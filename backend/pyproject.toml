@@ -1,0 +1,19 @@
+[project]
+name = "yantra-backend"
+version = "0.1.0"
+description = "Yantra Flask backend"
+requires-python = ">=3.12"
+dependencies = [
+    "dbutils>=3.2.0",
+    "flask>=3.1",
+    "flask-cors>=5.0",
+    "gunicorn>=23.0",
+    "pyjwt[crypto]>=2.15.1",
+    "pymysql>=1.2.3",
+    "python-dotenv>=1.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

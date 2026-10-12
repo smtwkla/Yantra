@@ -1,0 +1,9 @@
+# Not used for deployment — kept only as a pointer.
+#
+# The production compose file is a template in the devops repo:
+#   smtw_erp_devops/erp_server/yantra/compose.yml.j2
+# rendered per deployment (<org>_yantra_<instance>) by
+#   ./erp_spanner.py deploy <org> yantra <instance>
+# with deployment docs in smtw_erp_devops/docs/lob-apps/Yantra.MD.
+#
+# Change service definitions there, not here: one compose file to keep right.

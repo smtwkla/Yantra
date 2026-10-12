@@ -1,0 +1,18 @@
+# Never bake local uploads into the image — these are runtime data.
+# In production the uploads directory must be a named volume.
+backend/uploads/
+
+# Dev and test artifacts
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/tests/
+
+# Frontend build artifacts (built separately)
+frontend/node_modules/
+frontend/dist/
+
+# Local secrets — never in the image
+backend/secrets_*.py

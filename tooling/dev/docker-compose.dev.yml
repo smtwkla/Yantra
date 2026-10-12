@@ -1,0 +1,26 @@
+# Local development — MariaDB container only.
+# Usage: tooling/dev/dev-db-up.bat (or docker compose -f tooling/dev/docker-compose.dev.yml up -d)
+#
+# Port 3307, not 3306: other repos' dev MariaDB (e.g. SaralWeb) already use 3306.
+# Own project name so it never shares the default "dev" namespace with
+# VelKilnMaster / SaralWeb dev stacks.
+
+name: yantra-dev
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3307:3306"
+    environment:
+      MARIADB_DATABASE: vel_yantra_master
+      MARIADB_USER: vel_yantra_master
+      MARIADB_PASSWORD: dev-password
+      MARIADB_ROOT_PASSWORD: dev-root-password
+    volumes:
+      - yantra-mariadb-dev-data:/var/lib/mysql
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/20-test-db.sql:ro
+
+volumes:
+  yantra-mariadb-dev-data:

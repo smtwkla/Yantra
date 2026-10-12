@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System dependencies (add more here if needed, e.g. for Pillow)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for dependency management
+RUN pip install --no-cache-dir uv
+
+# Python dependencies — install from lockfile for reproducible builds
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Application code
+COPY backend/ ./
+COPY tooling/build/gunicorn.conf.py ./gunicorn.conf.py
+# Version file — served by /api/version so clients can detect a stale bundle
+COPY VERSION ./VERSION
+
+EXPOSE 5000
+
+# Run via the uv-managed venv
+CMD [".venv/bin/gunicorn", "-c", "gunicorn.conf.py", "app:app"]

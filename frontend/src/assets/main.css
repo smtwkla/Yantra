@@ -1,0 +1,116 @@
+/* -----------------------------------------------------------------------
+   Global CSS custom properties — theme values for the entire app.
+   Override these to change the look-and-feel in one place.
+   ----------------------------------------------------------------------- */
+
+:root {
+  /* Layout dimensions */
+  --sidebar-width: 60px;
+  --topbar-height: 42px;
+
+  /* Sidebar */
+  --sidebar-bg: #1e293b;
+  --sidebar-icon-color: #94a3b8;
+  --sidebar-icon-hover-bg: #334155;
+  --sidebar-icon-active-bg: #3b82f6;
+  --sidebar-icon-active-color: #ffffff;
+
+  /* Topbar */
+  --topbar-bg: #ffffff;
+  --topbar-border: #e2e8f0;
+
+  /* Content */
+  --content-bg: #f8fafc;
+
+  /* Text */
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+}
+
+/* -----------------------------------------------------------------------
+   Base resets
+   ----------------------------------------------------------------------- */
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  color: var(--text-primary);
+  background-color: var(--content-bg);
+}
+
+/* ----- Mobile bottom nav (hidden on desktop) ----- */
+
+.app-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 576px) {
+  .sidebar {
+    display: none;
+  }
+  .app-main {
+    margin-left: 0;
+    padding-bottom: 56px;
+  }
+  .app-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--sidebar-bg);
+    z-index: 1040;
+    align-items: center;
+    justify-content: space-around;
+  }
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--sidebar-icon-color);
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 0.65rem;
+    gap: 2px;
+    transition: color 0.15s;
+  }
+  .bottom-nav-item i {
+    font-size: 1.25rem;
+  }
+  .bottom-nav-item.active {
+    color: var(--sidebar-icon-active-color);
+  }
+  .bottom-nav-item:hover {
+    color: var(--sidebar-icon-active-color);
+  }
+}
+
+/* Suppress the default focus outline for mouse users, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Print: hide chrome, show content */
+@media print {
+  /* Hide navigation and interactive chrome */
+  .no-print { display: none !important; }
+
+  .modal-backdrop { display: none !important; }
+  .modal { position: static !important; }
+  .modal-dialog { max-width: 100% !important; margin: 0 !important; }
+  .modal-content { border: none !important; box-shadow: none !important; }
+  .modal-header { display: none !important; }
+
+  /* Show print-only elements */
+  .print-only { display: block !important; }
+
+  /* Reset app layout for print */
+  .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
+  .app-main { margin-left: 0 !important; }
+  .app-content { overflow: visible !important; padding: 0 !important; }
+}

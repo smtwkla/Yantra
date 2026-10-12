@@ -6,4 +6,15 @@ The shared conventions imported above apply to all repos. This file contains rep
 
 ## Yantra Specifics
 
-- **Stack**: Flask backend + Vue.js frontend (see [SMTW-WebApp-Base.md](SMTW-WebApp-Base.md))
+- **Stack**: Flask backend + Vue.js frontend (see [SMTW-WebApp-Base.md](SMTW-WebApp-Base.md)); MariaDB (PyMySQL + DBUtils pool); Keycloak realm `Office.smtw.in`. Product plan: `docs/Plan.MD`. Domain knowledge: `docs/Maintenance-Philosophy.md` — read before designing any maintenance module.
+- **Ports (dev)**: backend 5001, Vite 5176, MariaDB 3307 (3306 is SaralWeb's dev DB). Container backend listens on 5000.
+- **Dev commands** (also PyCharm run configs):
+  - DB: `tooling/dev/dev-db-up.bat` / `dev-db-down.bat` / `dev-db-reset.bat` — compose project `yantra-dev`, DBs `vel_yantra_master` + `vel_yantra_test`
+  - Backend: PyCharm "Backend" (`FLASK_DEBUG=1`, `DEV_AUTH_BYPASS=1`, interpreter `uv (Yantra-backend)`); frontend: "Frontend" (`npm run dev`)
+  - Tests: `tooling/run-tests.bat` (both), `run-backend-tests.bat` (needs the dev DB), `run-frontend-tests.bat`
+- **Secrets**: `backend/secrets_app.py`; in prod rendered by Ansible (`smtw_erp_devops/erp_server/yantra/secrets_app.py.j2`) — keep `example_secrets_app.py` field names in step with that template. Missing file falls back to the example only in dev/test.
+- **DB may not exist**: the app must start and serve while the DB is unreachable or not created (fresh deploy). `local_db.ensure_schema()` retries migrations every 30 s; `get_db()` raises `DBUnavailable` → 503.
+- **Release**: Release (patch/minor/major) run configs → `tooling/common/release.py`, with `TEST_CMD` / `BUILD_SCRIPT` / `DEPLOY_SCRIPT` and the deploy settings set as run-config env vars (a hook blocks writing `release.env`).
+- **Deploy**: `tooling/deploy.py` over plink to PuTTY session `ansible-ws` (`/home/kla/smtw/erp_server`): stamps `YANTRA_VER` (bare version, e.g. `"0.1.2"`) in `vars/settings_vel_yantra_master.yaml`, then runs `./erp_spanner.py deploy vel yantra master`. The compose pins the tag, so a VelKilnMaster-style `compose pull` would not update. `erp_spanner.py` exits 0 even when the playbook fails, so `deploy.py` checks the PLAY RECAP itself. `--check` is read-only; `--stamp-only` skips the Ansible run. "Deploy" run config = redeploy current `VERSION`.
+- **npm**: npm 10.9 crashes (`edgesOut`) resolving vitest's optional peers — use `npx npm@11 install` to change dependencies; `npm ci` (Docker) is fine.
+- **Not yet built** (Plan.MD phase 1, deliberate gaps for now): network gate + access log, task_queue (worker.py idles), PWA shell.

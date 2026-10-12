@@ -230,6 +230,81 @@ Rule: use the **lowest permission** a user needs to see meaningful content in th
 
 ---
 
+## Internet Exposure Pattern
+
+When an app is reachable from outside the LAN (e.g. supervisors on mobile data), three pieces work together: the
+backend must see the **real client IP**, a **network gate** keeps internal-only roles off the internet, and an **access
+log** records who reached the API from where. Reference: VelKilnMaster `access_control.py`, `access_log.py`,
+`tooling/build/nginx.conf`.
+
+### Real client IP behind proxies
+
+Behind the usual chain **front reverse proxy → app's nginx container → backend**, every request arrives from a proxy
+address unless each hop passes the real one on.
+
+**The trap (VelKilnMaster, Sept 2026):** the app's nginx set `X-Real-IP $remote_addr` — but `$remote_addr` was the
+front proxy (10.24.0.18), so every client looked internal and the network gate silently let the internet in. Nothing
+failed; it just never refused anyone.
+
+**Fix — in the app's nginx**, accept `X-Forwarded-For` only from the front proxy's range:
+
+```nginx
+set_real_ip_from 10.24.0.0/23;      # front proxy range — the only hop allowed to vouch for the client
+real_ip_header   X-Forwarded-For;
+real_ip_recursive on;               # skip trusted hops from the right; first untrusted address = client
+
+location /api/ {
+    proxy_set_header X-Real-IP       $remote_addr;   # now the real client
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+- **Backend reads `X-Real-IP` only.** The first entry of `X-Forwarded-For` is whatever the client sent — trivially
+  forged. `set_real_ip_from` + `real_ip_recursive` is what makes the address trustworthy; a client outside the trusted
+  range cannot spoof it.
+- `set_real_ip_from` must match the front proxy's actual range — keep it in step with the network zone config.
+- Parse with `ipaddress`; on failure log it and treat the client as **external** (fail closed).
+- **Verify after every deploy that touches proxies**: the access log must show real, varied client addresses, not the
+  proxy's. A gate that never refuses looks exactly like a gate that works.
+
+### Network gate by role
+
+`access_control.py` exports `require_access()`, a `before_request` factory registered **after** `require_auth` (it
+needs `g.user`):
+
+- Permission `access:wan` in `config_rbac.py` lists the roles allowed from anywhere; everyone else must come from an
+  internal network. Route code never sees this — it is a gate, like auth.
+- Internal ranges are a comma-separated CIDR list in the `app_settings` table (`internal_networks`), editable in
+  Settings without a deploy, cached in-process for 5 min.
+- Admin bypasses; public paths (`/api/auth/config`, `/api/version`) and the dev auth bypass skip the gate.
+- Refusal: 403 with a message saying an internal connection is required, plus a log warning naming user, role and IP.
+- Granting `access:wan` to a role is a business decision (who may work from outside) — record the date and reason in
+  a comment next to the grant.
+
+### Access log
+
+Answers "who reached the API, from where, and were they let in?" — without a row per request.
+
+- **One row per sighting, not per request**: the first time a Keycloak session (`sid` claim) is seen from an IP, again
+  when it moves to another IP (Wi-Fi → mobile data), and once per distinct refusal.
+- **Outcomes**: `ok`, `auth_failed`, `denied_network`, `denied_perm`. Each gate marks its own refusal on `g`
+  (`g.access_outcome`, `g.access_detail` — the failure reason or permission key); a bare 401/403 status is only the
+  fallback. Validation 4xx and 5xx on an authenticated request still count as `ok` — the user did reach the API.
+- **`after_request` hook**, registered before the other `after_request` hooks so Flask runs it last and sees the final
+  status. Wrapped in try/except — a logging failure must never break the request.
+- **Dedupe in-process**: a small cache suppresses repeats of the same `(outcome, session, IP[, detail])` for 10 min,
+  pruned when it grows. Each Gunicorn worker has its own cache, so occasional duplicate rows across workers are
+  accepted — it's an audit trail, not a counter.
+- **Columns**: `ts`, `username`, `role`, `session_id`, `client_ip`, `is_internal`, `outcome`, `method`, `path`,
+  `user_agent`, `detail`; indexes on `ts DESC` and `(username, ts DESC)`. `ts` follows the timezone policy
+  (`TIMESTAMP`/`DATETIME`, IST).
+- **Retention**: a scheduled worker task deletes rows older than `ACCESS_LOG_RETENTION_DAYS` (`company_settings.py`).
+- **Viewer**: Settings › Access log, paginated, filters for user, date range, external-only and denials-only; permission
+  `access_log:view` for the people who own the security question (manager, IT).
+- Classification and dedupe are pure (`classify_outcome`, `SightingCache` with an injectable clock) and unit-tested.
+
+---
+
 ## Multi-Tenancy Pattern
 
 When a single deployment serves multiple companies/tenants:
@@ -361,6 +436,28 @@ if cur.fetchone()["got"] == 1:
 Once the waiting workers get the lock they find no pending migrations and carry on. The same lock — held, with a
 non-blocking try (`GET_LOCK(name, 0)` / `pg_try_advisory_lock`) — keeps any singleton to one instance: the APScheduler,
 the queue drainer, background monitor threads. A connection-held lock is released automatically if its process dies.
+
+### Advisory locks on pooled connections (PostgreSQL)
+
+Session-level `pg_advisory_lock` is held by the **connection**, not the request. Pooled connections run in autocommit
+and are reused, so a lock that isn't explicitly released survives into every later request on that connection.
+
+**The incident (VelKilnMaster, June 2026):** a request-path lock was taken on key 2 but unlocked on key 1 (a no-op).
+Key 2 stayed held forever; every later request needing it blocked, each holding a pooled connection. ~88 stuck
+connections exhausted `max_connections` on a DB instance shared with other apps, and the midnight scheduled job failed
+to enqueue.
+
+- **Request path: prefer `pg_advisory_xact_lock(key)`** inside an explicit transaction — released automatically at
+  commit/rollback, nothing to forget.
+- If a session lock is unavoidable, acquire it **immediately before** `try:` and release it in `finally:`, using the
+  same named constant for lock and unlock — never two literals.
+- **Lock-ID registry**: define every key as a named constant in one place (e.g. `local_db.py`:
+  `LOCK_MIGRATIONS = 1`, `LOCK_SENSOR_MONITOR = 8001`, `LOCK_WORKER = 8002`, …) so keys can't collide or drift.
+- Singletons (scheduler, drainer, monitor thread) keep session locks on their **own dedicated connection** — that's
+  the one case where holding a lock for the process lifetime is the point.
+- **Diagnose**: query `pg_stat_activity` *as the app role* (a read-only user can't see other roles' rows) and look for
+  `state = 'active'` with `wait_event = 'advisory'` piling up. Immediate relief: restart the backend (drops pooled
+  connections) or `pg_terminate_backend` the stuck ones.
 
 ### Migration squashing
 
@@ -672,10 +769,24 @@ matching event retries.
 
 For human-readable sequential identifiers:
 
-- Format: `YYYY-MM-DD-NNN` (e.g. `2026-03-06-001`) — date prefix + daily sequence.
-- Generate server-side: query `MAX(serial)` for today's date, increment. Handle the first-of-day case.
-- Store as `VARCHAR(32)` with a UNIQUE index — the DB enforces uniqueness as a safety net.
-- For batch entities: `PREFIX-YYYY-MM-NNN` (e.g. `PR-2026-03-001`).
+- Format: `YYYY-MM-DD-NNN` (e.g. `2026-03-06-001`) — date prefix + daily sequence; or `<CODE>-<seq>` when the serial
+  belongs to a type (e.g. a mould code). For batch entities: `PREFIX-YYYY-MM-NNN` (e.g. `PR-2026-03-001`).
+- Generate server-side from a **counter row locked `FOR UPDATE`**, not `MAX(serial) + 1`. Two concurrent requests both
+  read the same `MAX` and collide — the UNIQUE index turns the race into a 500, it doesn't prevent it.
+- The counter lives on the row that owns the sequence (`next_serial` on the type row; a `serial_counters(scope, day)`
+  row for daily sequences, inserted on the first of the day with `ON CONFLICT DO NOTHING`). In one transaction:
+
+  ```sql
+  SELECT next_serial FROM mould_types WHERE id = %s FOR UPDATE;   -- concurrent allocators wait here
+  UPDATE mould_types SET next_serial = next_serial + %s WHERE id = %s;
+  -- insert the rows with serials first .. first + count - 1, then commit
+  ```
+
+  Allocating a block of `count` serials in one lock covers multi-row entries (e.g. N pieces from one mix).
+- Never reuse a serial: voiding the entity keeps its number. The counter only moves forward — if it can be edited (e.g.
+  seeding past numbers already in use before go-live), reject any value below the current one.
+- Store as `VARCHAR(32)` with a UNIQUE index — a safety net, not the allocation mechanism.
+- Reference: VelKilnMaster `casting.py` (piece serials).
 
 ---
 
@@ -846,6 +957,18 @@ Three layers — keep them separate:
 - Assert derived state through the projection functions.
 - Truncate the test DB once per session (session-scoped `pytest_configure`), not per class — per-class resets were
   tried and weren't worth the complexity. If tests pollute each other, fix the test, not the fixture.
+
+**Layer 4 — Frontend unit tests (Vitest)**
+
+- Vitest (`npm test` → `vitest run`, `environment: "jsdom"` in `vite.config.js`), tests in `frontend/tests/*.test.js`,
+  run via `tooling/run-frontend-tests.bat`.
+- Test the **pure helpers** the frontend does keep: formatters (`utils/*.js`), nav filtering (`canSeeNavItem`), the
+  stale-bundle `isOutdated`, client-side crypto twins. Plain data in, plain data out — no component mounting, no
+  network.
+- Logic that would need a component test to verify usually belongs in a pure helper (or the backend) instead.
+- Where a frontend helper must interoperate with a backend algorithm (e.g. an encryption format), generate a test
+  vector with the Python implementation (a `tooling/` script) into `frontend/tests/fixtures/` and test the JS side
+  against it, so the two can't drift silently. Reference: VelKilnMaster `tooling/crypto/make_test_vector.py`.
 
 Write `test_rbac.py` first, before any module tests. It validates the policy file itself and catches mistakes
 immediately.
