@@ -19,6 +19,7 @@ ROLES = (
     "maint_manager",
     "maint_engineer",
     "it_admin",
+    "maint_storekeeper",
     "maint_technician",
     "maint_operator",
 )
@@ -26,6 +27,8 @@ ROLES = (
 # Role inheritance — a role automatically gains all permissions of included roles.
 # Maintenance is a ladder: manager ⊇ engineer ⊇ technician ⊇ maint_operator.
 # it_admin stands apart: housekeeping and settings, not maintenance work.
+# maint_storekeeper stands apart too: issuing stock is not part of the
+# maintenance ladder. No v1 permissions beyond '*' — spares come later.
 ROLE_INCLUDES = {
     "maint_manager": ("maint_engineer",),
     "maint_engineer": ("maint_technician",),
@@ -35,7 +38,11 @@ ROLE_INCLUDES = {
 PERMISSIONS = {
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
-    "masters:edit": ("maint_engineer", "it_admin"),
+    "masters:edit": ("it_admin",),
+    "masters:read_senior": ("it_admin",),   # users' unit access
+
+    # Equipment — classes now, the equipment register from phase 2 on
+    "equipment:edit": ("maint_engineer", "it_admin"),
 
     # Settings — DB status, escalation times, notification channels
     "settings:read": ("maint_manager", "it_admin"),

@@ -59,6 +59,9 @@ class TestRoleExpansion:
     def test_it_admin_stands_apart(self):
         assert expand_roles(["it_admin"]) == {"it_admin"}
 
+    def test_storekeeper_stands_apart(self):
+        assert expand_roles(["maint_storekeeper"]) == {"maint_storekeeper"}
+
     def test_operator_no_expansion(self):
         assert expand_roles(["maint_operator"]) == {"maint_operator"}
 
@@ -79,9 +82,11 @@ class TestComputePermissions:
     @pytest.mark.parametrize("role, expected", [
         ("maint_operator",         {"masters:read"}),
         ("maint_technician", {"masters:read"}),
-        ("maint_engineer",   {"masters:read", "masters:edit"}),
-        ("maint_manager",    {"masters:read", "masters:edit", "settings:read"}),
-        ("it_admin",         {"masters:read", "masters:edit", "settings:read", "settings:edit"}),
+        ("maint_engineer",   {"masters:read", "equipment:edit"}),
+        ("maint_manager",    {"masters:read", "equipment:edit", "settings:read"}),
+        ("it_admin",         {"masters:read", "masters:edit", "masters:read_senior", "equipment:edit",
+                              "settings:read", "settings:edit"}),
+        ("maint_storekeeper", {"masters:read"}),
     ])
     def test_role_matrix(self, role, expected):
         assert set(compute_permissions([role])) == expected

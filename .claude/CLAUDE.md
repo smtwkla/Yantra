@@ -6,7 +6,9 @@ The shared conventions imported above apply to all repos. This file contains rep
 
 ## Yantra Specifics
 
-- **Stack**: Flask backend + Vue.js frontend (see [SMTW-WebApp-Base.md](SMTW-WebApp-Base.md)); MariaDB (PyMySQL + DBUtils pool); Keycloak realm `Office.smtw.in`. Product plan: `docs/Plan.MD`. Domain knowledge: `docs/Maintenance-Philosophy.md` — read before designing any maintenance module.
+- **Stack**: Flask backend + Vue.js frontend (see [SMTW-WebApp-Base.md](SMTW-WebApp-Base.md)); MariaDB (PyMySQL + DBUtils pool); Keycloak realm `Office.smtw.in`. Product plan: `docs/Plan.MD`. Domain knowledge: `docs/Maintenance-Philosophy.md` (rules, TPM-based) and `docs/Plant-Facts.md` (the factories as they are) — read both before designing any maintenance module.
+- **Standards and best practice**: Yantra must help the plant adopt industry maintenance standards and best practices (TPM, ISO 14224, EN 13306, ISO 55000, SMRP KPIs). At every design step, name the relevant standard or practice, explain in plain terms what it says and why, show how the proposal follows it — or state where and why it deliberately departs — and prefer standard terms over inventing local ones. The project owner is learning maintenance practice as the project goes.
+- **Step workflow**: work is done in numbered steps (`S001`, …) whose brief, reviews and implementation report live in `docs/steps/` — read `docs/steps/README.md` for the file naming, finding IDs and gates before planning, reviewing or coding a step. Never code a step whose brief is not `Approved` by the user. `/step` (skill) orchestrates the cycle from one terminal with the `brief-reviewer`, `coder` and `code-reviewer` subagents (`.claude/agents/`).
 - **Ports (dev)**: backend 5001, Vite 5176, MariaDB 3307 (3306 is SaralWeb's dev DB). Container backend listens on 5000.
 - **Dev commands** (also PyCharm run configs):
   - DB: `tooling/dev/dev-db-up.bat` / `dev-db-down.bat` / `dev-db-reset.bat` — compose project `yantra-dev`, DBs `vel_yantra_master` + `vel_yantra_test`

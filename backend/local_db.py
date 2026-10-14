@@ -43,6 +43,63 @@ _MIGRATIONS = [
             updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )""",
     ]),
+    # Audit convention for every table: created_* set on insert, updated_* stay
+    # NULL until the first edit (set together by the application, never by
+    # ON UPDATE, so a time is never recorded without an actor).
+    (2, "Basic masters: sites, units, equipment classes, unit access", [
+        """CREATE TABLE IF NOT EXISTS sites (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(20) NOT NULL,
+            name        VARCHAR(100) NOT NULL,
+            address     VARCHAR(255) NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_sites_code UNIQUE (code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS units (
+            id               INT AUTO_INCREMENT PRIMARY KEY,
+            site_id          INT NOT NULL,
+            code             VARCHAR(20) NOT NULL,
+            name             VARCHAR(100) NOT NULL,
+            oneerp_warehouse VARCHAR(140) NULL,
+            active           TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_units_site_code UNIQUE (site_id, code),
+            CONSTRAINT uq_units_warehouse UNIQUE (oneerp_warehouse),
+            CONSTRAINT fk_units_site FOREIGN KEY (site_id) REFERENCES sites (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS equipment_classes (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(4) NOT NULL,
+            name        VARCHAR(100) NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_classes_code UNIQUE (code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS user_units (
+            username    VARCHAR(100) NOT NULL,
+            unit_id     INT NOT NULL,
+            granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            granted_by  VARCHAR(100) NOT NULL,
+            PRIMARY KEY (username, unit_id),
+            CONSTRAINT fk_user_units_unit FOREIGN KEY (unit_id) REFERENCES units (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
+    # is_default is 1 for the default site and NULL for all others (never 0), so the
+    # UNIQUE index - which allows many NULLs - lets the database guarantee at most one default.
+    (3, "Default site", [
+        "ALTER TABLE sites ADD COLUMN is_default TINYINT(1) NULL AFTER active",
+        "ALTER TABLE sites ADD CONSTRAINT uq_sites_default UNIQUE (is_default)",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

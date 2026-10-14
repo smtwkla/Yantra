@@ -30,6 +30,7 @@ async function request(method, url, body = null) {
     const err = new Error(error.error || `HTTP ${response.status}`);
     err.status = response.status;
     err.code = error.code ?? null;   // machine-readable refusal kind, when the API sends one
+    err.field = error.field ?? null; // the form field the refusal is about, when the API names one
     throw err;
   }
 

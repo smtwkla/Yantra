@@ -52,6 +52,11 @@ def _validate(app, token):
 
 class TestValidateToken:
 
+    def test_storekeeper_client_role_accepted(self, app):
+        user = _validate(app, _token(client_roles=["maint_storekeeper"]))
+        assert user["roles"] == ["maint_storekeeper"]
+        assert user["permissions"] == ["masters:read"]
+
     def test_realm_role_maps_to_user(self, app):
         user = _validate(app, _token(realm_roles=["maint_operator", "offline_access"]))
         assert user["username"] == "jdoe"
@@ -106,7 +111,7 @@ class TestMiddleware:
         body = res.get_json()
         assert body["name"] == "John Doe"
         assert body["role"] == "maint_engineer"
-        assert "masters:edit" in body["permissions"]
+        assert "equipment:edit" in body["permissions"]
 
     def test_auth_config_exposes_realm_and_client(self, client):
         body = client.get("/api/auth/config").get_json()

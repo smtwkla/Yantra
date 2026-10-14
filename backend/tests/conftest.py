@@ -25,6 +25,8 @@ config.DB_CONFIG["database"] = "vel_yantra_test"
 
 from app import app as flask_app
 from auth_utils import compute_permissions
+from db_helpers import transaction
+from local_db import ensure_schema, get_local_db
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +47,24 @@ def _inject_test_user():
         "roles": [role_name],
         "permissions": compute_permissions([role_name]),
     }
+
+
+# Tables of the masters, emptied once per session so tests start from a known state
+_MASTER_TABLES = ("user_units", "units", "sites", "equipment_classes")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_master_tables():
+    error = ensure_schema(config.DB_CONFIG)
+    if error:
+        pytest.fail(f"Test database not ready (is the dev DB up?): {error}", pytrace=False)
+    conn = get_local_db(config.DB_CONFIG)
+    try:
+        with transaction(conn), conn.cursor() as cur:
+            for table in _MASTER_TABLES:  # child tables first (foreign keys)
+                cur.execute(f"DELETE FROM {table}")
+    finally:
+        conn.close()
 
 
 @pytest.fixture
@@ -86,3 +106,35 @@ class RoleClient:
 def role_client(app):
     """Factory: role_client("it_admin") → a client acting as that role."""
     return lambda role: RoleClient(app.test_client(), role)
+
+
+class Uniq:
+    """Unique codes and names, so tests never collide with each other or with leftovers."""
+
+    def __init__(self):
+        self._n = 0
+
+    def _next(self):
+        self._n += 1
+        return self._n
+
+    def site_code(self):
+        return f"T{self._next():04d}"
+
+    def unit_code(self):
+        return f"U{self._next():04d}"
+
+    def class_code(self):
+        n, letters = self._next(), ""
+        for _ in range(4):
+            n, rest = divmod(n, 26)
+            letters += chr(ord("A") + rest)
+        return letters
+
+    def warehouse(self):
+        return f"Test Warehouse {self._next()} - SMTW"
+
+
+@pytest.fixture(scope="session")
+def uniq():
+    return Uniq()

@@ -3,8 +3,11 @@ import { canOpenRoute, canSeeNavItem, landingPath, navItems } from "../src/store
 
 // What /api/auth/me returns per role (backend config_rbac.py — see test_rbac.py's role matrix)
 const OPERATOR = ["masters:read"];
-const MANAGER = ["masters:edit", "masters:read", "settings:read"];
-const IT_ADMIN = ["masters:edit", "masters:read", "settings:edit", "settings:read"];
+const ENGINEER = ["equipment:edit", "masters:read"];
+const MANAGER = ["equipment:edit", "masters:read", "settings:read"];
+const IT_ADMIN = [
+  "equipment:edit", "masters:edit", "masters:read", "masters:read_senior", "settings:edit", "settings:read",
+];
 
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
@@ -20,7 +23,7 @@ describe("navigation permissions", () => {
   });
 
   it("everyone with a role lands on Masters", () => {
-    for (const perms of [OPERATOR, MANAGER, IT_ADMIN]) {
+    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN]) {
       expect(landingPath(perms)).toBe("/masters");
     }
   });

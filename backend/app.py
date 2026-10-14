@@ -13,7 +13,8 @@ from config import (
     KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL,
     SECRET_KEY,
 )
-from local_db import DBUnavailable, ensure_schema, get_pooled_db, init_pool, return_pooled_db
+from db_helpers import close_db
+from local_db import DBUnavailable, ensure_schema, init_pool
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -41,27 +42,7 @@ app.before_request(require_auth(
 ))
 
 
-def get_db():
-    """Return a per-request DB connection from the pool, cached on g.
-
-    Raises DBUnavailable (→ 503) while the schema cannot be brought up to date.
-    Usage in routes:
-        conn = get_db()
-        with conn.cursor() as cur:
-            cur.execute("SELECT ...")
-    """
-    if "db" not in g:
-        error = ensure_schema(DB_CONFIG)
-        if error:
-            raise DBUnavailable(error)
-        g.db = get_pooled_db()
-    return g.db
-
-
-@app.teardown_appcontext
-def _close_db(exc):
-    """Return the per-request DB connection to the pool."""
-    return_pooled_db(g.pop("db", None))
+app.teardown_appcontext(close_db)
 
 
 @app.errorhandler(DBUnavailable)

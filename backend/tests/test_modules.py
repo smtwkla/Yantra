@@ -1,4 +1,4 @@
-"""HTTP permission enforcement on the module routes, plus version and DB status.
+"""Version endpoint and DB status (the masters routes are tested in test_masters_api.py).
 
 The DB status tests need the dev MariaDB container (tooling/dev/dev-db-up.bat).
 """
@@ -18,18 +18,6 @@ class TestVersion:
 
     def test_version_endpoint(self, client):
         assert client.get("/api/version").get_json() == {"version": config.APP_VERSION}
-
-
-class TestMasters:
-
-    @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "it_admin", "admin"])
-    def test_every_role_can_read(self, role_client, role):
-        res = role_client(role).get("/api/masters/")
-        assert res.status_code == 200
-        assert res.get_json() == {"items": []}
-
-    def test_unknown_role_is_forbidden(self, role_client):
-        assert role_client("nobody").get("/api/masters/").status_code == 403
 
 
 class TestSettingsDbStatus:
