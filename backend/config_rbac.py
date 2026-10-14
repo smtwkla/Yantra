@@ -36,13 +36,17 @@ ROLE_INCLUDES = {
 }
 
 PERMISSIONS = {
+    # Equipment — the equipment register (S002) and equipment classes
+    "equipment:read": ("*",),
+    # A scope key, not a read level: it says *where* (every unit, not only the user's
+    # unit-access rows), so it departs from the read_basic/read/read_senior naming.
+    "equipment:read_all_units": ("maint_manager", "it_admin"),
+    "equipment:edit": ("maint_engineer", "it_admin"),
+
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
     "masters:edit": ("it_admin",),
     "masters:read_senior": ("it_admin",),   # users' unit access
-
-    # Equipment — classes now, the equipment register from phase 2 on
-    "equipment:edit": ("maint_engineer", "it_admin"),
 
     # Settings — DB status, escalation times, notification channels
     "settings:read": ("maint_manager", "it_admin"),

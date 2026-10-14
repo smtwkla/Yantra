@@ -6,6 +6,7 @@
  */
 
 export const navItems = [
+  { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
   { name: "masters", path: "/masters", icon: "fa-solid fa-industry", label: "Masters", perm: "masters:read" },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];
@@ -30,4 +31,9 @@ export function canOpenRoute(name, permissions) {
 export function landingPath(permissions) {
   const item = navItems.find((i) => canSeeNavItem(i, permissions));
   return item ? item.path : null;
+}
+
+/** Whether a nav item is the current page — also true on its sub-pages (/equipment/5 → Equipment). */
+export function isActivePath(routePath, itemPath) {
+  return routePath === itemPath || routePath.startsWith(`${itemPath}/`);
 }

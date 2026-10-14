@@ -1,11 +1,25 @@
 import { createRouter, createWebHistory } from "vue-router";
+import EquipmentDetailView from "../views/EquipmentDetailView.vue";
+import EquipmentView from "../views/EquipmentView.vue";
 import MastersView from "../views/MastersView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import { authenticated, userPermissions } from "../stores/auth";
 import { canOpenRoute, landingPath } from "../stores/navigation";
 
 const routes = [
-  { path: "/", redirect: "/masters" },
+  { path: "/", redirect: () => landingPath(userPermissions.value) ?? "/equipment" },
+  {
+    path: "/equipment",
+    name: "equipment",
+    component: EquipmentView,
+    meta: { title: "Equipment" },
+  },
+  {
+    path: "/equipment/:id(\\d+)",
+    name: "equipment-detail",
+    component: EquipmentDetailView,
+    meta: { title: "Equipment" },
+  },
   {
     path: "/masters",
     name: "masters",

@@ -54,6 +54,38 @@ def transaction(conn):
     conn.commit()
 
 
+def insert_row(cur, table, clean, actor):
+    """INSERT the validated fields plus created_by.  Table and column names are code
+    constants, never client input."""
+    columns = [*clean, "created_by"]
+    cur.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})",
+        [*clean.values(), actor],
+    )
+    return cur.lastrowid
+
+
+def update_row(cur, table, record_id, clean, actor):
+    """UPDATE the validated fields and stamp updated_at/updated_by together; nothing to do
+    when ``clean`` is empty."""
+    if not clean:
+        return
+    assignments = [f"{column} = %s" for column in clean] + ["updated_at = NOW()", "updated_by = %s"]
+    cur.execute(f"UPDATE {table} SET {', '.join(assignments)} WHERE id = %s",
+                [*clean.values(), actor, record_id])
+
+
+def count(cur, sql, params):
+    """Run a ``SELECT COUNT(*) AS n …`` and return n."""
+    cur.execute(sql, params)
+    return cur.fetchone()["n"]
+
+
+def fetch_one(cur, sql, params):
+    cur.execute(sql, params)
+    return row_to_dict(cur.fetchone())
+
+
 def row_to_dict(row):
     """Convert a DB row dict to a JSON-safe dict.
 

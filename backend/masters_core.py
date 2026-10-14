@@ -28,7 +28,7 @@ def _code_parser(pattern, label, rule):
     return parse
 
 
-def _parse_name(raw):
+def parse_name(raw):
     name = raw.strip() if isinstance(raw, str) else ""
     if not name:
         raise ValueError("Name is required")
@@ -37,7 +37,7 @@ def _parse_name(raw):
     return name
 
 
-def _optional_text_parser(label, max_len, upper=False):
+def optional_text_parser(label, max_len, upper=False):
     """Stripped text; empty becomes None.  Not upper-cased unless asked."""
     def parse(raw):
         if raw is None:
@@ -77,21 +77,21 @@ def _parse_id(label):
 _SITE_FIELDS = {
     "code": (_code_parser(SITE_CODE_RE, "Site", "2–20 characters: capital letters, digits and hyphen, "
                                               "starting with a letter"), True),
-    "name": (_parse_name, True),
-    "address": (_optional_text_parser("Address", ADDRESS_MAX), False),
+    "name": (parse_name, True),
+    "address": (optional_text_parser("Address", ADDRESS_MAX), False),
     "active": (_parse_active, False),
     "is_default": (_flag_parser("Default"), False),
 }
 _UNIT_FIELDS = {
     "site_id": (_parse_id("Site"), True),
     "code": (_code_parser(UNIT_CODE_RE, "Unit", "2–20 characters: capital letters, digits and hyphen"), True),
-    "name": (_parse_name, True),
-    "oneerp_warehouse": (_optional_text_parser("OneERP warehouse", WAREHOUSE_MAX), False),
+    "name": (parse_name, True),
+    "oneerp_warehouse": (optional_text_parser("OneERP warehouse", WAREHOUSE_MAX), False),
     "active": (_parse_active, False),
 }
 _CLASS_FIELDS = {
     "code": (_code_parser(CLASS_CODE_RE, "Class", "2–4 capital letters"), True),
-    "name": (_parse_name, True),
+    "name": (parse_name, True),
     "active": (_parse_active, False),
 }
 

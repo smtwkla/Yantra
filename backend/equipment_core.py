@@ -1,0 +1,251 @@
+"""Equipment register — pure rules (no DB, no Flask, no clock).
+
+docs/steps/S002-equipment-register/1-brief.md.  The shell (equipment.py) fetches
+and locks rows, passes plain values in, and acts on what comes back.
+
+The tree has three fixed levels (ISO 14224 levels 6-8): equipment, component
+unit, component.  Only equipment has a unit; a part sits under a parent.
+"""
+
+from masters_core import optional_text_parser, parse_name
+
+LEVELS = ("equipment", "component_unit", "component")
+STATUSES = ("in_service", "standby", "out_of_use", "scrapped")
+CRITICALITIES = ("A", "B", "C")
+SCRAPPED = "scrapped"
+
+# New equipment starts at the lowest grade until someone ranks it (decision § 3.1)
+DEFAULT_CRITICALITY = "C"
+
+# How an own criticality of NULL (a part inheriting its equipment's grade) shows in events
+INHERIT = "inherit"
+
+YEAR_MIN = 1900
+TEXT_MAX = 100
+
+# level -> the levels its parent may have; equipment has no parent
+_ALLOWED_PARENTS = {
+    "equipment": (),
+    "component_unit": ("equipment",),
+    "component": ("component_unit", "equipment"),
+}
+
+# Messages for a parent of the wrong level (or a missing one)
+_PARENT_ERRORS = {
+    "equipment": "Equipment cannot have a parent",
+    "component_unit": "A component unit must sit under an equipment",
+    "component": "A component must sit under a component unit or an equipment",
+}
+
+
+# ---------------------------------------------------------------------------
+# Small parsers — each returns the clean value or raises ValueError(message)
+# ---------------------------------------------------------------------------
+
+def _enum_parser(label, allowed):
+    def parse(raw):
+        if raw not in allowed:
+            raise ValueError(f"{label} must be one of: {', '.join(allowed)}")
+        return raw
+    return parse
+
+
+def _is_id(raw):
+    return isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1
+
+
+def _id_parser(label, nullable):
+    def parse(raw):
+        if raw is None and nullable:
+            return None
+        if not _is_id(raw):
+            raise ValueError(f"{label} must be a record id")
+        return raw
+    return parse
+
+
+def _year_parser(this_year):
+    def parse(raw):
+        if raw is None:
+            return None
+        if not isinstance(raw, int) or isinstance(raw, bool) or not YEAR_MIN <= raw <= this_year + 1:
+            raise ValueError(f"Year must be between {YEAR_MIN} and {this_year + 1}")
+        return raw
+    return parse
+
+
+def _parse_criticality(raw):
+    if raw is None:
+        return None
+    return _enum_parser("Criticality", CRITICALITIES)(raw)
+
+
+# ---------------------------------------------------------------------------
+# Public rules
+# ---------------------------------------------------------------------------
+
+def format_equipment_code(prefix, number):
+    """VBM + 1 -> VBM001; past 999 the number simply grows (VBM1000)."""
+    return prefix + str(number).zfill(3)
+
+
+def check_parent(child_level, parent_level):
+    """Return an error message if a node of child_level may not sit under parent_level
+    (None = no parent), else None."""
+    allowed = _ALLOWED_PARENTS[child_level]
+    if parent_level in allowed or (not allowed and parent_level is None):
+        return None
+    return _PARENT_ERRORS[child_level]
+
+
+def effective_criticality(own, equipment_grade):
+    """A part's own grade wins; NULL means it inherits its root equipment's grade."""
+    return own if own is not None else equipment_grade
+
+
+def full_path(site_code, unit_code, codes_root_to_node):
+    """SITE.UNIT.EQUIP[.COMPUNIT][.COMPONENT] — derived for display and events, never stored."""
+    return ".".join([site_code, unit_code, *codes_root_to_node])
+
+
+def check_status_change(old, new):
+    """Return an error message if the status may not go from old to new (old None = on create).
+
+    Whether a node's parts allow scrapping needs the database; the shell checks that.
+    """
+    if old is None:
+        return "A new record cannot be scrapped" if new == SCRAPPED else None
+    if old == SCRAPPED and new != SCRAPPED:
+        return "Scrapped is final; the status cannot change"
+    return None
+
+
+# Tracked display value -> event name.  The move is named by the node's level:
+# equipment moves between units, a part moves between parents.
+_TRACKED = (
+    ("full_path", None),
+    ("class_code", "class"),
+    ("criticality", "criticality"),
+    ("status", "status"),
+)
+
+
+def _display(key, value):
+    if key == "criticality" and value is None:
+        return INHERIT
+    return value
+
+
+def tracked_changes(before, after):
+    """Compare two dicts of display values; return ``[(event, old, new)]`` for each tracked change.
+
+    Keys read: ``level``, ``full_path``, ``class_code``, ``criticality`` (own value,
+    None = inherit) and ``status``.  Any other key (name, make, ...) is not tracked.
+    """
+    changes = []
+    for key, event in _TRACKED:
+        old, new = _display(key, before.get(key)), _display(key, after.get(key))
+        if old == new:
+            continue
+        if event is None:
+            event = "moved_unit" if after["level"] == "equipment" else "moved_parent"
+        changes.append((event, old, new))
+    return changes
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def _fields(this_year):
+    """field -> (parser, required when creating).  level/code are handled separately."""
+    return {
+        "parent_id": (_id_parser("Parent", nullable=True), False),
+        "unit_id": (_id_parser("Unit", nullable=True), False),
+        "class_id": (_id_parser("Class", nullable=False), True),
+        "name": (parse_name, True),
+        "make": (optional_text_parser("Make", TEXT_MAX), False),
+        "model": (optional_text_parser("Model", TEXT_MAX), False),
+        "serial_no": (optional_text_parser("Serial number", TEXT_MAX), False),
+        "year": (_year_parser(this_year), False),
+        "criticality": (_parse_criticality, False),
+        "status": (_enum_parser("Status", STATUSES), False),
+    }
+
+
+def _check_immutable(data, stored, errors):
+    """On an update, code and level may be sent back unchanged but never changed."""
+    if "code" in data:
+        sent = data["code"].strip().upper() if isinstance(data["code"], str) else data["code"]
+        if sent != stored["code"]:
+            errors.append({"field": "code", "message": "Code cannot be changed"})
+    if "level" in data and data["level"] != stored["level"]:
+        errors.append({"field": "level", "message": "Level cannot be changed"})
+
+
+def _check_place(level, clean, creating, errors):
+    """Equipment has a unit and no parent; parts have a parent and no unit.  On an update an
+    absent field is unchanged, so only what was sent is checked.  A field that already
+    failed its own parsing is not reported twice."""
+    failed = {e["field"] for e in errors}
+    if level == "equipment":
+        if clean.get("parent_id") is not None:
+            errors.append({"field": "parent_id", "message": check_parent(level, "equipment")})
+        if ("unit_id" in clean or creating) and clean.get("unit_id") is None and "unit_id" not in failed:
+            errors.append({"field": "unit_id", "message": "Unit is required for equipment"})
+        if "criticality" in clean and clean["criticality"] is None:
+            errors.append({"field": "criticality", "message": "Criticality is required for equipment"})
+    else:
+        if clean.get("unit_id") is not None:
+            errors.append({"field": "unit_id",
+                           "message": "A part takes its equipment's unit; give its parent instead"})
+        if ("parent_id" in clean or creating) and clean.get("parent_id") is None and "parent_id" not in failed:
+            errors.append({"field": "parent_id", "message": check_parent(level, None)})
+
+
+def validate_equipment(data, creating, this_year, stored=None):
+    """Return ``(clean, errors)`` in the masters_core shape (errors: list of {field, message}).
+
+    ``this_year`` is the current IST year, passed in by the shell.  On an update,
+    ``stored`` is the node's current ``{code, level}``: code and level may be sent
+    back unchanged (they are then dropped) but not changed, and the place rules are
+    checked against the stored level.  On create the code is issued by the shell,
+    so a ``code`` in the body is ignored like any other unknown field.
+    """
+    clean, errors = {}, []
+
+    if creating:
+        try:
+            level = _enum_parser("Level", LEVELS)(data.get("level"))
+            clean["level"] = level
+        except ValueError as exc:
+            errors.append({"field": "level", "message": str(exc)})
+            level = None
+    else:
+        _check_immutable(data, stored, errors)
+        level = stored["level"]
+
+    for field, (parse, required) in _fields(this_year).items():
+        if field not in data:
+            if creating and required:
+                errors.append({"field": field, "message": f"{field.replace('_', ' ').capitalize()} is required"})
+            continue
+        try:
+            clean[field] = parse(data[field])
+        except ValueError as exc:
+            errors.append({"field": field, "message": str(exc)})
+
+    if level is not None:
+        _check_place(level, clean, creating, errors)
+        if creating:
+            if level == "equipment" and "criticality" not in clean:
+                clean["criticality"] = DEFAULT_CRITICALITY
+            # Absent keys are not written: a part's NULL parent_id/unit_id is the column default
+            clean = {k: v for k, v in clean.items() if not (k in ("parent_id", "unit_id") and v is None)}
+
+    if creating and "status" in clean:
+        message = check_status_change(None, clean["status"])
+        if message:
+            errors.append({"field": "status", "message": message})
+
+    return clean, errors

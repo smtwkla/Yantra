@@ -15,37 +15,6 @@ from local_db import get_local_db
 BASE = "/api/masters"
 
 
-@pytest.fixture
-def admin(role_client):
-    return role_client("it_admin")
-
-
-@pytest.fixture
-def engineer(role_client):
-    return role_client("maint_engineer")
-
-
-@pytest.fixture
-def make_site(admin, uniq):
-    def make(**overrides):
-        body = {"code": uniq.site_code(), "name": "Test site", **overrides}
-        res = admin.post(f"{BASE}/sites", json=body)
-        assert res.status_code == 201, res.get_json()
-        return res.get_json()
-    return make
-
-
-@pytest.fixture
-def make_unit(admin, uniq, make_site):
-    def make(site=None, **overrides):
-        site = site or make_site()
-        body = {"site_id": site["id"], "code": uniq.unit_code(), "name": "Test unit", **overrides}
-        res = admin.post(f"{BASE}/units", json=body)
-        assert res.status_code == 201, res.get_json()
-        return res.get_json()
-    return make
-
-
 def _row(sql, params):
     """Read straight from the DB, bypassing the API."""
     conn = get_local_db(config.DB_CONFIG)
@@ -291,6 +260,22 @@ class TestUnitCodeFreeze:
         assert admin.put(f"{BASE}/units/{unit['id']}", json={"name": "Again"}).status_code == 200
 
 
+    def test_unit_with_equipment_cannot_change_code_or_site(self, admin, make_unit, make_site,
+                                                            make_equipment, uniq):
+        unit = make_unit()
+        make_equipment(unit=unit)
+        by_code = admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()})
+        assert by_code.status_code == 409 and by_code.get_json()["field"] == "code"
+        by_site = admin.put(f"{BASE}/units/{unit['id']}", json={"site_id": make_site()["id"]})
+        assert by_site.status_code == 409 and by_site.get_json()["field"] == "site_id"
+
+    def test_scrapped_equipment_still_freezes_the_unit(self, admin, make_unit, make_equipment, uniq):
+        unit = make_unit()
+        node = make_equipment(unit=unit)
+        assert admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()}).status_code == 409
+
+
 class TestActivationRules:
 
     def test_site_with_active_units_cannot_be_deactivated(self, admin, make_site, make_unit):
@@ -321,6 +306,22 @@ class TestActivationRules:
         admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
         assert unit["id"] not in [u["id"] for u in admin.get(f"{BASE}/units").get_json()["items"]]
         assert unit["id"] in [u["id"] for u in admin.get(f"{BASE}/units?include_inactive=1").get_json()["items"]]
+
+
+    @pytest.mark.parametrize("status", ["in_service", "standby", "out_of_use"])
+    def test_unit_holding_equipment_not_scrapped_cannot_be_deactivated(self, admin, make_unit, make_equipment,
+                                                                       status):
+        unit = make_unit()
+        make_equipment(unit=unit, status=status)
+        res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
+        assert res.status_code == 409
+        assert res.get_json()["field"] == "active"
+
+    def test_unit_with_only_scrapped_equipment_can_be_deactivated(self, admin, make_unit, make_equipment):
+        unit = make_unit()
+        node = make_equipment(unit=unit)
+        admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"})
+        assert admin.put(f"{BASE}/units/{unit['id']}", json={"active": False}).status_code == 200
 
 
 class TestEquipmentClasses:
@@ -358,6 +359,31 @@ class TestEquipmentClasses:
 
     def test_unknown_class_is_404(self, engineer):
         assert engineer.put(f"{BASE}/equipment-classes/999999", json={"name": "x"}).status_code == 404
+
+
+    def test_class_with_equipment_cannot_change_code(self, engineer, make_class, make_equipment, uniq):
+        cls = make_class()
+        make_equipment(cls=cls)
+        res = engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"code": uniq.class_code()})
+        assert res.status_code == 409
+        assert res.get_json()["field"] == "code"
+        # Unchanged code and other fields are fine
+        assert engineer.put(f"{BASE}/equipment-classes/{cls['id']}",
+                            json={"code": cls["code"], "name": "Renamed"}).status_code == 200
+
+    def test_scrapped_equipment_still_freezes_the_class(self, admin, engineer, make_class, make_equipment, uniq):
+        cls = make_class()
+        node = make_equipment(cls=cls)
+        admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"})
+        res = engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"code": uniq.class_code()})
+        assert res.status_code == 409
+
+    def test_deactivated_class_with_equipment_stays_frozen(self, engineer, make_class, make_equipment, uniq):
+        cls = make_class()
+        make_equipment(cls=cls)
+        engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False})
+        res = engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"code": uniq.class_code()})
+        assert res.status_code == 409
 
 
 class TestUserUnits:
@@ -613,9 +639,9 @@ class TestErrorMapping:
     def test_a_foreign_key_error_is_not_a_409(self, admin, uniq, monkeypatch):
         import masters
 
-        def fail(cur, table, clean):
+        def fail(cur, table, clean, actor):
             raise pymysql.err.IntegrityError(1452, "Cannot add or update a child row")
-        monkeypatch.setattr(masters, "_insert", fail)
+        monkeypatch.setattr(masters, "insert_row", fail)
         # TESTING=True makes Flask re-raise unhandled errors; in production this is a logged 500
         with pytest.raises(pymysql.err.IntegrityError):
             admin.post(f"{BASE}/sites", json={"code": uniq.site_code(), "name": "x"})
@@ -623,9 +649,9 @@ class TestErrorMapping:
     def test_a_duplicate_on_an_unmapped_key_is_a_generic_409(self, admin, uniq, monkeypatch):
         import masters
 
-        def fail(cur, table, clean):
+        def fail(cur, table, clean, actor):
             raise pymysql.err.IntegrityError(1062, "Duplicate entry 'x' for key 'PRIMARY'")
-        monkeypatch.setattr(masters, "_insert", fail)
+        monkeypatch.setattr(masters, "insert_row", fail)
         res = admin.post(f"{BASE}/sites", json={"code": uniq.site_code(), "name": "x"})
         assert res.status_code == 409
         assert "field" not in res.get_json()
@@ -634,10 +660,10 @@ class TestErrorMapping:
     def test_the_key_name_is_read_from_the_end_of_the_message(self, admin, uniq, monkeypatch):
         import masters
 
-        def fail(cur, table, clean):
+        def fail(cur, table, clean, actor):
             raise pymysql.err.IntegrityError(
                 1062, "Duplicate entry 'x' for key 'uq_sites_code' for key 'PRIMARY'")
-        monkeypatch.setattr(masters, "_insert", fail)
+        monkeypatch.setattr(masters, "insert_row", fail)
         res = admin.post(f"{BASE}/sites", json={"code": uniq.site_code(), "name": "x"})
         assert res.status_code == 409
         assert "field" not in res.get_json()

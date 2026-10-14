@@ -1,6 +1,6 @@
 <script setup>
 /**
- * FormModal — a Bootstrap modal around a form, shared by the masters panels.
+ * FormModal — a Bootstrap modal around a form, shared by the masters panels and the equipment dialogs.
  *
  * The parent calls open()/close() through a template ref, puts the fields in
  * the default slot, and handles @save. `error` is a message not tied to one
@@ -13,6 +13,8 @@ defineProps({
   title: { type: String, required: true },
   saving: { type: Boolean, default: false },
   error: { type: String, default: "" },
+  // When set, Save is disabled and the reason shows as its tooltip
+  saveDisabledReason: { type: String, default: "" },
 });
 defineEmits(["save"]);
 
@@ -47,7 +49,12 @@ defineExpose({
         <div class="modal-footer">
           <div class="me-auto"><slot name="footer-left" /></div>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary" :disabled="saving">
+          <button
+            type="submit"
+            class="btn btn-primary"
+            :disabled="saving || Boolean(saveDisabledReason)"
+            :title="saveDisabledReason || null"
+          >
             <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save
           </button>
         </div>

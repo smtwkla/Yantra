@@ -3,7 +3,7 @@ Step: S001 — Basic masters
 Doc: brief
 Author: Planner (Opus)
 Date: 13-10-2026 (revised 13-10-2026 after brief-reviews r1 and r2)
-Status: In code review
+Status: Done (committed 817844c, 14-10-2026)
 ```
 
 # S001 — Basic masters: sites, units, equipment classes, unit access

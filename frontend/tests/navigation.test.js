@@ -1,31 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { canOpenRoute, canSeeNavItem, landingPath, navItems } from "../src/stores/navigation.js";
+import { canOpenRoute, canSeeNavItem, isActivePath, landingPath, navItems } from "../src/stores/navigation.js";
 
-// What /api/auth/me returns per role (backend config_rbac.py — see test_rbac.py's role matrix)
-const OPERATOR = ["masters:read"];
-const ENGINEER = ["equipment:edit", "masters:read"];
-const MANAGER = ["equipment:edit", "masters:read", "settings:read"];
+// What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix
+const OPERATOR = ["equipment:read", "masters:read"];
+const ENGINEER = ["equipment:read", "equipment:edit", "masters:read"];
+const MANAGER = ["equipment:read", "equipment:read_all_units", "equipment:edit", "masters:read", "settings:read"];
 const IT_ADMIN = [
-  "equipment:edit", "masters:edit", "masters:read", "masters:read_senior", "settings:edit", "settings:read",
+  "equipment:read", "equipment:read_all_units", "equipment:edit", "masters:edit", "masters:read",
+  "masters:read_senior", "settings:edit", "settings:read",
 ];
 
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
 describe("navigation permissions", () => {
-  it("maint_operator sees Masters only and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["masters"]);
+  it("maint_operator sees Equipment and Masters, and cannot open Settings", () => {
+    expect(visible(OPERATOR)).toEqual(["equipment", "masters"]);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
   });
 
-  it("manager and IT admin see Masters and Settings", () => {
-    expect(visible(MANAGER)).toEqual(["masters", "settings"]);
-    expect(visible(IT_ADMIN)).toEqual(["masters", "settings"]);
+  it("Equipment is first for every role; manager and IT admin also see Settings", () => {
+    expect(visible(ENGINEER)).toEqual(["equipment", "masters"]);
+    expect(visible(MANAGER)).toEqual(["equipment", "masters", "settings"]);
+    expect(visible(IT_ADMIN)).toEqual(["equipment", "masters", "settings"]);
   });
 
-  it("everyone with a role lands on Masters", () => {
+  it("everyone with a role lands on Equipment", () => {
     for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN]) {
-      expect(landingPath(perms)).toBe("/masters");
+      expect(landingPath(perms)).toBe("/equipment");
     }
+  });
+
+  it("an item stays active on its sub-pages, but not on a path that merely starts the same", () => {
+    expect(isActivePath("/equipment", "/equipment")).toBe(true);
+    expect(isActivePath("/equipment/5", "/equipment")).toBe(true);
+    expect(isActivePath("/equipmentx", "/equipment")).toBe(false);
+    expect(isActivePath("/masters", "/equipment")).toBe(false);
   });
 
   it("routes outside the nav guard themselves", () => {

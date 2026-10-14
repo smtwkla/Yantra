@@ -55,14 +55,14 @@ class TestValidateToken:
     def test_storekeeper_client_role_accepted(self, app):
         user = _validate(app, _token(client_roles=["maint_storekeeper"]))
         assert user["roles"] == ["maint_storekeeper"]
-        assert user["permissions"] == ["masters:read"]
+        assert user["permissions"] == ["equipment:read", "masters:read"]
 
     def test_realm_role_maps_to_user(self, app):
         user = _validate(app, _token(realm_roles=["maint_operator", "offline_access"]))
         assert user["username"] == "jdoe"
         assert user["name"] == "John Doe"
         assert user["roles"] == ["maint_operator"]
-        assert user["permissions"] == ["masters:read"]
+        assert user["permissions"] == ["equipment:read", "masters:read"]
 
     def test_client_roles_count_too(self, app):
         user = _validate(app, _token(client_roles=["it_admin"]))

@@ -100,6 +100,54 @@ _MIGRATIONS = [
         "ALTER TABLE sites ADD COLUMN is_default TINYINT(1) NULL AFTER active",
         "ALTER TABLE sites ADD CONSTRAINT uq_sites_default UNIQUE (is_default)",
     ]),
+    # The equipment register (S002).  serial_counters is a counter, not a record, so no
+    # audit columns; it is shared by later serials (BD-, PM-).  equipment_events is a
+    # history log — equipment's own columns stay the truth, nothing replays the events.
+    (4, "Equipment register: equipment tree, events, serial counters", [
+        """CREATE TABLE IF NOT EXISTS serial_counters (
+            scope       VARCHAR(40) PRIMARY KEY,
+            last_value  INT NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        # The CHECK makes the tree shape a database rule: equipment has a unit and no
+        # parent; component units and components have a parent and no unit.
+        """CREATE TABLE IF NOT EXISTS equipment (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(12) NOT NULL,
+            level       ENUM('equipment','component_unit','component') NOT NULL,
+            parent_id   INT NULL,
+            unit_id     INT NULL,
+            class_id    INT NOT NULL,
+            name        VARCHAR(100) NOT NULL,
+            make        VARCHAR(100) NULL,
+            model       VARCHAR(100) NULL,
+            serial_no   VARCHAR(100) NULL,
+            year        SMALLINT NULL,
+            criticality ENUM('A','B','C') NULL,
+            status      ENUM('in_service','standby','out_of_use','scrapped') NOT NULL DEFAULT 'in_service',
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_code UNIQUE (code),
+            CONSTRAINT fk_equipment_parent FOREIGN KEY (parent_id) REFERENCES equipment (id),
+            CONSTRAINT fk_equipment_unit FOREIGN KEY (unit_id) REFERENCES units (id),
+            CONSTRAINT fk_equipment_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id),
+            CONSTRAINT chk_equipment_level_place CHECK (
+                (level = 'equipment') = (unit_id IS NOT NULL)
+                AND (level = 'equipment') = (parent_id IS NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS equipment_events (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id  INT NOT NULL,
+            event         ENUM('created','moved_unit','moved_parent','status','criticality','class') NOT NULL,
+            old_value     VARCHAR(200) NULL,
+            new_value     VARCHAR(200) NULL,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by    VARCHAR(100) NOT NULL,
+            KEY ix_equipment_events_equipment (equipment_id, created_at),
+            CONSTRAINT fk_equipment_events_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

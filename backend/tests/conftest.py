@@ -36,12 +36,13 @@ from local_db import ensure_schema, get_local_db
 
 @flask_app.before_request
 def _inject_test_user():
-    from flask import g, request
+    from flask import current_app, g, request
     role_name = request.headers.get("X-Test-Role")
-    if not role_name:
+    if not role_name or not current_app.config.get("TESTING"):
         return
+    # X-Test-User gives a unit-access test its own fresh username (default test_<role>)
     g.user = {
-        "username": f"test_{role_name}",
+        "username": request.headers.get("X-Test-User") or f"test_{role_name}",
         "name": f"Test {role_name}",
         "role": role_name,
         "roles": [role_name],
@@ -49,20 +50,28 @@ def _inject_test_user():
     }
 
 
-# Tables of the masters, emptied once per session so tests start from a known state
-_MASTER_TABLES = ("user_units", "units", "sites", "equipment_classes")
+# Tables emptied once per session so tests start from a known state, child tables first
+_TABLES = ("equipment_events", "equipment", "user_units", "units", "sites", "equipment_classes",
+           "serial_counters")
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _clean_master_tables():
+def _clean_tables():
     error = ensure_schema(config.DB_CONFIG)
     if error:
         pytest.fail(f"Test database not ready (is the dev DB up?): {error}", pytrace=False)
     conn = get_local_db(config.DB_CONFIG)
     try:
-        with transaction(conn), conn.cursor() as cur:
-            for table in _MASTER_TABLES:  # child tables first (foreign keys)
-                cur.execute(f"DELETE FROM {table}")
+        with conn.cursor() as cur:
+            # equipment references itself (parent_id), so row-by-row DELETE order would fail
+            # with 1451; this connection alone runs with the checks off.
+            cur.execute("SET FOREIGN_KEY_CHECKS = 0")
+            try:
+                with transaction(conn):
+                    for table in _TABLES:
+                        cur.execute(f"DELETE FROM {table}")
+            finally:
+                cur.execute("SET FOREIGN_KEY_CHECKS = 1")
     finally:
         conn.close()
 
@@ -79,11 +88,13 @@ def client(app):
 
 
 class RoleClient:
-    """Wraps a Flask test client to inject the X-Test-Role header."""
+    """Wraps a Flask test client to inject the X-Test-Role (and optional X-Test-User) header."""
 
-    def __init__(self, inner, role):
+    def __init__(self, inner, role, username=None):
         self._inner = inner
         self._headers = {"X-Test-Role": role}
+        if username:
+            self._headers["X-Test-User"] = username
 
     def _call(self, method, *args, **kwargs):
         kwargs.setdefault("headers", {}).update(self._headers)
@@ -104,8 +115,9 @@ class RoleClient:
 
 @pytest.fixture
 def role_client(app):
-    """Factory: role_client("it_admin") → a client acting as that role."""
-    return lambda role: RoleClient(app.test_client(), role)
+    """Factory: role_client("it_admin") → a client acting as that role, as user test_<role>;
+    role_client("maint_engineer", "eng_x") acts as that username instead."""
+    return lambda role, username=None: RoleClient(app.test_client(), role, username)
 
 
 class Uniq:
@@ -134,7 +146,76 @@ class Uniq:
     def warehouse(self):
         return f"Test Warehouse {self._next()} - SMTW"
 
+    def username(self):
+        return f"user{self._next():04d}"
+
 
 @pytest.fixture(scope="session")
 def uniq():
     return Uniq()
+
+
+# ---------------------------------------------------------------------------
+# Records made through the real API (shared by the masters and equipment tests)
+# ---------------------------------------------------------------------------
+
+MASTERS = "/api/masters"
+EQUIPMENT = "/api/equipment"
+
+
+@pytest.fixture
+def admin(role_client):
+    """IT admin: writes masters and equipment, and sees every unit."""
+    return role_client("it_admin")
+
+
+@pytest.fixture
+def engineer(role_client):
+    return role_client("maint_engineer")
+
+
+@pytest.fixture
+def make_site(admin, uniq):
+    def make(**overrides):
+        body = {"code": uniq.site_code(), "name": "Test site", **overrides}
+        res = admin.post(f"{MASTERS}/sites", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_unit(admin, uniq, make_site):
+    def make(site=None, **overrides):
+        site = site or make_site()
+        body = {"site_id": site["id"], "code": uniq.unit_code(), "name": "Test unit", **overrides}
+        res = admin.post(f"{MASTERS}/units", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_class(admin, uniq):
+    def make(**overrides):
+        body = {"code": uniq.class_code(), "name": "Test class", **overrides}
+        res = admin.post(f"{MASTERS}/equipment-classes", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_equipment(admin, make_unit, make_class):
+    """make_equipment() → equipment in a fresh unit and class;
+    make_equipment(parent=node) → a component unit under it (level= to choose)."""
+    def make(unit=None, parent=None, cls=None, level=None, **overrides):
+        body = {"class_id": (cls or make_class())["id"], "name": "Test node"}
+        if parent is None:
+            body.update(level=level or "equipment", unit_id=(unit or make_unit())["id"])
+        else:
+            body.update(level=level or "component_unit", parent_id=parent["id"])
+        res = admin.post(EQUIPMENT, json={**body, **overrides})
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make

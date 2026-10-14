@@ -80,13 +80,14 @@ class TestComputePermissions:
             assert wildcard <= set(compute_permissions([role])), role
 
     @pytest.mark.parametrize("role, expected", [
-        ("maint_operator",         {"masters:read"}),
-        ("maint_technician", {"masters:read"}),
-        ("maint_engineer",   {"masters:read", "equipment:edit"}),
-        ("maint_manager",    {"masters:read", "equipment:edit", "settings:read"}),
-        ("it_admin",         {"masters:read", "masters:edit", "masters:read_senior", "equipment:edit",
-                              "settings:read", "settings:edit"}),
-        ("maint_storekeeper", {"masters:read"}),
+        ("maint_operator",    {"equipment:read", "masters:read"}),
+        ("maint_technician",  {"equipment:read", "masters:read"}),
+        ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit"}),
+        ("maint_manager",     {"equipment:read", "equipment:read_all_units", "masters:read", "equipment:edit",
+                               "settings:read"}),
+        ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
+                               "masters:read_senior", "equipment:edit", "settings:read", "settings:edit"}),
+        ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):
         assert set(compute_permissions([role])) == expected

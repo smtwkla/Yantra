@@ -7,6 +7,7 @@ import time
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
+from api_common import register_error_handlers
 from auth_utils import require_auth
 from config import (
     APP_VERSION, DB_CONFIG, DEV_AUTH_BYPASS, KEYCLOAK_CLIENT_ID,
@@ -43,6 +44,9 @@ app.before_request(require_auth(
 
 
 app.teardown_appcontext(close_db)
+
+# ApiError -> {error, field?}; a duplicate key -> 409 (api_common.py), for every blueprint
+register_error_handlers(app)
 
 
 @app.errorhandler(DBUnavailable)
@@ -121,6 +125,9 @@ def auth_me():
 # ---------------------------------------------------------------------------
 # Blueprints
 # ---------------------------------------------------------------------------
+
+from equipment import equipment_bp
+app.register_blueprint(equipment_bp, url_prefix="/api/equipment")
 
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")

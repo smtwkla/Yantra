@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest";
+import {
+  CRITICALITY_BADGE_CLASS, CRITICALITY_LABELS, LEVEL_LABELS, STATUS_BADGE_CLASS, STATUS_HELP, STATUS_LABELS,
+  describeEvent,
+} from "../src/utils/equipmentLabels.js";
+
+// The enums of backend/equipment_core.py
+const LEVELS = ["equipment", "component_unit", "component"];
+const STATUSES = ["in_service", "standby", "out_of_use", "scrapped"];
+const CRITICALITIES = ["A", "B", "C"];
+
+const ev = (event, old_value, new_value) => ({ event, old_value, new_value });
+
+describe("label maps", () => {
+  it("cover every enum value of S002", () => {
+    expect(Object.keys(LEVEL_LABELS).sort()).toEqual([...LEVELS].sort());
+    for (const map of [STATUS_LABELS, STATUS_HELP, STATUS_BADGE_CLASS]) {
+      expect(Object.keys(map).sort()).toEqual([...STATUSES].sort());
+    }
+    for (const map of [CRITICALITY_LABELS, CRITICALITY_BADGE_CLASS]) {
+      expect(Object.keys(map).sort()).toEqual([...CRITICALITIES].sort());
+    }
+  });
+});
+
+describe("describeEvent", () => {
+  it("created ignores old_value", () => {
+    expect(describeEvent(ev("created", null, "SMTW.FWMILL.VBM001"))).toBe("Created");
+    expect(describeEvent(ev("created", "anything", "SMTW.FWMILL.VBM001"))).toBe("Created");
+  });
+
+  it("moves show the old and new path", () => {
+    expect(describeEvent(ev("moved_unit", "SMTW.FWMILL.VBM001", "SSVT.SHOP.VBM001")))
+      .toBe("Moved: SMTW.FWMILL.VBM001 → SSVT.SHOP.VBM001");
+    expect(describeEvent(ev("moved_parent", "SMTW.FWMILL.VBM001.DRV002", "SMTW.FWMILL.VBM002.DRV005")))
+      .toBe("Moved: SMTW.FWMILL.VBM001.DRV002 → SMTW.FWMILL.VBM002.DRV005");
+  });
+
+  it("status uses the labels", () => {
+    expect(describeEvent(ev("status", "in_service", "standby"))).toBe("Status: In service → Standby");
+    expect(describeEvent(ev("status", "out_of_use", "scrapped"))).toBe("Status: Out of use → Scrapped");
+  });
+
+  it("criticality shows the literal inherit as Inherited", () => {
+    expect(describeEvent(ev("criticality", "B", "A"))).toBe("Criticality: B → A");
+    expect(describeEvent(ev("criticality", "inherit", "A"))).toBe("Criticality: Inherited → A");
+    expect(describeEvent(ev("criticality", "A", "inherit"))).toBe("Criticality: A → Inherited");
+  });
+
+  it("class shows the class codes", () => {
+    expect(describeEvent(ev("class", "VBM", "HP"))).toBe("Class: VBM → HP");
+  });
+
+  it("an unknown event is shown by name", () => {
+    expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
+  });
+});

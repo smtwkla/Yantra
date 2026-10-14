@@ -8,7 +8,7 @@
 import { computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { userPermissions } from "../../stores/auth";
-import { navItems, canSeeNavItem } from "../../stores/navigation";
+import { navItems, canSeeNavItem, isActivePath } from "../../stores/navigation";
 
 const router = useRouter();
 const route = useRoute();
@@ -29,7 +29,7 @@ function navigate(path) {
         v-for="item in visibleItems"
         :key="item.name"
         class="sidebar-btn"
-        :class="{ active: route.path === item.path }"
+        :class="{ active: isActivePath(route.path, item.path) }"
         :title="item.label"
         @click="navigate(item.path)"
       >

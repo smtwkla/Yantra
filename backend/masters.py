@@ -8,13 +8,12 @@ row locked first.
 """
 
 import logging
-import re
 
-import pymysql
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import require_perm
-from db_helpers import get_db, row_to_dict, rows_to_list, transaction
+from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from masters_core import (
     validate_equipment_class, validate_site, validate_unit, validate_unit_ids, validate_username,
 )
@@ -23,19 +22,14 @@ logger = logging.getLogger(__name__)
 
 masters_bp = Blueprint("masters", __name__)
 
-MYSQL_DUPLICATE_ENTRY = 1062
-
 # Named UNIQUE indexes (migration v2) -> the field to flag and a plain message
-_UNIQUE_KEY_ERRORS = {
+UNIQUE_KEY_ERRORS.update({
     "uq_sites_code": ("code", "A site with this code already exists"),
     "uq_units_site_code": ("code", "A unit with this code already exists at this site"),
     "uq_units_warehouse": ("oneerp_warehouse", "This OneERP warehouse is already mapped to another unit"),
     "uq_equipment_classes_code": ("code", "An equipment class with this code already exists"),
     "uq_sites_default": ("is_default", "Another site was made the default at the same time; reload and try again"),
-}
-# MariaDB says  for key 'uq_x'  — newer servers say  for key 'table.uq_x'
-# Anchored to the end: the duplicated value comes first and can be user text.
-_DUPLICATE_KEY_RE = re.compile(r"for key '(?:\w+\.)?(\w+)'$")
+})
 
 # is_default is 1 / NULL in the table; the API shows it as a boolean (see _site_out)
 _SITE_SELECT = (
@@ -54,79 +48,12 @@ _USER_UNITS_SELECT = (
 )
 
 
-class ApiError(Exception):
-    """A refusal the user can act on; becomes ``{error, field?}`` with ``status``."""
-
-    def __init__(self, message, status, field=None):
-        super().__init__(message)
-        self.message = message
-        self.status = status
-        self.field = field
-
-
-def _error_response(exc):
-    body = {"error": exc.message}
-    if exc.field:
-        body["field"] = exc.field
-    return jsonify(body), exc.status
-
-
-@masters_bp.errorhandler(ApiError)
-def _api_error(exc):
-    return _error_response(exc)
-
-
-@masters_bp.errorhandler(pymysql.err.IntegrityError)
-def _integrity_error(exc):
-    """A duplicate caught by a UNIQUE or primary key is a 409; anything else is a bug."""
-    if exc.args[0] != MYSQL_DUPLICATE_ENTRY:
-        raise exc
-    match = _DUPLICATE_KEY_RE.search(str(exc.args[1]))
-    field, message = _UNIQUE_KEY_ERRORS.get(
-        match.group(1) if match else None,
-        (None, "Conflicts with an existing record; reload and try again"),
-    )
-    return _error_response(ApiError(message, 409, field))
-
-
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
 
-def _actor():
-    return g.user["username"]
-
-
 def _include_inactive():
     return request.args.get("include_inactive") == "1"
-
-
-def _clean_body(validator, creating):
-    body = request.get_json(silent=True)
-    if not isinstance(body, dict):
-        raise ApiError("Request body must be a JSON object", 400)
-    clean, errors = validator(body, creating)
-    if errors:
-        raise ApiError(errors[0]["message"], 400, errors[0]["field"])
-    return clean
-
-
-def _insert(cur, table, clean):
-    """INSERT the validated fields.  Table and column names are code constants, never client input."""
-    columns = [*clean, "created_by"]
-    cur.execute(
-        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})",
-        [*clean.values(), _actor()],
-    )
-    return cur.lastrowid
-
-
-def _update(cur, table, record_id, clean):
-    if not clean:
-        return
-    assignments = [f"{column} = %s" for column in clean] + ["updated_at = NOW()", "updated_by = %s"]
-    cur.execute(f"UPDATE {table} SET {', '.join(assignments)} WHERE id = %s",
-                [*clean.values(), _actor(), record_id])
 
 
 def _lock_row(cur, table, record_id):
@@ -137,16 +64,6 @@ def _lock_row(cur, table, record_id):
     if row is None:
         raise ApiError("Not found", 404)
     return row
-
-
-def _count(cur, sql, params):
-    cur.execute(sql, params)
-    return cur.fetchone()["n"]
-
-
-def _fetch_one(cur, sql, params):
-    cur.execute(sql, params)
-    return row_to_dict(cur.fetchone())
 
 
 def _site_out(row):
@@ -161,14 +78,14 @@ def _list_response(cur, sql, params=(), convert=lambda row: row):
 
 
 def _fetch_site(cur, site_id):
-    return _site_out(_fetch_one(cur, f"{_SITE_SELECT} WHERE id = %s", (site_id,)))
+    return _site_out(fetch_one(cur, f"{_SITE_SELECT} WHERE id = %s", (site_id,)))
 
 
 def _clear_default_site(cur, except_id=None):
     """Make no site the default (except_id is the one about to become it)."""
     cur.execute(
         "UPDATE sites SET is_default = NULL, updated_at = NOW(), updated_by = %s "
-        "WHERE is_default = 1 AND id <> %s", (_actor(), except_id or 0))
+        "WHERE is_default = 1 AND id <> %s", (actor(), except_id or 0))
 
 
 def _lock_site_for_unit(cur, site_id):
@@ -202,7 +119,7 @@ def _as_column_value(clean):
 @masters_bp.route("/sites", methods=["POST"])
 @require_perm("masters:edit")
 def create_site():
-    clean = _clean_body(validate_site, creating=True)
+    clean = clean_body(validate_site, creating=True)
     making_default = bool(clean.get("is_default"))
     if making_default and clean.get("active") == 0:
         raise ApiError("An inactive site cannot be the default", 409, "is_default")
@@ -211,7 +128,7 @@ def create_site():
     with transaction(conn), conn.cursor() as cur:
         if making_default:
             _clear_default_site(cur)
-        site_id = _insert(cur, "sites", clean)
+        site_id = insert_row(cur, "sites", clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_site(cur, site_id)), 201
 
@@ -219,26 +136,26 @@ def create_site():
 @masters_bp.route("/sites/<int:site_id>", methods=["PUT"])
 @require_perm("masters:edit")
 def update_site(site_id):
-    clean = _clean_body(validate_site, creating=False)
+    clean = clean_body(validate_site, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         site = _lock_row(cur, "sites", site_id)
         if clean.get("code", site["code"]) != site["code"]:
-            if _count(cur, "SELECT COUNT(*) AS n FROM units WHERE site_id = %s", (site_id,)):
+            if count(cur, "SELECT COUNT(*) AS n FROM units WHERE site_id = %s", (site_id,)):
                 raise ApiError("Code is in use and cannot be changed", 409, "code")
         will_be_default = bool(clean["is_default"]) if "is_default" in clean else bool(site["is_default"])
         will_be_active = bool(clean["active"]) if "active" in clean else bool(site["active"])
         if clean.get("active") == 0:
             if site["is_default"]:
                 raise ApiError("This is the default site; untick Default first", 409, "active")
-            if _count(cur, "SELECT COUNT(*) AS n FROM units WHERE site_id = %s AND active = 1", (site_id,)):
+            if count(cur, "SELECT COUNT(*) AS n FROM units WHERE site_id = %s AND active = 1", (site_id,)):
                 raise ApiError("The site has active units; deactivate them first", 409, "active")
         if will_be_default and not will_be_active:
             raise ApiError("An inactive site cannot be the default", 409, "is_default")
         if will_be_default and not site["is_default"]:
             _clear_default_site(cur, except_id=site_id)
         _as_column_value(clean)
-        _update(cur, "sites", site_id, clean)
+        update_row(cur, "sites", site_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_site(cur, site_id))
 
@@ -271,37 +188,51 @@ def list_units():
         return _list_response(cur, f"{_UNIT_SELECT}{where} ORDER BY s.code, u.code", params)
 
 
+def _unit_is_referenced(cur, unit_id):
+    """Access rows or any equipment — scrapped included, it still carries the unit in its
+    history — freeze the unit's code and site.  Only equipment rows hold a unit_id; parts
+    follow their equipment."""
+    return (count(cur, "SELECT COUNT(*) AS n FROM user_units WHERE unit_id = %s", (unit_id,))
+            or count(cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s", (unit_id,)))
+
+
 @masters_bp.route("/units", methods=["POST"])
 @require_perm("masters:edit")
 def create_unit():
-    clean = _clean_body(validate_unit, creating=True)
+    clean = clean_body(validate_unit, creating=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         _lock_site_for_unit(cur, clean["site_id"])
-        unit_id = _insert(cur, "units", clean)
+        unit_id = insert_row(cur, "units", clean, actor())
     with conn.cursor() as cur:
-        return jsonify(_fetch_one(cur, f"{_UNIT_SELECT} WHERE u.id = %s", (unit_id,))), 201
+        return jsonify(fetch_one(cur, f"{_UNIT_SELECT} WHERE u.id = %s", (unit_id,))), 201
 
 
 @masters_bp.route("/units/<int:unit_id>", methods=["PUT"])
 @require_perm("masters:edit")
 def update_unit(unit_id):
-    clean = _clean_body(validate_unit, creating=False)
+    clean = clean_body(validate_unit, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         unit = _lock_row(cur, "units", unit_id)
         code_changes = clean.get("code", unit["code"]) != unit["code"]
         site_changes = clean.get("site_id", unit["site_id"]) != unit["site_id"]
         if code_changes or site_changes:
-            if _count(cur, "SELECT COUNT(*) AS n FROM user_units WHERE unit_id = %s", (unit_id,)):
+            if _unit_is_referenced(cur, unit_id):
                 if code_changes:
                     raise ApiError("Code is in use and cannot be changed", 409, "code")
                 raise ApiError("Unit is in use and cannot be moved to another site", 409, "site_id")
+        # Laid-up (out_of_use) equipment still stands in the unit, so it blocks too (S002 § 10.2)
+        if clean.get("active") == 0 and count(
+                cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s AND status <> 'scrapped'",
+                (unit_id,)):
+            raise ApiError("The unit holds equipment that is not scrapped; move or scrap it first",
+                           409, "active")
         if site_changes or clean.get("active") == 1:
             _lock_site_for_unit(cur, clean.get("site_id", unit["site_id"]))
-        _update(cur, "units", unit_id, clean)
+        update_row(cur, "units", unit_id, clean, actor())
     with conn.cursor() as cur:
-        return jsonify(_fetch_one(cur, f"{_UNIT_SELECT} WHERE u.id = %s", (unit_id,)))
+        return jsonify(fetch_one(cur, f"{_UNIT_SELECT} WHERE u.id = %s", (unit_id,)))
 
 
 # ---------------------------------------------------------------------------
@@ -319,22 +250,26 @@ def list_equipment_classes():
 @masters_bp.route("/equipment-classes", methods=["POST"])
 @require_perm("equipment:edit")
 def create_equipment_class():
-    clean = _clean_body(validate_equipment_class, creating=True)
+    clean = clean_body(validate_equipment_class, creating=True)
     with get_db().cursor() as cur:
-        class_id = _insert(cur, "equipment_classes", clean)
-        return jsonify(_fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,))), 201
+        class_id = insert_row(cur, "equipment_classes", clean, actor())
+        return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,))), 201
 
 
 @masters_bp.route("/equipment-classes/<int:class_id>", methods=["PUT"])
 @require_perm("equipment:edit")
 def update_equipment_class(class_id):
-    clean = _clean_body(validate_equipment_class, creating=False)
+    clean = clean_body(validate_equipment_class, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_row(cur, "equipment_classes", class_id)  # S001: nothing references a class yet
-        _update(cur, "equipment_classes", class_id, clean)
+        record = _lock_row(cur, "equipment_classes", class_id)
+        # Every equipment code is built from the class prefix, scrapped equipment included
+        if clean.get("code", record["code"]) != record["code"] and count(
+                cur, "SELECT COUNT(*) AS n FROM equipment WHERE class_id = %s", (class_id,)):
+            raise ApiError("Code is in use and cannot be changed", 409, "code")
+        update_row(cur, "equipment_classes", class_id, clean, actor())
     with conn.cursor() as cur:
-        return jsonify(_fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,)))
+        return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,)))
 
 
 # ---------------------------------------------------------------------------
@@ -387,11 +322,11 @@ def replace_user_units(username):
         for unit_id in unit_ids:
             if unit_id not in held:
                 cur.execute("INSERT INTO user_units (username, unit_id, granted_by) VALUES (%s, %s, %s)",
-                            (username, unit_id, _actor()))
+                            (username, unit_id, actor()))
     with conn.cursor() as cur:
         after = _user_units(cur, username)
     if {u["id"] for u in before} != {u["id"] for u in after}:
-        logger.info("user_units changed: actor=%s user=%s before=[%s] after=[%s]", _actor(), username,
+        logger.info("user_units changed: actor=%s user=%s before=[%s] after=[%s]", actor(), username,
                     ",".join(u["full_code"] for u in before), ",".join(u["full_code"] for u in after))
     return jsonify({"username": username, "units": after})
 
