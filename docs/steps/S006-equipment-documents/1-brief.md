@@ -2,7 +2,7 @@
 Step: S006 — Documents and photos on equipment
 Doc: brief
 Author: Planner (Opus)
-Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1 and r2)
+Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1, r2 and r3)
 Status: In review
 ```
 
@@ -132,6 +132,7 @@ On each equipment page (any level: equipment, component-unit, component):
   - `validate_document(form)` → `(clean, errors)`: kind, title (§ 5.4);
   - `clean_original_name(raw, title)` (§ 5.4);
   - `stored_name(token, ext)`;
+  - `safe_download_name(title, ext)` (§ 5.4);
   - `make_thumbnail(data)` (§ 5.3). Pillow is a library, not a framework, so this
     stays pure.
 - **`backend/file_store.py`** (new, thin I/O): the folder for a node, writing a
@@ -146,12 +147,14 @@ On each equipment page (any level: equipment, component-unit, component):
 - **`backend/api_common.py`:**
   - a handler for Werkzeug's `RequestEntityTooLarge` (413) →
     `{"error": "The file is larger than 100 MB", "field": "file"}`, the number
-    taken from the setting's ceiling constant. It is a backstop: the route's own
+    being `UPLOAD_MAX_MB_CEILING`. It is a backstop: the route's own
     size checks answer first (§ 5.2);
   - `documents.py` registers `uq_equipment_documents_stored` → "Retry the
     upload" in `UNIQUE_KEY_ERRORS` (as `uq_equipment_code` is).
-- **`backend/app.py`:** `MAX_CONTENT_LENGTH = 101 MB` (matches Nginx's `101M`),
-  from one constant that the 413 message also uses; registers the blueprint.
+- **`backend/app.py`:** registers the blueprint and sets `MAX_CONTENT_LENGTH`
+  from one constant, `UPLOAD_MAX_MB_CEILING = 100` (the setting's maximum): the
+  request ceiling is `(UPLOAD_MAX_MB_CEILING + 1)` MB, matching Nginx's `101M`,
+  and the 413 message and the setting's range use the same constant.
 - **`backend/pyproject.toml`** and **`backend/uv.lock`:** Pillow (`uv add
   pillow`). Pillow is the standard Python imaging library, actively maintained
   (quarterly releases, 12.x supports Python 3.12).
@@ -266,9 +269,11 @@ deployment lines of § 6.4 into the report.
    backstop.
 3. `thumbnail((400, 400))` **first** (for JPEG it decodes at a reduced scale,
    so a 12 MP photo never decodes in full), **then** `ImageOps.exif_transpose`
-   (phones store photos rotated), then `convert("RGB")` (a transparent PNG is
-   flattened on white, since JPEG has no transparency); save as JPEG, quality
-   85. The orientation tag survives `thumbnail`, so the result is upright.
+   (phones store photos rotated), then, for an image with transparency (`RGBA`,
+   `LA`, or `P` with transparency), **paste it onto a white canvas using its alpha
+   as the mask**; otherwise `convert("RGB")`. (A plain `convert("RGB")` drops the
+   alpha and would give transparent drawings a black background.) Save as JPEG,
+   quality 85. The orientation tag survives `thumbnail`, so the result is upright.
 - **Worst-case memory:** PNG and WebP decode in full. At the 50 MP cap an RGBA
   image is about 200 MB, held briefly by one worker. Accepted, with three
   workers; the cap is what bounds it (A.8.6).
@@ -289,7 +294,7 @@ deployment lines of § 6.4 into the report.
 - **`original_name`:** the client's name, cut to the part after the last `/` or
   `\`, control characters removed, truncated to 255; empty → the title. Display
   only (Vue escapes it).
-- **Download name:** `<title>.<ext>`, built by `send_file(download_name=…)`,
+- **Download name:** `<title>.<ext>` (a thumbnail: `<title>.jpg`), built by `send_file(download_name=…)`,
   which already writes both an ASCII `filename` and an RFC 5987 `filename*` for
   the full title. `safe_download_name` only drops path separators, quotes and
   control characters.
@@ -313,12 +318,12 @@ deployment lines of § 6.4 into the report.
 Order on upload. The slow part, writing to the NFS share, happens **outside**
 the node lock, so a hanging mount never blocks other writes to that node (BR2-04,
 which corrects round 1's ordering):
-1. Permission; load the node with access (404); the size check before parsing
-   (§ 5.2).
+1. Permission; load the node with access (404); **early scrapped check** from
+   that plain read (409), so a scrapped node doesn't get files read or written;
+   the size check before parsing (§ 5.2).
 2. Validate kind and title (400); read the file up to the limit (400); detect
    its type (400); for a photo, make the thumbnail (§ 5.3; a pixel-cap 400
-   here). **Early scrapped check** from the plain read of step 1 (409), so a
-   scrapped node doesn't get files written at all.
+   here).
 3. **Write the files**, no transaction open: create the node's folder
    (`exist_ok`); write the file to a temporary name **in that folder** and
    `os.replace` it into place (all-or-nothing, also on NFS, because it stays
@@ -415,8 +420,9 @@ Checked in `smtw_erp_devops` (15-10-2026):
 - App-FS exports it to customer7 with `rw,all_squash,anonuid=1000,anongid=1000,sec=krb5`;
   the export root is `kla:kla 0775`. Every write lands as uid 1000.
 - App-FS has its own backup (user).
-- **Container user (done by the devops team, 15-10-2026):** `compose.yml.j2`
-  now runs backend and worker as `user: "1000:1000"`, like weighbridge and Geo,
+- **Container user (made by the devops team, 15-10-2026; in the
+  `smtw_erp_devops` working tree until they commit it):** `compose.yml.j2`
+  runs backend and worker as `user: "1000:1000"`, like weighbridge and Geo,
   so they use the renewed Kerberos user ticket rather than the machine
   credentials root would use.
   - **Consequence to check:** `deploy.yaml` writes `secrets_app.py` with mode
@@ -484,8 +490,10 @@ Under `/api/settings`:
 - `stored_name` format; `safe_download_name` (quotes, slashes, `\r\n`,
   non-ASCII).
 - `make_thumbnail`: a small EXIF-rotated JPEG gives an upright thumbnail; an
-  RGBA PNG gives a thumbnail; a header claiming 8 000 × 8 000 px (64 MP) is
-  refused by the 50 MP cap; a truncated JPEG gives `None`.
+  transparent RGBA PNG gives a thumbnail with a **white** corner pixel; a header
+  claiming 8 000 × 8 000 px (64 MP) is refused by the 50 MP cap (built cheaply by
+  patching the size in a 1 × 1 JPEG's SOF0 header, not by allocating the image);
+  a truncated JPEG gives `None`.
 
 ### API (`test_documents_api.py`)
 - Upload a PDF and a JPEG → 201; listed newest first with `upload_max_mb`; open
@@ -500,8 +508,10 @@ Under `/api/settings`:
 - The 413 backstop: `MAX_CONTENT_LENGTH` lowered for the test **below**
   `upload_max_mb` + 64 KB, so the request passes check 2 and reaches it → 413
   with JSON `{error, field}`.
-- No `Content-Length` (a chunked request in the test client) → still refused
-  above the limit by check 3.
+- No `Content-Length`: a chunked request built with
+  `environ_overrides={"HTTP_TRANSFER_ENCODING": "chunked", "wsgi.input_terminated": True}`
+  (Werkzeug's test client otherwise always sets a length) → refused above the
+  limit by check 3, asserting the size message (not "Choose a file").
 - Access: another unit's node → 404 for list, open, upload; operator upload →
   403; a `doc_id` of another node → 404.
 - Scrapped node: upload and remove → 409; list and open → 200.
@@ -593,3 +603,17 @@ All twelve round-1 answers verified in the text.
 | BR2-05 `window.open` null; PDF URL revoking | minor | **Accepted.** Fallback to Download; PDF URLs revoked on unmount only (§ 6.3). |
 | BR2-06 Integer rule; who changed the limit; where the helper lives | minor | **Accepted.** JSON integer only; INFO log with actor, old and new; `settings.py` (§ 3, § 5.7). No `updated_by` column. |
 | BR2-07 Small points | nit | **Accepted.** Temp folder clean-up; 413 message from the constant; `test_settings_api.py`; no `total`; `PYTHONDONTWRITEBYTECODE`; A.8.10 note (§ 2, § 3, § 8). |
+
+### Round 3 — `2-brief-review-r3.md` (Fable), answered 15-10-2026
+
+The last round under the 3-round cap. All round-2 answers verified. No blocker or
+major finding; the answers below are not re-reviewed.
+
+| Finding | Severity | Response |
+|---|---|---|
+| BR3-01 `convert("RGB")` gives black, not white | minor | **Accepted.** Paste onto white with the alpha as mask; a white-corner test (§ 5.3, § 9). |
+| BR3-02 The chunked test would pass for the wrong reason | minor | **Accepted.** The `environ_overrides` recipe; assert the size message (§ 9). |
+| BR3-03 The early scrapped check sat late | nit | **Accepted.** Moved into step 1 (§ 5.6). |
+| BR3-04 Two constants for the ceiling | nit | **Accepted.** One `UPLOAD_MAX_MB_CEILING = 100`; the request ceiling is +1 (§ 3). |
+| BR3-05 "Done" vs uncommitted in devops | nit | **Accepted.** Worded as made, uncommitted until the devops team commits (§ 6.4). |
+| BR3-06 Test recipe; `safe_download_name`; thumbnail name | nit | **Accepted** (§ 3, § 5.4, § 9). |

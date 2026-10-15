@@ -141,4 +141,4 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | Done — committed 6d58ce5 | 15-10-2026 |
 | S004 | [Equipment types and notes](S004-equipment-types-notes/1-brief.md) — types per class, notes, search in notes | 2 | Done — committed 226ce67 | 15-10-2026 |
 | S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | In code review — clean (r1); awaiting user check and commit | 15-10-2026 |
-| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | In review — r3 | 15-10-2026 |
+| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | In review — r3 answered; awaiting user (gate A) | 15-10-2026 |
