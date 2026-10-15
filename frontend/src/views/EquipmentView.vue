@@ -1,6 +1,7 @@
 <script setup>
 /**
- * Equipment list — a paged, filterable table (docs/steps/S003-equipment-screens/1-brief.md § 4.1).
+ * Equipment list — a paged, filterable table (docs/steps/S003-equipment-screens/1-brief.md § 4.1;
+ * type filter and the search in notes and type names: S004).
  * The filters live in the URL query, so Back returns to the same page and a filtered list
  * can be bookmarked. The route is the single source of truth: controls write to it with
  * router.replace and the list reloads when it changes.
@@ -14,7 +15,9 @@ import StatusBadge from "../components/StatusBadge.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPermissions } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
-import { ensureEquipmentClasses, ensureSites, ensureUnits, equipmentClasses, sites, units } from "../stores/masters";
+import {
+  ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses, equipmentTypes, sites, units,
+} from "../stores/masters";
 import { STATUS_LABELS } from "../utils/equipmentLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 
@@ -70,6 +73,15 @@ const unitChoices = computed(() => {
 const classChoices = computed(() =>
   [...(equipmentClasses.value ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.code.localeCompare(b.code))
 );
+// Shown with a class, or with a type_id in the URL alone, so a bookmarked type filter is never applied
+// invisibly. Inactive types stay listed (marked): equipment can still carry them.
+const showTypeFilter = computed(() => Boolean(query.value.class_id || query.value.type_id));
+const typeChoices = computed(() => {
+  const all = equipmentTypes.value ?? [];
+  const shown = query.value.class_id ? all.filter((t) => String(t.class_id) === query.value.class_id) : all;
+  return [...shown].sort((a, b) => Number(b.active) - Number(a.active));
+});
+const typeLabel = (t) => (query.value.class_id ? t.name : `${t.class_code} · ${t.name}`);
 const statusChoices = computed(() =>
   Object.entries(STATUS_LABELS).filter(([value]) => value !== "scrapped" || showScrapped.value)
 );
@@ -86,7 +98,9 @@ const filterModel = (key, fallback = "", set = (value) => update({ [key]: value 
   computed({ get: () => query.value[key] ?? fallback, set });
 const siteModel = filterModel("site_id", "", chooseSite);
 const unitModel = filterModel("unit_id");
-const classModel = filterModel("class_id");
+// A type belongs to one class, so choosing a class always clears the type
+const classModel = filterModel("class_id", "", (value) => update({ class_id: value, type_id: null }));
+const typeModel = filterModel("type_id");
 // Leaving a bookmarked status=scrapped must not untick "Show scrapped" behind the user's back
 function chooseStatus(value) {
   const changes = { status: value };
@@ -128,7 +142,7 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "class_id", "status", "criticality", "q"]) {
+  for (const key of ["site_id", "unit_id", "class_id", "type_id", "status", "criticality", "q"]) {
     if (query.value[key]) params.set(key, query.value[key]);
   }
   if (showScrapped.value) params.set("include_scrapped", "1");
@@ -142,7 +156,7 @@ async function load() {
   loadError.value = "";
   try {
     const [result] = await Promise.all([
-      apiGet(listUrl()), ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureMyUnits(),
+      apiGet(listUrl()), ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureEquipmentTypes(), ensureMyUnits(),
     ]);
     if (seq === loadSeq) page.value = result;
   } catch (err) {
@@ -175,6 +189,10 @@ function openNode(id) {
         <option value="">All classes</option>
         <option v-for="c in classChoices" :key="c.id" :value="c.id">{{ c.code }}{{ c.active ? "" : " (inactive)" }}</option>
       </select>
+      <select v-if="showTypeFilter" v-model="typeModel" class="form-select form-select-sm w-auto" aria-label="Type">
+        <option value="">All types</option>
+        <option v-for="t in typeChoices" :key="t.id" :value="t.id">{{ typeLabel(t) }}{{ t.active ? "" : " (inactive)" }}</option>
+      </select>
       <select v-model="statusModel" class="form-select form-select-sm w-auto" aria-label="Status">
         <option value="">All statuses</option>
         <option v-for="[value, text] in statusChoices" :key="value" :value="value">{{ text }}</option>
@@ -186,7 +204,7 @@ function openNode(id) {
       <select v-model="levelModel" class="form-select form-select-sm w-auto" aria-label="Level">
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
-      <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code or name…" aria-label="Search" />
+      <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, notes…" aria-label="Search" />
       <button v-if="canEdit" class="btn btn-sm btn-primary ms-auto" @click="formModal.openCreateEquipment()">
         <i class="fa-solid fa-plus me-1"></i>Add equipment
       </button>
@@ -226,7 +244,7 @@ function openNode(id) {
           >
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>
-            <td>{{ e.class_code }}</td>
+            <td>{{ e.class_code }}<span v-if="e.type_name" class="text-secondary"> · {{ e.type_name }}</span></td>
             <td>{{ level === "equipment" ? e.unit : e.full_path }}</td>
             <td><CriticalityBadge :grade="e.effective_criticality" /></td>
             <td><StatusBadge :status="e.status" /></td>

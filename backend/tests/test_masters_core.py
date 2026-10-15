@@ -3,7 +3,7 @@
 import pytest
 
 from masters_core import (
-    normalise_username, validate_equipment_class, validate_site, validate_unit,
+    normalise_username, validate_equipment_class, validate_equipment_type, validate_site, validate_unit,
     validate_unit_ids, validate_username,
 )
 
@@ -28,6 +28,51 @@ class TestEquipmentClassCode:
         clean, errors = validate_equipment_class({"code": " vbm ", "name": "x"}, creating=True)
         assert errors == []
         assert clean["code"] == "VBM"
+
+
+class TestEquipmentType:
+
+    def test_create_happy_path(self):
+        clean, errors = validate_equipment_type({"class_id": 3, "name": "  Closed execution "}, creating=True)
+        assert errors == []
+        assert clean == {"class_id": 3, "name": "Closed execution"}
+
+    def test_create_needs_class_and_name(self):
+        _, errors = validate_equipment_type({}, creating=True)
+        assert sorted(_fields(errors)) == ["class_id", "name"]
+
+    @pytest.mark.parametrize("name", ["", "   ", None, 5, "x" * 101])
+    def test_bad_name(self, name):
+        _, errors = validate_equipment_type({"class_id": 3, "name": name}, creating=True)
+        assert _fields(errors) == ["name"]
+
+    def test_name_of_100_characters_is_fine(self):
+        assert validate_equipment_type({"class_id": 3, "name": "x" * 100}, creating=True)[1] == []
+
+    @pytest.mark.parametrize("name", ["none", "None", "NONE", " none "])
+    def test_none_is_reserved(self, name):
+        _, errors = validate_equipment_type({"class_id": 3, "name": name}, creating=True)
+        assert _fields(errors) == ["name"]
+
+    def test_a_name_containing_none_is_fine(self):
+        assert validate_equipment_type({"class_id": 3, "name": "None-return valve"}, creating=True)[1] == []
+
+    @pytest.mark.parametrize("class_id", [0, -1, "3", True, None, 1.5])
+    def test_bad_class_id(self, class_id):
+        _, errors = validate_equipment_type({"class_id": class_id, "name": "x"}, creating=True)
+        assert _fields(errors) == ["class_id"]
+
+    def test_update_leaves_absent_fields_out(self):
+        assert validate_equipment_type({"name": "Open execution"}, creating=False) == ({"name": "Open execution"}, [])
+
+    def test_update_parses_class_id_as_an_id(self):
+        # Whether it changed is the shell's decision; the validator only parses it
+        assert validate_equipment_type({"class_id": 4}, creating=False) == ({"class_id": 4}, [])
+        assert _fields(validate_equipment_type({"class_id": "4"}, creating=False)[1]) == ["class_id"]
+
+    @pytest.mark.parametrize("raw, expected", [(True, 1), (False, 0), (1, 1), (0, 0)])
+    def test_active_reaches_the_update(self, raw, expected):
+        assert validate_equipment_type({"active": raw}, creating=False) == ({"active": expected}, [])
 
 
 class TestSiteCode:

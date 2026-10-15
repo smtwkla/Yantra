@@ -594,6 +594,7 @@ class TestListing:
         ({"page": "0"}, "page"), ({"page": "x"}, "page"), ({"per_page": "0"}, "per_page"),
         ({"per_page": "201"}, "per_page"), ({"per_page": "-1"}, "per_page"), ({"unit_id": "a"}, "unit_id"),
         ({"status": "broken"}, "status"), ({"criticality": "D"}, "criticality"), ({"level": "part"}, "level"),
+        ({"type_id": "x"}, "type_id"), ({"type_id": "0"}, "type_id"),
         # CR1-02: digits int() rejects, and pages past MAX_PAGE (an OFFSET MariaDB would refuse)
         ({"page": "²"}, "page"), ({"per_page": "²"}, "per_page"), ({"unit_id": "١"}, "unit_id"),
         ({"page": str(equipment.MAX_PAGE + 1)}, "page"), ({"page": "10000000000000000000000000"}, "page"),
@@ -624,8 +625,9 @@ class TestListing:
         unit = make_unit()
         mill = make_equipment(unit=unit)
         item = _list(admin, unit_id=unit["id"])["items"][0]
-        assert set(item) == {"id", "code", "level", "name", "class_id", "class_code", "unit_id", "unit",
-                             "full_path", "effective_criticality", "status", "part_count"}
+        # Exact, so it also guards that the list has no notes (S004 § 5.5)
+        assert set(item) == {"id", "code", "level", "name", "class_id", "class_code", "type_id", "type_name",
+                             "unit_id", "unit", "full_path", "effective_criticality", "status", "part_count"}
         assert (item["unit_id"], item["unit"], item["full_path"]) == (unit["id"], unit["full_code"],
                                                                       mill["full_path"])
 
@@ -887,3 +889,194 @@ class TestRootCriticality:
 
     def test_equipment_reports_its_own_grade(self, admin, make_equipment):
         assert _get(admin, make_equipment(criticality="A"))["root_criticality"] == "A"
+
+
+class TestTypes:
+    """S004 § 5.2: an equipment's type belongs to its class; a class change needs a type decision."""
+
+    def test_create_with_a_type_of_its_class(self, admin, make_class, make_type, make_equipment):
+        cls = make_class()
+        closed = make_type(cls=cls, name="Closed execution")
+        pump = make_equipment(cls=cls, type_id=closed["id"])
+        assert (pump["type_id"], pump["type_name"]) == (closed["id"], "Closed execution")
+        assert [e[0] for e in _events(admin, pump)] == ["created"]
+
+    def test_create_without_a_type_or_with_null(self, make_equipment):
+        assert make_equipment()["type_id"] is None
+        node = make_equipment(type_id=None)
+        assert (node["type_id"], node["type_name"]) == (None, None)
+
+    def test_a_part_may_have_a_type(self, make_class, make_type, make_equipment):
+        cls = make_class()
+        squirrel = make_type(cls=cls, name="Squirrel cage")
+        motor = make_equipment(parent=make_equipment(), level="component", cls=cls, type_id=squirrel["id"])
+        assert motor["type_name"] == "Squirrel cage"
+
+    def test_create_refusals(self, admin, engineer, make_class, make_unit, make_type):
+        cls, unit = make_class(), make_unit()
+        foreign, retired = make_type(), make_type(cls=cls)
+        engineer.put(f"{MASTERS}/equipment-types/{retired['id']}", json={"active": False})
+        body = {"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"], "name": "x"}
+        for type_id, status, message in (
+                (foreign["id"], 400, "This type belongs to another class"),
+                (999999, 400, "Unknown type"),
+                (retired["id"], 409, "The type is inactive")):
+            res = admin.post(EQUIPMENT, json={**body, "type_id": type_id})
+            assert (res.status_code, res.get_json()) == (status, {"error": message, "field": "type_id"})
+        assert _ids(admin, unit_id=unit["id"]) == []
+
+    def test_put_refusals(self, admin, engineer, make_class, make_type, make_equipment):
+        cls = make_class()
+        node = make_equipment(cls=cls)
+        retired = make_type(cls=cls)
+        engineer.put(f"{MASTERS}/equipment-types/{retired['id']}", json={"active": False})
+        foreign = _put(admin, node, type_id=make_type()["id"])
+        assert (foreign.status_code, foreign.get_json()["field"]) == (400, "type_id")
+        assert _put(admin, node, type_id=999999).status_code == 400
+        res = _put(admin, node, type_id=retired["id"])
+        assert (res.status_code, res.get_json()["error"]) == (409, "The type is inactive")
+        assert _get(admin, node)["type_id"] is None
+
+    def test_a_type_deactivated_later_is_kept(self, admin, engineer, make_class, make_type, make_equipment):
+        cls = make_class()
+        kind = make_type(cls=cls)
+        node = make_equipment(cls=cls, type_id=kind["id"])
+        engineer.put(f"{MASTERS}/equipment-types/{kind['id']}", json={"active": False})
+        # Other fields only, and the type sent back unchanged as the edit dialog does
+        assert _put(admin, node, name="Renamed").status_code == 200
+        res = _put(admin, node, name="Again", type_id=kind["id"], class_id=cls["id"])
+        assert res.status_code == 200
+        assert res.get_json()["type_id"] == kind["id"]
+
+    def test_set_change_clear_one_event_each(self, admin, make_class, make_type, make_equipment):
+        cls = make_class()
+        closed, open_ = make_type(cls=cls, name="Closed execution"), make_type(cls=cls, name="Open execution")
+        node = make_equipment(cls=cls)
+        for type_id in (closed["id"], open_["id"], None):
+            assert _put(admin, node, type_id=type_id).status_code == 200
+        assert _events(admin, node)[:3] == [
+            ("type", "Open execution", "none"),
+            ("type", "Closed execution", "Open execution"),
+            ("type", "none", "Closed execution"),
+        ]
+
+    def test_class_change_while_typed_needs_a_type_decision(self, admin, make_class, make_type, make_equipment):
+        old_cls, new_cls = make_class(), make_class()
+        kind = make_type(cls=old_cls, name="Closed execution")
+        node = make_equipment(cls=old_cls, type_id=kind["id"])
+        res = _put(admin, node, class_id=new_cls["id"])
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "Pick a type of the new class, or none", "field": "type_id"})
+        assert _get(admin, node)["class_id"] == old_cls["id"]
+
+    def test_class_change_with_no_type(self, admin, make_class, make_type, make_equipment):
+        old_cls, new_cls = make_class(), make_class()
+        node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Closed execution")["id"])
+        res = _put(admin, node, class_id=new_cls["id"], type_id=None)
+        assert res.status_code == 200
+        assert (res.get_json()["class_id"], res.get_json()["type_id"]) == (new_cls["id"], None)
+        assert set(_events(admin, node)[:2]) == {
+            ("class", old_cls["code"], new_cls["code"]), ("type", "Closed execution", "none")}
+
+    def test_class_change_with_a_type_of_the_new_class(self, admin, make_class, make_type, make_equipment):
+        old_cls, new_cls = make_class(), make_class()
+        node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Closed execution")["id"])
+        new_kind = make_type(cls=new_cls, name="Gear")
+        res = _put(admin, node, class_id=new_cls["id"], type_id=new_kind["id"])
+        assert res.status_code == 200
+        assert res.get_json()["type_name"] == "Gear"
+
+    def test_class_change_with_the_old_type_sent_back_is_400(self, admin, make_class, make_type, make_equipment):
+        old_cls, new_cls = make_class(), make_class()
+        kind = make_type(cls=old_cls)
+        node = make_equipment(cls=old_cls, type_id=kind["id"])
+        res = _put(admin, node, class_id=new_cls["id"], type_id=kind["id"])
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "This type belongs to another class", "field": "type_id"})
+
+    def test_class_change_of_an_untyped_node_needs_nothing(self, admin, make_class, make_equipment):
+        node = make_equipment()
+        assert _put(admin, node, class_id=make_class()["id"]).status_code == 200
+
+    def test_the_same_type_name_across_a_class_change_is_a_class_event_only(self, admin, make_class, make_type,
+                                                                            make_equipment):
+        old_cls, new_cls = make_class(), make_class()
+        node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Standard")["id"])
+        res = _put(admin, node, class_id=new_cls["id"], type_id=make_type(cls=new_cls, name="Standard")["id"])
+        assert res.status_code == 200
+        assert _events(admin, node) == [("class", old_cls["code"], new_cls["code"]),
+                                        ("created", None, node["full_path"])]
+
+    def test_the_type_name_in_events_comes_from_the_lock(self, admin, make_class, make_type, make_equipment,
+                                                         stale_reread, monkeypatch):
+        cls = make_class()
+        node = make_equipment(cls=cls)
+        kind = make_type(cls=cls, name="Closed execution")
+        stale_reread(lambda row: {**row, "type_name": None})
+        res = _put(admin, node, type_id=kind["id"])
+        monkeypatch.undo()
+        assert res.status_code == 200
+        assert _events(admin, node)[0] == ("type", "none", "Closed execution")
+
+    def test_the_composite_key_holds_when_the_shell_is_bypassed(self, make_type, make_equipment):
+        node = make_equipment()
+        with pytest.raises(pymysql.err.IntegrityError):
+            _db("UPDATE equipment SET type_id = %s WHERE id = %s", (make_type()["id"], node["id"]))
+
+    def test_a_scrapped_node_takes_no_type_or_notes(self, admin, make_class, make_type, make_equipment):
+        cls = make_class()
+        node = make_equipment(cls=cls)
+        _put(admin, node, status="scrapped")
+        assert _put(admin, node, type_id=make_type(cls=cls)["id"]).status_code == 409
+        assert _put(admin, node, notes="x").status_code == 409
+
+
+class TestNotes:
+
+    def test_saved_with_line_breaks_in_the_detail(self, admin, make_equipment):
+        node = make_equipment(notes="  Mounted on the left plinth\n\nManual: shelf 3\n")
+        assert node["notes"] == "Mounted on the left plinth\n\nManual: shelf 3"
+        assert _get(admin, node)["notes"] == node["notes"]
+
+    def test_empty_becomes_null(self, admin, make_equipment):
+        node = make_equipment(notes="x")
+        assert _put(admin, node, notes="   ").get_json()["notes"] is None
+
+    def test_too_long_is_400(self, admin, make_equipment):
+        node = make_equipment()
+        assert _put(admin, node, notes="x" * 2000).status_code == 200
+        res = _put(admin, node, notes="x" * 2001)
+        assert (res.status_code, res.get_json()["field"]) == (400, "notes")
+
+    def test_a_change_writes_no_event_but_the_audit_columns(self, role_client, make_equipment):
+        node = make_equipment()
+        res = _put(role_client("maint_manager"), node, notes="Bearing grade 6205")
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["updated_by"] == "test_maint_manager" and body["updated_at"]
+        assert [e["event"] for e in body["events"]] == ["created"]
+
+
+class TestTypeFilterAndSearch:
+
+    def test_type_filter(self, admin, make_unit, make_class, make_type, make_equipment):
+        unit, cls = make_unit(), make_class()
+        closed, open_ = make_type(cls=cls), make_type(cls=cls)
+        a = make_equipment(unit=unit, cls=cls, type_id=closed["id"])
+        make_equipment(unit=unit, cls=cls, type_id=open_["id"])
+        make_equipment(unit=unit, cls=cls)
+        assert _ids(admin, type_id=closed["id"]) == [a["id"]]
+        assert _ids(admin, unit_id=unit["id"], class_id=cls["id"], type_id=closed["id"]) == [a["id"]]
+
+    def test_search_finds_a_word_in_the_notes(self, admin, make_unit, make_equipment):
+        unit = make_unit()
+        node = make_equipment(unit=unit, notes="Spare impeller\nkept in Store B")
+        make_equipment(unit=unit, notes="nothing here")
+        assert _ids(admin, unit_id=unit["id"], q="IMPELLER") == [node["id"]]
+
+    def test_search_finds_the_type_name(self, admin, make_unit, make_class, make_type, make_equipment):
+        unit, cls = make_unit(), make_class()
+        closed = make_type(cls=cls, name="Closed execution")
+        node = make_equipment(unit=unit, cls=cls, type_id=closed["id"], name="Pump")
+        make_equipment(unit=unit, cls=cls, name="Pump")
+        assert _ids(admin, unit_id=unit["id"], q="closed") == [node["id"]]

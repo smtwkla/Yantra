@@ -51,6 +51,13 @@ describe("describeEvent", () => {
     expect(describeEvent(ev("class", "VBM", "HP"))).toBe("Class: VBM → HP");
   });
 
+  it("type shows the type names, and none as None", () => {
+    expect(describeEvent(ev("type", "none", "Closed execution"))).toBe("Type: None → Closed execution");
+    expect(describeEvent(ev("type", "Closed execution", "Open execution")))
+      .toBe("Type: Closed execution → Open execution");
+    expect(describeEvent(ev("type", "Open execution", "none"))).toBe("Type: Open execution → None");
+  });
+
   it("an unknown event is shown by name", () => {
     expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
   });

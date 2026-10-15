@@ -3,8 +3,8 @@
 import pytest
 
 from equipment_core import (
-    check_parent, check_status_change, effective_criticality, format_equipment_code, full_path,
-    tracked_changes, validate_equipment,
+    check_parent, check_status_change, check_type_class, effective_criticality, format_equipment_code,
+    full_path, tracked_changes, validate_equipment,
 )
 
 THIS_YEAR = 2026
@@ -76,9 +76,19 @@ class TestFullPath:
         assert full_path("SMTW", "FWMILL", codes) == path
 
 
+class TestCheckTypeClass:
+
+    def test_match(self):
+        assert check_type_class(4, 4) is None
+
+    def test_mismatch(self):
+        assert check_type_class(4, 5) == "This type belongs to another class"
+
+
 def _state(**overrides):
-    base = {"level": "equipment", "full_path": "S.U.VBM001", "class_code": "VBM", "criticality": "C",
-            "status": "in_service", "name": "Mill", "make": "X", "year": 2020}
+    base = {"level": "equipment", "full_path": "S.U.VBM001", "class_code": "VBM", "type_name": None,
+            "criticality": "C", "status": "in_service", "name": "Mill", "make": "X", "year": 2020,
+            "notes": None}
     return {**base, **overrides}
 
 
@@ -115,6 +125,26 @@ class TestTrackedChanges:
     def test_criticality_back_to_inherit(self):
         before, after = _state(level="component", criticality="B"), _state(level="component", criticality=None)
         assert tracked_changes(before, after) == [("criticality", "B", "inherit")]
+
+    def test_type_set(self):
+        assert tracked_changes(_state(), _state(type_name="Closed execution")) == [
+            ("type", "none", "Closed execution")]
+
+    def test_type_changed(self):
+        before, after = _state(type_name="Closed execution"), _state(type_name="Open execution")
+        assert tracked_changes(before, after) == [("type", "Closed execution", "Open execution")]
+
+    def test_type_cleared(self):
+        assert tracked_changes(_state(type_name="Closed execution"), _state()) == [
+            ("type", "Closed execution", "none")]
+
+    def test_same_type_name_across_a_class_change_is_a_class_event_only(self):
+        before = _state(class_code="RPP", type_name="Standard")
+        after = _state(class_code="HP", type_name="Standard")
+        assert tracked_changes(before, after) == [("class", "RPP", "HP")]
+
+    def test_notes_change_gives_no_event(self):
+        assert tracked_changes(_state(), _state(notes="Mounted on the\nleft side")) == []
 
     def test_several_changes_one_event_each(self):
         events = tracked_changes(_state(), _state(class_code="HP", status="scrapped", name="x"))
@@ -208,6 +238,40 @@ class TestValidateCreate:
     def test_null_criticality_on_a_part_means_inherit(self):
         clean, errors = _create(**PART, criticality=None)
         assert errors == [] and clean["criticality"] is None
+
+
+class TestTypeAndNotes:
+
+    def test_type_id_is_an_id(self):
+        clean, errors = _create(**EQUIPMENT, type_id=7)
+        assert errors == [] and clean["type_id"] == 7
+
+    @pytest.mark.parametrize("type_id", [0, "7", True, 1.5])
+    def test_bad_type_id(self, type_id):
+        assert _fields(_create(**EQUIPMENT, type_id=type_id)[1]) == ["type_id"]
+
+    def test_null_type_is_dropped_on_create(self):
+        clean, errors = _create(**EQUIPMENT, type_id=None)
+        assert errors == [] and "type_id" not in clean
+
+    def test_null_type_is_kept_on_update(self):
+        assert _update(type_id=None) == ({"type_id": None}, [])
+
+    @pytest.mark.parametrize("raw", ["", "   ", "\n \n", None])
+    def test_empty_notes_become_null(self, raw):
+        clean, errors = _create(**EQUIPMENT, notes=raw)
+        assert errors == [] and clean["notes"] is None
+
+    def test_notes_trimmed_with_inner_line_breaks_kept(self):
+        clean, _ = _create(**EQUIPMENT, notes="  Mounted on the left\n\n  Manual: shelf 3  \n")
+        assert clean["notes"] == "Mounted on the left\n\n  Manual: shelf 3"
+
+    def test_notes_of_2000_characters_are_fine(self):
+        assert _create(**EQUIPMENT, notes="x" * 2000)[1] == []
+
+    @pytest.mark.parametrize("raw", ["x" * 2001, 5])
+    def test_bad_notes(self, raw):
+        assert _fields(_create(**EQUIPMENT, notes=raw)[1]) == ["notes"]
 
 
 class TestValidateUpdate:

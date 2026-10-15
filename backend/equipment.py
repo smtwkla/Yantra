@@ -1,5 +1,5 @@
 """Equipment register — the equipment tree API
-(docs/steps/S002-equipment-register/1-brief.md).
+(docs/steps/S002-equipment-register/1-brief.md; types and notes: S004).
 
 Thin shell: equipment_core holds the rules (validation, codes, level table,
 paths, tracked changes); this module checks unit access, locks, issues codes,
@@ -12,7 +12,8 @@ only when the write needs it:
     (2) the target parent equipment row
     (3) the unit row
     (4) the class row
-    (5) the serial_counters row
+    (5) the equipment type row
+    (6) the serial_counters row
 
 - Every lock is a single-row ``SELECT <decision columns> FROM <table> WHERE id = %s
   FOR UPDATE``, never taken through the join fragment (MariaDB has no FOR UPDATE OF,
@@ -24,9 +25,10 @@ only when the write needs it:
   checks and display values.
 - Ancestors are never locked.  The scrap check locks the subtree top-down, the
   reverse of the order above: the one accepted deadlock (brief § 6 Locking).
-- masters.py locks units, sites, classes and user_units but never equipment; this
-  module never locks sites or user_units and locks units/classes only after any
-  equipment rows.  So no lock cycle spans the two modules.
+- masters.py locks units, sites, classes, equipment types and user_units but never
+  equipment, and takes a class before a type, as here; this module never locks sites
+  or user_units and locks units/classes/types only after any equipment rows.  So no
+  lock cycle spans the two modules.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -37,7 +39,7 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import has_perm, require_perm
 from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
-    CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, effective_criticality,
+    CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, check_type_class, effective_criticality,
     format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 
@@ -72,12 +74,13 @@ _NODE_FROM = (
     " JOIN units u ON u.id = COALESCE(gp.unit_id, p.unit_id, e.unit_id)"
     " JOIN sites s ON s.id = u.site_id"
     " JOIN equipment_classes c ON c.id = e.class_id"
+    " LEFT JOIN equipment_types t ON t.id = e.type_id"
 )
 
 _NODE_COLUMNS = (
-    "SELECT e.id, e.code, e.level, e.parent_id, e.class_id, e.name, e.make, e.model, e.serial_no,"
-    " e.year, e.criticality, e.status, e.created_at, e.created_by, e.updated_at, e.updated_by,"
-    " c.code AS class_code, u.id AS root_unit_id, s.code AS site_code, u.code AS unit_code,"
+    "SELECT e.id, e.code, e.level, e.parent_id, e.class_id, e.type_id, e.name, e.make, e.model,"
+    " e.serial_no, e.year, e.criticality, e.status, e.notes, e.created_at, e.created_by, e.updated_at,"
+    " e.updated_by, c.code AS class_code, t.name AS type_name, u.id AS root_unit_id, s.code AS site_code, u.code AS unit_code,"
     " p.code AS p_code, p.level AS p_level, p.name AS p_name,"
     " gp.id AS gp_id, gp.code AS gp_code, gp.level AS gp_level, gp.name AS gp_name,"
     f" {_ROOT_CRITICALITY} AS root_criticality"
@@ -89,9 +92,11 @@ _PART_COUNT = (
 )
 
 # Locking reads: each returns the columns its decisions need (BR3-01)
-_LOCK_EQUIPMENT = "SELECT id, level, status, parent_id, unit_id, class_id FROM equipment WHERE id = %s FOR UPDATE"
+_LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id FROM equipment "
+                   "WHERE id = %s FOR UPDATE")
 _LOCK_UNIT = "SELECT id, code, active FROM units WHERE id = %s FOR UPDATE"
 _LOCK_CLASS = "SELECT id, code, active FROM equipment_classes WHERE id = %s FOR UPDATE"
+_LOCK_TYPE = "SELECT id, class_id, name, active FROM equipment_types WHERE id = %s FOR UPDATE"
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +135,8 @@ def _summary(node):
         "name": node["name"],
         "class_id": node["class_id"],
         "class_code": node["class_code"],
+        "type_id": node["type_id"],
+        "type_name": node["type_name"],
         "unit_id": node["root_unit_id"],
         "unit": f"{node['site_code']}.{node['unit_code']}",
         "full_path": _path(node),
@@ -175,7 +182,7 @@ def _children(cur, node):
 def _detail(cur, node):
     out = _summary(node)
     plain = row_to_dict(node)
-    for field in ("parent_id", "make", "model", "serial_no", "year", "criticality",
+    for field in ("parent_id", "make", "model", "serial_no", "year", "criticality", "notes",
                   "created_at", "created_by", "updated_at", "updated_by"):
         out[field] = plain[field]
     out["root_criticality"] = node["root_criticality"]
@@ -266,18 +273,47 @@ def _lock_class(cur, class_id):
     return equipment_class
 
 
+def _lock_type(cur, type_id, node_class_id, newly_chosen):
+    """Lock the type a write gives the node (5); every decision comes from this row.  An
+    inactive type may be kept (a class change keeping it) but not newly chosen."""
+    cur.execute(_LOCK_TYPE, (type_id,))
+    equipment_type = cur.fetchone()
+    if equipment_type is None:
+        raise ApiError("Unknown type", 400, "type_id")
+    message = check_type_class(equipment_type["class_id"], node_class_id)
+    if message:
+        raise ApiError(message, 400, "type_id")
+    if newly_chosen and not equipment_type["active"]:
+        raise ApiError("The type is inactive", 409, "type_id")
+    return equipment_type
+
+
 # ---------------------------------------------------------------------------
 # Writing
 # ---------------------------------------------------------------------------
 
 def _next_code(cur, prefix):
-    """Bump the per-prefix counter (5) and read it back on the same connection, inside the
+    """Bump the per-prefix counter (6) and read it back on the same connection, inside the
     caller's transaction: a failed create rolls the bump back, so failures leave no gaps."""
     scope = f"EQ:{prefix}"
     cur.execute("INSERT INTO serial_counters (scope, last_value) VALUES (%s, 1) "
                 "ON DUPLICATE KEY UPDATE last_value = last_value + 1", (scope,))
     cur.execute("SELECT last_value FROM serial_counters WHERE scope = %s", (scope,))
     return format_equipment_code(prefix, cur.fetchone()["last_value"])
+
+
+def _check_type_on_update(cur, locked, clean, sent_type):
+    """The type a PUT leaves the node with must belong to its class, and a class change
+    needs a type decision: the type is never cleared silently (S004 § 5.2).  Decided from
+    the locked node and type rows; returns the locked type when one was taken, else None."""
+    class_changes = "class_id" in clean
+    if class_changes and locked["type_id"] is not None and not sent_type:
+        raise ApiError("Pick a type of the new class, or none", 400, "type_id")
+    resulting_type = clean.get("type_id", locked["type_id"])
+    if resulting_type is None or not ("type_id" in clean or class_changes):
+        return None
+    new_class = clean.get("class_id", locked["class_id"])
+    return _lock_type(cur, resulting_type, new_class, newly_chosen="type_id" in clean)
 
 
 def _write_events(cur, equipment_id, changes):
@@ -304,16 +340,19 @@ def _tracked_state(node):
     return {**node, "full_path": _path(node)}
 
 
-def _written_state(cur, node_id, unit=None, equipment_class=None):
+def _written_state(cur, node_id, unit=None, equipment_class=None, equipment_type=None):
     """The node as this write left it, for the event text.  The plain re-read may show a
-    unit or class code from before a rename committed while this write waited for its lock;
-    the locking reads of the target unit and class (when this write took them) have the
-    current code, so those win."""
+    unit or class code, or a type name, from before a change committed while this write
+    waited for its lock (or miss a type created since: the type join is a LEFT JOIN); the
+    locking reads of the target unit, class and type (when this write took them) have the
+    current values, so those win."""
     node = _reread(cur, node_id)
     if unit is not None:
         node = {**node, "unit_code": unit["code"]}
     if equipment_class is not None:
         node = {**node, "class_code": equipment_class["code"]}
+    if equipment_type is not None:
+        node = {**node, "type_name": equipment_type["name"]}
     return _tracked_state(node)
 
 
@@ -354,7 +393,8 @@ def list_equipment():
     page = _int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
     per_page = _int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
     conditions, params = [], []
-    for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id")):
+    for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
+                         ("type_id", "e.type_id")):
         value = _int_arg(name, None, minimum=1)
         if value is not None:
             conditions.append(f"{column} = %s")
@@ -373,8 +413,9 @@ def list_equipment():
         params.append(level)
     q = (request.args.get("q") or "").strip()
     if q:
-        conditions.append("(e.code LIKE %s OR e.name LIKE %s)")
-        params.extend([_like_pattern(q)] * 2)
+        # The type name too, so "closed" finds closed-execution pumps whatever their names say
+        conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s)")
+        params.extend([_like_pattern(q)] * 4)
     if request.args.get("include_scrapped") != "1":
         conditions.append("e.status <> 'scrapped'")
 
@@ -430,9 +471,12 @@ def create_equipment():
         else:
             _load_target_node(cur, clean["parent_id"], clean["level"])   # (2)
         equipment_class = _lock_class(cur, clean["class_id"])            # (4)
-        code = _next_code(cur, equipment_class["code"])                  # (5)
+        equipment_type = None
+        if "type_id" in clean:   # a null type_id was dropped by the validator
+            equipment_type = _lock_type(cur, clean["type_id"], clean["class_id"], newly_chosen=True)  # (5)
+        code = _next_code(cur, equipment_class["code"])                  # (6)
         node_id = insert_row(cur, "equipment", {"code": code, **clean}, actor())
-        created = _written_state(cur, node_id, unit, equipment_class)
+        created = _written_state(cur, node_id, unit, equipment_class, equipment_type)
         _write_events(cur, node_id, [("created", None, created["full_path"])])
     with conn.cursor() as cur:
         return jsonify(_detail(cur, _reread(cur, node_id))), 201
@@ -450,8 +494,9 @@ def update_equipment(node_id):
         stored = {"code": node["code"], "level": locked["level"]}
         clean = clean_body(lambda body, creating: validate_equipment(body, creating, this_year, stored),
                            creating=False)
-        # Sending back the current parent, unit or class is not a move or a reclassification
-        for field in ("parent_id", "unit_id", "class_id"):
+        sent_type = "type_id" in clean   # as sent, before unchanged fields are dropped
+        # Sending back the current parent, unit, class or type is not a move or a reclassification
+        for field in ("parent_id", "unit_id", "class_id", "type_id"):
             if field in clean and clean[field] == locked[field]:
                 del clean[field]
         unit = equipment_class = None
@@ -461,11 +506,12 @@ def update_equipment(node_id):
             unit = _lock_target_unit(cur, clean["unit_id"])               # (3)
         if "class_id" in clean:
             equipment_class = _lock_class(cur, clean["class_id"])         # (4)
+        equipment_type = _check_type_on_update(cur, locked, clean, sent_type)   # (5)
         if clean.get("status") == SCRAPPED:
             _check_parts_scrapped(cur, node_id)
         before = _tracked_state(node)
         update_row(cur, "equipment", node_id, clean, actor())
-        after = _written_state(cur, node_id, unit, equipment_class)
+        after = _written_state(cur, node_id, unit, equipment_class, equipment_type)
         _write_events(cur, node_id, tracked_changes(before, after))
     with conn.cursor() as cur:
         return jsonify(_detail(cur, _reread(cur, node_id)))

@@ -3,7 +3,7 @@ Step: S002 — Equipment register
 Doc: brief
 Author: Planner (Opus)
 Date: 14-10-2026 (revised 14-10-2026 after brief-reviews r1, r2 and r3)
-Status: In code review (approved 14-10-2026 by KLA)
+Status: Done (committed 6d58ce5, 15-10-2026)
 ```
 
 # S002 — Equipment register: the equipment tree (backend)

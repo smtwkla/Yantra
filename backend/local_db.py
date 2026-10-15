@@ -148,6 +148,33 @@ _MIGRATIONS = [
             CONSTRAINT fk_equipment_events_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]),
+    # Equipment types per class (ISO 14224 class/type) and notes (S004).  MariaDB DDL is
+    # not transactional and the version is recorded only after the last statement, so
+    # every statement here is safe to run twice: a half-applied v5 is simply re-run.
+    # The composite FK makes "the type belongs to the equipment's class" a database rule;
+    # uq_equipment_types_id_class is the index it references.  A NULL type_id skips it.
+    (5, "Equipment types per class, equipment notes", [
+        """CREATE TABLE IF NOT EXISTS equipment_types (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            class_id    INT NOT NULL,
+            name        VARCHAR(100) NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_types_class_name UNIQUE (class_id, name),
+            CONSTRAINT uq_equipment_types_id_class UNIQUE (id, class_id),
+            CONSTRAINT fk_equipment_types_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS type_id INT NULL AFTER class_id",
+        "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS notes TEXT NULL",
+        """ALTER TABLE equipment ADD CONSTRAINT fk_equipment_type FOREIGN KEY IF NOT EXISTS
+            (type_id, class_id) REFERENCES equipment_types (id, class_id)""",
+        # The six old values keep their order and 'type' is appended: metadata only
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','status','criticality','class','type') NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

@@ -50,7 +50,7 @@ module before each is built.
 - Offline mode.
 - Tamil UI and Tamil master data — possibly a later version.
 - Equipment groups (a set of equipment picked by hand) — equipment class covers selecting equipment.
-- Per-class custom fields (e.g. press tonnage).
+- Per-class custom fields (e.g. press tonnage). (Equipment *types* — S004 — are a pick-list value within a class, not a custom attribute.)
 - A production-supervisor role — none planned: production supervisors have no special role in Yantra (decided 13-10-2026). There is no maintenance-supervisor role either.
 - **Kiosks** (Raspberry Pi, shared) — a later version (decided 13-10-2026). Their login design is already settled (§ 3, *Shared-device login*).
 - Detecting missed "before use" CIL checks (needs a signal that the equipment ran).
@@ -175,8 +175,9 @@ CIL jobs at their units and nothing else.
   data (kW, rpm, frame, mounting, make) are attributes, used to find
   interchangeable spares. The tree already gives components codes, so nothing in
   v1 needs redoing.
-- **Fields:** code, name, equipment class, make, model, serial number, year, criticality (A/B/C; required on equipment, default C; component-units and components inherit unless graded), status (in service / standby / out of use / scrapped — scrapped is final and read-only), unit. Only equipment has a unit; its parts follow it (decided 14-10-2026, S002). Which machine backs up which (a standby relationship) is not recorded.
+- **Fields:** code, name, equipment class, make, model, serial number, year, type (optional; one of its class's types — decided 15-10-2026, S004), criticality (A/B/C; required on equipment, default C; component-units and components inherit unless graded), status (in service / standby / out of use / scrapped — scrapped is final and read-only), unit. Only equipment has a unit; its parts follow it (decided 14-10-2026, S002). Which machine backs up which (a standby relationship) is not recorded. Notes: free text for reading, searchable, not in the history (S004).
 - **Equipment class:** what a piece of equipment *is* (hydraulic press, ball mill, kiln fan, …), a list maintained by engineers. Used to pick equipment when applying a PM template, to compare MTBF/downtime across equipment of a kind, and (if failure codes are adopted) to scope code lists. No class-specific custom fields in v1.
+- **Equipment type** (decided 15-10-2026, S004): how equipment of a class is built, e.g. `RPP` → closed / open execution (ISO 14224 class → type). Types are defined per class, maintained by engineers; an equipment's type must belong to its class.
 - **Sites and units:** sites (SMTW, BRICKS, SSVT, the farms, …) are created in Yantra. Each site has units — its areas and shop floors — coded `SITE.UNIT` (e.g. `SMTW.KILN`, `SSVT.SHOP`). A unit can be mapped to a OneERP warehouse code. Until the sync exists, units are maintained by hand.
 - **Codes frozen once in use** (decided 13-10-2026, S001). A site, unit or equipment-class
   code — and a unit's site — can be corrected only while nothing references the record
@@ -315,6 +316,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `sites` | Code (e.g. `SMTW`, `BRICKS`), name, address, active |
 | `units` | `site_id`, code (the part after the dot; the full `SITE.UNIT` code is derived), name, optional OneERP warehouse code, active |
 | `equipment_classes` | Code (= the equipment-code prefix, e.g. `VBM`), name, active |
+| `equipment_types` | Per class: name, active (S004); `equipment.type_id` must be a type of the equipment's class |
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `equipment_class_id` |
 | `equipment_events` | Equipment history: one row per move or change of status, criticality or class — old → new, who, when (S002) |
 | `user_units` | User (Keycloak username) → unit: the shop-floor access list |
@@ -353,7 +355,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 **Desktop (engineer, manager, admin):**
 
 - Dashboard: open tickets by age, equipment down now, PMs due/overdue, out-of-limit readings.
-- Equipment register and tree, equipment classes, PM templates (apply to equipment) and plans (including CIL), codes, units, users' unit access.
+- Equipment register and tree, equipment classes, PM templates (apply to equipment) and plans (including CIL), codes, units, users' unit access. *Built so far (15-10-2026): the equipment register — list, equipment page with tree and history (S003), and the masters (S001).*
 - Ticket and PM job lists with filters; verify / close queues.
 - Reports (§ 4.6).
 - Settings (IT-Admin): escalation times, notification channels, OneERP sync, internal networks.

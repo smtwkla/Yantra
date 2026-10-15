@@ -51,8 +51,8 @@ def _inject_test_user():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("equipment_events", "equipment", "user_units", "units", "sites", "equipment_classes",
-           "serial_counters")
+_TABLES = ("equipment_events", "equipment", "equipment_types", "user_units", "units", "sites",
+           "equipment_classes", "serial_counters")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -146,6 +146,9 @@ class Uniq:
     def warehouse(self):
         return f"Test Warehouse {self._next()} - SMTW"
 
+    def type_name(self):
+        return f"Type {self._next():04d}"
+
     def username(self):
         return f"user{self._next():04d}"
 
@@ -216,6 +219,17 @@ def make_equipment(admin, make_unit, make_class):
         else:
             body.update(level=level or "component_unit", parent_id=parent["id"])
         res = admin.post(EQUIPMENT, json={**body, **overrides})
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_type(admin, uniq, make_class):
+    """make_type() -> a type of a fresh class; make_type(cls=c, name=...) to choose."""
+    def make(cls=None, **overrides):
+        body = {"class_id": (cls or make_class())["id"], "name": uniq.type_name(), **overrides}
+        res = admin.post(f"{MASTERS}/equipment-types", json=body)
         assert res.status_code == 201, res.get_json()
         return res.get_json()
     return make

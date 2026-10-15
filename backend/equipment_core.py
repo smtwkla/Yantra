@@ -7,7 +7,7 @@ The tree has three fixed levels (ISO 14224 levels 6-8): equipment, component
 unit, component.  Only equipment has a unit; a part sits under a parent.
 """
 
-from masters_core import optional_text_parser, parse_name
+from masters_core import RESERVED_TYPE_NAME, optional_text_parser, parse_name
 
 LEVELS = ("equipment", "component_unit", "component")
 STATUSES = ("in_service", "standby", "out_of_use", "scrapped")
@@ -20,8 +20,12 @@ DEFAULT_CRITICALITY = "C"
 # How an own criticality of NULL (a part inheriting its equipment's grade) shows in events
 INHERIT = "inherit"
 
+# How a node without a type shows in events; masters refuses it as a type name
+NO_TYPE = RESERVED_TYPE_NAME
+
 YEAR_MIN = 1900
 TEXT_MAX = 100
+NOTES_MAX = 2000
 
 # level -> the levels its parent may have; equipment has no parent
 _ALLOWED_PARENTS = {
@@ -120,11 +124,20 @@ def check_status_change(old, new):
     return None
 
 
+def check_type_class(type_class_id, node_class_id):
+    """Return an error message if a type of type_class_id may not be given to a node of
+    node_class_id (ISO 14224: a type belongs to one class), else None."""
+    if type_class_id != node_class_id:
+        return "This type belongs to another class"
+    return None
+
+
 # Tracked display value -> event name.  The move is named by the node's level:
 # equipment moves between units, a part moves between parents.
 _TRACKED = (
     ("full_path", None),
     ("class_code", "class"),
+    ("type_name", "type"),
     ("criticality", "criticality"),
     ("status", "status"),
 )
@@ -133,14 +146,18 @@ _TRACKED = (
 def _display(key, value):
     if key == "criticality" and value is None:
         return INHERIT
+    if key == "type_name" and value is None:
+        return NO_TYPE
     return value
 
 
 def tracked_changes(before, after):
     """Compare two dicts of display values; return ``[(event, old, new)]`` for each tracked change.
 
-    Keys read: ``level``, ``full_path``, ``class_code``, ``criticality`` (own value,
-    None = inherit) and ``status``.  Any other key (name, make, ...) is not tracked.
+    Keys read: ``level``, ``full_path``, ``class_code``, ``type_name`` (None = no type),
+    ``criticality`` (own value, None = inherit) and ``status``.  Any other key (name,
+    make, notes, ...) is not tracked.  Types are compared by name, so a reclassification
+    between two types of the same name gives no type event (S004 § 5.2).
     """
     changes = []
     for key, event in _TRACKED:
@@ -163,6 +180,7 @@ def _fields(this_year):
         "parent_id": (_id_parser("Parent", nullable=True), False),
         "unit_id": (_id_parser("Unit", nullable=True), False),
         "class_id": (_id_parser("Class", nullable=False), True),
+        "type_id": (_id_parser("Type", nullable=True), False),
         "name": (parse_name, True),
         "make": (optional_text_parser("Make", TEXT_MAX), False),
         "model": (optional_text_parser("Model", TEXT_MAX), False),
@@ -170,6 +188,7 @@ def _fields(this_year):
         "year": (_year_parser(this_year), False),
         "criticality": (_parse_criticality, False),
         "status": (_enum_parser("Status", STATUSES), False),
+        "notes": (optional_text_parser("Notes", NOTES_MAX), False),
     }
 
 
@@ -240,8 +259,10 @@ def validate_equipment(data, creating, this_year, stored=None):
         if creating:
             if level == "equipment" and "criticality" not in clean:
                 clean["criticality"] = DEFAULT_CRITICALITY
-            # Absent keys are not written: a part's NULL parent_id/unit_id is the column default
-            clean = {k: v for k, v in clean.items() if not (k in ("parent_id", "unit_id") and v is None)}
+            # Absent keys are not written: a part's NULL parent_id/unit_id and no type are the
+            # column defaults
+            clean = {k: v for k, v in clean.items()
+                     if not (k in ("parent_id", "unit_id", "type_id") and v is None)}
 
     if creating and "status" in clean:
         message = check_status_change(None, clean["status"])

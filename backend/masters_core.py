@@ -15,6 +15,8 @@ CLASS_CODE_RE = re.compile(r"^[A-Z]{2,4}$")
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,99}$")
 
 NAME_MAX = 100
+# History shows "no type" as this word, so no type may be called it (S004 § 5.1)
+RESERVED_TYPE_NAME = "none"
 ADDRESS_MAX = 255
 WAREHOUSE_MAX = 140
 
@@ -34,6 +36,13 @@ def parse_name(raw):
         raise ValueError("Name is required")
     if len(name) > NAME_MAX:
         raise ValueError(f"Name must be at most {NAME_MAX} characters")
+    return name
+
+
+def _parse_type_name(raw):
+    name = parse_name(raw)
+    if name.lower() == RESERVED_TYPE_NAME:
+        raise ValueError(f'The name "{RESERVED_TYPE_NAME}" is reserved; history uses it for no type')
     return name
 
 
@@ -95,6 +104,13 @@ _CLASS_FIELDS = {
     "active": (_parse_active, False),
 }
 
+# class_id is parsed on update too: the shell refuses a different one (it is fixed after create)
+_TYPE_FIELDS = {
+    "class_id": (_parse_id("Class"), True),
+    "name": (_parse_type_name, True),
+    "active": (_parse_active, False),
+}
+
 
 def _validate(data, fields, creating):
     clean, errors = {}, []
@@ -120,6 +136,10 @@ def validate_unit(data, creating):
 
 def validate_equipment_class(data, creating):
     return _validate(data, _CLASS_FIELDS, creating)
+
+
+def validate_equipment_type(data, creating):
+    return _validate(data, _TYPE_FIELDS, creating)
 
 
 def normalise_username(raw):

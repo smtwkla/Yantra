@@ -1,7 +1,8 @@
 <script setup>
 /**
  * Equipment page — one node at any level: path, details, parts and history
- * (docs/steps/S003-equipment-screens/1-brief.md § 4.2). Reloaded from the API after any save.
+ * (docs/steps/S003-equipment-screens/1-brief.md § 4.2; type and notes: S004). Reloaded from the API
+ * after any save. The type name comes with the node, so no types cache is needed here.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -121,6 +122,7 @@ function onSaved({ result, created }) {
               <dl class="row mb-0">
                 <dt class="col-5">Level</dt><dd class="col-7">{{ LEVEL_LABELS[node.level] }}</dd>
                 <dt class="col-5">Class</dt><dd class="col-7">{{ classLabel }}</dd>
+                <dt class="col-5">Type</dt><dd class="col-7">{{ node.type_name }}</dd>
                 <dt class="col-5">Make</dt><dd class="col-7">{{ node.make }}</dd>
                 <dt class="col-5">Model</dt><dd class="col-7">{{ node.model }}</dd>
                 <dt class="col-5">Serial no.</dt><dd class="col-7">{{ node.serial_no }}</dd>
@@ -149,6 +151,12 @@ function onSaved({ result, created }) {
           </div>
         </div>
       </div>
+
+      <div v-if="node.notes" class="card mt-3">
+        <div class="card-header">Notes</div>
+        <!-- pre-wrap: shown as entered, line breaks and aligned spacing kept -->
+        <div class="card-body notes-text">{{ node.notes }}</div>
+      </div>
     </template>
 
     <EquipmentFormModal ref="formModal" @saved="onSaved" />
@@ -156,3 +164,10 @@ function onSaved({ result, created }) {
     <EquipmentStatusModal ref="statusModal" @saved="load" />
   </div>
 </template>
+
+<style scoped>
+.notes-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>

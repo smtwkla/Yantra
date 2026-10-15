@@ -139,3 +139,5 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S001 | [Basic masters](S001-basic-masters/1-brief.md) — sites, units, equipment classes, unit access | 2 | Done — committed 817844c | 14-10-2026 |
 | S002 | [Equipment register](S002-equipment-register/1-brief.md) — equipment tree (backend/API), codes, status, criticality, events, unit access enforced | 2 | Done — committed 6d58ce5 | 15-10-2026 |
 | S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | Done — committed 6d58ce5 | 15-10-2026 |
+| S004 | [Equipment types and notes](S004-equipment-types-notes/1-brief.md) — types per class, notes, search in notes | 2 | In code review — clean (r1); awaiting user check and commit | 15-10-2026 |
+| S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | In review — r2 clean; awaiting user (gate A) | 15-10-2026 |

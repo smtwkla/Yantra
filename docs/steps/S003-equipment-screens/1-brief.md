@@ -3,7 +3,7 @@ Step: S003 — Equipment register screens
 Doc: brief
 Author: Planner (Opus)
 Date: 14-10-2026 (revised 14-10-2026 after brief-reviews r1 and r2)
-Status: In code review (approved 15-10-2026 by KLA)
+Status: Done (committed 6d58ce5, 15-10-2026)
 ```
 
 # S003 — Equipment register: the screens

@@ -386,6 +386,116 @@ class TestEquipmentClasses:
         assert res.status_code == 409
 
 
+def _types(client, query=""):
+    return client.get(f"{BASE}/equipment-types{query}").get_json()["items"]
+
+
+class TestEquipmentTypes:
+
+    def test_create_list_rename(self, engineer, make_class):
+        cls = make_class()
+        created = engineer.post(f"{BASE}/equipment-types", json={"class_id": cls["id"], "name": " Closed execution "})
+        assert created.status_code == 201
+        record = created.get_json()
+        assert (record["class_id"], record["class_code"], record["name"], record["active"]) == \
+            (cls["id"], cls["code"], "Closed execution", 1)
+        assert record["created_by"] == "test_maint_engineer" and record["updated_at"] is None
+
+        renamed = engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"name": "Closed exec."})
+        assert renamed.status_code == 200
+        assert renamed.get_json()["name"] == "Closed exec."
+        assert renamed.get_json()["updated_by"] == "test_maint_engineer"
+
+    def test_list_filters_by_class_and_is_ordered_by_class_code_then_name(self, engineer, make_class, make_type):
+        cls, other = make_class(), make_class()
+        open_ex = make_type(cls=cls, name="Open execution")
+        closed_ex = make_type(cls=cls, name="Closed execution")
+        elsewhere = make_type(cls=other)
+        assert [t["id"] for t in _types(engineer, f"?class_id={cls['id']}")] == [closed_ex["id"], open_ex["id"]]
+        listed = _types(engineer)
+        assert {open_ex["id"], closed_ex["id"], elsewhere["id"]} <= {t["id"] for t in listed}
+        assert listed == sorted(listed, key=lambda t: (t["class_code"], t["name"].lower()))
+
+    @pytest.mark.parametrize("raw", ["x", "-1", "1.5", "²"])
+    def test_bad_class_filter_is_400(self, engineer, raw):
+        res = engineer.get(f"{BASE}/equipment-types?class_id={raw}")
+        assert res.status_code == 400
+        assert res.get_json()["field"] == "class_id"
+
+    def test_deactivate_hides_unless_requested_and_reactivate(self, engineer, make_type):
+        record = make_type()
+        query = f"?class_id={record['class_id']}"
+        assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": False}).status_code == 200
+        assert _types(engineer, query) == []
+        assert [t["active"] for t in _types(engineer, f"{query}&include_inactive=1")] == [0]
+        assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": True}).status_code == 200
+        assert [t["id"] for t in _types(engineer, query)] == [record["id"]]
+
+    def test_duplicate_name_in_a_class_is_409_case_insensitive(self, engineer, make_class, make_type):
+        cls = make_class()
+        make_type(cls=cls, name="Closed execution")
+        res = engineer.post(f"{BASE}/equipment-types", json={"class_id": cls["id"], "name": "closed EXECUTION"})
+        assert res.status_code == 409
+        assert res.get_json() == {"error": "A type with this name already exists in this class", "field": "name"}
+
+    def test_rename_onto_a_sibling_is_409(self, engineer, make_class, make_type):
+        cls = make_class()
+        make_type(cls=cls, name="Closed execution")
+        other = make_type(cls=cls, name="Open execution")
+        res = engineer.put(f"{BASE}/equipment-types/{other['id']}", json={"name": "Closed execution"})
+        assert res.status_code == 409 and res.get_json()["field"] == "name"
+
+    def test_the_same_name_in_another_class_is_fine(self, make_type):
+        first = make_type(name="Standard")
+        second = make_type(name="Standard")
+        assert first["class_id"] != second["class_id"]
+
+    def test_the_name_none_is_reserved(self, engineer, make_class):
+        res = engineer.post(f"{BASE}/equipment-types", json={"class_id": make_class()["id"], "name": "None"})
+        assert res.status_code == 400 and res.get_json()["field"] == "name"
+
+    def test_unknown_class_on_create_is_400(self, engineer):
+        res = engineer.post(f"{BASE}/equipment-types", json={"class_id": 999999, "name": "x"})
+        assert res.status_code == 400
+        assert res.get_json() == {"error": "Unknown class", "field": "class_id"}
+
+    def test_inactive_class_on_create_is_409(self, engineer, make_class):
+        cls = make_class()
+        engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False})
+        res = engineer.post(f"{BASE}/equipment-types", json={"class_id": cls["id"], "name": "x"})
+        assert res.status_code == 409
+        assert res.get_json() == {"error": "The class is inactive", "field": "class_id"}
+
+    def test_reactivating_under_an_inactive_class_is_409(self, engineer, make_class, make_type):
+        cls = make_class()
+        record = make_type(cls=cls)
+        engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": False})
+        engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False})
+        res = engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": True})
+        assert res.status_code == 409
+        assert res.get_json() == {"error": "The class is inactive", "field": "active"}
+        # Renaming it is still fine: only reactivation needs an active class
+        assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"name": "Renamed"}).status_code == 200
+
+    def test_deactivating_a_type_in_use_is_allowed(self, engineer, make_type, make_equipment):
+        record = make_type()
+        make_equipment(cls={"id": record["class_id"]}, type_id=record["id"])
+        assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": False}).status_code == 200
+
+    def test_class_cannot_change_but_may_be_sent_back(self, engineer, make_class, make_type):
+        record = make_type()
+        res = engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"class_id": make_class()["id"]})
+        assert res.status_code == 400
+        assert res.get_json() == {"error": "Class cannot be changed", "field": "class_id"}
+        same = engineer.put(f"{BASE}/equipment-types/{record['id']}",
+                            json={"class_id": record["class_id"], "name": "Kept"})
+        assert same.status_code == 200
+        assert (same.get_json()["class_id"], same.get_json()["name"]) == (record["class_id"], "Kept")
+
+    def test_unknown_type_is_404(self, engineer):
+        assert engineer.put(f"{BASE}/equipment-types/999999", json={"name": "x"}).status_code == 404
+
+
 class TestUserUnits:
 
     def test_replace_set_and_read_back(self, admin, make_unit):
@@ -491,7 +601,7 @@ class TestPermissions:
                                       "maint_engineer", "maint_manager", "it_admin", "admin"])
     def test_every_role_can_read_the_pick_lists(self, role_client, role):
         client = role_client(role)
-        for path in ("sites", "units", "equipment-classes"):
+        for path in ("sites", "units", "equipment-classes", "equipment-types"):
             assert client.get(f"{BASE}/{path}").status_code == 200, (role, path)
 
     def test_unknown_role_is_forbidden(self, role_client):
@@ -511,11 +621,17 @@ class TestPermissions:
         client = role_client(role)
         assert client.post(f"{BASE}/equipment-classes", json={"code": "XX", "name": "x"}).status_code == 403
         assert client.put(f"{BASE}/equipment-classes/1", json={"name": "x"}).status_code == 403
+        assert client.post(f"{BASE}/equipment-types", json={"class_id": 1, "name": "x"}).status_code == 403
+        assert client.put(f"{BASE}/equipment-types/1", json={"name": "x"}).status_code == 403
 
     @pytest.mark.parametrize("role", ["maint_engineer", "maint_manager", "it_admin", "admin"])
     def test_class_writers(self, role_client, role, uniq):
-        res = role_client(role).post(f"{BASE}/equipment-classes", json={"code": uniq.class_code(), "name": "x"})
+        client = role_client(role)
+        res = client.post(f"{BASE}/equipment-classes", json={"code": uniq.class_code(), "name": "x"})
         assert res.status_code == 201
+        res = client.post(f"{BASE}/equipment-types", json={"class_id": res.get_json()["id"], "name": "x"})
+        assert res.status_code == 201
+        assert client.put(f"{BASE}/equipment-types/{res.get_json()['id']}", json={"name": "y"}).status_code == 200
 
     @pytest.mark.parametrize("role, status", [
         ("maint_operator", 403), ("maint_technician", 403), ("maint_engineer", 403),

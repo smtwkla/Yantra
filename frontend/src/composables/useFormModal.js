@@ -13,7 +13,10 @@
 import { computed, ref } from "vue";
 import { apiPost, apiPut } from "../api";
 
-export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (form) => form }) {
+// label(record) names the record being edited (a confirmation shows it); records without a code pass their own
+const codeLabel = (record) => record.full_code ?? record.code;
+
+export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (form) => form, label = codeLabel }) {
   const modal = ref(null); // template ref to <FormModal>
   const form = ref(blank());
   const editingId = ref(null);
@@ -36,7 +39,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
 
   function openEdit(record) {
     editingId.value = record.id;
-    editingLabel.value = record.full_code ?? record.code;
+    editingLabel.value = label(record);
     form.value = fromRecord(record);
     error.value = null;
     modal.value.open();

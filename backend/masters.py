@@ -1,10 +1,12 @@
-"""Masters module — sites, units, equipment classes, users' unit access
-(docs/steps/S001-basic-masters/1-brief.md).
+"""Masters module — sites, units, equipment classes and types, users' unit access
+(docs/steps/S001-basic-masters/1-brief.md; equipment types: S004).
 
 Thin shell: masters_core validates input, this module fetches, checks the
 rules that need the database, and stores.  Pooled connections are autocommit,
 so anything that checks and then writes runs in transaction() with the parent
 row locked first.
+
+Equipment types lock class → type, the order equipment.py uses (class (4), type (5)).
 """
 
 import logging
@@ -15,7 +17,8 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import require_perm
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from masters_core import (
-    validate_equipment_class, validate_site, validate_unit, validate_unit_ids, validate_username,
+    validate_equipment_class, validate_equipment_type, validate_site, validate_unit, validate_unit_ids,
+    validate_username,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +32,8 @@ UNIQUE_KEY_ERRORS.update({
     "uq_units_warehouse": ("oneerp_warehouse", "This OneERP warehouse is already mapped to another unit"),
     "uq_equipment_classes_code": ("code", "An equipment class with this code already exists"),
     "uq_sites_default": ("is_default", "Another site was made the default at the same time; reload and try again"),
+    # Migration v5 (S004)
+    "uq_equipment_types_class_name": ("name", "A type with this name already exists in this class"),
 })
 
 # is_default is 1 / NULL in the table; the API shows it as a boolean (see _site_out)
@@ -40,6 +45,10 @@ _SITE_SELECT = (
 _UNIT_SELECT = (
     "SELECT u.*, s.code AS site_code, CONCAT(s.code, '.', u.code) AS full_code "
     "FROM units u JOIN sites s ON s.id = u.site_id"
+)
+
+_TYPE_SELECT = (
+    "SELECT t.*, c.code AS class_code FROM equipment_types t JOIN equipment_classes c ON c.id = t.class_id"
 )
 
 _USER_UNITS_SELECT = (
@@ -64,6 +73,17 @@ def _lock_row(cur, table, record_id):
     if row is None:
         raise ApiError("Not found", 404)
     return row
+
+
+def _int_filter(name):
+    """An optional ?name=<id> list filter; anything but digits is a 400."""
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    # isascii: str.isdigit() also accepts digits such as '²' that int() rejects
+    if not (raw.isascii() and raw.isdigit()):
+        raise ApiError(f"{name} must be a number", 400, name)
+    return int(raw)
 
 
 def _site_out(row):
@@ -164,22 +184,13 @@ def update_site(site_id):
 # Units
 # ---------------------------------------------------------------------------
 
-def _site_filter():
-    raw = request.args.get("site_id")
-    if raw is None:
-        return None
-    if not raw.isdigit():
-        raise ApiError("site_id must be a number", 400, "site_id")
-    return int(raw)
-
-
 @masters_bp.route("/units")
 @require_perm("masters:read")
 def list_units():
     conditions, params = [], []
     if not _include_inactive():
         conditions.append("u.active = 1")
-    site_id = _site_filter()
+    site_id = _int_filter("site_id")
     if site_id is not None:
         conditions.append("u.site_id = %s")
         params.append(site_id)
@@ -270,6 +281,77 @@ def update_equipment_class(class_id):
         update_row(cur, "equipment_classes", class_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,)))
+
+
+# ---------------------------------------------------------------------------
+# Equipment types — per class (ISO 14224); the class is fixed after create
+# ---------------------------------------------------------------------------
+
+def _lock_class_for_type(cur, class_id, field):
+    """Lock the class a type is created or reactivated under: it must exist (400) and be
+    active (409).  ``field`` is class_id on create, active on reactivation."""
+    cur.execute("SELECT id, active FROM equipment_classes WHERE id = %s FOR UPDATE", (class_id,))
+    equipment_class = cur.fetchone()
+    if equipment_class is None:
+        raise ApiError("Unknown class", 400, field)
+    if not equipment_class["active"]:
+        raise ApiError("The class is inactive", 409, field)
+
+
+def _fetch_type(cur, type_id):
+    return fetch_one(cur, f"{_TYPE_SELECT} WHERE t.id = %s", (type_id,))
+
+
+@masters_bp.route("/equipment-types")
+@require_perm("masters:read")
+def list_equipment_types():
+    conditions, params = [], []
+    if not _include_inactive():
+        conditions.append("t.active = 1")
+    class_id = _int_filter("class_id")
+    if class_id is not None:
+        conditions.append("t.class_id = %s")
+        params.append(class_id)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"{_TYPE_SELECT}{where} ORDER BY c.code, t.name", params)
+
+
+@masters_bp.route("/equipment-types", methods=["POST"])
+@require_perm("equipment:edit")
+def create_equipment_type():
+    clean = clean_body(validate_equipment_type, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_class_for_type(cur, clean["class_id"], "class_id")
+        type_id = insert_row(cur, "equipment_types", clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_type(cur, type_id)), 201
+
+
+@masters_bp.route("/equipment-types/<int:type_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_equipment_type(type_id):
+    """Rename, deactivate or reactivate.  Deactivating needs no "in use" check: equipment
+    keeps the type, it just can't be newly chosen."""
+    clean = clean_body(validate_equipment_type, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        # A plain read of the class is safe (a type's class never changes) and lets the
+        # reactivation lock the class before the type: the class → type order
+        stored = fetch_one(cur, "SELECT class_id FROM equipment_types WHERE id = %s", (type_id,))
+        if stored is None:
+            raise ApiError("Not found", 404)
+        if clean.get("active") == 1:
+            _lock_class_for_type(cur, stored["class_id"], "active")
+        record = _lock_row(cur, "equipment_types", type_id)
+        if "class_id" in clean:
+            if clean["class_id"] != record["class_id"]:
+                raise ApiError("Class cannot be changed", 400, "class_id")
+            del clean["class_id"]
+        update_row(cur, "equipment_types", type_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_type(cur, type_id))
 
 
 # ---------------------------------------------------------------------------

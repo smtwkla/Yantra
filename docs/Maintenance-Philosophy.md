@@ -243,6 +243,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Breakdown | An unplanned failure that needs repair (ticket `BD-YYYY-MM-NNN`) |
 | PM | Preventive maintenance — planned work from a PM plan (job `PM-YYYY-MM-NNN`) |
 | Equipment class | What a piece of equipment is (hydraulic press, ball mill, …) |
+| Equipment type | How equipment of a class is built, e.g. a radial piston pump in closed or open execution (ISO 14224 type within class) |
 | PM template | Reusable work definition applied to many equipment |
 | PM plan | The recurring task for one equipment: checklist, readings, triggers, performer |
 | PM job | One occurrence of a PM plan, generated when due |

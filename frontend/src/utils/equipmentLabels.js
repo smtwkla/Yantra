@@ -1,6 +1,6 @@
 /**
  * Display labels for the equipment register — one vocabulary for every screen
- * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5). Pure: no imports.
+ * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004). Pure: no imports.
  */
 
 export const LEVEL_LABELS = {
@@ -41,9 +41,12 @@ export const CRITICALITY_BADGE_CLASS = {
 
 /** S002 writes this literal for "no own grade" in criticality events. */
 const INHERIT = "inherit";
+/** S004 writes this literal for "no type" in type events (no type may be named it). */
+const NO_TYPE = "none";
 
 const label = (map, value) => map[value] ?? String(value);
 const criticalityText = (value) => (value === INHERIT ? "Inherited" : label(CRITICALITY_LABELS, value));
+const typeText = (value) => (value === NO_TYPE ? "None" : value);
 const change = (name, from, to) => `${name}: ${from} → ${to}`;
 
 /** One history event ({event, old_value, new_value}) in plain words. */
@@ -61,6 +64,8 @@ export function describeEvent(event) {
       return change("Criticality", criticalityText(oldValue), criticalityText(newValue));
     case "class":
       return change("Class", oldValue, newValue);
+    case "type":
+      return change("Type", typeText(oldValue), typeText(newValue));
     default:
       return String(event.event);
   }

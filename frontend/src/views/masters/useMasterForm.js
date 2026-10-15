@@ -11,7 +11,7 @@ import { apiPut } from "../../api";
 import { useFormModal } from "../../composables/useFormModal";
 import { resetMasters } from "../../stores/masters";
 
-export function useMasterForm({ path, blank, fromRecord, reload }) {
+export function useMasterForm({ path, blank, fromRecord, reload, label }) {
   const editingActive = ref(true);
   const confirmingDeactivate = ref(false);
 
@@ -20,6 +20,7 @@ export function useMasterForm({ path, blank, fromRecord, reload }) {
     path,
     blank,
     fromRecord,
+    label,
     afterSave: async () => {
       resetMasters();
       await reload();
