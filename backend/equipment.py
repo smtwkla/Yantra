@@ -109,6 +109,9 @@ def _read_node(cur, node_id):
     return cur.fetchone()
 
 
+SAVED_BUT_UNREADABLE = "Saved, but the record could not be read back — reload the page"
+
+
 def _reread(cur, node_id, message="This record changed while saving — try again", field=None):
     """Plain read of a node this request has just locked or written; 409 when the read finds
     no row.  Inside a write, REPEATABLE READ answers plain reads from the snapshot taken at
@@ -274,8 +277,9 @@ def _lock_class(cur, class_id):
 
 
 def _lock_type(cur, type_id, node_class_id, newly_chosen):
-    """Lock the type a write gives the node (5); every decision comes from this row.  An
-    inactive type may be kept (a class change keeping it) but not newly chosen."""
+    """Lock the type a write gives the node (5); every decision comes from this row.  The
+    active check applies only when this write chooses the type; a type kept from before is
+    checked for its class only (and keeping a type without a class change takes no lock at all)."""
     cur.execute(_LOCK_TYPE, (type_id,))
     equipment_type = cur.fetchone()
     if equipment_type is None:
@@ -479,7 +483,8 @@ def create_equipment():
         created = _written_state(cur, node_id, unit, equipment_class, equipment_type)
         _write_events(cur, node_id, [("created", None, created["full_path"])])
     with conn.cursor() as cur:
-        return jsonify(_detail(cur, _reread(cur, node_id))), 201
+        # Committed already: a retry would duplicate the record, so the message says reload
+        return jsonify(_detail(cur, _reread(cur, node_id, SAVED_BUT_UNREADABLE))), 201
 
 
 @equipment_bp.route("/<int:node_id>", methods=["PUT"])
@@ -514,4 +519,5 @@ def update_equipment(node_id):
         after = _written_state(cur, node_id, unit, equipment_class, equipment_type)
         _write_events(cur, node_id, tracked_changes(before, after))
     with conn.cursor() as cur:
-        return jsonify(_detail(cur, _reread(cur, node_id)))
+        # Committed already: "try again" would mislead, so the message says reload
+        return jsonify(_detail(cur, _reread(cur, node_id, SAVED_BUT_UNREADABLE)))

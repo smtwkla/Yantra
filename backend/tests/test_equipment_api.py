@@ -511,6 +511,24 @@ class TestRereadAfterWrite:
         assert _ids(admin, unit_id=unit["id"]) == []
         assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 1
 
+    def test_create_that_cannot_read_back_after_commit_says_reload_and_is_saved(
+            self, admin, make_class, make_unit, make_equipment, stale_reread, monkeypatch):
+        cls, unit = make_class(), make_unit()
+        first = make_equipment(cls=cls)
+        reads = []
+
+        def second_read_fails(row):   # the first read is in the transaction, the second after the commit
+            reads.append(row)
+            return row if len(reads) == 1 else None
+        stale_reread(second_read_fails)
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"],
+                                          "name": "x"})
+        monkeypatch.undo()
+        assert len(reads) == 2
+        assert (res.status_code, res.get_json()) == (409, {"error": equipment.SAVED_BUT_UNREADABLE})
+        assert len(_ids(admin, unit_id=unit["id"])) == 1
+        assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 2
+
     def test_update_that_cannot_read_back_is_409_and_rolls_back(self, admin, make_unit, make_equipment,
                                                                 stale_reread, monkeypatch):
         mill, target = make_equipment(), make_unit()

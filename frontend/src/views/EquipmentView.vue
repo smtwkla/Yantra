@@ -22,7 +22,6 @@ import { STATUS_LABELS } from "../utils/equipmentLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 
 const PAGE_SIZE = 50; // the API default
-const SEARCH_DELAY_MS = 300;
 const DEFAULT_LEVEL = "equipment";
 const LEVEL_CHOICES = [
   ["equipment", "Equipment"],
@@ -79,9 +78,14 @@ const showTypeFilter = computed(() => Boolean(query.value.class_id || query.valu
 const typeChoices = computed(() => {
   const all = equipmentTypes.value ?? [];
   const shown = query.value.class_id ? all.filter((t) => String(t.class_id) === query.value.class_id) : all;
-  return [...shown].sort((a, b) => Number(b.active) - Number(a.active));
+  const choices = [...shown].sort((a, b) => Number(b.active) - Number(a.active));
+  // A hand-made URL can pair a class with a type of another class; list that type (last) so the applied
+  // filter is visible. An unknown type_id stays unlisted: the select is blank and the list empty.
+  const foreign = all.find((t) => String(t.id) === query.value.type_id);
+  if (foreign && !choices.includes(foreign)) choices.push(foreign);
+  return choices;
 });
-const typeLabel = (t) => (query.value.class_id ? t.name : `${t.class_code} · ${t.name}`);
+const typeLabel = (t) => (String(t.class_id) === query.value.class_id ? t.name : `${t.class_code} · ${t.name}`);
 const statusChoices = computed(() =>
   Object.entries(STATUS_LABELS).filter(([value]) => value !== "scrapped" || showScrapped.value)
 );
@@ -117,7 +121,7 @@ function toggleScrapped(on) {
   update(changes);
 }
 
-// ---- search: 300 ms after the last keystroke ----
+// ---- search: SEARCH_DELAY_MS after the last keystroke ----
 
 const searchText = ref(query.value.q ?? "");
 
@@ -131,7 +135,7 @@ function applySearch() {
   update(changes);
 }
 
-const { schedule: scheduleSearch } = useDebounced(applySearch, SEARCH_DELAY_MS);
+const { schedule: scheduleSearch } = useDebounced(applySearch);
 watch(searchText, scheduleSearch);
 // Back / Forward changes q without typing
 watch(() => query.value.q, (q) => {

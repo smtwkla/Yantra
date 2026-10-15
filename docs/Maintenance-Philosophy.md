@@ -111,22 +111,27 @@ raised / acknowledged ──► closed   (engineer: frivolous, with code + remar
 
 - **No approval step.** A ticket goes straight to maintenance. If it turns out
   frivolous, the engineer closes it with a suitable code and remarks (**Decided**).
-- **Intensity** is captured on the ticket (**Decided**). Scale **Proposed** from
-  ISO 14224 failure impact:
+- **Intensity** is captured on the ticket (**Decided**). Scale **Decided**
+  (15-10-2026) from ISO 14224 failure impact:
   - **critical** — equipment stopped;
   - **degraded** — running with reduced function;
-  - **incipient** — still running normally, early signs (noise, leak, heat).
+  - **initial** — still running normally, early signs (noise, leak, heat).
+    ISO 14224 calls this *incipient*; Yantra uses the plain word.
   Only critical time counts as downtime.
 - Only an engineer closes a ticket, and can send it back to "in progress".
-- **Failure coding** — symptom by the operator; cause and action by the
-  technician/engineer; lists maintained by engineers. Moving to ISO 14224-style
-  coding (failure mode, cause, action required; mechanism and detection method
-  optional; lists scoped by equipment class) is **pending evaluation** — adopt if it is
-  not too daunting for the floor.
+- **Failure coding** (**Decided**, 15-10-2026): the ISO 14224 core.
+  - **Failure mode**: what is seen, picked by the operator as the symptom.
+  - **Failure cause**: why it failed, picked by the technician/engineer.
+  - **Maintenance action**: what was done, picked by the technician/engineer.
+  Lists are trimmed from ISO 14224 Annex B and maintained by engineers.
+  Mechanism is not used for now; detection method is filled automatically from
+  the ticket's source. Mode lists may later be scoped by equipment class.
 - Frivolous closures are excluded from downtime and MTBF/MTTR (**Proposed**).
 
-TBD — downtime end: "back in service" (technician) or the operator's confirmation
-(Plan.MD open question 4); escalation times per criticality.
+**Decided** (15-10-2026): downtime ends at the technician's "back in service".
+Whether the operator can mark "not fixed" to reopen is settled with the phase 3
+brief. Escalation times per criticality: **deferred** to the notification step
+(Telegram / web push).
 
 ## 7. Planned maintenance
 
@@ -239,7 +244,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | OEE | Overall Equipment Effectiveness = Availability × Performance × Quality |
 | CIL | Clean, Inspect, Lubricate — the operator's routine care of a piece of equipment |
 | Red tag | An abnormality needing maintenance — in Yantra, a breakdown ticket |
-| Intensity | How bad a ticket's problem is: critical / degraded / incipient (proposed) |
+| Intensity | How bad a ticket's problem is: critical / degraded / initial (ISO 14224 failure impact) |
 | Breakdown | An unplanned failure that needs repair (ticket `BD-YYYY-MM-NNN`) |
 | PM | Preventive maintenance — planned work from a PM plan (job `PM-YYYY-MM-NNN`) |
 | Equipment class | What a piece of equipment is (hydraulic press, ball mill, …) |

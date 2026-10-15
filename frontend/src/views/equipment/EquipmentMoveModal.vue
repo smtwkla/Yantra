@@ -15,7 +15,6 @@ import { ensureSites, ensureUnits, sites, units } from "../../stores/masters";
 
 const emit = defineEmits(["saved"]);
 
-const SEARCH_DELAY_MS = 300;
 const SEARCH_LIMIT = 20; // per search; the hint below tells when there are more
 
 const node = ref(null);
@@ -86,7 +85,7 @@ async function runSearch() {
   }
 }
 
-const { schedule: scheduleSearch } = useDebounced(runSearch, SEARCH_DELAY_MS);
+const { schedule: scheduleSearch } = useDebounced(runSearch);
 watch(search, scheduleSearch);
 
 function choose(match) {

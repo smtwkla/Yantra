@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canOpenRoute, canSeeNavItem, isActivePath, landingPath, navItems } from "../src/stores/navigation.js";
+import { canOpenRoute, canSeeNavItem, isActivePath, landingNavItem, landingPath, navItems } from "../src/stores/navigation.js";
 
 // What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix
 const OPERATOR = ["equipment:read", "masters:read"];
@@ -43,6 +43,20 @@ describe("navigation permissions", () => {
 
   it("no permissions → no landing page", () => {
     expect(landingPath([])).toBeNull();
+    expect(landingNavItem([])).toBeNull();
+  });
+
+  it("the landing nav item is Equipment for every role", () => {
+    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN]) {
+      expect(landingNavItem(perms)).toBe(navItems[0]);
+      expect(landingNavItem(perms).label).toBe("Equipment");
+    }
+  });
+
+  it("the not-found route opens for every role, and for none", () => {
+    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN, []]) {
+      expect(canOpenRoute("not-found", perms)).toBe(true);
+    }
   });
 
   it("perms alternatives: any one of them is enough", () => {

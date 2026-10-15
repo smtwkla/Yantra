@@ -27,10 +27,14 @@ export function canOpenRoute(name, permissions) {
   return !item || canSeeNavItem(item, permissions);
 }
 
-/** Path of the first nav item the user may see — the landing page; null when none. */
+/** The first nav item the user may see — the landing page; null when none. */
+export function landingNavItem(permissions) {
+  return navItems.find((i) => canSeeNavItem(i, permissions)) ?? null;
+}
+
+/** Path of the landing page; null when the user has none. */
 export function landingPath(permissions) {
-  const item = navItems.find((i) => canSeeNavItem(i, permissions));
-  return item ? item.path : null;
+  return landingNavItem(permissions)?.path ?? null;
 }
 
 /** Whether a nav item is the current page — also true on its sub-pages (/equipment/5 → Equipment). */

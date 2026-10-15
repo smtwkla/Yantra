@@ -3,7 +3,7 @@ Step: S004 — Equipment types and notes
 Doc: brief
 Author: Planner (Opus)
 Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1 and r2)
-Status: In code review (approved 15-10-2026 by KLA)
+Status: Done (committed 226ce67, 15-10-2026)
 ```
 
 # S004 — Equipment types and notes

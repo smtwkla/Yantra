@@ -3,7 +3,7 @@ Step: S005 — Tidy-up: page not found, leftover review nits
 Doc: brief
 Author: Planner (Opus)
 Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1 and r2)
-Status: In review
+Status: In code review (approved 15-10-2026 by KLA)
 ```
 
 # S005 — Tidy-up: page not found, leftover review nits
@@ -229,3 +229,7 @@ fixture and the call sites. No blocker or major finding.
 | BR2-01 § 4.1 and § 7 still name `landingPath`; § 5 lacks the tests | nit | **Accepted.** Both name `landingNavItem`; tests in § 5. |
 | BR2-02 The foreign type's label rule | nit | **Accepted.** `CLS · Name` whenever the type's class isn't the chosen class (§ 4.5). |
 | BR2-03 What "saved" means in the test | nit | **Accepted.** In the unit's list, next code `+2` (§ 3). |
+
+### Gate A — user decision, 15-10-2026
+
+- **Approved** as written. Coder: Sonnet.

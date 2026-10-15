@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import EquipmentDetailView from "../views/EquipmentDetailView.vue";
 import EquipmentView from "../views/EquipmentView.vue";
 import MastersView from "../views/MastersView.vue";
+import NotFoundView from "../views/NotFoundView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import { authenticated, userPermissions } from "../stores/auth";
 import { canOpenRoute, landingPath } from "../stores/navigation";
@@ -32,6 +33,8 @@ const routes = [
     component: SettingsView,
     meta: { title: "Settings" },
   },
+  // Last, so every route above wins
+  { path: "/:pathMatch(.*)*", name: "not-found", component: NotFoundView, meta: { title: "Page not found" } },
 ];
 
 const router = createRouter({

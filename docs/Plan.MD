@@ -202,8 +202,8 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 ```
 
 - **Timestamps** for each transition. From them: response time (raised → acknowledged), repair time (in progress → back in service), downtime (raised → back in service).
-- **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Proposed scale, from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **incipient** (still fine, early signs). Only critical time counts as downtime. Scale to be confirmed — open question 9.
-- **Codes:** symptom (operator picks), cause and action (technician/engineer pick). Pick-lists maintained by engineers. Whether to move to ISO 14224-style failure coding (failure mode, cause, action; mechanism and detection method optional; lists scoped by equipment class) is pending evaluation — open question 5.
+- **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Scale (decided 15-10-2026), from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **initial** (still fine, early signs; ISO 14224 calls it *incipient*). Only critical time counts as downtime.
+- **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below).
 - **No approval step:** a raised ticket goes straight to maintenance. If it turns out frivolous, the engineer **closes it directly** from raised or acknowledged, with a required code (e.g. *no fault found*, *not a breakdown*) and remarks.
 - **Who worked:** one or more technicians per ticket, with time spent.
 - **Photos and remarks** at any step.
@@ -386,13 +386,13 @@ Each phase ends usable on its own.
 ## 9. Open questions
 
 1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`).
-2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality?
+2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
-4. **Downtime definition:** does downtime end at "back in service" (technician) or at the operator's confirmation?
-5. **Failure coding:** adopt ISO 14224-style coding (failure mode, cause, action required; mechanism, detection method optional; scoped by equipment class)? Pending evaluation — adopt if not too daunting for the floor.
+4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). Whether the operator can mark "not fixed" to reopen the ticket is settled with the phase 3 brief.
+5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class.
 6. **Template edits:** when a PM template changes, do plans created from it update, or keep their copy until re-applied?
 7. ~~**Unit access upkeep**~~ Decided 13-10-2026: IT admin maintains users' unit lists (and sites and units) — `masters:edit`.
 8. ~~**CIL shifts**~~ Superseded: CIL is per equipment, before use or by frequency (§ 4.4); missed before-use detection is deferred.
-9. **Intensity scale:** adopt critical / degraded / incipient (ISO 14224 failure impact), or a plant-specific scale?
+9. ~~**Intensity scale**~~ Decided 15-10-2026: **critical / degraded / initial** — ISO 14224's failure impact, with the plain word *initial* for the standard's *incipient*.
 10. **CIL verification:** does an engineer verify CIL jobs, or are they done when the operator submits?
 11. ~~**Kiosks.**~~ Decided 13-10-2026: not in v1; not tied to a unit; operators are Keycloak local users with passwords; logout manual or on inactivity; no supervisor role; resets by IT in Keycloak (Decisions table, § 3).
