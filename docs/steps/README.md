@@ -137,5 +137,5 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | ID | Title | Plan.MD phase | Status | Date |
 |---|---|---|---|---|
 | S001 | [Basic masters](S001-basic-masters/1-brief.md) — sites, units, equipment classes, unit access | 2 | Done — committed 817844c | 14-10-2026 |
-| S002 | [Equipment register](S002-equipment-register/1-brief.md) — equipment tree (backend/API), codes, status, criticality, events, unit access enforced | 2 | In code review — clean (r2); awaiting user check and commit | 14-10-2026 |
-| S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | In code review — r1 fixes done; awaiting code review r2 | 14-10-2026 |
+| S002 | [Equipment register](S002-equipment-register/1-brief.md) — equipment tree (backend/API), codes, status, criticality, events, unit access enforced | 2 | Done — committed 6d58ce5 | 15-10-2026 |
+| S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | Done — committed 6d58ce5 | 15-10-2026 |

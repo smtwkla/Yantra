@@ -49,10 +49,21 @@ files and its Status, and continue from there.
    - Stop after **3 rounds** and ask the user.
    - A finding that needs a user decision isn't settled by you. Collect it for
      the gate.
-3. **Gate A: STOP.** Give the user:
-   - a short summary of the brief;
+3. **Gate A: STOP.** The user approves the brief itself, not a summary of it.
+   Only after all review rounds are done, show them, in this order:
+   - **the decision-relevant sections of the brief, verbatim** (the text as it
+     stands after the last round): *What will be built*, *Out of scope*,
+     *Standards and practice*, *Design decisions* (with the rejected
+     alternatives) and *Open questions*. For an amendment, its what, rules and
+     open points;
+   - **the other sections by heading**, one line each, with the brief's path, so
+     the user can open any of them;
    - what changed across the review rounds;
-   - every point needing their decision.
+   - every point needing their decision;
+   - the coder's model for phase 2, and why.
+
+   Don't paraphrase the shown sections. If the brief is long, offer to publish it
+   as a private artifact page too.
 
    Only the user sets `Approved`. When they approve, record it (status, index
    row, and their answers in the brief), and record lasting decisions in
