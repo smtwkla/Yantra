@@ -43,7 +43,7 @@ PLINK = os.getenv("PLINK", "plink")
 DEPLOY_TARGET = "vel yantra master"
 # Settings yaml (relative to erp_server/) and the key holding the image tag.
 # The tag is the bare VERSION (build.bat tags images 0.1.2, not v0.1.2).
-VARS_FILE = "vars/settings_vel_yantra_master.yaml"
+VARS_FILE = "yantra/vars/settings_vel_yantra_master.yaml"
 VER_KEY = "YANTRA_VER"
 
 # erp_spanner.py reports a failed playbook but still exits 0 — detect it in the output
