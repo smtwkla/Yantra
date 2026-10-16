@@ -19,9 +19,9 @@ module before each is built.
 | Shape | Standalone Flask + Vue app on the SMTW web-app base (`.claude/SMTW-WebApp-Base.md`), like VelKilnMaster. Not a Frappe app. |
 | Users | Shop floor on phones (mobile-first); engineers and managers also on desktop. English only (Tamil possibly in a later version). Online only — no offline mode. |
 | Kiosks | Raspberry Pi kiosks on the shop floor, where operators and supervisors log on and enter things fast (stated 13-10-2026). A kiosk is **not tied to a unit**; what a user may do there follows their own unit access. Kiosks sit inside the plant, not in public areas. Sessions are personal: a user stays logged in across several entries and is logged out **manually or after a period of inactivity** (decided 13-10-2026). **Not in v1** — a later version. |
-| Login | Keycloak SSO for everyone, realm `Office.smtw.in`, client `vel-yantra-master`. Keycloak supplies role membership (client roles of `vel-yantra-master`); Yantra maps roles to permissions. **Operators are Keycloak local users** in the same realm, with password login: no AD account, so no CAL (decided 13-10-2026; no PINs, no RFID/badges exist). Requirements: see *Shared-device login* below. |
+| Login | Keycloak SSO for everyone, realm `Office.smtw.in`, client `vel-yantra-master`. Keycloak says who may log in (client role `maintenance_team`) and who is IT admin (`it_admin`); the org-wide realm role `mspv-apps-admin` is admin. The maintenance roles are held **in Yantra, per site** (S011, decided 16-10-2026); Yantra maps roles to permissions. **Operators are Keycloak local users** in the same realm, with password login: no AD account, so no CAL (decided 13-10-2026; no PINs, no RFID/badges exist). Requirements: see *Shared-device login* below. |
 | Sites and units | **All sites are covered** (decided 13-10-2026): the main factory, stock yards, farms and SSVT. Sites are created in Yantra (not fixed in code). SSVT is a site in the same company for now. Each site has units; unit codes use dot notation **`SITE.UNIT`** (e.g. `SMTW.KILN`, `BRICKS.SHED1`). Site list: `docs/Plant-Facts.md` § 2. |
-| Shop-floor access | Which units a user may see is held in **Yantra's DB** (user → units), not in Keycloak (decided 12-10-2026). Applies to operators, technicians and engineers; the manager sees all units. |
+| Shop-floor access | Which units a user may see is held in **Yantra's DB** (user → units), not in Keycloak (decided 12-10-2026). Since S011 (16-10-2026) a user's **role is per site** too: per site one role, and either all units of the site or chosen units. A manager normally has all units of their site(s). |
 | OneERP | Read-only. OneERP warehouses become equipment units. The warehouse mapping may be deferred. **Yantra's nomenclature leads** (decided 13-10-2026): OneERP warehouse codes may be renamed to match Yantra's `SITE.UNIT` codes (e.g. `SMTW.MCC` → `SMTW.MCC1` / `SMTW.MCC2`), rather than Yantra adopting OneERP's names. Renames are done in OneERP by its owners. |
 | Hosting | customer7 (10.24.0.112), web container published on port **8990**. Front-proxy vhost is public (Keycloak is the gate); live since 11-10-2026. |
 | Access from outside | Shop-floor phones use **mobile data**, so all roles get `access:wan` (decided 11-10-2026): the network gate does not restrict by role; Keycloak login is the gate. The real-client-IP handling and access log of the base pattern still apply. |
@@ -60,7 +60,7 @@ module before each is built.
 
 ## 3. Roles
 
-Roles come from Keycloak. A user may hold several; permissions are the union.
+**Roles per site** (S011, decided 16-10-2026). The maintenance roles below are held in Yantra: per user and site, **one** role, granted only by IT admin (nobody changes their own access). At a record, a user's rights are those of their role at the record's site; navigation and site-less masters use the union over their sites. `it_admin` and `admin` stay in Keycloak and apply everywhere; Keycloak's `maintenance_team` only lets a user log in. A deliberate departure from the base RBAC pattern (roles from the token), recorded in `.claude/CLAUDE.md`.
 
 | Role | Who | Can do |
 |---|---|---|
@@ -113,7 +113,7 @@ with each module. First cut of the main keys:
 | `masters:read_senior` | | | | | ✓ |
 | `equipment:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `equipment:edit` | | | ✓ | ✓ | ✓ |
-| `equipment:read_all_units` | | | | ✓ | ✓ |
+| `equipment:read_all_units` | | | | | ✓ |
 | `equipment:purge_documents` | | | | ✓ | ✓ |
 | `breakdown:raise` | ✓ | ✓ | ✓ | ✓ | |
 | `breakdown:work` | | ✓ | ✓ | ✓ | |
@@ -124,6 +124,7 @@ with each module. First cut of the main keys:
 | `reading:log` | ✓ | ✓ | ✓ | ✓ | |
 | `report:read` | | | ✓ | ✓ | |
 | `settings:edit` | | | | | ✓ |
+| `technicians:edit` | | | ✓ | ✓ | ✓ |
 
 `masters:edit` (decided 13-10-2026) covers sites, units and users' unit access — IT
 admin only. `masters:read_senior` (IT admin) is needed to view users' unit access;
@@ -179,7 +180,7 @@ CIL jobs at their units and nothing else.
   interchangeable spares. The tree already gives components codes, so nothing in
   v1 needs redoing.
 - **Fields:** code, name, equipment class, make, model, serial number, year, type (optional; one of its class's types — decided 15-10-2026, S004), criticality (A/B/C; required on equipment, default C; component-units and components inherit unless graded), status (in service / standby / out of use / scrapped — scrapped is final and read-only), unit. Only equipment has a unit; its parts follow it (decided 14-10-2026, S002). Which machine backs up which (a standby relationship) is not recorded. Notes: free text for reading, searchable, not in the history (S004).
-- **Equipment class:** what a piece of equipment *is* (hydraulic press, ball mill, kiln fan, …), a list maintained by engineers. Used to pick equipment when applying a PM template, to compare MTBF/downtime across equipment of a kind, and (if failure codes are adopted) to scope code lists. No class-specific custom fields in v1.
+- **Equipment class:** what a piece of equipment *is* (hydraulic press, ball mill, kiln fan, …), a list maintained by engineers. Used to pick equipment when applying a PM template, to compare MTBF/downtime across equipment of a kind, and (if failure codes are adopted) to scope code lists. No class-specific custom fields in v1. A class is a **kind**, not a container like sites and units: the same class is used at any level of the tree — a blower is a component-unit in one machine and a stand-alone machine elsewhere — so "all compressors in the plant" is one class across every level (clarified by the user 16-10-2026). So a class has no level of its own; a level shown for a class is derived from where it is used.
 - **Equipment type** (decided 15-10-2026, S004): how equipment of a class is built, e.g. `RPP` → closed / open execution (ISO 14224 class → type). Types are defined per class, maintained by engineers; an equipment's type must belong to its class.
 - **Sites and units:** sites (SMTW, BRICKS, SSVT, the farms, …) are created in Yantra. Each site has units — its areas and shop floors — coded `SITE.UNIT` (e.g. `SMTW.KILN`, `SSVT.SHOP`). A unit can be mapped to a OneERP warehouse code. Until the sync exists, units are maintained by hand.
 - **Codes frozen once in use** (decided 13-10-2026, S001). A site, unit or equipment-class
@@ -208,7 +209,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 - **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Scale (decided 15-10-2026), from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **initial** (still fine, early signs; ISO 14224 calls it *incipient*). Only critical time counts as downtime.
 - **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below).
 - **No approval step:** a raised ticket goes straight to maintenance. If it turns out frivolous, the engineer **closes it directly** from raised or acknowledged, with a required code (e.g. *no fault found*, *not a breakdown*) and remarks.
-- **Who worked:** one or more technicians per ticket, with time spent.
+- **Who worked:** one or more technicians per ticket, with time spent. Each labour row carries the **trade worked** (pre-filled when the technician has only one), so man-hours per discipline (ISO 14224 Table 8) can be summed (S010, 16-10-2026).
 - **Photos and remarks** at any step.
 - **Notifications:** new ticket → maintenance; escalation if not acknowledged within a set time (per criticality).
 - Serial: `BD-YYYY-MM-NNN`.
@@ -322,12 +323,16 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `equipment_types` | Per class: name, active (S004); `equipment.type_id` must be a type of the equipment's class |
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `equipment_class_id` |
 | `equipment_events` | Equipment history: one row per move or change of status, criticality or class — old → new, who, when (S002) |
-| `user_units` | User (Keycloak username) → unit: the shop-floor access list |
+| `user_units` | User (Keycloak username) → unit: the units within a site where the user has a membership without "all units" |
+| `memberships` | User → site: the user's one role at that site, and "all units" (S011) |
+| `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
+| `technicians` | Maintenance people, or one record per contractor firm: name, in-house / contract, optional Yantra login (S010) |
+| `technician_trades` | Technician → trades (S010) |
 | `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008); owner is exactly one of node, class or type (S009) |
 | `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
 | `breakdowns` | Ticket: equipment, state, intensity, codes, remarks, serial |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |
-| `breakdown_labour` | Technician and time spent per ticket |
+| `breakdown_labour` | Technician, trade worked and time spent per ticket |
 | `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
 | `meter_readings` | Value, time, who, source (`manual`/`iiot`), PM job link if taken during one |
 | `pm_templates`, `pm_template_items` | Reusable PM work: items, triggers, photo required |
@@ -388,7 +393,7 @@ Each phase ends usable on its own.
 
 ## 9. Open questions
 
-1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`).
+1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`). **Superseded 16-10-2026 (S011):** Keycloak keeps `maintenance_team` and `it_admin`; the maintenance roles are held in Yantra per site.
 2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
 4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). Whether the operator can mark "not fixed" to reopen the ticket is settled with the phase 3 brief.

@@ -227,12 +227,14 @@ From `docs/Plan.MD` § 3 (**Decided**):
 - **Technicians** — work tickets and PM jobs.
 - **Engineers** — assign, verify and close; own the masters (equipment, classes,
   templates, plans, codes).
-- **Maintenance manager** — all units, reports.
+- **Maintenance manager** — all units of their site(s), reports.
 - **Storekeeper** — maintenance stores; no v1 work (spares come later).
 - **IT admin** — settings and housekeeping, not maintenance work.
 
-Everyone except the manager works only at the **units (shop floors) they are
-given**, held in Yantra's DB. Production supervisors are left out for now.
+Roles are **per site** (decided 16-10-2026): one person can be manager at one
+site and engineer at another. Within a site, everyone works only at the
+**units (shop floors) they are given**, or all units of the site (usually the
+manager), held in Yantra's DB. Production supervisors are left out for now.
 
 TBD — shift patterns, on-call arrangement, and who covers when the engineer is absent.
 
