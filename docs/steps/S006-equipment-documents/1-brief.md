@@ -2,8 +2,8 @@
 Step: S006 — Documents and photos on equipment
 Doc: brief
 Author: Planner (Opus)
-Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1, r2 and r3)
-Status: In review
+Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1, r2 and r3; 16-10-2026 title edit added at gate A)
+Status: Approved 16-10-2026 by KLA
 ```
 
 # S006 — Documents and photos on equipment
@@ -34,9 +34,10 @@ On each equipment page (any level: equipment, component-unit, component):
 2. **Photos**: nameplates, the machine, a part. A grid of thumbnails; click to
    see it large, with previous/next. On a phone, "Add photo" offers the camera
    or the gallery.
-3. **Upload** (a dialog: kind, title, file) and **Remove**, with
+3. **Upload** (a dialog: kind, title, file), **Edit title** and **Remove**, with
    `equipment:edit`, at the user's units. Removing hides the file; it is not
-   deleted (§ 5.5).
+   deleted (§ 5.5). Editing the title fixes phone uploads that arrive as
+   `IMG_2034` (§ 5.8).
 4. **An upload size limit** that IT admin sets on the **Settings** page
    (default 20 MB, range 1–100), stored in `app_settings` (§ 5.7).
 
@@ -46,11 +47,13 @@ On each equipment page (any level: equipment, component-unit, component):
   storage);
 - versioning a document (a new version is a new upload; the old one can be
   removed);
-- documents on classes or types (e.g. one manual for every `RPP` pump);
+- documents on classes or types (e.g. one manual for every `RPP` pump) —
+  queued (user, 16-10-2026);
 - Office files, DWG, HEIC photos (§ 5.2);
-- malware scanning of uploads (§ 2, § 10.3);
+- malware scanning of uploads (§ 2, § 10.3) — queued (user, 16-10-2026);
 - editing an image (crop, rotate) in the browser;
-- a screen for removed documents.
+- a screen for removed documents (restore, delete for good) — queued (user,
+  16-10-2026).
 
 ## 2. Standards and practice
 
@@ -78,12 +81,13 @@ On each equipment page (any level: equipment, component-unit, component):
     who can see the equipment, so the upload dialog says "No confidential
     documents (contracts, prices)".
   - **A.5.34 (privacy, PII):** phone photos carry the phone's GPS position and
-    time in their EXIF data. A decision for the user (§ 10.2).
+    time in their EXIF data. Kept as uploaded (user, 16-10-2026; § 10.2).
   - **A.8.6 (capacity management):** image decoding is capped so one upload
     can't exhaust the server's memory (§ 5.3).
   - **A.8.7 (protection against malware):** uploads are **not** scanned. The
     first-bytes check enforces the file *type*; it is not antivirus. Accepted
-    deliberately: files come from staff and are only opened by browsers (§ 10.3).
+    for now: files come from staff and are only opened by browsers. Scanning
+    is queued for a later step (user, 16-10-2026; § 10.3).
   - **A.8.13 (backup):** files live on the App-FS share, which has its own
     backup (user, 15-10-2026).
   - **A.8.10 (information deletion)** asks that information be deleted when no
@@ -129,6 +133,8 @@ On each equipment page (any level: equipment, component-unit, component):
 - **`backend/documents_core.py`** (new, pure; bytes in, bytes out):
   - `detect_file_type(first_bytes)` → `("pdf" | "jpeg" | "png" | "webp", content_type)` or `None`;
   - `kind_accepts(kind, file_type)`: documents take PDF, photos take JPEG/PNG/WebP;
+  - `validate_title(raw)` → `(title, error)` (§ 5.4), used by
+    `validate_document` and by the title edit;
   - `validate_document(form)` → `(clean, errors)`: kind, title (§ 5.4);
   - `clean_original_name(raw, title)` (§ 5.4);
   - `stored_name(token, ext)`;
@@ -176,6 +182,9 @@ On each equipment page (any level: equipment, component-unit, component):
   and Photos cards.
 - **`frontend/src/views/equipment/DocumentUploadModal.vue`** (new): the upload
   dialog.
+- **`frontend/src/views/equipment/DocumentTitleModal.vue`** (new): the
+  one-field title dialog, on `FormModal` + `useFormModal` (its `PUT
+  <path>/<id>` already matches § 8).
 - **`frontend/src/views/equipment/PhotoViewer.vue`** (new): a Bootstrap modal
   showing one photo large, with previous/next.
 - **`frontend/src/views/EquipmentDetailView.vue`:** the new component **below the
@@ -205,10 +214,11 @@ deployment lines of § 6.4 into the report.
 | `size_bytes` | `INT NOT NULL` |
 | `has_thumb` | `TINYINT(1) NOT NULL DEFAULT 0` |
 | `created_at`, `created_by` | audit, as S001 |
+| `updated_at`, `updated_by` | `NULL` until the title is edited; the last edit (§ 5.8) |
 | `removed_at`, `removed_by` | `NULL` until removed |
 
 - Index `ix_equipment_documents_node (equipment_id, removed_at)`.
-- No `updated_*`: a document isn't edited (§ 10.4).
+- Only the title is editable; the file, kind and node never change (§ 5.8).
 
 ## 5. Rules
 
@@ -217,7 +227,7 @@ deployment lines of § 6.4 into the report.
 | Action | Permission | Also |
 |---|---|---|
 | List, open, view | `equipment:read` | the node is at the user's units (S002), else 404 |
-| Upload, remove | `equipment:edit` | the node is at the user's units; not scrapped (409, the S002 read-only rule) |
+| Upload, edit title, remove | `equipment:edit` | the node is at the user's units; not scrapped (409, the S002 read-only rule) |
 | Read the upload limit | `settings:read` | |
 | Change the upload limit | `settings:edit` (IT admin) | |
 
@@ -310,8 +320,8 @@ deployment lines of § 6.4 into the report.
   and refuse a scrapped node from that locked row (409), as S002 requires.
 - The row and the file stay (ISO 55001 control). Removed documents are hidden
   from the list and their files are no longer served (404).
-- Scrapped equipment: no uploads and no removals (409); its documents stay
-  viewable.
+- Scrapped equipment: no uploads, title edits or removals (409); its documents
+  stay viewable.
 
 ### 5.6 Writing safely
 
@@ -348,6 +358,27 @@ which corrects round 1's ordering):
 - **Locks:** `documents.py` takes lock (1) only, briefly, and then touches
   `equipment_documents` rows, which nothing else locks, so no lock cycle is
   added. No file I/O happens while it holds the lock.
+
+### 5.8 Edit title
+
+- `PUT /<doc_id>` with JSON `{title}`; the title rules of § 5.4
+  (`validate_title`), else 400 field `title`. Any other key is ignored, so the
+  file, kind and node can't be changed this way.
+- In one transaction: lock the node (`LOCK_EQUIPMENT`, lock (1)), refuse a
+  scrapped node from that locked row (409), then `SELECT` the document
+  (`id`, `equipment_id`, `removed_at IS NULL`) → 404 if none, then
+  `UPDATE … SET title, updated_at = NOW(), updated_by`. The `SELECT` decides
+  the 404, not `rowcount`: MariaDB counts an unchanged row as 0 affected, so
+  saving the same title would otherwise look like a missing document. The node
+  lock serialises it with remove, so a document can't be removed in between.
+- 200, the item as in the list (with `updated_at`, `updated_by`).
+- **Traceability:** the row keeps the last edit (who, when); earlier titles are
+  not kept, and the equipment's history isn't written, as for upload and remove.
+  The upload's `created_by` and `original_name` stay, so where the file came
+  from is never lost (ISO 55001 7.6.3).
+- **On the page:** an **Edit** (pencil) button next to Remove on each document
+  row and in the photo viewer, opening `DocumentTitleModal` pre-filled with the
+  title; the list reloads after a save.
 
 ### 5.7 The upload limit setting
 
@@ -438,22 +469,22 @@ Checked in `smtw_erp_devops` (15-10-2026):
 
 ## 7. Design decisions
 
-| Decision | Reason | Rejected alternative |
-|---|---|---|
-| Files on the App-FS share mounted at `/app/data` | Plan § 1 (decided); App-FS has its own backup | MinIO (Plan § 1: no) |
-| Type detected from the first bytes | A renamed `.exe` isn't a PDF (ISO 27001 A.8.28) | Trusting the extension or the browser's content type |
-| PDF + JPEG/PNG/WebP only | Covers manuals, drawings and phone photos; all display in a browser | Office files, DWG, HEIC |
-| Thumbnails with Pillow, made before the transaction, pixel cap 50 MP | Phone photos are 3–8 MB; the cap protects memory (A.8.6); no decoding under a lock | No thumbnails; a global Pillow knob |
-| Remove hides, never deletes | ISO 55001 controlled information | Hard delete |
-| Blob fetch with the token; tab opened synchronously; `download` attribute | One auth mechanism; works on iPhone and Android | Signed URLs (a second auth path, tokens in logs) |
-| The size limit in `app_settings`, edited on the Settings page | Configurable at runtime (base pattern), by IT admin, without SQL | A constant; a database-only value |
-| Upload and remove need `equipment:edit` | The same people who maintain the register | Operators adding photos (§ 10.5) |
-| Documents on any node level | A motor's datasheet belongs to the motor | Equipment level only |
-| A separate blueprint `documents.py`; equipment's load and lock made public | `equipment.py` stays about the tree; no private names imported across modules | Adding to `equipment.py` |
-| Remove as one conditional `UPDATE` | Two removes at once: one 204, one 404 | Locking the document row |
-| A storage `OSError` → 503 | The user learns it's temporary; the log says why | A 500 |
-| Files written before the short locking transaction | A hanging NFS mount never holds the node lock (BR2-04) | Writing inside the transaction |
-| Ceilings at 101 MB, setting up to 100 | A file at the setting's maximum still fits with the multipart overhead | Ceilings at 100 MB |
+| Decision                                                                   | Reason                                                                             | Rejected alternative                                 |
+|----------------------------------------------------------------------------|------------------------------------------------------------------------------------|------------------------------------------------------|
+| Files on the App-FS share mounted at `/app/data`                           | Plan § 1 (decided); App-FS has its own backup                                      | MinIO (Plan § 1: no)                                 |
+| Type detected from the first bytes                                         | A renamed `.exe` isn't a PDF (ISO 27001 A.8.28)                                    | Trusting the extension or the browser's content type |
+| PDF + JPEG/PNG/WebP only                                                   | Covers manuals, drawings and phone photos; all display in a browser                | Office files, DWG, HEIC                              |
+| Thumbnails with Pillow, made before the transaction, pixel cap 50 MP       | Phone photos are 3–8 MB; the cap protects memory (A.8.6); no decoding under a lock | No thumbnails; a global Pillow knob                  |
+| Remove hides, never deletes                                                | ISO 55001 controlled information                                                   | Hard delete                                          |
+| Blob fetch with the token; tab opened synchronously; `download` attribute  | One auth mechanism; works on iPhone and Android                                    | Signed URLs (a second auth path, tokens in logs)     |
+| The size limit in `app_settings`, edited on the Settings page              | Configurable at runtime (base pattern), by IT admin, without SQL                   | A constant; a database-only value                    |
+| Upload, title edit and remove need `equipment:edit`                       | The same people who maintain the register                                          | Operators adding photos (§ 10.5)                     |
+| Documents on any node level                                                | A motor's datasheet belongs to the motor                                           | Equipment level only                                 |
+| A separate blueprint `documents.py`; equipment's load and lock made public | `equipment.py` stays about the tree; no private names imported across modules      | Adding to `equipment.py`                             |
+| Remove as one conditional `UPDATE`                                         | Two removes at once: one 204, one 404                                              | Locking the document row                             |
+| A storage `OSError` → 503                                                  | The user learns it's temporary; the log says why                                   | A 500                                                |
+| Files written before the short locking transaction                         | A hanging NFS mount never holds the node lock (BR2-04)                             | Writing inside the transaction                       |
+| Ceilings at 101 MB, setting up to 100                                      | A file at the setting's maximum still fits with the multipart overhead             | Ceilings at 100 MB                                   |
 
 ## 8. API
 
@@ -462,10 +493,11 @@ Under `/api/equipment/<node_id>/documents` (collection routes with
 
 | Method and path | Permission | Result |
 |---|---|---|
-| `GET /` | `equipment:read` | `{items, upload_max_mb}` (no `total`: one node's documents aren't paged); items not removed, `ORDER BY created_at DESC, id DESC`: `id, kind, title, original_name, content_type, size_bytes, has_thumb, created_at, created_by` |
+| `GET /` | `equipment:read` | `{items, upload_max_mb}` (no `total`: one node's documents aren't paged); items not removed, `ORDER BY created_at DESC, id DESC`: `id, kind, title, original_name, content_type, size_bytes, has_thumb, created_at, created_by, updated_at, updated_by` |
 | `POST /` (multipart: `kind`, `title`, `file`) | `equipment:edit` | 201, the new item |
 | `GET /<doc_id>/file` | `equipment:read` | the file |
 | `GET /<doc_id>/thumb` | `equipment:read` | the thumbnail; 404 when `has_thumb = 0` |
+| `PUT /<doc_id>` `{title}` | `equipment:edit` | 200, the item; 400 field `title`; 409 scrapped (§ 5.8) |
 | `DELETE /<doc_id>` | `equipment:edit` | 204 (§ 5.5) |
 
 - A `doc_id` that belongs to another node, or is removed → 404.
@@ -484,8 +516,8 @@ Under `/api/settings`:
 - `detect_file_type`: real first bytes of PDF, JPEG, PNG, WebP; a text file, an
   `.exe` header, a HEIC header, empty input → `None`.
 - `kind_accepts`: a PDF as a photo and a JPEG as a document are refused.
-- `validate_document`: kind; title blank, 201 characters, control characters
-  removed.
+- `validate_title` / `validate_document`: kind; title blank, 201 characters,
+  control characters removed.
 - `clean_original_name`: a Windows path, a Unix path, 300 characters, empty.
 - `stored_name` format; `safe_download_name` (quotes, slashes, `\r\n`,
   non-ASCII).
@@ -514,7 +546,11 @@ Under `/api/settings`:
   limit by check 3, asserting the size message (not "Choose a file").
 - Access: another unit's node → 404 for list, open, upload; operator upload →
   403; a `doc_id` of another node → 404.
-- Scrapped node: upload and remove → 409; list and open → 200.
+- Scrapped node: upload, title edit and remove → 409; list and open → 200.
+- Title edit → 200, listed with the new title, `updated_by` set; the same title
+  again → 200 (not 404); blank or 201 characters → 400 field `title`; a removed
+  document or one of another node → 404; a `kind` in the body is ignored;
+  operator → 403; the download name follows the new title.
 - Remove → 204, gone from the list, the file still on disk, `removed_by` set;
   a second remove → 404; open after remove → 404.
 - Insert failure (monkeypatched) → no file left in the folder; a storage
@@ -537,6 +573,8 @@ Under `/api/settings`:
   gallery; Open shows the PDF in a new tab; Download saves `<title>.pdf`.
 - Upload a `.docx` renamed to `.pdf`: refused. A photo above the limit: refused
   in the dialog before sending.
+- Rename a phone photo from `IMG_…` to "Nameplate" on the phone; the grid and
+  the download name follow.
 - Remove a photo; it disappears; the equipment's history is unchanged.
 - As operator: sees and opens documents, no upload or remove buttons.
 - Settings → Uploads: IT admin changes the limit to 5; a 6 MB photo is refused.
@@ -555,14 +593,11 @@ Under `/api/settings`:
 
 1. **Done (devops team, 15-10-2026) — container user** `1000:1000`. Open only:
    the `secrets_app.py` ownership check of § 6.4.
-2. **For the user — EXIF (GPS position) in photos.** Keep originals as uploaded
-   (the position is the plant; viewers are staff), or strip EXIF on upload
-   (re-saving the photo: slightly lower quality, nothing a technician needs is
-   lost)? Recommended: keep, for now.
-3. **For the user — no malware scan** of uploads (ISO 27001 A.8.7). Accepted
-   because files come from staff and only browsers open them? Recommended:
-   accept.
-4. **Assumption:** titles aren't editable after upload (remove and upload again).
+2. **Decided (user, 16-10-2026) — EXIF:** originals are kept as uploaded,
+   GPS position included (the position is the plant; viewers are staff).
+3. **Decided (user, 16-10-2026) — no malware scan in S006** (ISO 27001
+   A.8.7); scanning is queued as a later step.
+4. **Decided (user, 16-10-2026) — titles are editable** after upload (§ 5.8).
 5. **Assumption:** only `equipment:edit` uploads. Operators could add photos too;
    that fits TPM's autonomous maintenance but needs a new permission. Revisit with
    CIL in phase 4.
@@ -617,3 +652,12 @@ major finding; the answers below are not re-reviewed.
 | BR3-04 Two constants for the ceiling | nit | **Accepted.** One `UPLOAD_MAX_MB_CEILING = 100`; the request ceiling is +1 (§ 3). |
 | BR3-05 "Done" vs uncommitted in devops | nit | **Accepted.** Worded as made, uncommitted until the devops team commits (§ 6.4). |
 | BR3-06 Test recipe; `safe_download_name`; thumbnail name | nit | **Accepted** (§ 3, § 5.4, § 9). |
+
+### Gate A — user decisions, 16-10-2026
+
+- EXIF: keep originals (§ 10.2). Malware scan: not in S006, queued (§ 10.3).
+- **Title edit added** to the step (§ 1, § 3, § 4, § 5.8, § 8, § 9); not
+  re-reviewed by the brief reviewer.
+- Queued for later steps (`docs/steps/README.md`): documents on classes or
+  types, malware scanning, a removed-documents screen.
+- Approved by KLA.

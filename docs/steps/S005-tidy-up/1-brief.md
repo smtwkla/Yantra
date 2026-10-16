@@ -3,7 +3,7 @@ Step: S005 — Tidy-up: page not found, leftover review nits
 Doc: brief
 Author: Planner (Opus)
 Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1 and r2)
-Status: In code review (approved 15-10-2026 by KLA)
+Status: Done (committed 0a91b8b, 15-10-2026)
 ```
 
 # S005 — Tidy-up: page not found, leftover review nits

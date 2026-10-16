@@ -140,5 +140,19 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S002 | [Equipment register](S002-equipment-register/1-brief.md) — equipment tree (backend/API), codes, status, criticality, events, unit access enforced | 2 | Done — committed 6d58ce5 | 15-10-2026 |
 | S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | Done — committed 6d58ce5 | 15-10-2026 |
 | S004 | [Equipment types and notes](S004-equipment-types-notes/1-brief.md) — types per class, notes, search in notes | 2 | Done — committed 226ce67 | 15-10-2026 |
-| S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | In code review — clean (r1); awaiting user check and commit | 15-10-2026 |
-| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | In review — r3 answered; awaiting user (gate A) | 15-10-2026 |
+| S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | Done — committed 0a91b8b | 15-10-2026 |
+| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | Approved 16-10-2026 | 15-10-2026 |
+| S007 | Dialog close guard — no lost input on an outside click; confirm discard when changed | 2 | Queued — no brief yet | 16-10-2026 |
+| S008 | Removed documents screen — list removed files, restore, delete for good | 2 | Queued — no brief yet | 16-10-2026 |
+| S009 | Documents on classes or types — e.g. one manual for every `RPP` pump | 2 | Queued — no brief yet | 16-10-2026 |
+
+## Queued (not yet briefed)
+
+Ideas agreed as worth doing, in no fixed order. A queued item gets its step ID
+when its brief is opened, or earlier when the user assigns one (S007–S009, 16-10-2026).
+
+| Idea | From | Note |
+|---|---|---|
+| QR labels | Plan.MD phase 2 | Called "S007" in S006's brief, before S007–S009 were assigned |
+| Malware scanning of uploads (ISO 27001 A.8.7) | user, 16-10-2026 | S006 § 10.3; ClamAV in its own container is the candidate |
+| Nginx resolver + recreate backend on `secrets_app.py` change | 16-10-2026 | Prevents the 502 and the stale client ID seen on the first deploy |

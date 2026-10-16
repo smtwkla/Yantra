@@ -1167,6 +1167,10 @@ When an input applies to a group of records (e.g. marking all entries for a supp
 - Show validation errors inline next to the relevant field, not only at the top.
 - On success: close modal, refresh the list, optionally show a toast notification.
 - On failure: keep the modal open, show the error message.
+- **Never lose typed input.** Form modals use `backdrop: 'static'`, so a click outside never closes them. Esc, ✕ and
+  Cancel close at once when the form is unchanged; when it has changed, they first show an in-dialog
+  "Discard your changes? Keep editing / Discard". Detect changes by comparing the form with a snapshot taken at open.
+  No browser `confirm()`. Implement this once, in the shared form-modal component, not per dialog.
 
 ### Print / Export Views
 
