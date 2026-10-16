@@ -3,7 +3,7 @@ Step: S007 — Dialog close guard; Nginx and deploy fixes
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-review r1)
-Status: In code review
+Status: Done (committed 11789d7 + 7b504f4, 16-10-2026)
 ```
 
 # S007 — Dialog close guard; Nginx and deploy fixes
