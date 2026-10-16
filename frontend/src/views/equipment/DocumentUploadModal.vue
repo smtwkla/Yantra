@@ -33,7 +33,7 @@ const KIND_LABELS = {
 };
 
 // Uploads are multipart, so they go through send() rather than useFormModal's JSON save()
-const { modal, form, saving, fieldError, modalError, openCreate, send } = useFormModal({
+const { modal, form, saving, dirty, fieldError, modalError, openCreate, send } = useFormModal({
   path: null,
   blank: (kind = "document") => ({ kind, title: "", file: null }),
   afterSave: (result) => emit("saved", result),
@@ -98,6 +98,7 @@ defineExpose({ open });
     ref="modal"
     :title="form.kind === 'photo' ? 'Add photo' : 'Add document'"
     :saving="saving"
+    :dirty="dirty"
     :error="modalError"
     :save-disabled-reason="saveDisabledReason"
     save-label="Upload"

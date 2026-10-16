@@ -5,11 +5,12 @@
  * edit needs masters:edit. Yantra cannot list Keycloak users, so the table shows
  * users who already have access and a new user is added by typing a username.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { apiGet, apiPut } from "../../api";
 import FormModal from "../../components/FormModal.vue";
 import { userPermissions } from "../../stores/auth";
 import { ensureUnits, units } from "../../stores/masters";
+import { formSnapshot } from "../../utils/formSnapshot";
 
 const canEdit = computed(() => userPermissions.value.includes("masters:edit"));
 const items = ref(null);
@@ -47,9 +48,20 @@ function load(name, heldUnits, isNew) {
   error.value = null;
 }
 
+// This dialog does not use useFormModal, so it keeps its own snapshot (see there for the why)
+const snapshot = ref(null);
+const dirty = computed(
+  () => snapshot.value !== null && formSnapshot({ username: username.value, selected: selected.value }) !== snapshot.value
+);
+const markClean = () => {
+  snapshot.value = formSnapshot({ username: username.value, selected: selected.value });
+};
+
 function open(name, heldUnits, isNew) {
   load(name, heldUnits, isNew);
+  snapshot.value = null;
   modal.value.open();
+  nextTick(markClean);
 }
 
 function toggle(unitId) {
@@ -66,6 +78,7 @@ async function save() {
   const existing = isNewUser.value ? items.value?.find((i) => i.username === name) : null;
   if (existing) {
     load(existing.username, existing.units, false);
+    nextTick(markClean); // the dialog was re-filled by code: what is shown now is the baseline
     error.value = {
       field: "username",
       message: "This user already has unit access; their current units are shown. Review and save.",
@@ -134,6 +147,7 @@ onMounted(reload);
     ref="modal"
     :title="isNewUser ? 'Add user' : `Unit access — ${username}`"
     :saving="saving"
+    :dirty="dirty"
     :error="error && error.field !== 'username' && error.field !== 'unit_ids' ? error.message : ''"
     @save="save"
   >

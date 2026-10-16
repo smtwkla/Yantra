@@ -10,8 +10,9 @@
  * form is shown at the top of the dialog instead (modalError).
  */
 
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { apiPost, apiPut } from "../api";
+import { formSnapshot } from "../utils/formSnapshot";
 
 // label(record) names the record being edited (a confirmation shows it); records without a code pass their own
 const codeLabel = (record) => record.full_code ?? record.code;
@@ -24,6 +25,23 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
   const saving = ref(false);
   const error = ref(null); // {field, message} from the last refused save
 
+  // The form as it was once the dialog was filled; null until then. `dirty` tells FormModal
+  // whether closing would lose typed input.
+  const snapshot = ref(null);
+  const dirty = computed(() => snapshot.value !== null && formSnapshot(form.value) !== snapshot.value);
+
+  // Taken in nextTick: a dialog may adjust the form right after opening it (a preselected
+  // unit), and that must not make an untouched dialog look changed.
+  function markClean() {
+    snapshot.value = formSnapshot(form.value);
+  }
+
+  function open() {
+    snapshot.value = null; // never compare with the previous dialog's snapshot
+    modal.value.open();
+    nextTick(markClean);
+  }
+
   const fieldError = (name) => (error.value?.field === name ? error.value.message : "");
   const modalError = computed(() =>
     error.value && !(error.value.field in form.value) ? error.value.message : ""
@@ -34,7 +52,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
     editingLabel.value = "";
     form.value = blank(seed);
     error.value = null;
-    modal.value.open();
+    open();
   }
 
   function openEdit(record) {
@@ -42,7 +60,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
     editingLabel.value = label(record);
     form.value = fromRecord(record);
     error.value = null;
-    modal.value.open();
+    open();
   }
 
   // Closes the modal first, then hands the API's response to afterSave, so the
@@ -73,7 +91,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
   }
 
   return {
-    modal, form, editingId, editingLabel, saving, error,
+    modal, form, editingId, editingLabel, saving, error, dirty, markClean,
     fieldError, modalError, openCreate, openEdit, save, send,
   };
 }

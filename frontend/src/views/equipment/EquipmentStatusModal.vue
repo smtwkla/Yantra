@@ -17,7 +17,7 @@ const STATUS_ORDER = ["in_service", "standby", "out_of_use", "scrapped"];
 
 const node = ref(null);
 
-const { modal, form, saving, fieldError, modalError, openEdit, save } = useFormModal({
+const { modal, form, saving, dirty, fieldError, modalError, openEdit, save } = useFormModal({
   path: "/api/equipment",
   blank: () => ({ status: "in_service" }),
   fromRecord: (record) => ({ status: record.status }),
@@ -43,6 +43,7 @@ defineExpose({ open });
     ref="modal"
     :title="`Change status of ${node?.code ?? ''}`"
     :saving="saving"
+    :dirty="dirty"
     :error="modalError"
     :save-disabled-reason="saveDisabledReason"
     @save="save"

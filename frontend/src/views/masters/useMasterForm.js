@@ -43,9 +43,9 @@ export function useMasterForm({ path, blank, fromRecord, reload, label }) {
     return base.send(() => apiPut(`${path}/${base.editingId.value}`, { active }));
   }
 
-  const { modal, form, editingId, editingLabel, saving, fieldError, modalError, save } = base;
+  const { modal, form, editingId, editingLabel, saving, dirty, fieldError, modalError, save } = base;
   return {
-    modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving,
+    modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving, dirty,
     fieldError, modalError, openCreate, openEdit, save, changeActive,
   };
 }

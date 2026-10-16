@@ -18,7 +18,7 @@ const TITLE_MAX = 200;
 
 // The path depends on the node, which can change while this component is reused, so the
 // PUT goes through send() rather than useFormModal's fixed-path save()
-const { modal, form, editingId, saving, fieldError, modalError, openEdit, send } = useFormModal({
+const { modal, form, editingId, saving, dirty, fieldError, modalError, openEdit, send } = useFormModal({
   path: null,
   blank: () => ({ title: "" }),
   fromRecord: (doc) => ({ title: doc.title }),
@@ -34,7 +34,7 @@ defineExpose({ open: openEdit });
 </script>
 
 <template>
-  <FormModal ref="modal" title="Edit title" :saving="saving" :error="modalError" @save="save">
+  <FormModal ref="modal" title="Edit title" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <div class="mb-0">
       <label class="form-label" for="doc-edit-title">Title</label>
       <input

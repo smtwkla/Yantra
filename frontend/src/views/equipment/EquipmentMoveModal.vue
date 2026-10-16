@@ -30,7 +30,7 @@ const isEquipment = computed(() => node.value?.level === "equipment");
 const currentParentId = computed(() => node.value?.ancestors?.at(-1)?.id ?? null);
 
 const {
-  modal, form, saving, error, fieldError, modalError, openEdit, save,
+  modal, form, saving, dirty, error, fieldError, modalError, openEdit, save,
 } = useFormModal({
   path: "/api/equipment",
   blank: () => ({ unit_id: "" }),
@@ -118,6 +118,7 @@ defineExpose({ open });
     ref="modal"
     :title="`Move ${node?.code ?? ''}`"
     :saving="saving"
+    :dirty="dirty"
     :error="modalError"
     :save-disabled-reason="saveDisabledReason"
     @save="save"

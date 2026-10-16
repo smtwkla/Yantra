@@ -30,7 +30,7 @@ async function reload() {
 }
 
 const {
-  modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving,
+  modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving, dirty,
   fieldError, modalError, openCreate, openEdit, save, changeActive,
 } =
   useMasterForm({
@@ -88,7 +88,7 @@ onMounted(reload);
     </div>
   </div>
 
-  <FormModal ref="modal" :title="editingId === null ? 'Add unit' : 'Edit unit'" :saving="saving" :error="modalError" @save="save">
+  <FormModal ref="modal" :title="editingId === null ? 'Add unit' : 'Edit unit'" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <template v-if="editingId !== null" #footer-left>
       <ActiveToggle
         :active="editingActive"

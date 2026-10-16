@@ -55,7 +55,7 @@ function toBody(form) {
 }
 
 const {
-  modal, form, editingId, saving, error, fieldError, modalError, openCreate, openEdit: openEditForm, save,
+  modal, form, editingId, saving, dirty, error, fieldError, modalError, openCreate, openEdit: openEditForm, save,
 } = useFormModal({
   path: "/api/equipment",
   blank,
@@ -165,7 +165,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
 </script>
 
 <template>
-  <FormModal ref="modal" :title="title" :saving="saving" :error="modalError" @save="save">
+  <FormModal ref="modal" :title="title" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <div class="mb-3">
       <label class="form-label" for="eq-level">Level</label>
       <select
