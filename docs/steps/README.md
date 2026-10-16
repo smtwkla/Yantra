@@ -99,6 +99,19 @@ becomes an **amendment** rather than a new step:
 
 A change too big for the step being reviewed becomes a new step.
 
+## IDE reformatting
+
+The user reads the step files in PyCharm, which can re-pad Markdown tables,
+re-wrap lines or switch line endings (`core.autocrlf` is on) without any change
+of content. That is expected and never needs the user's attention:
+
+- **Keep it.** Never revert it, and never report it as a finding or a change.
+- **See the real changes** with `git diff -w --ignore-cr-at-eol` (or
+  `--word-diff`); a whitespace-only diff is empty there.
+- **Edit the file as it is now.** Re-read it before an edit and match the
+  current text: the Edit tool, not a script holding an older copy or assuming
+  LF line endings and the old table padding.
+
 ## Orchestrated mode (one terminal)
 
 The `/step` skill (`.claude/skills/step/SKILL.md`) runs the whole cycle from one
@@ -141,10 +154,10 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S003 | [Equipment register screens](S003-equipment-screens/1-brief.md) — list, equipment page, create/edit, move, status dialogs | 2 | Done — committed 6d58ce5 | 15-10-2026 |
 | S004 | [Equipment types and notes](S004-equipment-types-notes/1-brief.md) — types per class, notes, search in notes | 2 | Done — committed 226ce67 | 15-10-2026 |
 | S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | Done — committed 0a91b8b | 15-10-2026 |
-| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | Approved 16-10-2026 | 15-10-2026 |
-| S007 | Dialog close guard — no lost input on an outside click; confirm discard when changed | 2 | Queued — no brief yet | 16-10-2026 |
-| S008 | Removed documents screen — list removed files, restore, delete for good | 2 | Queued — no brief yet | 16-10-2026 |
-| S009 | Documents on classes or types — e.g. one manual for every `RPP` pump | 2 | Queued — no brief yet | 16-10-2026 |
+| S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | In code review — clean (r2); awaiting user check and commit | 16-10-2026 |
+| S007 | [Dialog close guard; Nginx and deploy fixes](S007-dialog-guard-deploy-fixes/1-brief.md) — no lost input in dialogs; backend re-resolved; recreate on a secrets change | 2 | Approved 16-10-2026 (coding after S006 is committed) | 16-10-2026 |
+| S008 | [Removed documents](S008-removed-documents/1-brief.md) — list removed files on Settings, restore, delete for good | 2 | In review — r1 | 16-10-2026 |
+| S009 | [Documents on classes and types](S009-class-type-documents/1-brief.md) — one manual for every `RPP` pump, shown on each node | 2 | In review — r1 | 16-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -155,4 +168,3 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 |---|---|---|
 | QR labels | Plan.MD phase 2 | Called "S007" in S006's brief, before S007–S009 were assigned |
 | Malware scanning of uploads (ISO 27001 A.8.7) | user, 16-10-2026 | S006 § 10.3; ClamAV in its own container is the candidate |
-| Nginx resolver + recreate backend on `secrets_app.py` change | 16-10-2026 | Prevents the 502 and the stale client ID seen on the first deploy |

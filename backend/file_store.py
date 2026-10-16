@@ -1,0 +1,60 @@
+"""File storage for equipment documents and photos — thin I/O, no rules.
+
+Layout: ``DATA_DIR/equipment/<node_id>/<stored_name>`` (and ``<stored_name>.thumb.jpg``).
+Names come from documents_core.stored_name; nothing from the client reaches a path.
+
+config.DATA_DIR is read at call time, so tests can point it elsewhere.  A file is never
+written in place: it goes to a temporary name in the same folder and is moved into place
+with os.replace, which is all-or-nothing (also on NFS, because it stays within one folder),
+so a half-written file is never served.
+"""
+
+import logging
+import os
+import secrets
+
+import config
+
+logger = logging.getLogger(__name__)
+
+_EQUIPMENT_FOLDER = "equipment"
+
+
+def node_folder(node_id):
+    return os.path.join(config.DATA_DIR, _EQUIPMENT_FOLDER, str(int(node_id)))
+
+
+def file_path(node_id, name):
+    return os.path.join(node_folder(node_id), name)
+
+
+def write_file(node_id, name, data):
+    """Write ``data`` as ``name`` in the node's folder (created when missing) and return
+    its path.  Raises OSError; a temporary file is removed before the error propagates."""
+    folder = node_folder(node_id)
+    os.makedirs(folder, exist_ok=True)
+    final = os.path.join(folder, name)
+    temp = os.path.join(folder, f".{name}.{secrets.token_hex(4)}.tmp")
+    try:
+        with open(temp, "xb") as f:
+            f.write(data)
+        os.replace(temp, final)
+    except OSError:
+        remove_quietly(temp)
+        raise
+    return final
+
+
+def remove_quietly(path):
+    """Remove one file during clean-up.  A failure is logged, never raised, so it cannot
+    hide the error that caused the clean-up."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning("Could not remove %s during clean-up: %s", path, exc)
+
+
+def is_file(path):
+    return os.path.isfile(path)

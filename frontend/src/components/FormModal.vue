@@ -15,6 +15,8 @@ defineProps({
   error: { type: String, default: "" },
   // When set, Save is disabled and the reason shows as its tooltip
   saveDisabledReason: { type: String, default: "" },
+  // The submit button's text, e.g. "Upload"
+  saveLabel: { type: String, default: "Save" },
 });
 defineEmits(["save"]);
 
@@ -55,7 +57,7 @@ defineExpose({
             :disabled="saving || Boolean(saveDisabledReason)"
             :title="saveDisabledReason || null"
           >
-            <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>Save
+            <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>{{ saveLabel }}
           </button>
         </div>
       </form>

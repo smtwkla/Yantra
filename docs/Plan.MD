@@ -320,7 +320,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `equipment_class_id` |
 | `equipment_events` | Equipment history: one row per move or change of status, criticality or class — old → new, who, when (S002) |
 | `user_units` | User (Keycloak username) → unit: the shop-floor access list |
-| `equipment_documents` | Files attached to equipment |
+| `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006) |
 | `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
 | `breakdowns` | Ticket: equipment, state, intensity, codes, remarks, serial |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |

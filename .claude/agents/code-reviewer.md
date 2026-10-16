@@ -71,6 +71,9 @@ review file there.
 - Write only the review file. Never edit code, tests, the brief or the report.
 - `Bash` is for tests and read-only git (`git diff`, `git status`, `git log`).
   Never commit, push, or change the DB beyond what the test suite itself does.
+- Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
+  come from the user's IDE: not findings (`docs/steps/README.md` § IDE
+  reformatting). Read diffs with `git diff -w --ignore-cr-at-eol`.
 
 Finish with a short summary for the orchestrator:
 - the file you wrote;

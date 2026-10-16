@@ -10,6 +10,9 @@ import re
 
 import pymysql
 from flask import g, jsonify, request
+from werkzeug.exceptions import RequestEntityTooLarge
+
+from config import UPLOAD_MAX_MB_CEILING
 
 MYSQL_DUPLICATE_ENTRY = 1062
 
@@ -50,9 +53,17 @@ def _integrity_error(exc):
     return _error_response(ApiError(message, 409, field))
 
 
+def _request_too_large(_exc):
+    """A backstop: Werkzeug refuses a body over MAX_CONTENT_LENGTH only when the form is
+    parsed, after the upload route's own size check has answered for anything over the
+    upload limit (S006 § 5.2).  JSON, so the dialog shows it beside the file field."""
+    return _error_response(ApiError(f"The file is larger than {UPLOAD_MAX_MB_CEILING} MB", 413, "file"))
+
+
 def register_error_handlers(app):
     app.register_error_handler(ApiError, _error_response)
     app.register_error_handler(pymysql.err.IntegrityError, _integrity_error)
+    app.register_error_handler(RequestEntityTooLarge, _request_too_large)
 
 
 def actor():

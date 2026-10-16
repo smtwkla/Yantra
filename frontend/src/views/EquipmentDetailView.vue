@@ -1,8 +1,8 @@
 <script setup>
 /**
  * Equipment page — one node at any level: path, details, parts and history
- * (docs/steps/S003-equipment-screens/1-brief.md § 4.2; type and notes: S004). Reloaded from the API
- * after any save. The type name comes with the node, so no types cache is needed here.
+ * (docs/steps/S003-equipment-screens/1-brief.md § 4.2; type and notes: S004; documents and
+ * photos: S006, loaded separately by EquipmentDocuments). Reloaded from the API after any save. The type name comes with the node, so no types cache is needed here.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -13,6 +13,7 @@ import { userPermissions } from "../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
+import EquipmentDocuments from "./equipment/EquipmentDocuments.vue";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
@@ -157,6 +158,8 @@ function onSaved({ result, created }) {
         <!-- pre-wrap: shown as entered, line breaks and aligned spacing kept -->
         <div class="card-body notes-text">{{ node.notes }}</div>
       </div>
+
+      <EquipmentDocuments :node-id="node.id" :can-edit="canEdit" />
     </template>
 
     <EquipmentFormModal ref="formModal" @saved="onSaved" />

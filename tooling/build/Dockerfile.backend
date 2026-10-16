@@ -2,9 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System dependencies (add more here if needed, e.g. for Pillow)
+# System dependencies (add more here if needed).  Pillow needs none: its wheels bundle
+# libjpeg, zlib and libwebp.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+
+# Uploaded files: the App-FS share is bind-mounted here in production.  The container
+# runs as uid 1000, which cannot write under /app, so no __pycache__ either.
+ENV DATA_DIR=/app/data
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Install uv for dependency management
 RUN pip install --no-cache-dir uv

@@ -11,8 +11,8 @@ from api_common import register_error_handlers
 from auth_utils import require_auth
 from config import (
     APP_VERSION, DB_CONFIG, DEV_AUTH_BYPASS, KEYCLOAK_CLIENT_ID,
-    KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL,
-    SECRET_KEY,
+    KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL, MB,
+    SECRET_KEY, UPLOAD_MAX_MB_CEILING,
 )
 from db_helpers import close_db
 from local_db import DBUnavailable, ensure_schema, init_pool
@@ -30,6 +30,9 @@ ensure_schema(DB_CONFIG)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
+# The request ceiling: the upload setting's maximum plus one MB for the multipart overhead,
+# matching Nginx's client_max_body_size 101M (S006 § 5.2)
+app.config["MAX_CONTENT_LENGTH"] = (UPLOAD_MAX_MB_CEILING + 1) * MB
 CORS(app, origins=os.environ.get("CORS_ORIGINS", "http://localhost:5176").split(","))
 
 
@@ -128,6 +131,9 @@ def auth_me():
 
 from equipment import equipment_bp
 app.register_blueprint(equipment_bp, url_prefix="/api/equipment")
+
+from documents import documents_bp
+app.register_blueprint(documents_bp, url_prefix="/api/equipment")
 
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")

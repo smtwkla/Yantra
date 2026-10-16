@@ -3,7 +3,7 @@ Step: S006 — Documents and photos on equipment
 Doc: brief
 Author: Planner (Opus)
 Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1, r2 and r3; 16-10-2026 title edit added at gate A)
-Status: Approved 16-10-2026 by KLA
+Status: In code review (approved 16-10-2026 by KLA)
 ```
 
 # S006 — Documents and photos on equipment
@@ -574,7 +574,8 @@ Under `/api/settings`:
 - Upload a `.docx` renamed to `.pdf`: refused. A photo above the limit: refused
   in the dialog before sending.
 - Rename a phone photo from `IMG_…` to "Nameplate" on the phone; the grid and
-  the download name follow.
+  the photo viewer show the new title. Rename a PDF; Download saves it under the
+  new title (photos have no Download button; CR1-02, reworded 16-10-2026).
 - Remove a photo; it disappears; the equipment's history is unchanged.
 - As operator: sees and opens documents, no upload or remove buttons.
 - Settings → Uploads: IT admin changes the limit to 5; a 6 MB photo is refused.

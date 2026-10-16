@@ -120,3 +120,6 @@ files and its Status, and continue from there.
   green — starting code review r1".
 - **Reports at the gates.** Short, in plain terms, and naming the standards
   touched, because the user is learning maintenance practice.
+- **IDE reformatting is expected** (README § IDE reformatting). Whitespace-only
+  changes in a file the user has open are theirs: carry on, don't ask about
+  them, and don't mention them at the gates. Before editing, re-read the file.

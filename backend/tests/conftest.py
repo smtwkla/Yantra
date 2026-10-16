@@ -6,7 +6,9 @@ start it with tooling/dev/dev-db-up.bat. Migrations are applied automatically.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 
 import pytest
 
@@ -14,6 +16,10 @@ import pytest
 os.environ["YANTRA_TESTING"] = "1"
 # Never run the suite with the dev auth bypass, even if the shell has it set
 os.environ.pop("DEV_AUTH_BYPASS", None)
+# Uploaded files go to a temporary folder, never the dev data/ folder; set before config
+# is imported, which reads it.  Removed at the end of the session (_remove_data_dir).
+TEST_DATA_DIR = tempfile.mkdtemp(prefix="yantra-test-data-")
+os.environ["DATA_DIR"] = TEST_DATA_DIR
 
 # Add backend directory to path so imports work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -51,8 +57,8 @@ def _inject_test_user():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("equipment_events", "equipment", "equipment_types", "user_units", "units", "sites",
-           "equipment_classes", "serial_counters")
+_TABLES = ("equipment_documents", "equipment_events", "equipment", "equipment_types", "user_units", "units",
+           "sites", "equipment_classes", "serial_counters")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -74,6 +80,31 @@ def _clean_tables():
                 cur.execute("SET FOREIGN_KEY_CHECKS = 1")
     finally:
         conn.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _remove_data_dir():
+    yield
+    shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+
+
+@pytest.fixture
+def upload_limit_mb():
+    """upload_limit_mb(n) sets the upload_max_mb setting (n=None removes it, raw text is
+    written as is); the seeded 20 is put back afterwards."""
+    def write(value):
+        conn = get_local_db(config.DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                if value is None:
+                    cur.execute("DELETE FROM app_settings WHERE setting_key = 'upload_max_mb'")
+                else:
+                    cur.execute("INSERT INTO app_settings (setting_key, setting_value) VALUES ('upload_max_mb', %s) "
+                                "ON DUPLICATE KEY UPDATE setting_value = %s", (str(value), str(value)))
+        finally:
+            conn.close()
+    yield write
+    write(20)
 
 
 @pytest.fixture
@@ -233,3 +264,28 @@ def make_type(admin, uniq, make_class):
         assert res.status_code == 201, res.get_json()
         return res.get_json()
     return make
+
+
+@pytest.fixture
+def user_with_units(role_client, admin, uniq):
+    """A client for a fresh username holding exactly the given units."""
+    def make(role, units):
+        username = uniq.username()
+        res = admin.put(f"{MASTERS}/user-units/{username}", json={"unit_ids": [u["id"] for u in units]})
+        assert res.status_code == 200, res.get_json()
+        return role_client(role, username)
+    return make
+
+
+@pytest.fixture
+def db_rows():
+    """db_rows(sql, params) -> the rows, read on a connection of its own (outside the API)."""
+    def query(sql, params=()):
+        conn = get_local_db(config.DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchall()
+        finally:
+            conn.close()
+    return query

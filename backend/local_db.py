@@ -175,6 +175,32 @@ _MIGRATIONS = [
         """ALTER TABLE equipment_events MODIFY event
             ENUM('created','moved_unit','moved_parent','status','criticality','class','type') NOT NULL""",
     ]),
+    # Documents and photos on equipment (S006).  The files live under DATA_DIR; a row is
+    # never deleted — removed_at hides it (ISO 55001 controlled information).  Only the
+    # title is ever edited (updated_*).  Each statement is safe to run twice, as in v5.
+    (6, "Equipment documents and photos, upload size limit", [
+        """CREATE TABLE IF NOT EXISTS equipment_documents (
+            id             INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id   INT NOT NULL,
+            kind           ENUM('document','photo') NOT NULL,
+            title          VARCHAR(200) NOT NULL,
+            original_name  VARCHAR(255) NOT NULL,
+            stored_name    VARCHAR(80) NOT NULL,
+            content_type   VARCHAR(50) NOT NULL,
+            size_bytes     INT NOT NULL,
+            has_thumb      TINYINT(1) NOT NULL DEFAULT 0,
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by     VARCHAR(100) NOT NULL,
+            updated_at     DATETIME NULL,
+            updated_by     VARCHAR(100) NULL,
+            removed_at     DATETIME NULL,
+            removed_by     VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_documents_stored UNIQUE (stored_name),
+            KEY ix_equipment_documents_node (equipment_id, removed_at),
+            CONSTRAINT fk_equipment_documents_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        "INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('upload_max_mb', '20')",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

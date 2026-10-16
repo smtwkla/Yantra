@@ -80,6 +80,23 @@ if DEV_AUTH_BYPASS and not IS_DEV:
 DEV_STUB_ROLE = getattr(secrets_app, "DEV_STUB_ROLE", "admin")
 
 # ---------------------------------------------------------------------------
+# Data directory and uploads
+# ---------------------------------------------------------------------------
+
+# App-owned files (equipment documents and photos).  The env var is DATA_DIR because the
+# production compose already sets DATA_DIR: /app/data (the App-FS share); tests point it
+# at a temporary folder.  Must be one filesystem (no mount inside it), so os.replace
+# stays atomic.  Default: <repo>/data in dev.
+DATA_DIR = os.path.abspath(
+    os.environ.get("DATA_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+)
+
+# The upload_max_mb setting's maximum.  The request ceiling (Flask MAX_CONTENT_LENGTH,
+# Nginx client_max_body_size 101M) is one MB above it, for the multipart overhead.
+UPLOAD_MAX_MB_CEILING = 100
+MB = 1024 * 1024
+
+# ---------------------------------------------------------------------------
 # Application version
 # ---------------------------------------------------------------------------
 

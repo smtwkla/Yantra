@@ -56,6 +56,9 @@ review file there. If the orchestrator says to review an amendment only, review
 - `Bash` is for read-only commands only (`git diff`, `git status`, `ls`, `cat`,
   `grep`). Never commit.
 - Never approve a brief. Approval is the user's.
+- Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
+  come from the user's IDE: not findings (`docs/steps/README.md` § IDE
+  reformatting).
 
 Finish with a short summary for the orchestrator:
 - the file you wrote;

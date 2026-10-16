@@ -1,6 +1,6 @@
 # Never bake local uploads into the image — these are runtime data.
-# In production the uploads directory must be a named volume.
-backend/uploads/
+# In production DATA_DIR (/app/data) is the App-FS share, bind-mounted.
+data/
 
 # Dev and test artifacts
 backend/.venv/

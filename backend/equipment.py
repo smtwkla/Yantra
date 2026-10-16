@@ -29,6 +29,9 @@ only when the write needs it:
   equipment, and takes a class before a type, as here; this module never locks sites
   or user_units and locks units/classes/types only after any equipment rows.  So no
   lock cycle spans the two modules.
+- documents.py (S006) takes lock (1) only, briefly, through LOCK_EQUIPMENT and
+  load_node_for_user, and then touches equipment_documents rows, which nothing else
+  locks; so it adds no lock cycle.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -92,8 +95,8 @@ _PART_COUNT = (
 )
 
 # Locking reads: each returns the columns its decisions need (BR3-01)
-_LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id FROM equipment "
-                   "WHERE id = %s FOR UPDATE")
+LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id FROM equipment "
+                  "WHERE id = %s FOR UPDATE")
 _LOCK_UNIT = "SELECT id, code, active FROM units WHERE id = %s FOR UPDATE"
 _LOCK_CLASS = "SELECT id, code, active FROM equipment_classes WHERE id = %s FOR UPDATE"
 _LOCK_TYPE = "SELECT id, class_id, name, active FROM equipment_types WHERE id = %s FOR UPDATE"
@@ -216,12 +219,12 @@ def _can_access(cur, unit_id):
     return unit_ids is None or unit_id in unit_ids
 
 
-def _load_node_for_user(cur, node_id, for_update):
+def load_node_for_user(cur, node_id, for_update):
     """The node being read or written → ``(locked_row or None, node)``.  A missing node and
     one outside the user's units are the same 404, so nothing is revealed."""
     locked = None
     if for_update:
-        cur.execute(_LOCK_EQUIPMENT, (node_id,))   # (1)
+        cur.execute(LOCK_EQUIPMENT, (node_id,))   # (1)
         locked = cur.fetchone()
         if locked is None:
             raise ApiError("Not found", 404)
@@ -234,7 +237,7 @@ def _load_node_for_user(cur, node_id, for_update):
 def _load_target_node(cur, node_id, child_level):
     """Lock the target parent of a create or re-parent (2), then refuse in this order:
     unknown 400 → outside the user's units 403 → scrapped 409 → wrong level 400."""
-    cur.execute(_LOCK_EQUIPMENT, (node_id,))
+    cur.execute(LOCK_EQUIPMENT, (node_id,))
     locked = cur.fetchone()
     if locked is None:
         raise ApiError("Unknown parent", 400, "parent_id")
@@ -458,7 +461,7 @@ def my_units():
 @require_perm("equipment:read")
 def get_equipment(node_id):
     with get_db().cursor() as cur:
-        _, node = _load_node_for_user(cur, node_id, for_update=False)
+        _, node = load_node_for_user(cur, node_id, for_update=False)
         return jsonify(_detail(cur, node))
 
 
@@ -492,7 +495,7 @@ def create_equipment():
 def update_equipment(node_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked, node = _load_node_for_user(cur, node_id, for_update=True)   # (1); 404
+        locked, node = load_node_for_user(cur, node_id, for_update=True)   # (1); 404
         if locked["status"] == SCRAPPED:
             raise ApiError("This record is scrapped and cannot be changed", 409)
         this_year = _this_year()

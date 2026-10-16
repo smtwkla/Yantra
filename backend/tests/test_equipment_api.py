@@ -56,17 +56,6 @@ def _db(sql, params=()):
         conn.close()
 
 
-@pytest.fixture
-def user_with_units(role_client, admin, uniq):
-    """A client for a fresh username holding exactly the given units."""
-    def make(role, units):
-        username = uniq.username()
-        res = admin.put(f"{MASTERS}/user-units/{username}", json={"unit_ids": [u["id"] for u in units]})
-        assert res.status_code == 200, res.get_json()
-        return role_client(role, username)
-    return make
-
-
 class TestCodes:
 
     def test_each_level_gets_the_next_code_of_its_class(self, make_class, make_equipment):

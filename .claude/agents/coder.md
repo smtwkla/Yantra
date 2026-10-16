@@ -45,6 +45,9 @@ The orchestrator gives you one of three tasks:
   version.
 - **Never commit, push, build images, deploy or release.** Commits are the
   user's.
+- **IDE reformatting is expected.** Whitespace-only changes in a file the user
+  has open are theirs; keep them, and re-read a file before editing it
+  (`docs/steps/README.md` § IDE reformatting).
 - **Status.** Set the brief's `Status` and the README index row as the
   conventions say:
   - `Implementing` while you work;

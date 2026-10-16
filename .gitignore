@@ -13,6 +13,7 @@ tooling/build/secrets_*
 
 # Application data
 scratch/
+/data/
 
 # Frontend
 frontend/node_modules/
