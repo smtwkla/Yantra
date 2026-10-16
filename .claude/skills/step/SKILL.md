@@ -19,7 +19,8 @@ Read it before starting.
 
 ## Commands
 
-- `/step plan <topic>`: open a new step and run **phase 1**.
+- `/step plan <topic>`: open a new step and run **phase 1**. Propose the track
+  (below). `/step plan lite <topic>` or `/step plan full <topic>` forces it.
 - `/step amend S00N <request>`: write amendment `A<n>` in § 10 of the brief.
   Run the brief reviewer on it only if the user asks. Then stop at gate A.
 - `/step implement S00N`: the brief, or amendment, must be `Approved`. Run
@@ -32,10 +33,45 @@ Read it before starting.
 When the user just says "go on" or "next", find where the step stands from its
 files and its Status, and continue from there.
 
+## Tracks
+
+Every step runs on one of two tracks (README § Tracks). The track is in the
+brief's header (`Track: light | full`) and in the index row.
+
+- **Choosing.** When planning, check the light criteria below and **propose**
+  the track in one line with the reason ("Track: light — UI on the masters
+  pattern, no migration"). The user confirms or overrides; a forced track
+  (`plan lite` / `plan full`) needs no confirmation. When in doubt, full.
+- **Light only if all hold:**
+  - no migration, and no change to existing data;
+  - no auth, RBAC or security-sensitive code (uploads, file serving, secrets,
+    access checks);
+  - no transactions, locking or concurrency rules;
+  - follows an existing pattern: no new module design, no new dependency, no
+    endpoint beyond plain CRUD;
+  - roughly 10 files or fewer.
+
+  These are the inverse of the Opus criteria in phase 2, so a light step is
+  always coded on Sonnet.
+- **What changes on the light track:**
+  - the brief uses the short template (README § Tracks);
+  - **one** brief-review round. Its answers are not re-reviewed, unless a
+    `blocker` or `major` finding is open;
+  - **gate A is a bullet summary** plus the brief's path; show the sections
+    verbatim if the user asks;
+  - the coder is Sonnet; the code-review loop is unchanged (up to 3 rounds).
+- **Switch to full** automatically, and tell the user, when the brief reviewer
+  raises a `blocker` or `major` finding, or the coder or a reviewer finds the
+  step meets a full-track criterion. Update the header and the index row; the
+  brief then gets the full-track sections it lacks before gate A.
+
 ## Phase 1: brief
 
 1. **Write the brief.** The ID is the next free `S0NN` in the README index.
-   - Write `1-brief.md` with status `Draft`, then add the index row.
+   - Write `1-brief.md` with status `Draft` and its `Track`, then add the index
+     row. A light brief uses the short template.
+   - Mark the manual checks that matter as **important** (README § Manual
+     checks).
    - Follow CLAUDE-COMMON "Show the plan before building" and the Yantra rule on
      standards.
    - Ask the user first only about decisions that change the design. Other open
@@ -46,10 +82,12 @@ files and its Status, and continue from there.
    - Read its review file. Answer **every** finding in the brief's Review log
      (`Accepted` / `Rejected` / `Deferred`) and revise the brief text.
    - Repeat until no `blocker` or `major` finding is open.
-   - Stop after **3 rounds** and ask the user.
+   - Stop after **3 rounds** and ask the user. Light track: one round (§ Tracks).
    - A finding that needs a user decision isn't settled by you. Collect it for
      the gate.
-3. **Gate A: STOP.** The user approves the brief itself, not a summary of it.
+3. **Gate A: STOP.** Light track: a bullet summary instead of the verbatim
+   sections (§ Tracks); the rest below still applies. Full track: the user
+   approves the brief itself, not a summary of it.
    Only after all review rounds are done, show them, in this order:
    - **the decision-relevant sections of the brief, verbatim** (the text as it
      stands after the last round): *What will be built*, *Out of scope*,
@@ -103,10 +141,15 @@ files and its Status, and continue from there.
    - what was built;
    - any departures from the brief, with your view on each;
    - the minor findings still open;
-   - the manual browser checks for the user.
+   - the manual checks: the **important** ones as the checklist from the impl
+     report's `## Manual checks`, the rest as a plain list.
 
    The user checks, then **commits** (with the `S00N:` prefix). Set the status to
-   `Done` only when the user says it is committed.
+   `Done` only when the user says it is committed **and** every important check
+   is ticked by the user or explicitly skipped by them. Record it in the
+   impl report's checklist (`[x]`, or `[skipped] <reason>` in the user's words)
+   and in the status, e.g. `Done (committed abc123; checks: 3 done, 1 skipped —
+   iPhone)`. Never tick a check yourself.
 
 ## Rules
 

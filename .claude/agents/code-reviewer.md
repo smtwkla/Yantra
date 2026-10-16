@@ -65,6 +65,11 @@ review file there.
 - Start with a one-line verdict: whether any `blocker` or `major` finding is open.
 - End with "Checked and found consistent".
 - List what still needs the user's **manual browser check**.
+- **Manual checks.** Check that the impl report has a `## Manual checks`
+  section carrying every **important** check of the brief as an unticked box.
+  A missing one is a `minor` finding.
+- **Track.** On a `Track: light` step, a change that meets a full-track
+  criterion (README § Tracks) is at least a `major` finding.
 
 ## Limits
 

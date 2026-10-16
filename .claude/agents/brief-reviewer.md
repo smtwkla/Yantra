@@ -41,6 +41,16 @@ review file there. If the orchestrator says to review an amendment only, review
 - **Earlier rounds.** If there are earlier rounds, first verify that every
   earlier finding marked `Accepted` is actually reflected in the brief text, not
   only in the Review log.
+- **Track** (`docs/steps/README.md` § Tracks). For a `Track: light` brief:
+  - review it against the short template, and don't ask for the full-track
+    sections it leaves out on purpose;
+  - check that it really meets **every** light criterion. If it doesn't (a
+    migration, access checks, locking, a new endpoint beyond plain CRUD, …),
+    raise a `major` finding "belongs on the full track", with the criterion it
+    fails;
+  - this is the only round: say so in the verdict.
+- **Manual checks.** Check that the checks a person must do (real phones,
+  production steps) are marked **important**, and that the plain ones aren't.
 
 ## How to write findings
 

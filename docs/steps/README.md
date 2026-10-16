@@ -47,10 +47,64 @@ Step: S001 — Basic masters
 Doc: brief | brief-review r1 | impl-report | code-review r1
 Author: <role> (<model>)
 Date: DD-MM-YYYY
+Track: light | full
 Status: Draft | In review | Approved DD-MM-YYYY by <user> | Implementing | In code review | Done | Dropped
 ```
 
-`Status` appears in the brief only. The brief's status is the step's status.
+`Track` and `Status` appear in the brief only. The brief's status is the step's
+status. Briefs written before 16-10-2026 have no `Track` line: they are full.
+
+## Tracks
+
+A step runs on the **full** track or, when it is small and safe, the **light**
+track, so a small change doesn't carry a large step's ceremony.
+
+**Light only if all of these hold** (otherwise full):
+- no migration, and no change to existing data;
+- no auth, RBAC or security-sensitive code (uploads, file serving, secrets,
+  access checks);
+- no transactions, locking or concurrency rules;
+- follows an existing pattern: no new module design, no new dependency, no
+  endpoint beyond plain CRUD;
+- roughly 10 files or fewer.
+
+The planner proposes the track; the user confirms or overrides it.
+
+| | Full | Light |
+|---|---|---|
+| Brief | All sections | The short template below |
+| Brief review | Up to 3 rounds | 1 round; answers not re-reviewed unless a `blocker`/`major` is open |
+| Gate A | Decision sections verbatim | A bullet summary + the brief's path (verbatim on request) |
+| Coder | Sonnet or Opus | Sonnet |
+| Code review | Up to 3 rounds | Up to 3 rounds (unchanged) |
+
+**Switch to full** when the brief reviewer raises a `blocker` or `major`
+finding, or the step turns out to meet a full-track criterion. The header and
+the index row are updated, and the user is told.
+
+**The light brief** (about a page):
+1. What will be built, and out of scope;
+2. Standards and practice: one or two lines;
+3. Where: files and what changes in each;
+4. Design decisions: only the real choices, with the rejected alternative;
+5. Tests and acceptance, with the important manual checks marked;
+6. Open questions and assumptions;
+7. Amendments; Review log.
+
+## Manual checks
+
+Some checks only a person can do: a real phone, a production step, how a screen
+feels. The ones that matter are marked **important** in the brief's tests
+section; the rest stay plain notes.
+
+- **The coder** copies them into the impl report's `## Manual checks`: each
+  important one as a box, `- [ ] …`; the rest as a plain list.
+- **At gate B** the planner shows the important ones as that checklist.
+- **The user** ticks each one or skips it with a reason. The planner records
+  it in the report (`[x]`, or `[skipped] <reason>`), never ticking a box on the
+  user's behalf.
+- **Done** needs every important check ticked or explicitly skipped; the status
+  records it, e.g. `Done (committed abc123; checks: 3 done, 1 skipped — iPhone)`.
 
 ## Findings
 
@@ -69,14 +123,17 @@ Status: Draft | In review | Approved DD-MM-YYYY by <user> | Implementing | In co
 1. **Brief review.** The brief goes from `Draft` to `In review`. Review rounds
    repeat until no `blocker` or `major` finding is open.
 2. **Approval.** Only the user sets `Approved`, after reading the brief as it
-   stands after the last review round. The planner shows its decision-relevant
-   sections verbatim (what, out of scope, standards, design decisions, open
-   questions) and lists the others by heading, rather than a summary. The coder
+   stands after the last review round. On the full track the planner shows its
+   decision-relevant sections verbatim (what, out of scope, standards, design
+   decisions, open questions) and lists the others by heading, rather than a
+   summary; on the light track, a bullet summary and the path (§ Tracks). The coder
    never starts on an unapproved brief. Anything the brief doesn't cover is raised with the user,
    not decided in code.
 3. **Code review.** Status `In code review`. Rounds repeat until no `blocker`
    or `major` finding is open.
-4. **Done.** The user commits; no terminal commits. The status becomes `Done`.
+4. **Done.** The user commits; no terminal commits. The status becomes `Done`
+   once the commit is confirmed and every important manual check is ticked or
+   explicitly skipped by the user (§ Manual checks).
 
 Whoever changes a step's status also updates its row in the index below.
 

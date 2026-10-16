@@ -61,8 +61,16 @@ The report follows CLAUDE-COMMON "Report after implementation":
 2. how it works;
 3. files touched;
 4. decisions taken, flagging any departure from the brief;
-5. not done, deferred or assumed, including what still needs a manual browser
-   check.
+5. not done, deferred or assumed;
+6. `## Manual checks`: every manual check from the brief. The ones marked
+   **important** as unticked boxes (`- [ ] …`), the rest as a plain list
+   (`docs/steps/README.md` § Manual checks). Never tick a box: only the user
+   does.
+
+**Track.** On a `Track: light` step, if you find it meets a full-track
+criterion (a migration, access checks, locking or concurrency, a new endpoint
+beyond plain CRUD; README § Tracks), stop and say so under **QUESTIONS FOR THE
+USER** before building that part.
 
 Finish with a short summary for the orchestrator:
 - tests run and their result;
