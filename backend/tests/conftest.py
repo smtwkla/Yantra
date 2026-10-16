@@ -289,3 +289,23 @@ def db_rows():
         finally:
             conn.close()
     return query
+
+
+# ---------------------------------------------------------------------------
+# One node in a fresh unit (shared by the document tests)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def unit(make_unit):
+    return make_unit()
+
+
+@pytest.fixture
+def node(make_equipment, unit):
+    return make_equipment(unit=unit)
+
+
+@pytest.fixture
+def at_unit(user_with_units, unit):
+    """at_unit(role) -> a client for a fresh user of that role holding the node's unit."""
+    return lambda role: user_with_units(role, [unit])

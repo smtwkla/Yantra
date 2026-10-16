@@ -8,6 +8,7 @@ as absolute numbers.  Unit-access tests each use a fresh username.
 import pymysql
 import pytest
 
+import api_common
 import config
 import equipment
 from local_db import get_local_db
@@ -604,7 +605,7 @@ class TestListing:
         ({"type_id": "x"}, "type_id"), ({"type_id": "0"}, "type_id"),
         # CR1-02: digits int() rejects, and pages past MAX_PAGE (an OFFSET MariaDB would refuse)
         ({"page": "²"}, "page"), ({"per_page": "²"}, "per_page"), ({"unit_id": "١"}, "unit_id"),
-        ({"page": str(equipment.MAX_PAGE + 1)}, "page"), ({"page": "10000000000000000000000000"}, "page"),
+        ({"page": str(api_common.MAX_PAGE + 1)}, "page"), ({"page": "10000000000000000000000000"}, "page"),
     ])
     def test_bad_parameters_are_400(self, admin, params, field):
         res = admin.get(EQUIPMENT, query_string=params)
@@ -614,7 +615,7 @@ class TestListing:
         body = _list(admin)
         assert (body["page"], body["per_page"]) == (1, 50)
         assert _list(admin, per_page=200)["per_page"] == 200
-        assert _list(admin, page=equipment.MAX_PAGE, per_page=200)["items"] == []
+        assert _list(admin, page=api_common.MAX_PAGE, per_page=200)["items"] == []
         assert admin.get(f"{EQUIPMENT}/").status_code == 200
 
     def test_paging_ordered_by_code_and_past_the_end(self, admin, make_unit, make_class, make_equipment):

@@ -4,11 +4,13 @@
  * - Database card: reachability, server and schema version.
  * - Uploads card: the upload size limit (S006 § 5.7), editable with settings:edit,
  *   read-only with settings:read. The backend validates the range.
+ * - Removed documents card: restore or delete for good, with equipment:purge_documents (S008).
  */
 import { computed, onMounted, ref } from "vue";
 import { apiGet, apiPut } from "../api";
 import { userPermissions } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
+import RemovedDocuments from "./settings/RemovedDocuments.vue";
 
 const status = ref(null);
 const loading = ref(false);
@@ -38,6 +40,7 @@ const UPLOAD_MAX_MB_MIN = 1;
 const UPLOAD_MAX_MB_MAX = 100;
 
 const canEditSettings = computed(() => userPermissions.value.includes("settings:edit"));
+const canPurgeDocuments = computed(() => userPermissions.value.includes("equipment:purge_documents"));
 const uploadMaxMb = ref(null);      // as stored
 const uploadMaxMbInput = ref(null); // as typed
 const appLoadError = ref("");
@@ -158,6 +161,8 @@ onMounted(() => {
         </dl>
       </div>
     </div>
+
+    <RemovedDocuments v-if="canPurgeDocuments" />
   </div>
 </template>
 

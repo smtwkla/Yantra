@@ -114,6 +114,7 @@ with each module. First cut of the main keys:
 | `equipment:read` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `equipment:edit` | | | ✓ | ✓ | ✓ |
 | `equipment:read_all_units` | | | | ✓ | ✓ |
+| `equipment:purge_documents` | | | | ✓ | ✓ |
 | `breakdown:raise` | ✓ | ✓ | ✓ | ✓ | |
 | `breakdown:work` | | ✓ | ✓ | ✓ | |
 | `breakdown:close` | | | ✓ | ✓ | |
@@ -129,7 +130,9 @@ admin only. `masters:read_senior` (IT admin) is needed to view users' unit acces
 engineers may be added in phase 3, when they assign work. `equipment:edit` covers equipment classes and equipment — engineers
 (and so the manager) and IT admin. `equipment:read_all_units` (decided 14-10-2026, S002) is a
 *scope* key: its holders see equipment at every unit; everyone else sees only the
-units in their unit access.
+units in their unit access. `equipment:purge_documents` (decided 16-10-2026, S008) —
+manager and IT admin — lists removed documents and restores or deletes them for
+good; erasing is kept apart from the everyday remove (ISO 27001 A.5.3, A.8.2).
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -186,7 +189,7 @@ CIL jobs at their units and nothing else.
   which embed the prefix. For sites and units it is change control (ISO 55001): OneERP
   warehouse names, printed lists and history snapshots follow the codes. Master records
   are deactivated, never deleted.
-- **Documents:** manuals, drawings, photos attached to a piece of equipment.
+- **Documents:** manuals, drawings, photos attached to a piece of equipment (S006), or to an equipment class or type and then shown read-only on every node of it, at every unit — one controlled copy (decided 16-10-2026, S009). Each node shows its own class's and type's documents, not its parent's.
 - **QR label:** printable per equipment; scanning it on a phone opens the equipment page, from where an operator can raise a breakdown or log a reading in one tap.
 
 ### 4.2 Breakdown tickets
@@ -320,7 +323,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `equipment_class_id` |
 | `equipment_events` | Equipment history: one row per move or change of status, criticality or class — old → new, who, when (S002) |
 | `user_units` | User (Keycloak username) → unit: the shop-floor access list |
-| `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006) |
+| `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008); owner is exactly one of node, class or type (S009) |
 | `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
 | `breakdowns` | Ticket: equipment, state, intensity, codes, remarks, serial |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |

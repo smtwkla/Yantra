@@ -12,7 +12,8 @@ under it.  If the transaction fails, the files just written are removed.
 
 Files are served only through these routes, after the access check (ISO 27001 A.8.3).
 A removed document keeps its row and its file (ISO 55001 controlled information) but is
-no longer listed or served.
+no longer listed or served.  A removed document can be restored or deleted for good by
+equipment:purge_documents (S008).
 """
 
 import logging
@@ -21,16 +22,19 @@ import secrets
 from flask import Blueprint, jsonify, request, send_file
 
 import file_store
-from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
+from api_common import (
+    DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
+    like_pattern,
+)
 from auth_utils import require_perm
 from config import MB
-from db_helpers import get_db, insert_row, row_to_dict, transaction, update_row
+from db_helpers import count, get_db, insert_row, row_to_dict, transaction, update_row
 from documents_core import (
-    SIGNATURE_BYTES, THUMB_EXTENSION, TYPE_REFUSED, FILE_TYPES, PhotoTooLarge, clean_original_name,
+    KINDS, SIGNATURE_BYTES, THUMB_EXTENSION, TYPE_REFUSED, FILE_TYPES, PhotoTooLarge, clean_original_name,
     detect_file_type, kind_accepts, make_thumbnail, safe_download_name, stored_name, thumb_name,
     validate_document, validate_title,
 )
-from equipment import load_node_for_user
+from equipment import NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path
 from equipment_core import SCRAPPED
 from settings import upload_max_mb
 
@@ -51,6 +55,8 @@ CACHE_MAX_AGE_S = 3600
 
 SCRAPPED_MESSAGE = "This record is scrapped and cannot be changed"
 STORAGE_UNAVAILABLE = "File storage is unavailable — try again later"
+FILE_LEFT_BEHIND = ("The record is deleted, but its file could not be removed from storage. "
+                    "Ask IT to remove it; the path is in the server log.")
 
 _ITEM_COLUMNS = ("id, kind, title, original_name, content_type, size_bytes, has_thumb,"
                  " created_at, created_by, updated_at, updated_by")
@@ -268,4 +274,127 @@ def remove_document(node_id, doc_id):
                     "WHERE id = %s AND equipment_id = %s AND removed_at IS NULL", (actor(), doc_id, node_id))
         if cur.rowcount == 0:
             raise ApiError("Not found", 404)
+    return "", 204
+
+
+# ---------------------------------------------------------------------------
+# Removed documents: list, restore, delete for good (S008)
+# ---------------------------------------------------------------------------
+
+_REMOVED_COLUMNS = (
+    "SELECT d.id, d.kind, d.title, d.original_name, d.content_type, d.size_bytes, d.created_at,"
+    " d.created_by, d.removed_at, d.removed_by, e.id AS equipment_id, e.code, e.name, e.level, e.status,"
+    " s.code AS site_code, u.code AS unit_code, p.code AS p_code, gp.code AS gp_code"
+)
+# An inner join: right while every document belongs to a node
+_REMOVED_FROM = " FROM equipment_documents d JOIN equipment e ON e.id = d.equipment_id" + NODE_JOINS
+
+_PATH_COLUMNS = ("site_code", "unit_code", "p_code", "gp_code")
+
+
+def _removed_item(row):
+    """A removed-list row as the API shows it: the node's unit and path instead of the
+    join columns they come from."""
+    item = row_to_dict({key: value for key, value in row.items() if key not in _PATH_COLUMNS})
+    item["unit"] = f"{row['site_code']}.{row['unit_code']}"
+    item["full_path"] = node_path(row)
+    return item
+
+
+@documents_bp.route("/removed-documents")
+@require_perm("equipment:purge_documents")
+def list_removed_documents():
+    page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
+    per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
+    conditions, params = ["d.removed_at IS NOT NULL"], []
+    kind = enum_arg("kind", KINDS)
+    if kind:
+        conditions.append("d.kind = %s")
+        params.append(kind)
+    q = (request.args.get("q") or "").strip()
+    if q:
+        # The original name too: phone photos are IMG_2034 in both title and file name
+        conditions.append("(e.code LIKE %s OR d.title LIKE %s OR d.original_name LIKE %s)")
+        params.extend([like_pattern(q)] * 3)
+
+    with get_db().cursor() as cur:
+        unit_ids = accessible_unit_ids(cur)
+        if unit_ids is not None:
+            if not unit_ids:
+                return jsonify({"items": [], "total": 0, "page": page, "per_page": per_page})
+            conditions.append(f"u.id IN ({', '.join(['%s'] * len(unit_ids))})")
+            params.extend(sorted(unit_ids))
+        where = f" WHERE {' AND '.join(conditions)}"
+        total = count(cur, f"SELECT COUNT(*) AS n{_REMOVED_FROM}{where}", params)
+        cur.execute(f"{_REMOVED_COLUMNS}{_REMOVED_FROM}{where} ORDER BY d.removed_at DESC, d.id DESC "
+                    "LIMIT %s OFFSET %s", [*params, per_page, (page - 1) * per_page])
+        items = [_removed_item(row) for row in cur.fetchall()]
+    return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
+
+
+@documents_bp.route("/<int:node_id>/documents/<int:doc_id>/restore", methods=["POST"])
+@require_perm("equipment:purge_documents")
+def restore_document(node_id, doc_id):
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_node_for_change(cur, node_id)   # (1); 404; 409
+        cur.execute("SELECT id, title, kind, removed_by, removed_at FROM equipment_documents "
+                    "WHERE id = %s AND equipment_id = %s AND removed_at IS NOT NULL", (doc_id, node_id))
+        doc = cur.fetchone()
+        if doc is None:
+            raise ApiError("Not found", 404)
+        # updated_at / updated_by record the last title edit, not a restore
+        cur.execute("UPDATE equipment_documents SET removed_at = NULL, removed_by = NULL WHERE id = %s", (doc_id,))
+        item = _item(_read_item(cur, node_id, doc_id))   # still under the node lock
+    logger.info("Document %s '%s' (%s) of node %s restored by %s; removed by %s at %s",
+                doc_id, doc["title"], doc["kind"], node_id, actor(), doc["removed_by"], doc["removed_at"])
+    return jsonify(item)
+
+
+def _remove_stored_files(node_id, doc):
+    """Delete the file and its thumbnail, each attempted on its own -> True when every file
+    is gone (or was already missing).  Logs what it finds; never raises."""
+    names = [doc["stored_name"]]
+    if doc["has_thumb"]:
+        names.append(thumb_name(doc["stored_name"]))
+    all_gone = True
+    for name in names:
+        path = file_store.file_path(node_id, name)
+        try:
+            if not file_store.remove_file(path):
+                # The same sign _serve logs: the mount or the backup is wrong.  The outcome is fine.
+                logger.warning("File already missing when deleting document %s of node %s: %s",
+                               doc["id"], node_id, path)
+        except OSError as exc:
+            all_gone = False
+            logger.error("Could not delete file %s of document %s, node %s: errno %s, %s",
+                         path, doc["id"], node_id, exc.errno, exc.strerror)
+    return all_gone
+
+
+@documents_bp.route("/<int:node_id>/documents/<int:doc_id>/purge", methods=["POST"])
+@require_perm("equipment:purge_documents")
+def purge_document(node_id, doc_id):
+    conn = get_db()
+    # Row first, then the files (brief § 5.3): after the commit nothing can restore the
+    # document, so a file is never deleted from under a live row.
+    with transaction(conn), conn.cursor() as cur:
+        # No scrapped check: erasing a file is disposition of information, not a change to
+        # the asset record
+        load_node_for_user(cur, node_id, for_update=True)   # (1); 404
+        cur.execute("SELECT id, title, kind, stored_name, has_thumb, created_by, removed_by, removed_at "
+                    "FROM equipment_documents WHERE id = %s AND equipment_id = %s", (doc_id, node_id))
+        doc = cur.fetchone()
+        if doc is None:
+            raise ApiError("Not found", 404)
+        if doc["removed_at"] is None:
+            raise ApiError("Remove the document first", 409)
+        cur.execute("DELETE FROM equipment_documents WHERE id = %s AND equipment_id = %s", (doc_id, node_id))
+    # After the commit, so it is never logged for a rolled-back delete, and before the file
+    # I/O, so it is there even if that hangs
+    logger.info("Document %s '%s' (%s, %s) of node %s deleted for good by %s; uploaded by %s, removed by %s at %s",
+                doc_id, doc["title"], doc["kind"], doc["stored_name"], node_id, actor(), doc["created_by"],
+                doc["removed_by"], doc["removed_at"])
+    if not _remove_stored_files(node_id, doc):
+        return jsonify({"warning": FILE_LEFT_BEHIND})
     return "", 204

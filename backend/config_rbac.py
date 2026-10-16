@@ -42,6 +42,9 @@ PERMISSIONS = {
     # unit-access rows), so it departs from the read_basic/read/read_senior naming.
     "equipment:read_all_units": ("maint_manager", "it_admin"),
     "equipment:edit": ("maint_engineer", "it_admin"),
+    # Removed documents (S008): list them, restore one, delete one for good.  Senior roles
+    # only: engineers remove, but do not bring back or erase (ISO 27001 A.5.3, A.8.2).
+    "equipment:purge_documents": ("maint_manager", "it_admin"),
 
     # Masters — machine register, locations, codes
     "masters:read": ("*",),

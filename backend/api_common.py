@@ -80,3 +80,33 @@ def clean_body(validator, creating):
     if errors:
         raise ApiError(errors[0]["message"], 400, errors[0]["field"])
     return clean
+
+
+DEFAULT_PER_PAGE = 50
+MAX_PER_PAGE = 200
+# Far past any real register (MAX_PAGE x MAX_PER_PAGE = 20 million rows), and it keeps
+# the OFFSET a number MariaDB accepts: an unbounded page overflows it (error 1064).
+MAX_PAGE = 100_000
+
+
+def int_arg(name, default, minimum, maximum=None):
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    # isascii: str.isdigit() also accepts digits such as '²' that int() rejects
+    if not (raw.isascii() and raw.isdigit()) or int(raw) < minimum or (maximum is not None and int(raw) > maximum):
+        bounds = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
+        raise ApiError(f"{name} must be a whole number {bounds}", 400, name)
+    return int(raw)
+
+
+def enum_arg(name, allowed):
+    raw = request.args.get(name)
+    if raw is not None and raw not in allowed:
+        raise ApiError(f"{name} must be one of: {', '.join(allowed)}", 400, name)
+    return raw
+
+
+def like_pattern(text):
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

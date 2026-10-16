@@ -56,5 +56,16 @@ def remove_quietly(path):
         logger.warning("Could not remove %s during clean-up: %s", path, exc)
 
 
+def remove_file(path):
+    """Remove one file -> True, or False when it was already missing (the caller logs that).
+    Any other OSError propagates: unlike remove_quietly, this is the deletion itself, not
+    clean-up after another error."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def is_file(path):
     return os.path.isfile(path)

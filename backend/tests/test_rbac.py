@@ -84,9 +84,10 @@ class TestComputePermissions:
         ("maint_technician",  {"equipment:read", "masters:read"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit"}),
         ("maint_manager",     {"equipment:read", "equipment:read_all_units", "masters:read", "equipment:edit",
-                               "settings:read"}),
+                               "equipment:purge_documents", "settings:read"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
-                               "masters:read_senior", "equipment:edit", "settings:read", "settings:edit"}),
+                               "masters:read_senior", "equipment:edit", "equipment:purge_documents",
+                               "settings:read", "settings:edit"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):

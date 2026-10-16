@@ -29,7 +29,7 @@ only when the write needs it:
   equipment, and takes a class before a type, as here; this module never locks sites
   or user_units and locks units/classes/types only after any equipment rows.  So no
   lock cycle spans the two modules.
-- documents.py (S006) takes lock (1) only, briefly, through LOCK_EQUIPMENT and
+- documents.py (S006, S008) takes lock (1) only, briefly, through LOCK_EQUIPMENT and
   load_node_for_user, and then touches equipment_documents rows, which nothing else
   locks; so it adds no lock cycle.
 """
@@ -38,7 +38,10 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
-from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
+from api_common import (
+    DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
+    like_pattern,
+)
 from auth_utils import has_perm, require_perm
 from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
@@ -54,12 +57,6 @@ UNIQUE_KEY_ERRORS.update({
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-DEFAULT_PER_PAGE = 50
-MAX_PER_PAGE = 200
-# Far past any real register (MAX_PAGE x MAX_PER_PAGE = 20 million rows), and it keeps
-# the OFFSET a number MariaDB accepts: an unbounded page overflows it (error 1064).
-MAX_PAGE = 100_000
-
 # The root equipment's grade at every depth.  A CASE that picks the root row rather
 # than a COALESCE over the levels: if an equipment's grade were ever NULL, a COALESCE
 # would fall through to a component unit's grade and hide the error.
@@ -70,8 +67,7 @@ _ROOT_CRITICALITY = (
 
 # The one place a node's unit is resolved: a part's unit is its root equipment's,
 # at most two steps up.  For plain reads only — never with FOR UPDATE.
-_NODE_FROM = (
-    " FROM equipment e"
+NODE_JOINS = (
     " LEFT JOIN equipment p ON p.id = e.parent_id"
     " LEFT JOIN equipment gp ON gp.id = p.parent_id"
     " JOIN units u ON u.id = COALESCE(gp.unit_id, p.unit_id, e.unit_id)"
@@ -79,6 +75,7 @@ _NODE_FROM = (
     " JOIN equipment_classes c ON c.id = e.class_id"
     " LEFT JOIN equipment_types t ON t.id = e.type_id"
 )
+_NODE_FROM = " FROM equipment e" + NODE_JOINS
 
 _NODE_COLUMNS = (
     "SELECT e.id, e.code, e.level, e.parent_id, e.class_id, e.type_id, e.name, e.make, e.model,"
@@ -127,7 +124,7 @@ def _reread(cur, node_id, message="This record changed while saving — try agai
     return node
 
 
-def _path(node):
+def node_path(node):
     codes = [c for c in (node["gp_code"], node["p_code"], node["code"]) if c]
     return full_path(node["site_code"], node["unit_code"], codes)
 
@@ -145,7 +142,7 @@ def _summary(node):
         "type_name": node["type_name"],
         "unit_id": node["root_unit_id"],
         "unit": f"{node['site_code']}.{node['unit_code']}",
-        "full_path": _path(node),
+        "full_path": node_path(node),
         "effective_criticality": effective_criticality(node["criticality"], node["root_criticality"]),
         "status": node["status"],
     }
@@ -201,10 +198,11 @@ def _detail(cur, node):
 
 
 # ---------------------------------------------------------------------------
-# Unit access — only these helpers, the list and /my-units touch _accessible_unit_ids
+# Unit access — only these helpers, the list, /my-units and documents.py's removed list
+# touch accessible_unit_ids
 # ---------------------------------------------------------------------------
 
-def _accessible_unit_ids(cur):
+def accessible_unit_ids(cur):
     """None = every unit (equipment:read_all_units; admin bypasses has_perm).  Otherwise the
     user's active units — an empty set is no access at all, not an error."""
     if has_perm("equipment:read_all_units"):
@@ -215,7 +213,7 @@ def _accessible_unit_ids(cur):
 
 
 def _can_access(cur, unit_id):
-    unit_ids = _accessible_unit_ids(cur)
+    unit_ids = accessible_unit_ids(cur)
     return unit_ids is None or unit_id in unit_ids
 
 
@@ -344,7 +342,7 @@ def _check_parts_scrapped(cur, node_id):
 
 
 def _tracked_state(node):
-    return {**node, "full_path": _path(node)}
+    return {**node, "full_path": node_path(node)}
 
 
 def _written_state(cur, node_id, unit=None, equipment_class=None, equipment_type=None):
@@ -371,50 +369,27 @@ def _this_year():
 # List
 # ---------------------------------------------------------------------------
 
-def _int_arg(name, default, minimum, maximum=None):
-    raw = request.args.get(name)
-    if raw is None:
-        return default
-    # isascii: str.isdigit() also accepts digits such as '²' that int() rejects
-    if not (raw.isascii() and raw.isdigit()) or int(raw) < minimum or (maximum is not None and int(raw) > maximum):
-        bounds = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
-        raise ApiError(f"{name} must be a whole number {bounds}", 400, name)
-    return int(raw)
-
-
-def _enum_arg(name, allowed):
-    raw = request.args.get(name)
-    if raw is not None and raw not in allowed:
-        raise ApiError(f"{name} must be one of: {', '.join(allowed)}", 400, name)
-    return raw
-
-
-def _like_pattern(text):
-    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
-
-
 @equipment_bp.route("/", strict_slashes=False)
 @require_perm("equipment:read")
 def list_equipment():
-    page = _int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
-    per_page = _int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
+    page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
+    per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
     conditions, params = [], []
     for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
                          ("type_id", "e.type_id")):
-        value = _int_arg(name, None, minimum=1)
+        value = int_arg(name, None, minimum=1)
         if value is not None:
             conditions.append(f"{column} = %s")
             params.append(value)
-    status = _enum_arg("status", STATUSES)
+    status = enum_arg("status", STATUSES)
     if status:
         conditions.append("e.status = %s")
         params.append(status)
-    criticality = _enum_arg("criticality", CRITICALITIES)
+    criticality = enum_arg("criticality", CRITICALITIES)
     if criticality:
         conditions.append(f"COALESCE(e.criticality, {_ROOT_CRITICALITY}) = %s")
         params.append(criticality)
-    level = _enum_arg("level", (*LEVELS, "all")) or "equipment"
+    level = enum_arg("level", (*LEVELS, "all")) or "equipment"
     if level != "all":
         conditions.append("e.level = %s")
         params.append(level)
@@ -422,13 +397,13 @@ def list_equipment():
     if q:
         # The type name too, so "closed" finds closed-execution pumps whatever their names say
         conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s)")
-        params.extend([_like_pattern(q)] * 4)
+        params.extend([like_pattern(q)] * 4)
     if request.args.get("include_scrapped") != "1":
         conditions.append("e.status <> 'scrapped'")
 
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
     with get_db().cursor() as cur:
-        unit_ids = _accessible_unit_ids(cur)
+        unit_ids = accessible_unit_ids(cur)
         if unit_ids is not None:
             if not unit_ids:
                 return jsonify(empty)
@@ -453,7 +428,7 @@ def my_units():
     then empty); otherwise the user's active units.  Lets the pickers avoid choices the
     write endpoints would refuse with 403."""
     with get_db().cursor() as cur:
-        unit_ids = _accessible_unit_ids(cur)
+        unit_ids = accessible_unit_ids(cur)
     return jsonify({"all_units": unit_ids is None, "unit_ids": [] if unit_ids is None else sorted(unit_ids)})
 
 
