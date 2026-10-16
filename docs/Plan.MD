@@ -190,7 +190,7 @@ CIL jobs at their units and nothing else.
   which embed the prefix. For sites and units it is change control (ISO 55001): OneERP
   warehouse names, printed lists and history snapshots follow the codes. Master records
   are deactivated, never deleted.
-- **Documents:** manuals, drawings, photos attached to a piece of equipment (S006), or to an equipment class or type and then shown read-only on every node of it, at every unit — one controlled copy (decided 16-10-2026, S009). Each node shows its own class's and type's documents, not its parent's.
+- **Documents:** manuals, drawings, photos attached to a piece of equipment (S006). Not on equipment classes or types: a class or type mixes products of different makers, so manufacturer documentation belongs to an equipment **model**, a master still to be built (decided 16-10-2026; S009 dropped).
 - **QR label:** printable per equipment; scanning it on a phone opens the equipment page, from where an operator can raise a breakdown or log a reading in one tap.
 
 ### 4.2 Breakdown tickets
@@ -328,7 +328,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
 | `technicians` | Maintenance people, or one record per contractor firm: name, in-house / contract, optional Yantra login (S010) |
 | `technician_trades` | Technician → trades (S010) |
-| `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008); owner is exactly one of node, class or type (S009) |
+| `equipment_documents` | Files attached to equipment: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
 | `breakdowns` | Ticket: equipment, state, intensity, codes, remarks, serial |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |

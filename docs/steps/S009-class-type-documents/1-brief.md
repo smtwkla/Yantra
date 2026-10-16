@@ -3,10 +3,19 @@ Step: S009 — Documents on classes and types
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-reviews r1 and r2)
-Status: Approved 16-10-2026 by KLA
+Status: Dropped 16-10-2026
 ```
 
 # S009 — Documents on classes and types
+
+> **Dropped 16-10-2026 by KLA.** Built and reviewed (three code-review rounds,
+> clean), then dropped before commit: an equipment class or type mixes products
+> of different makers (an `Extruder` class holds a new Haendle and an old Daruvar
+> de-airing mill), so there is hardly anything to attach at that level.
+> Manufacturer documentation belongs to the product, an equipment **model** —
+> a master still to be built (queued in the README). The code was reverted to
+> `c11a549`; the full diff is kept in `s009-code.patch` beside this brief, for
+> the model step to reuse. Migration v7 of this step never reached production.
 
 S006 attaches documents and photos to one node of the equipment tree. A manual
 that applies to every radial piston pump then has to be uploaded to `RPP001`,
@@ -423,7 +432,189 @@ the same six routes as S006 § 8, with the permissions of § 5.1:
 
 ## 11. Amendments
 
-(none)
+### A1 — Class and type documents on the removed-documents screen
+
+```
+Requested by: KLA, 16-10-2026 ("S008 is now done, we need to bring both together")
+Status: Dropped 16-10-2026 (see A2)
+```
+
+The follow-up queued at gate A (§ 10.3): S008's Settings card lists, restores
+and deletes for good only **node** documents. With A1 it covers **class and
+type** documents too, so a removed `RPP` manual can be brought back or erased
+like any other.
+
+#### What
+
+1. **The removed list** (`GET /api/equipment/removed-documents`) also returns
+   removed class and type documents, in the same order (`removed_at DESC, id
+   DESC`), the same paging and the same `kind` and `q` filters.
+2. **Restore** and **delete for good** work for class and type documents.
+3. **The card** shows such a row with "Class *RPP — Radial piston pump*" or
+   "Type *RPP — Closed execution*" in the Equipment column, as plain text (no
+   link: Masters sections aren't routes), with no path and no scrapped state.
+
+#### Rules
+
+- **Who:** `equipment:purge_documents`, as S008. Class and type rows are **not
+  unit-scoped**: they are visible at every unit (§ 2, A.8.3, confirmed at gate
+  A), so a manager limited to some units sees every removed class and type
+  document. Node rows keep S008's unit scope.
+- **The list query:** a `UNION ALL` of two branches with the same columns, then
+  `ORDER BY`, `LIMIT`/`OFFSET` over the union, and the `COUNT(*)` over the same
+  union:
+  - the **node branch** is S008's query unchanged (inner join to `equipment` +
+    `NODE_JOINS`, unit scope);
+  - the **class/type branch** reads documents with `class_id` or `type_id` set,
+    `LEFT JOIN`s `equipment_classes` and `equipment_types` (and the type's
+    class), and has no unit condition. When the user has no units at all (an
+    empty set), the node branch is left out, not the whole list.
+  - `q` matches, in this branch, the class code, the type name, the title and
+    the original name (the node branch keeps its own: node code, title,
+    original name).
+- **Each item** gains `owner` (`equipment` | `class` | `type`) and `path` (the
+  owner's documents collection URL, as the `inherited` groups carry it, BR1-06),
+  and the card builds the action URLs as `path` + `/<id>/restore` or `/purge`.
+  For a class or type item: `equipment_id`, `level`, `status`, `unit` and
+  `full_path` are `null`; `code` is the class code and `name` the label above.
+  Node items are unchanged apart from the two new keys.
+- **Restore and purge** move to the owner pattern: three stacked route
+  decorators each (§ 3), `/<owner prefix>/<int:owner_id>/documents/<int:doc_id>/restore`
+  and `/purge`. The node URLs stay the same.
+  - Restore: lock the owner (`lock_for_change`: a node also refuses scrapped,
+    409, as S008; a class or type has no such state), then S008 § 5.2 steps 2–5
+    with the owner's column.
+  - Purge: lock the owner with access but **no scrapped check** (S008 § 5.3
+    step 1), then S008 § 5.3 steps 2–6 with the owner's column and folder
+    (`file_store.file_path(owner, owner_id, name)`). A node keeps
+    `load_node_for_user(for_update=True)`; a class or type uses its plain lock.
+  - The log lines name the owner ("of class 3", "of type 7") instead of "of
+    node".
+- **Lock order:** still exactly one owner lock per write (§ 5.3).
+- The "not yet (S009 § 10.3)" comments in `documents.py` go.
+
+#### Where
+
+- `backend/documents.py`: the list's union and item builder; restore and purge
+  generalised; docstring.
+- `frontend/src/views/settings/RemovedDocuments.vue`: the class/type row
+  rendering; action URLs from `path`; the Restore button disabled only for a
+  scrapped **node**.
+- `backend/tests/test_removed_documents_api.py`: the new cases below.
+
+#### Tests
+
+- A removed class document and a removed type document are listed, with
+  `owner`, `path`, the label as `name` and the `null` node fields; `total`
+  counts them; order by removal across node and class rows; paging across the
+  union (filtered by `q`, as S008's isolation rule asks).
+- `q` with the class code finds the class document and that class's node
+  documents; `kind=photo` filters both branches.
+- A user limited to one unit sees class and type rows but not another unit's
+  node rows; a user with no units sees only class and type rows.
+- Restore and purge of a class and of a type document: 200 / 204, the file gone
+  from its owner folder after purge, the INFO line names the owner; purge of an
+  active class document → 409; a class document through another class's or a
+  node's route → 404; operator and engineer → 403.
+- The S008 tests pass with behaviour and assertions unchanged.
+
+#### Manual checks
+
+- Remove a class document in Masters; Settings → Removed documents shows it
+  as "Class RPP — …"; Restore brings it back on Masters and on every `RPP`
+  page; remove it again and delete it for good.
+- The same for a type document.
+
+#### Coder model
+
+**Opus**: transactions and locking (restore and purge generalised to three
+owners) and a paged `UNION ALL` query.
+
+#### Open points
+
+- **Owner filter on the card** (All / Equipment / Classes / Types): not
+  proposed; `q` with a class code covers it. Say if you want it.
+
+### A2 — Drop the type owner: documents on classes only
+
+```
+Requested by: KLA, 16-10-2026 ("drop the type from this")
+Status: Dropped 16-10-2026 — overtaken: the whole step was dropped (class documents removed too)
+```
+
+Documents on an equipment **type** have hardly any real use: a type says how a
+class is built (pilot-operated, direct-operating), and manufacturer
+documentation belongs to the product, the **model** (ISO 14224 lists the model
+designation as an equipment attribute of its own; EN 13460's supplier
+documentation is per product). A model master doesn't exist yet; it is queued
+as its own step. So S009 keeps two owners, the **node** and the **class**.
+Class documents keep their modest use: what holds for every machine of a kind,
+whoever made it (an isolation procedure, a one-point lesson, standard-condition
+photos).
+
+Where this amendment and the text above disagree, this amendment wins; the text
+above is not rewritten.
+
+#### What is removed
+
+- **Backend:** the `type` entry of `OWNERS`; the type route decorator on each of
+  the six operations; the type group in the node list's `inherited`; the
+  `type` → `equipment-types/` folder in `file_store`; the type lines in the
+  docstrings.
+- **Frontend:** the Documents button and documents view on
+  **Masters → Equipment types**; the "From type …" heading code where it is
+  type-specific (the generic group rendering in `DocumentsCards` stays); the
+  `"type"` value of `everyUnit`.
+- **Tests:** the type cases; the class cases stay. The node list's `inherited`
+  then holds at most the class group.
+
+#### Migration v8 (append-only; v7 stays as applied)
+
+v7 is applied on the dev and test databases (never on production), so it is
+not edited (CLAUDE-COMMON: migrations are append-only, user's choice (a),
+16-10-2026). v8, each statement safe to run twice:
+
+```sql
+-- Rows owned by a type exist only on dev/test DBs (v7 never reached production)
+DELETE FROM equipment_documents WHERE type_id IS NOT NULL;
+-- The CHECK names type_id, so it goes before the column and comes back with two owners
+ALTER TABLE equipment_documents DROP CONSTRAINT IF EXISTS chk_equipment_documents_owner;
+ALTER TABLE equipment_documents DROP FOREIGN KEY IF EXISTS fk_equipment_documents_type;
+ALTER TABLE equipment_documents DROP INDEX IF EXISTS ix_equipment_documents_type;
+ALTER TABLE equipment_documents DROP COLUMN IF EXISTS type_id;
+ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+    CHECK ((equipment_id IS NOT NULL) + (class_id IS NOT NULL) = 1);
+```
+
+- **For the coder to verify on the dev DB:** whether `DROP INDEX` must come after
+  `DROP FOREIGN KEY` (it does here); if MariaDB refuses any statement, say which
+  and how it was reordered.
+- The `DELETE` leaves a type document's file behind under
+  `DATA_DIR/equipment-types/` on a dev machine: harmless, never served.
+- On production, v7 and v8 run together on the first deploy; the table then has
+  `equipment_id` and `class_id` only.
+
+#### Tests
+
+- The CHECK test: two owners, or none, still fails on
+  `chk_equipment_documents_owner`.
+- A migration test, if the suite has the pattern: after v8, `type_id` is gone.
+- Everything else as § 9, without the type cases.
+
+#### Manual checks
+
+- Masters → Equipment types: no Documents button.
+- An equipment page shows its own documents and "From class …" only.
+
+#### Coder model
+
+**Sonnet**: it only removes code along an existing pattern, plus a small
+migration.
+
+#### A1
+
+**Dropped** (16-10-2026): the removed-documents screen gets non-node owners once,
+in the model step, for class and model documents together.
 
 ## Review log
 
