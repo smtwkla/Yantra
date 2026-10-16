@@ -3,7 +3,7 @@ Step: S006 — Documents and photos on equipment
 Doc: brief
 Author: Planner (Opus)
 Date: 15-10-2026 (revised 15-10-2026 after brief-reviews r1, r2 and r3; 16-10-2026 title edit added at gate A)
-Status: In code review (approved 16-10-2026 by KLA)
+Status: Done (committed 76d7282, 16-10-2026)
 ```
 
 # S006 — Documents and photos on equipment
