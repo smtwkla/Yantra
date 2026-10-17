@@ -9,7 +9,6 @@ import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
 import StatusBadge from "../components/StatusBadge.vue";
-import { userPermissions } from "../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
@@ -34,8 +33,11 @@ const moveModal = ref(null);
 const statusModal = ref(null);
 
 const scrapped = computed(() => node.value?.status === "scrapped");
-// No actions while another node is loading: they would act on the node still on screen
-const canEdit = computed(() => userPermissions.value.includes("equipment:edit") && !scrapped.value && !loading.value);
+// No actions while another node is loading: they would act on the node still on screen.
+// Rights follow the node's site (S011): the API sends the user's keys at that site.
+const canEdit = computed(
+  () => (node.value?.permissions ?? []).includes("equipment:edit") && !scrapped.value && !loading.value
+);
 const siteAndUnit = computed(() => node.value.unit.split("."));
 const classLabel = computed(() => {
   const cls = (equipmentClasses.value ?? []).find((c) => c.id === node.value.class_id);

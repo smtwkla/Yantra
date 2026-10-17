@@ -28,7 +28,7 @@ const classChoices = computed(() => (equipmentClasses.value ?? []).filter((c) =>
 async function reload() {
   loadError.value = "";
   try {
-    await Promise.all([ensureEquipmentClasses(), ensureEquipmentTypes()]);
+    await Promise.all([ensureEquipmentClasses({ refresh: true }), ensureEquipmentTypes({ refresh: true })]);
   } catch (err) {
     loadError.value = err.message;
   }

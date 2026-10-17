@@ -24,4 +24,7 @@ KEYCLOAK_CLIENT_ID = "vel-yantra-master"
 KEYCLOAK_HOST_IP = ""
 
 # Role used by DEV_AUTH_BYPASS=1 (dev only). Change to test as a non-admin.
+# "admin" or "it_admin": a token role, at every site.  A site role ("maint_engineer", ...):
+# that role at every site, all units.  "maintenance_team": logged in with no access, to see
+# the "no access yet" page (S011 § 5.8).
 # DEV_STUB_ROLE = "admin"

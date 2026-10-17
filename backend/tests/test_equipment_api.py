@@ -780,10 +780,11 @@ class TestUnitAccess:
         client = role_client("maint_engineer", uniq.username())
         assert _list(client, level="all") == {"items": [], "total": 0, "page": 1, "per_page": 50}
 
-    def test_username_is_compared_lower_case(self, admin, role_client, uniq, two_units):
+    def test_username_is_compared_lower_case(self, make_person, role_client, uniq, two_units):
         unit_a, _, mill_a, _ = two_units
         username = uniq.username()
-        admin.put(f"{MASTERS}/user-units/{username}", json={"unit_ids": [unit_a["id"]]})
+        make_person(username=username, sites=[{"site_id": unit_a["site_id"], "role": "maint_technician",
+                                               "all_units": False, "unit_ids": [unit_a["id"]]}])
         client = role_client("maint_technician", username.upper())
         assert _get(client, mill_a)["id"] == mill_a["id"]
 
@@ -862,7 +863,8 @@ class TestMyUnits:
         engineer = user_with_units("maint_engineer", [unit_a, unit_b])
         res = engineer.get(f"{EQUIPMENT}/my-units")
         assert res.status_code == 200
-        assert res.get_json() == {"all_units": False, "unit_ids": sorted([unit_a["id"], unit_b["id"]])}
+        ids = sorted([unit_a["id"], unit_b["id"]])
+        assert res.get_json() == {"all_units": False, "unit_ids": ids, "edit_unit_ids": ids}
 
     def test_inactive_units_are_left_out(self, admin, user_with_units, make_unit):
         active, inactive = make_unit(), make_unit()
@@ -870,14 +872,35 @@ class TestMyUnits:
         assert admin.put(f"{MASTERS}/units/{inactive['id']}", json={"active": False}).status_code == 200
         assert engineer.get(f"{EQUIPMENT}/my-units").get_json()["unit_ids"] == [active["id"]]
 
-    @pytest.mark.parametrize("role", ["maint_manager", "it_admin", "admin"])
-    def test_senior_roles_get_all_units(self, user_with_units, make_unit, role):
+    @pytest.mark.parametrize("role", ["it_admin", "admin"])
+    def test_token_roles_get_all_units(self, user_with_units, make_unit, role):
+        """S011: only IT admin (token) and admin see every unit; managers see their sites'."""
         client = user_with_units(role, [make_unit()])
-        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": True, "unit_ids": []}
+        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": True, "unit_ids": [],
+                                                                   "edit_unit_ids": None}
+
+    def test_a_manager_with_all_units_of_a_site_gets_its_active_units(self, admin, user_at_sites, make_site,
+                                                                        make_unit):
+        site = make_site()
+        unit_a, unit_b, gone = make_unit(site), make_unit(site), make_unit(site)
+        admin.put(f"{MASTERS}/units/{gone['id']}", json={"active": False})
+        manager, _ = user_at_sites([(site, "maint_manager", "all")])
+        body = manager.get(f"{EQUIPMENT}/my-units").get_json()
+        assert body["all_units"] is False
+        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]]) == body["edit_unit_ids"]
+
+    def test_edit_units_are_where_edit_is_held(self, user_at_sites, make_site, make_unit):
+        site_a, site_b = make_site(), make_site()
+        unit_a, unit_b = make_unit(site_a), make_unit(site_b)
+        client, _ = user_at_sites([(site_a, "maint_engineer", [unit_a]), (site_b, "maint_operator", [unit_b])])
+        body = client.get(f"{EQUIPMENT}/my-units").get_json()
+        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]])
+        assert body["edit_unit_ids"] == [unit_a["id"]]
 
     def test_a_user_with_no_rows_gets_an_empty_list(self, role_client, uniq):
         client = role_client("maint_engineer", uniq.username())
-        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": False, "unit_ids": []}
+        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": False, "unit_ids": [],
+                                                                   "edit_unit_ids": []}
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_engineer", "maint_manager",
                                       "it_admin", "maint_storekeeper"])

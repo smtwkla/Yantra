@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopbar from "./components/layout/AppTopbar.vue";
@@ -8,6 +8,9 @@ import UpdateToast from "./components/layout/UpdateToast.vue";
 import { authenticated, authError, logout, userPermissions } from "./stores/auth";
 import { canOpenRoute, landingPath } from "./stores/navigation";
 import { startVersionChecks, stopVersionChecks } from "./stores/appVersion";
+import NoAccessView from "./views/NoAccessView.vue";
+
+const noAccess = computed(() => authenticated.value && userPermissions.value.length === 0);
 
 // Watch for newer deployed builds — a tab left open on the shop floor would
 // otherwise keep running old JS indefinitely. See stores/appVersion.js.
@@ -33,7 +36,9 @@ watch(userPermissions, (perms) => {
       <AppTopbar class="topbar-desktop no-print" />
       <main class="app-content">
         <AppTopbar class="topbar-mobile no-print" />
-        <router-view />
+        <!-- Signed in with no permission anywhere: no nav items, and this page instead (S011) -->
+        <NoAccessView v-if="noAccess" />
+        <router-view v-else />
       </main>
     </div>
     <UpdateToast class="no-print" />

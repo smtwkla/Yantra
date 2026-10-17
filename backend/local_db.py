@@ -201,6 +201,82 @@ _MIGRATIONS = [
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
         "INSERT IGNORE INTO app_settings (setting_key, setting_value) VALUES ('upload_max_mb', '20')",
     ]),
+    # Trades and the Team register of people (S010, amendment A1).  A person is named as the
+    # user chooses: a person, or a contractor firm; never deleted, only deactivated, so
+    # tickets can name them.  Every statement is safe to run twice, as in v5.
+    # Edited in place for A1 (technicians -> people) before any commit or deploy; the dev
+    # databases were reset (S010 3-impl-report, Amendment A1).
+    (7, "Trades, people", [
+        """CREATE TABLE IF NOT EXISTS trades (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(50) NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_trades_name UNIQUE (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS people (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(100) NOT NULL,
+            employment  ENUM('direct','contractor') NOT NULL,
+            username    VARCHAR(100) NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_people_username UNIQUE (username)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS person_trades (
+            person_id   INT NOT NULL,
+            trade_id    INT NOT NULL,
+            granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            granted_by  VARCHAR(100) NOT NULL,
+            PRIMARY KEY (person_id, trade_id),
+            CONSTRAINT fk_person_trades_person FOREIGN KEY (person_id) REFERENCES people (id),
+            CONSTRAINT fk_person_trades_trade FOREIGN KEY (trade_id) REFERENCES trades (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
+    # Roles per site, held in Yantra (S011, amendment A1): a person's role at a site, with all
+    # the site's units or the chosen ones (person_units).  role is text validated against
+    # config_rbac.SITE_ROLES, one list to keep.  SQL only and additive, every statement safe
+    # to re-run: user_units is copied, not dropped, so the previous release still runs on
+    # this schema (rollback, S011 § 5.7); a later step drops it.  The copied rows have no
+    # membership yet, so they grant nothing until IT admin adds a role.  People created for
+    # legacy usernames are found by created_by = 'migration-v8'; a username already held by
+    # an inactive person attaches to that person.
+    (8, "Memberships (role per site), person units", [
+        """CREATE TABLE IF NOT EXISTS memberships (
+            person_id   INT NOT NULL,
+            site_id     INT NOT NULL,
+            role        VARCHAR(30) NOT NULL,
+            all_units   TINYINT(1) NOT NULL DEFAULT 0,
+            granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            granted_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            PRIMARY KEY (person_id, site_id),
+            CONSTRAINT fk_memberships_person FOREIGN KEY (person_id) REFERENCES people (id),
+            CONSTRAINT fk_memberships_site FOREIGN KEY (site_id) REFERENCES sites (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS person_units (
+            person_id   INT NOT NULL,
+            unit_id     INT NOT NULL,
+            granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            granted_by  VARCHAR(100) NOT NULL,
+            PRIMARY KEY (person_id, unit_id),
+            CONSTRAINT fk_person_units_person FOREIGN KEY (person_id) REFERENCES people (id),
+            CONSTRAINT fk_person_units_unit FOREIGN KEY (unit_id) REFERENCES units (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """INSERT INTO people (name, employment, username, created_by)
+            SELECT DISTINCT uu.username, 'direct', uu.username, 'migration-v8' FROM user_units uu
+            WHERE NOT EXISTS (SELECT 1 FROM people p WHERE p.username = uu.username)""",
+        """INSERT IGNORE INTO person_units (person_id, unit_id, granted_at, granted_by)
+            SELECT p.id, uu.unit_id, uu.granted_at, uu.granted_by
+            FROM user_units uu JOIN people p ON p.username = uu.username""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

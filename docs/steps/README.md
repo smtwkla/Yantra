@@ -215,8 +215,9 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S007 | [Dialog close guard; Nginx and deploy fixes](S007-dialog-guard-deploy-fixes/1-brief.md) — no lost input in dialogs; backend re-resolved; recreate on a secrets change | 2 | Done — committed 11789d7 + 7b504f4 | 16-10-2026 |
 | S008 | [Removed documents](S008-removed-documents/1-brief.md) — list removed files on Settings, restore, delete for good | 2 | Done — committed 799851c | 16-10-2026 |
 | S009 | [Documents on classes and types](S009-class-type-documents/1-brief.md) — one manual for every `RPP` pump, shown on each node | 2 | Dropped 16-10-2026 — documents belong on a model master (queued); code kept as `s009-code.patch` | 16-10-2026 |
-| S010 | [Technicians and trades](S010-technicians/1-brief.md) — maintenance people, in-house or contract firm, trades, optional login | 2 | Implementing (approved 16-10-2026) | 16-10-2026 |
-| S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | Approved 16-10-2026 (coding after S010 is committed) | 16-10-2026 |
+| S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | In code review — amendment A1 (Team; A1 approved 16-10-2026) | 16-10-2026 |
+| S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | In code review (A1 approved 16-10-2026; built on uncommitted S010, baseline tree 15227de) | 16-10-2026 |
+| S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | Approved 17-10-2026 — coded after S010/S011 are committed | 16-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -227,4 +228,4 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 |---|---|---|
 | QR labels | Plan.MD phase 2 | Called "S007" in S006's brief, before S007–S009 were assigned |
 | Malware scanning of uploads (ISO 27001 A.8.7) | user, 16-10-2026 | S006 § 10.3; ClamAV in its own container is the candidate |
-| Equipment models: a model master (manufacturer + model designation), equipment picks its model in place of free-text make/model, documents on the model; class and model documents on the removed-documents screen | user, 16-10-2026 | Replaces the dropped S009; its brief and `s009-code.patch` (owner columns + CHECK, inherited groups, Masters in-panel view) are reusable |
+| Drop the legacy `user_units` table | S011 A1, 16-10-2026 | After S011 is live and a rollback is no longer wanted (S011 A1 rule 3) |

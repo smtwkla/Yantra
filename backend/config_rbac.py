@@ -1,6 +1,6 @@
 """RBAC policy — single source of truth for roles and permissions.
 
-ROLES: ordered most → least privileged.
+ROLES: ordered most → least privileged (the order is for display: the "role" /auth/me shows).
 ROLE_INCLUDES: maps a role to roles it inherits (transitive).
 PERMISSIONS: maps 'module:action' → tuple of granted roles.
 
@@ -11,6 +11,14 @@ Rules:
   - Order entries to match sidebar nav order for readability.
   - ROLE_INCLUDES is expanded transitively by compute_permissions().
 
+Where roles come from (S011, a deliberate departure from the base RBAC pattern, which takes
+every role from the token):
+  - TOKEN_ROLES and admin come from Keycloak: they hold at every site.
+  - SITE_ROLES come from Yantra's database, one per person and site (table memberships):
+    a role's keys hold only at that site (SITE_SCOPED keys) and add to the global union
+    (every other key).  The DB stores the role as text, validated against SITE_ROLES.
+  - LOGIN_ROLE lets a user log in and grants nothing by itself.
+
 Roles and the first-cut permission matrix: docs/Plan.MD § 3.
 """
 
@@ -20,27 +28,53 @@ ROLES = (
     "maint_engineer",
     "it_admin",
     "maint_storekeeper",
+    "maint_supervisor",
     "maint_technician",
     "maint_operator",
 )
+
+# Keycloak client roles that grant permissions.  admin comes from the realm (auth_utils).
+TOKEN_ROLES = ("it_admin",)
+
+# The Keycloak client role that only lets a user log in; deliberately not in ROLES, so it
+# matches no ('*',) key and grants nothing: access comes from memberships.
+LOGIN_ROLE = "maintenance_team"
+
+# The roles a person holds per site (S011, A1), in the order the Team dialog offers them
+SITE_ROLES = (
+    "maint_manager",
+    "maint_engineer",
+    "maint_supervisor",
+    "maint_technician",
+    "maint_operator",
+    "maint_storekeeper",
+)
+
+# The one role an engineer may give at their site, and the one a person without a login
+# may hold (S011 A1, user decisions at gate A)
+TECHNICIAN_ROLE = "maint_technician"
 
 # Role inheritance — a role automatically gains all permissions of included roles.
 # Maintenance is a ladder: manager ⊇ engineer ⊇ technician ⊇ maint_operator.
 # it_admin stands apart: housekeeping and settings, not maintenance work.
 # maint_storekeeper stands apart too: issuing stock is not part of the
 # maintenance ladder. No v1 permissions beyond '*' — spares come later.
+# maint_supervisor is production-side (TPM autonomous maintenance): above the operator,
+# off the maintenance ladder, so a supervisor does not work tickets.
 ROLE_INCLUDES = {
     "maint_manager": ("maint_engineer",),
     "maint_engineer": ("maint_technician",),
     "maint_technician": ("maint_operator",),
+    "maint_supervisor": ("maint_operator",),
 }
 
 PERMISSIONS = {
     # Equipment — the equipment register (S002) and equipment classes
     "equipment:read": ("*",),
     # A scope key, not a read level: it says *where* (every unit, not only the user's
-    # unit-access rows), so it departs from the read_basic/read/read_senior naming.
-    "equipment:read_all_units": ("maint_manager", "it_admin"),
+    # memberships), so it departs from the read_basic/read/read_senior naming.  Managers get
+    # their breadth from "all units of the site" in their membership instead (S011 § 5.3).
+    "equipment:read_all_units": ("it_admin",),
     "equipment:edit": ("maint_engineer", "it_admin"),
     # Removed documents (S008): list them, restore one, delete one for good.  Senior roles
     # only: engineers remove, but do not bring back or erase (ISO 27001 A.5.3, A.8.2).
@@ -49,9 +83,26 @@ PERMISSIONS = {
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
     "masters:edit": ("it_admin",),
-    "masters:read_senior": ("it_admin",),   # users' unit access
+    "masters:read_senior": ("it_admin",),   # everyone's logins and access
+
+    # Team and trades (S010 A1): the maintenance side knows who can do what; IT admin
+    # maintains masters too.  Managers inherit it from the engineer.  A person's login, and
+    # the active flag of a person who has one, need masters:edit as well (masters.py).
+    "people:edit": ("maint_engineer", "it_admin"),
+    # Engineers assign Technicians at their own site (S011 A1, gate A): the one grant
+    # delegated to the maintenance side; every other role is IT admin's (masters:edit).
+    "people:assign_technicians": ("maint_engineer", "it_admin"),
 
     # Settings — DB status, escalation times, notification channels
     "settings:read": ("maint_manager", "it_admin"),
     "settings:edit": ("it_admin",),
 }
+
+# Keys checked at the record's site (has_perm_at, accessible_unit_ids).  Every later
+# breakdown, PM, reading and report key joins this list.  A key not listed here is global.
+SITE_SCOPED = frozenset({
+    "equipment:read",
+    "equipment:edit",
+    "equipment:purge_documents",
+    "people:assign_technicians",
+})

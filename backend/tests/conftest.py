@@ -29,16 +29,33 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
 config.DB_CONFIG["database"] = "vel_yantra_test"
 
+from access_core import Membership
 from app import app as flask_app
-from auth_utils import compute_permissions
+from auth_utils import make_user
+from config_rbac import LOGIN_ROLE, SITE_ROLES, TOKEN_ROLES
 from db_helpers import transaction
 from local_db import ensure_schema, get_local_db
+from tests.access_helpers import site_rows
 
 
 # ---------------------------------------------------------------------------
 # Inject g.user when the X-Test-Role header is present. Registered once at
 # import time so it works even after the first request has been served.
 # ---------------------------------------------------------------------------
+
+def harness_user(role_name, username):
+    """The g.user for an X-Test-Role header (S011 § 5.8):
+    - a site role: that role at every site (a wildcard membership; DB memberships ignored),
+      all units only for the manager; the unit rows come from the DB, as in production;
+    - admin, it_admin, maintenance_team: token roles; memberships from the DB, as in production;
+    - anything else ("nobody"): no token role and no membership, never a wildcard."""
+    name = f"Test {role_name}"
+    if role_name in SITE_ROLES:
+        return make_user(username, name, [LOGIN_ROLE], [Membership(None, role_name, role_name == "maint_manager")])
+    if role_name in ("admin", LOGIN_ROLE, *TOKEN_ROLES):
+        return make_user(username, name, [role_name])
+    return make_user(username, name, [], [])
+
 
 @flask_app.before_request
 def _inject_test_user():
@@ -47,18 +64,13 @@ def _inject_test_user():
     if not role_name or not current_app.config.get("TESTING"):
         return
     # X-Test-User gives a unit-access test its own fresh username (default test_<role>)
-    g.user = {
-        "username": request.headers.get("X-Test-User") or f"test_{role_name}",
-        "name": f"Test {role_name}",
-        "role": role_name,
-        "roles": [role_name],
-        "permissions": compute_permissions([role_name]),
-    }
+    g.user = harness_user(role_name, request.headers.get("X-Test-User") or f"test_{role_name}")
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("equipment_documents", "equipment_events", "equipment", "equipment_types", "user_units", "units",
-           "sites", "equipment_classes", "serial_counters")
+_TABLES = ("person_units", "memberships", "person_trades", "people", "trades", "equipment_documents",
+           "equipment_events", "equipment", "equipment_types", "user_units", "units", "sites", "equipment_classes",
+           "serial_counters")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -180,6 +192,9 @@ class Uniq:
     def type_name(self):
         return f"Type {self._next():04d}"
 
+    def trade_name(self):
+        return f"Trade {self._next():04d}"
+
     def username(self):
         return f"user{self._next():04d}"
 
@@ -267,13 +282,56 @@ def make_type(admin, uniq, make_class):
 
 
 @pytest.fixture
-def user_with_units(role_client, admin, uniq):
-    """A client for a fresh username holding exactly the given units."""
+def make_trade(admin, uniq):
+    def make(**overrides):
+        body = {"name": uniq.trade_name(), **overrides}
+        res = admin.post(f"{MASTERS}/trades", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_person(admin):
+    """make_person() -> a direct employee with no trades and no login; trades=[t, ...] to give some.
+    Created by IT admin, who may also set a login (username=...); a login save carries the
+    person's sites (S011 A1 rule 1), none unless sites=[...] is given."""
+    def make(trades=None, **overrides):
+        body = {"name": "Test person", "employment": "direct", "trade_ids": [t["id"] for t in trades or []],
+                **overrides}
+        if body.get("username"):
+            body.setdefault("sites", [])
+        res = admin.post(f"{MASTERS}/people", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def user_with_units(role_client, make_person, uniq):
+    """A client for a fresh username holding exactly the given units: a person with that login
+    and the role at the units' sites.  With X-Test-Role a site role holds at every site
+    (S011 § 5.8), so the units are what counts.  For a token role (it_admin, admin) nothing is
+    written: a token role sees every unit anyway."""
     def make(role, units):
         username = uniq.username()
-        res = admin.put(f"{MASTERS}/user-units/{username}", json={"unit_ids": [u["id"] for u in units]})
-        assert res.status_code == 200, res.get_json()
+        if role in SITE_ROLES:
+            make_person(name=f"User {username}", username=username, sites=site_rows(role, units))
         return role_client(role, username)
+    return make
+
+
+@pytest.fixture
+def user_at_sites(role_client, make_person, uniq):
+    """user_at_sites([(site, role, units_or_"all"), ...]) -> a maintenance_team client whose
+    real memberships are exactly these (the per-site cases: the X-Test-Role wildcard would
+    hide "at B -> 403").  The person is returned too: (client, person)."""
+    def make(spec):
+        username = uniq.username()
+        sites = [{"site_id": site["id"], "role": role, "all_units": units == "all",
+                  "unit_ids": [] if units == "all" else [u["id"] for u in units]} for site, role, units in spec]
+        person = make_person(name=f"User {username}", username=username, sites=sites)
+        return role_client(LOGIN_ROLE, username), person
     return make
 
 

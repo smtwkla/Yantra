@@ -1,9 +1,12 @@
 /**
- * Masters cache — sites, units, equipment classes and types, fetched once and shared.
+ * Masters cache — sites, units, equipment classes and types, trades, fetched once and shared.
  *
- * Lists include inactive records (consumers filter on `active`). After any
- * master is saved, call resetMasters() so the next ensureX() fetches fresh
- * data — a renamed site changes the full codes shown on its units.
+ * Lists include inactive records (consumers filter on `active`). Pickers (the equipment
+ * form, the move dialog) take the cached copy: a list a few minutes old is harmless there.
+ * The Masters panels pass `{ refresh: true }` so the screen that shows and edits a list
+ * always shows what is in the database now, including what another user just added.
+ * After any master is saved, call resetMasters() so every other list is fetched fresh
+ * on its next ensureX() — a renamed site changes the full codes shown on its units.
  */
 
 import { ref } from "vue";
@@ -13,29 +16,36 @@ export const sites = ref(null);
 export const units = ref(null);
 export const equipmentClasses = ref(null);
 export const equipmentTypes = ref(null);
+export const trades = ref(null);
 
 async function fetchItems(path) {
   return (await apiGet(`/api/masters/${path}?include_inactive=1`)).items;
 }
 
-export async function ensureSites() {
-  if (sites.value === null) sites.value = await fetchItems("sites");
-  return sites.value;
+// Fills `target` from the API when it is empty or `refresh` asks for it; returns the list
+async function ensure(target, path, refresh) {
+  if (refresh || target.value === null) target.value = await fetchItems(path);
+  return target.value;
 }
 
-export async function ensureUnits() {
-  if (units.value === null) units.value = await fetchItems("units");
-  return units.value;
+export function ensureSites({ refresh = false } = {}) {
+  return ensure(sites, "sites", refresh);
 }
 
-export async function ensureEquipmentClasses() {
-  if (equipmentClasses.value === null) equipmentClasses.value = await fetchItems("equipment-classes");
-  return equipmentClasses.value;
+export function ensureUnits({ refresh = false } = {}) {
+  return ensure(units, "units", refresh);
 }
 
-export async function ensureEquipmentTypes() {
-  if (equipmentTypes.value === null) equipmentTypes.value = await fetchItems("equipment-types");
-  return equipmentTypes.value;
+export function ensureEquipmentClasses({ refresh = false } = {}) {
+  return ensure(equipmentClasses, "equipment-classes", refresh);
+}
+
+export function ensureEquipmentTypes({ refresh = false } = {}) {
+  return ensure(equipmentTypes, "equipment-types", refresh);
+}
+
+export function ensureTrades({ refresh = false } = {}) {
+  return ensure(trades, "trades", refresh);
 }
 
 /** Id of the active default site, or null when none is set. Used to preselect pick-one site fields. */
@@ -48,4 +58,5 @@ export function resetMasters() {
   units.value = null;
   equipmentClasses.value = null;
   equipmentTypes.value = null;
+  trades.value = null;
 }

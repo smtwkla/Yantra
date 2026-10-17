@@ -1,9 +1,11 @@
-"""Keycloak token validation and the auth middleware.
+"""Keycloak token validation, the auth middleware and /api/auth/me.
 
 Tokens are signed with a throwaway RSA key and the JWKS lookup is stubbed,
-so these run without a Keycloak server.
+so these run without a Keycloak server.  From S011 a token's maintenance roles are
+ignored: maintenance_team lets a user log in, and the roles come from memberships.
 """
 
+import logging
 import time
 
 import jwt
@@ -12,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 import auth_utils
 import config
+import db_helpers
 
 CLIENT_ID = config.KEYCLOAK_CLIENT_ID
 
@@ -32,9 +35,9 @@ def stub_jwks(monkeypatch):
     monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _StubJWKClient(_KEY))
 
 
-def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY):
+def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe"):
     payload = {
-        "preferred_username": "jdoe",
+        "preferred_username": username,
         "name": "John Doe",
         "azp": azp,
         "exp": int(time.time()) + exp_in,
@@ -44,34 +47,51 @@ def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY)
     return jwt.encode(payload, key, algorithm="RS256")
 
 
+def _bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _validate(app, token):
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = _bearer(token) if token else {}
     with app.test_request_context("/api/auth/me", headers=headers):
         return auth_utils.validate_keycloak_token("https://sso.example/realms/R", CLIENT_ID)
 
 
+@pytest.fixture
+def db_down(monkeypatch):
+    """Every get_db() in the request raises DBUnavailable, as while the database is down."""
+    monkeypatch.setattr(db_helpers, "ensure_schema", lambda _config: "Can't connect (test)")
+
+
 class TestValidateToken:
 
-    def test_storekeeper_client_role_accepted(self, app):
-        user = _validate(app, _token(client_roles=["maint_storekeeper"]))
-        assert user["roles"] == ["maint_storekeeper"]
-        assert user["permissions"] == ["equipment:read", "masters:read"]
+    def test_login_role_accepted_and_grants_nothing(self, app):
+        user = _validate(app, _token(client_roles=["maintenance_team"]))
+        assert user["roles"] == ["maintenance_team"]
+        assert user["permissions"] == []
 
     def test_realm_role_maps_to_user(self, app):
-        user = _validate(app, _token(realm_roles=["maint_operator", "offline_access"]))
+        user = _validate(app, _token(realm_roles=["maintenance_team", "offline_access"]))
         assert user["username"] == "jdoe"
         assert user["name"] == "John Doe"
-        assert user["roles"] == ["maint_operator"]
-        assert user["permissions"] == ["equipment:read", "masters:read"]
+        assert user["roles"] == ["maintenance_team"]
 
     def test_client_roles_count_too(self, app):
         user = _validate(app, _token(client_roles=["it_admin"]))
         assert user["role"] == "it_admin"
 
-    def test_multiple_roles_primary_is_most_privileged(self, app):
-        user = _validate(app, _token(realm_roles=["maint_operator", "maint_manager"]))
-        assert user["roles"] == ["maint_manager", "maint_operator"]
-        assert user["role"] == "maint_manager"
+    def test_it_admin_and_login_role_together(self, app):
+        user = _validate(app, _token(client_roles=["maintenance_team", "it_admin"]))
+        assert user["roles"] == ["it_admin", "maintenance_team"]
+        assert user["role"] == "it_admin"
+
+    def test_old_maintenance_roles_alone_are_rejected(self, app):
+        assert _validate(app, _token(realm_roles=["maint_operator", "maint_manager"])) is None
+
+    def test_old_maintenance_roles_are_kept_as_stale(self, app):
+        user = _validate(app, _token(client_roles=["maintenance_team", "maint_engineer"]))
+        assert user["roles"] == ["maintenance_team"] and user["permissions"] == []
+        assert user["stale_roles"] == ["maint_engineer"]
 
     @pytest.mark.parametrize("admin_role", ["admin", "mspv-apps-admin"])
     def test_admin_realm_roles_map_to_admin(self, app, admin_role):
@@ -83,13 +103,13 @@ class TestValidateToken:
         assert _validate(app, _token(realm_roles=["offline_access"])) is None
 
     def test_wrong_client_is_rejected(self, app):
-        assert _validate(app, _token(realm_roles=["maint_operator"], azp="other-app")) is None
+        assert _validate(app, _token(realm_roles=["maintenance_team"], azp="other-app")) is None
 
     def test_expired_token_is_rejected(self, app):
-        assert _validate(app, _token(realm_roles=["maint_operator"], exp_in=-60)) is None
+        assert _validate(app, _token(realm_roles=["maintenance_team"], exp_in=-60)) is None
 
     def test_bad_signature_is_rejected(self, app):
-        assert _validate(app, _token(realm_roles=["maint_operator"], key=_OTHER_KEY)) is None
+        assert _validate(app, _token(realm_roles=["maintenance_team"], key=_OTHER_KEY)) is None
 
     def test_missing_header_is_rejected(self, app):
         assert _validate(app, None) is None
@@ -104,14 +124,24 @@ class TestMiddleware:
     def test_protected_path_without_token_is_401(self, client):
         assert client.get("/api/auth/me").status_code == 401
 
-    def test_valid_bearer_token_reaches_route(self, client):
-        token = _token(realm_roles=["maint_engineer"])
-        res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    def test_old_role_token_is_401(self, client):
+        assert client.get("/api/auth/me", headers=_bearer(_token(realm_roles=["maint_engineer"]))).status_code == 401
+
+    def test_valid_bearer_token_reaches_route(self, client, make_unit, make_person, uniq):
+        unit = make_unit()
+        login = uniq.username()
+        make_person(username=login, sites=[{"site_id": unit["site_id"], "role": "maint_engineer",
+                                            "all_units": True, "unit_ids": []}])
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"], username=login)))
         assert res.status_code == 200
         body = res.get_json()
         assert body["name"] == "John Doe"
         assert body["role"] == "maint_engineer"
+        assert body["roles"] == ["maintenance_team"]
         assert "equipment:edit" in body["permissions"]
+        assert body["db_unavailable"] is False
+        assert body["sites"] == [{"site_id": unit["site_id"], "site_code": unit["site_code"],
+                                  "role": "maint_engineer", "all_units": True}]
 
     def test_auth_config_exposes_realm_and_client(self, client):
         body = client.get("/api/auth/config").get_json()
@@ -121,6 +151,63 @@ class TestMiddleware:
             "clientId": CLIENT_ID,
             "devBypass": False,
         }
+
+
+class TestLoginOnly:
+    """S011 § 5.1, § 8: maintenance_team without a membership logs in and sees nothing."""
+
+    def test_me_is_200_with_nothing(self, client, uniq):
+        headers = _bearer(_token(client_roles=["maintenance_team"], username=uniq.username()))
+        body = client.get("/api/auth/me", headers=headers).get_json()
+        assert body["permissions"] == [] and body["sites"] == [] and body["role"] is None
+        assert client.get("/api/equipment", headers=headers).status_code == 403
+
+    def test_an_inactive_person_has_no_access(self, client, admin, make_unit, make_person, uniq):
+        unit = make_unit()
+        login = uniq.username()
+        person = make_person(username=login, sites=[{"site_id": unit["site_id"], "role": "maint_operator",
+                                                     "all_units": True, "unit_ids": []}])
+        headers = _bearer(_token(client_roles=["maintenance_team"], username=login))
+        assert client.get("/api/equipment", headers=headers).status_code == 200
+        assert admin.put(f"/api/masters/people/{person['id']}", json={"active": 0}).status_code == 200
+        # Deactivating ends access on the next request (A1 rule 3)
+        assert client.get("/api/equipment", headers=headers).status_code == 403
+        assert client.get("/api/auth/me", headers=headers).get_json()["permissions"] == []
+
+
+class TestStaleRolesWarning:
+    """§ 5.1, BR2-04: one WARNING from /auth/me, none from other routes."""
+
+    def _stale(self, caplog):
+        return [r for r in caplog.records if "still carries old Keycloak roles" in r.getMessage()]
+
+    def test_logged_from_me_only(self, client, caplog, uniq):
+        headers = _bearer(_token(client_roles=["maintenance_team", "maint_engineer"], username=uniq.username()))
+        with caplog.at_level(logging.WARNING):
+            client.get("/api/masters/sites", headers=headers)
+            assert self._stale(caplog) == []
+            client.get("/api/auth/me", headers=headers)
+        assert len(self._stale(caplog)) == 1
+        assert "maint_engineer" in self._stale(caplog)[0].getMessage()
+
+
+class TestDatabaseDown:
+    """§ 5.2: the token answers what it can; /auth/me says the database is down."""
+
+    def test_it_admin_gets_token_permissions(self, client, db_down):
+        body = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["it_admin"]))).get_json()
+        assert body["db_unavailable"] is True and body["sites"] is None
+        assert body["permissions"] == auth_utils.compute_permissions(["it_admin"])
+        assert body["role"] == "it_admin"
+
+    def test_login_only_user_gets_nothing(self, client, db_down):
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"])))
+        assert res.status_code == 200
+        assert res.get_json()["permissions"] == [] and res.get_json()["db_unavailable"] is True
+
+    def test_a_check_that_needs_memberships_is_503(self, client, db_down):
+        res = client.get("/api/masters/sites", headers=_bearer(_token(client_roles=["maintenance_team"])))
+        assert res.status_code == 503
 
 
 class TestInternalUrl:

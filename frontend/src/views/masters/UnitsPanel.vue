@@ -23,7 +23,7 @@ const siteChoices = computed(() => (sites.value ?? []).filter((s) => s.active ||
 async function reload() {
   loadError.value = "";
   try {
-    await Promise.all([ensureSites(), ensureUnits()]);
+    await Promise.all([ensureSites({ refresh: true }), ensureUnits({ refresh: true })]);
   } catch (err) {
     loadError.value = err.message;
   }

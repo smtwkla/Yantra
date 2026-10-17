@@ -16,7 +16,7 @@ const rows = computed(() => (sites.value ?? []).filter((s) => showInactive.value
 async function reload() {
   loadError.value = "";
   try {
-    await ensureSites();
+    await ensureSites({ refresh: true });
   } catch (err) {
     loadError.value = err.message;
   }

@@ -3,7 +3,7 @@ Step: S011 — Roles per site, held in Yantra
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-reviews r1, r2 and r3)
-Status: Approved 16-10-2026 by KLA
+Status: In code review (approved 16-10-2026 by KLA; A1 approved 16-10-2026)
 ```
 
 # S011 — Roles per site, held in Yantra
@@ -18,7 +18,9 @@ administrator.
 This step moves the maintenance roles into Yantra, per site, next to unit
 access. Keycloak keeps only who may log in at all, and IT admin.
 
-**Depends on:** S010 committed (migration v8); this step is migration **v9**.
+**Depends on:** S010 committed (migration v7); this step is migration **v8**
+(S009 was dropped on 16-10-2026, so the numbers moved down by one; no design
+change).
 It changes the RBAC core, so it is coded on **Opus** and is best done before
 phase 3 (breakdowns), while only masters and equipment use roles.
 
@@ -44,8 +46,7 @@ Background reading:
 - `backend/auth_utils.py`, `backend/config_rbac.py`, `backend/equipment.py`
   (`accessible_unit_ids`, `load_node_for_user`, `_load_target_node`,
   `_lock_target_unit`, `/my-units`, the lock-order docstring),
-  `backend/documents.py` (incl. S008's removed-documents routes and S009's
-  class/type documents), `backend/masters.py` (user units, `update_unit`),
+  `backend/documents.py` (incl. S008's removed-documents routes), `backend/masters.py` (user units, `update_unit`),
   `backend/app.py` (`/api/auth/me`), `backend/tests/conftest.py`
   (`X-Test-Role`, `user_with_units`);
 - `frontend/src/stores/auth.js`, `frontend/src/App.vue`,
@@ -120,7 +121,7 @@ Background reading:
 ## 3. Where
 
 ### Backend
-- **Migration v9** in `backend/local_db.py` (§ 4).
+- **Migration v8** in `backend/local_db.py` (§ 4).
 - **`backend/config_rbac.py`:**
   - `ROLES` unchanged (the six roles: order and the `('*',)` wildcard);
   - `TOKEN_ROLES = ("it_admin",)`; `LOGIN_ROLE = "maintenance_team"`, **not**
@@ -220,7 +221,7 @@ Background reading:
   that working tree; the user commits it.
 - `backend/example_secrets_app.py`: the `DEV_STUB_ROLE` comment (§ 5.8).
 
-## 4. Data model (migration v9)
+## 4. Data model (migration v8)
 
 **`memberships`**
 
@@ -327,8 +328,7 @@ don't change. Per route:
   re-parent: the node's site **and** the new parent's site;
 - documents upload, title edit, remove: the node's site; purge, restore: the
   document's node's site;
-- class and type documents (S009), equipment classes and types, technicians
-  (S010): no site; the **global** key applies.
+- equipment classes and types, technicians (S010): no site; the **global** key applies.
 The coder lists every write route with its check in the report.
 
 ### 5.5 User access (memberships)
@@ -396,7 +396,7 @@ The coder lists every write route with its check in the report.
    few users exist in production.
 4. **Remove the old `maint_*` client roles** once every user has a membership
    **and** a rollback to the previous release is no longer wanted (the old
-   code needs them; v9 only adds a table, so the old release runs on the new
+   code needs them; v8 only adds a table, so the old release runs on the new
    schema). The WARNING log line (§ 5.1) shows who still carries them.
 The implementation report repeats these steps with the exact Keycloak screens.
 
@@ -561,7 +561,175 @@ The implementation report repeats these steps with the exact Keycloak screens.
 
 ## 10. Amendments
 
-(none)
+### A1 — Site roles belong to people; Supervisor added
+
+```
+Requested by: KLA, 16-10-2026
+Status: Approved 16-10-2026 by KLA
+```
+
+**Why.** The user wants one register of people (S010 A1, "Team") and each
+person's role per site on that record, with or without a login (user,
+16-10-2026). For a person **without** a login, the site role says where they
+work and as what, so later screens can offer "technicians at SMTW". For a
+person **with** a login, the same rows are their **Yantra access**: what this
+step designed as memberships keyed by username now hangs off the person. The
+security design of § 5 (rights per site, the choke points, lazy loading,
+fail-closed, IT admin and admin in Keycloak) is unchanged.
+
+**What changes** (supersedes the parts of § 1, § 3–§ 8 named below):
+
+1. **Roles** (`config_rbac.SITE_ROLES`): `maint_manager`, `maint_engineer`,
+   **`maint_supervisor`** (new), `maint_technician`, `maint_operator`,
+   `maint_storekeeper`.
+   - **Supervisor** is production-side (user, 16-10-2026): an operator's rights
+     now (CIL, raise issues, readings), more reports later; usually given wider
+     units than an operator. `ROLE_INCLUDES["maint_supervisor"] =
+     ("maint_operator",)`: above operator, **off** the maintenance ladder, so a
+     supervisor does not work tickets. Today it grants exactly the operator's
+     keys. This replaces Plan § 3's "no supervisor role" (13-10-2026).
+   - `ROLES` gains `maint_supervisor`, after `maint_storekeeper` and before
+     `maint_technician`.
+2. **Data model** (migration **v8**, replacing § 4):
+   - **`memberships`**: `person_id` (FK `people`) instead of `username`;
+     `PRIMARY KEY (person_id, site_id)`; otherwise as § 4 (`role VARCHAR(30)`
+     validated against `SITE_ROLES`, `all_units`, granted/updated who and
+     when);
+   - **`person_units`** (`person_id`, `unit_id`, `granted_at`, `granted_by`):
+     the units within a site, replacing **`user_units`**;
+   - **legacy rows:** the migration moves every `user_units` row to
+     `person_units`, creating a person per distinct username that has no
+     person yet (name = the username, employment direct, login = the username),
+     then drops `user_units`. The moved rows have no membership yet, so they
+     show in Team with no role (as § 5.5's legacy rows) until IT admin adds
+     one. Each created person is logged in the migration's output.
+3. **Access** (§ 5.1–5.3): the token's username → the **active** person with
+   that login → their memberships and units. No such person, or an inactive
+   one → no access (`NoAccessView`). Deactivating a person ends their access
+   on their next request (ISO 27001 A.5.18, leavers).
+4. **Who edits site roles** (replaces § 5.5's permission line):
+   - a person **without** a login: `people:edit` (engineers, IT admin);
+   - a person **with** a login (their rows are access): `masters:edit` (IT
+     admin) only;
+   - nobody edits **their own** person's login or site roles (the § 5.5 own-
+     access rule, now by person);
+   - adding a login is IT admin's (S010 A1). The dialog then shows "Adding this
+     login gives access as: SMTW Technician (FWMILL, MCC1)…", so turning roles
+     into access is a visible, deliberate act;
+   - the check "has a login" is made on the **locked** person row, in the same
+     transaction as the role write (lock order: the person row → their
+     membership and unit rows → units), so an engineer's role edit can't race
+     IT admin adding a login.
+5. **API** (replaces `/user-access`): `PUT /api/masters/people/<id>/sites`
+   `{sites: [...]}` with the rules of § 5.5 (body shape, unknown site,
+   inactive site or unit kept-not-granted, one role, all-units xor units,
+   units of that site, diff keeping `granted_*`, INFO log only on change).
+   `GET /api/masters/people` adds `sites` per person for `people:edit` and
+   `masters:read_senior` holders. `/user-access` and `/user-units` are removed.
+6. **Frontend:** the "User access" section goes; the **Team** dialog (S010
+   A1) gains a "Sites and roles" section (site, role, all units / units), read-
+   only where the user may not edit it (a person with a login, for engineers).
+7. **Where else `user_units` was used:** `accessible_unit_ids`, `/my-units`,
+   `masters._unit_is_referenced` (now counts `person_units`), the test
+   fixtures (`user_with_units` creates a person with the login, then PUTs its
+   sites).
+
+**Standards.** As § 2. ISO 27001 A.5.18 now has one place for a joiner (create
+the person, IT admin adds the login and roles) and a leaver (deactivate the
+person: access ends, history keeps the name, S010 A.5.34 retention). A.5.3 /
+A.8.2: engineers can describe who works where, but only IT admin turns that
+into access.
+
+**Tests** (added to § 8):
+- a supervisor at A has the operator's keys at A and no `equipment:edit`;
+  `ROLE_INCLUDES` keeps it off the ladder (a `test_rbac` case);
+- an engineer sets site roles on a person without a login → 200; on a person
+  with a login → 403; IT admin → 200; anyone on their own person → 403;
+- an engineer's role edit and IT admin's login add on the same person: the
+  role edit, run after the login is committed, → 403 (the locked check);
+- the token's login matches an inactive person → no access (403 on data,
+  `NoAccessView`); deactivating a person removes access on the next request;
+- migration v8 on a DB with legacy `user_units` rows: people created for the
+  unknown usernames, rows moved, `user_units` gone, idempotent on a re-run;
+- `GET /people`: `sites` present for engineers and IT admin, absent for an
+  operator.
+
+**Open points.**
+- A person without a login can hold any role, including manager; it only
+  describes them (no access). Fine?
+- The legacy migration names created people after their username; IT admin
+  renames them in Team.
+
+#### A1 rules added after review (`2-brief-review-r4.md`)
+
+These override the A1 text above where they differ.
+
+1. **Granting with a login is one server-side act** (BR-A1-01). A `POST` or
+   `PUT /people` that **sets or changes** `username` must carry `sites` (400
+   field `sites` if missing); the login and the sites are written in one
+   transaction (lock order: the person row → their membership and unit rows →
+   units), replacing whatever sites the person had. So what IT admin sees and
+   sends is exactly what is granted, whatever an engineer saved in between.
+   One INFO line: actor, person, login, the roles granted. The dialog's
+   "Adding this login gives access as: …" line shows the sites being sent in
+   that same save. Clearing a login needs no `sites` (it removes access).
+2. **`active` of a person with a login is IT admin's** (BR-A1-02), matching
+   S010 A1 rule 1: `masters:edit`, checked on the locked row; the own-person
+   rule covers `active` too.
+3. **Migration v8 is SQL-only and additive** (BR-A1-03). `init_db` runs SQL
+   strings only, so:
+   - people for legacy usernames: `INSERT INTO people (name, employment,
+     username, created_by) SELECT DISTINCT uu.username, 'direct', uu.username,
+     'migration-v8' FROM user_units uu WHERE NOT EXISTS (SELECT 1 FROM people p
+     WHERE p.username = uu.username)`; a username already held by an
+     **inactive** person attaches to that person (it stays inactive, so no
+     access until IT admin reactivates);
+   - `INSERT IGNORE INTO person_units (person_id, unit_id, granted_at,
+     granted_by) SELECT …` keeping the original `granted_at/by`;
+   - **no `DROP TABLE user_units` in v8**: each statement is safe to re-run,
+     and the previous release, which reads `user_units`, still runs on the v8
+     schema, so the rollback of § 5.7 holds. `user_units` is no longer read
+     or written by S011's code; a later step drops it once rollback is no
+     longer wanted (queued);
+   - the created people are visible afterwards by `created_by =
+     'migration-v8'`, instead of a per-row log.
+4. **Own person, exactly** (BR-A1-04), with `normalise_username(actor())`, on
+   the locked row: setting `username` to one's own → 403 "You can't give
+   yourself a login" (S010 A1 rule 2); `PUT /people/<id>/sites` or `active` on
+   the person whose stored login is one's own → 403 "You can't change your own
+   access"; tests with a case-varied `X-Test-User`.
+5. **Who sees access, and the two-key route** (BR-A1-05). `GET /people`
+   returns `sites` (§ 6's shape, `[{site_id, site_code, active, role,
+   all_units, units}]`): to `people:edit` holders **for persons without a
+   login** only; for persons with a login, only to `masters:read_senior`
+   holders (IT admin), as Plan § 3 keeps access lists today and as S010 A1
+   rule 7 keeps logins. `PUT /people/<id>/sites` is decorated
+   `@require_perm("people:edit")`; inside, on the locked person row, a person
+   with a login additionally needs `masters:edit` (403 otherwise). IT admin
+   holds both.
+6. **Where, and docs** (BR-A1-06): Plan § 2 ("no production-supervisor
+   role" → supervisor added), § 3 (role table with Supervisor, the matrix
+   column, the "no special role" sentence), § 5 (`memberships` by person,
+   `person_units`), § 9.11; Maintenance-Philosophy § 11 (supervisor);
+   `docs/Keycloak.md` § 3.2, § 4, § 6, § 7 ("User access" → the Team
+   dialog); the `NoAccessView` text ("ask IT to add you in Team");
+   `test_role_matrix` and `navigation.test.js` supervisor rows;
+   `conftest._TABLES` (`person_units`, `memberships` before `people`); every
+   test calling `/user-units` (about nine) re-pointed; `person_units`
+   `PRIMARY KEY (person_id, unit_id)`, `fk_person_units_person`,
+   `fk_person_units_unit`; `ROLES` order is display-only. S011's body text
+   saying `technicians:edit` (§ 5.2, § 5.4, § 9.5) reads `people:edit`.
+7. **Testing the migration** (BR-A1-07): on the test DB, insert legacy
+   `user_units` rows, delete the `db_version` row 8, call `init_db` twice;
+   assert people created once, rows moved once, nothing else changed.
+8. **Standards** (BR-A1-08): the supervisor follows **TPM autonomous
+   maintenance**, where operators and their supervisors own cleaning,
+   inspection and lubrication of their machines (Plan § 9.10's CIL
+   verification may later sit with them); **EN 15628**'s "maintenance
+   supervisor" is a maintenance-side level (about an engineer here), not this
+   role; **ISO 27001 A.5.16 (identity management)**: one person record with
+   one login is where an identity's life cycle is managed; "six roles" →
+   seven (`ROLES` with `it_admin`).
 
 ## Review log
 
@@ -615,3 +783,124 @@ BR2-02 to BR2-08 verified in the text; BR2-01 was missing from § 5.3.
 - Assumptions § 9.1–9.5 confirmed; § 9.6: nobody changes their own access.
 - Coder: Opus (RBAC core, security-sensitive).
 - Approved by KLA. Coding starts after S010 is committed.
+
+### Amendment A1 — `2-brief-review-r4.md` (Fable), answered 16-10-2026
+
+One round, as the user asked; the answers are not re-reviewed. The three majors
+are answered in A1's "rules added after review" and put to the user at gate A.
+
+| Finding | Severity | Response |
+|---|---|---|
+| BR-A1-01 The "gives access as" line is a stale snapshot | major | **Accepted.** Setting or changing a login must carry `sites`, written in one transaction (rule 1). |
+| BR-A1-02 `active` of a person with a login is an access switch | major | **Accepted.** `masters:edit`, locked row; own-person rule covers it (rule 2; S010 A1 rule 1). |
+| BR-A1-03 Migration v8 can't run as described; rollback broken by the drop | major | **Accepted.** SQL-only, additive, no drop; inactive-person case stated; dropping `user_units` queued (rule 3). |
+| BR-A1-04 Own-person rule must block giving yourself a login | minor | **Accepted** (rule 4; S010 A1 rule 2). |
+| BR-A1-05 Engineers would see every plant's access | minor | **Accepted, option 2.** `sites` to engineers only for persons without a login; the two-key route spelled out (rule 5). |
+| BR-A1-06 Files, docs and tests not listed | minor | **Accepted** (rule 6). |
+| BR-A1-07 No harness for the migration re-run test | minor | **Accepted.** Rewind `db_version` on the test DB, run twice (rule 7). |
+| BR-A1-08 Standards | nit | **Accepted** (rule 8). |
+
+### Amendment A1 — user decisions at gate A, 16-10-2026
+
+- **A person without a login can only be a Technician** at a site. `PUT
+  /people/<id>/sites` on a person without a login → 400 field `role` "Without a
+  login, a person can only be a technician" for any other role. A person's
+  site roles describe them for pick-lists (labour on tickets and PM jobs);
+  operators, supervisors, engineers and managers are people who log in.
+  - **Clearing a login** (IT admin) must also carry `sites` that satisfy this
+    rule (only technician rows, or none), in the same transaction as rule 1,
+    so a person never keeps a manager row without a login (400 otherwise).
+  - The Team dialog offers only "Technician" in the role select while the
+    person has no login.
+  - Test: an engineer giving a person without a login the role engineer or
+    operator → 400; technician → 200; IT admin clearing a manager's login with
+    their manager row still sent → 400.
+- Engineers see the site roles only of people without a login (rule 5):
+  confirmed.
+- **Engineers assign technicians to sites** (user, 16-10-2026). This
+  delegates one limited grant to engineers; everything else about access stays
+  IT admin's.
+  - **Who and where:** a new site-scoped key `people:assign_technicians` =
+    `("maint_engineer", "it_admin")` (managers inherit; in `SITE_SCOPED`). An
+    engineer at SMTW assigns technicians at SMTW only.
+  - **What:** add a Technician row at that site, change its units or all-units,
+    or remove it, for **any** person, with or without a login. With a login
+    this is real access, kept low: Technician only, nothing higher.
+  - **Limits:** a row whose current role at that site is anything but
+    Technician can't be changed or removed by an engineer, and an engineer
+    can't give any other role (403 "Only IT admin can set this role"); never on
+    their own person (403, the own-person rule).
+  - **API:** per-site rows, so an engineer never has to send rows at sites
+    they can't see: `PUT /api/masters/people/<id>/sites/<site_id>`
+    `{role, all_units, unit_ids}` and `DELETE …/sites/<site_id>`. Each is
+    allowed when the actor holds `masters:edit`, or holds
+    `people:assign_technicians` at that site and both the stored and the new
+    role are Technician (or absent). Checked on the locked person row, then the
+    membership row. Replaces the whole-set `PUT /people/<id>/sites` of A1
+    point 5; rule 1's login-with-sites save (IT admin) keeps its whole-set
+    body.
+  - **Visibility** (rule 5 refined): for a person with a login, an engineer
+    sees that person's rows at the sites where they hold
+    `people:assign_technicians`, and `has_login`; not the login itself, nor
+    rows at other sites.
+  - **Logged** at INFO like every access change (actor, person, site, before,
+    after).
+  - **Tests:** engineer at A adds Technician at A for a person with a login →
+    200 and that person can now work at A; at B → 403; changes an operator row
+    at A → 403; gives Supervisor at A → 403; on own person → 403; IT admin →
+    any role; a person's rows at B are unchanged by an engineer's save at A.
+
+#### Rules added after the gate-A review (`2-brief-review-r5.md`)
+
+1. **Which key writes site rows** (BR-A1G-01). Both per-site routes are
+   decorated `@require_perm("people:assign_technicians")`; `people:edit` no
+   longer writes site rows anywhere (it supersedes A1 point 4's first line and
+   rule 5's decorator). § 1 / § 2 / § 7's "only IT admin edits memberships"
+   now reads "only IT admin grants roles above Technician; engineers assign
+   Technicians at their sites". Visibility for persons without a login stays
+   as rule 5.
+2. **The per-site contract** (BR-A1G-02):
+   - each row is its own request; the Team dialog saves changed rows one after
+     another and stops at the first refusal, showing it on that row (rows
+     already saved stay saved; the dialog reloads the person). The S007 guard
+     applies to the whole dialog;
+   - **editability comes from the backend:** `GET /people` gives each row
+     `editable: true/false`, and each person `assignable_site_ids` (sites
+     where the actor may add a Technician row); the frontend doesn't compute
+     RBAC;
+   - § 5.5's rules per row: `role` required; an inactive site or unit can be
+     kept on an existing row but not newly granted; `DELETE` of a missing row
+     → 404;
+   - refusal order: 400 (body, unknown site, the no-login rule) before 403
+     (the engineer limits);
+   - an inactive person may have rows (dormant: no access while inactive);
+   - responses are filtered like `GET /people`.
+3. **Units an engineer may give** (BR-A1G-03): any active unit of that site,
+   or all units. The site is the boundary, not the engineer's own units.
+4. **Tests** (BR-A1G-04), besides those listed above:
+   `test_rbac.py::test_role_matrix` and `navigation.test.js` gain
+   `people:assign_technicians` for engineer, manager and IT admin; the
+   per-site cases run with `maintenance_team` + real memberships (the
+   `X-Test-Role` wildcard would hide "at B → 403"); `DELETE` variants; a
+   person without a login at B → 403; IT admin giving Manager to a person
+   without a login → 400; visibility and `PUT` response filtering; the
+   `masters:edit` branch checked first (IT admin any role); rule 1's whole-set
+   save replacing an engineer's earlier row; `SITE_SCOPED` and holder
+   invariants; one INFO line per change.
+5. **Where and standards** (BR-A1G-05): `SITE_SCOPED` in § 3 gains the key;
+   Plan § 3 paragraph and matrix row; `.claude/CLAUDE.md`, `docs/Keycloak.md`
+   and the `NoAccessView` text say "ask IT or your engineer". Standards: ISO
+   27001 **A.5.18** allows access to be granted by the owner of the
+   information, here the site's engineer, with the same log; **A.8.2** least
+   privilege: the delegated grant is the lowest maintenance role only; **A.5.3**
+   still holds in code: nobody grants themselves, and roles above Technician
+   stay IT admin's; ISO 55001 § 5.3: the site's engineer answers for who works
+   on that site's assets.
+
+| Finding | Severity | Response |
+|---|---|---|
+| BR-A1G-01 Superseded text and the route's key | minor | **Accepted** (rule 1). |
+| BR-A1G-02 Per-site contract and the dialog's save | minor | **Accepted** (rule 2). |
+| BR-A1G-03 Which units an engineer may give | minor | **Accepted.** Any unit of the site (rule 3). |
+| BR-A1G-04 Tests | minor | **Accepted** (rule 4). |
+| BR-A1G-05 Docs and standards | nit | **Accepted** (rule 5). |

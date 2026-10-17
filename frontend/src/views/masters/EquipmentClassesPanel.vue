@@ -19,7 +19,7 @@ const rows = computed(() => (equipmentClasses.value ?? []).filter((c) => showIna
 async function reload() {
   loadError.value = "";
   try {
-    await ensureEquipmentClasses();
+    await ensureEquipmentClasses({ refresh: true });
   } catch (err) {
     loadError.value = err.message;
   }

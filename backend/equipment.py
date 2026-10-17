@@ -25,10 +25,17 @@ only when the write needs it:
   checks and display values.
 - Ancestors are never locked.  The scrap check locks the subtree top-down, the
   reverse of the order above: the one accepted deadlock (brief § 6 Locking).
-- masters.py locks units, sites, classes, equipment types and user_units but never
-  equipment, and takes a class before a type, as here; this module never locks sites
-  or user_units and locks units/classes/types only after any equipment rows.  So no
-  lock cycle spans the two modules.
+- masters.py locks units, sites, classes, equipment types, people, memberships and
+  person_units but never equipment, and takes a class before a type, as here; this
+  module never locks sites, people, memberships or person_units (it reads memberships
+  and person_units plain, for the site checks, S011) and locks units/classes/types only
+  after any equipment rows.  So no lock cycle spans the two modules.  masters.py's own
+  site-role writes lock person → their membership and person_units rows → units, and
+  the membership insert then takes the site's row through its FK: unit → site, the
+  order update_unit uses.
+- Every write checks its key at the record's site (S011 § 5.4) inside the three choke
+  points below (load_node_for_user, _load_target_node, _lock_target_unit), after their
+  own refusals, so no write route can skip it.
 - documents.py (S006, S008) takes lock (1) only, briefly, through LOCK_EQUIPMENT and
   load_node_for_user, and then touches equipment_documents rows, which nothing else
   locks; so it adds no lock cycle.
@@ -42,7 +49,7 @@ from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
-from auth_utils import has_perm, require_perm
+from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
 from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
     CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, check_type_class, effective_criticality,
@@ -80,7 +87,8 @@ _NODE_FROM = " FROM equipment e" + NODE_JOINS
 _NODE_COLUMNS = (
     "SELECT e.id, e.code, e.level, e.parent_id, e.class_id, e.type_id, e.name, e.make, e.model,"
     " e.serial_no, e.year, e.criticality, e.status, e.notes, e.created_at, e.created_by, e.updated_at,"
-    " e.updated_by, c.code AS class_code, t.name AS type_name, u.id AS root_unit_id, s.code AS site_code, u.code AS unit_code,"
+    " e.updated_by, c.code AS class_code, t.name AS type_name, u.id AS root_unit_id,"
+    " s.id AS site_id, s.code AS site_code, u.code AS unit_code,"
     " p.code AS p_code, p.level AS p_level, p.name AS p_name,"
     " gp.id AS gp_id, gp.code AS gp_code, gp.level AS gp_level, gp.name AS gp_name,"
     f" {_ROOT_CRITICALITY} AS root_criticality"
@@ -94,7 +102,7 @@ _PART_COUNT = (
 # Locking reads: each returns the columns its decisions need (BR3-01)
 LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id FROM equipment "
                   "WHERE id = %s FOR UPDATE")
-_LOCK_UNIT = "SELECT id, code, active FROM units WHERE id = %s FOR UPDATE"
+_LOCK_UNIT = "SELECT id, code, active, site_id FROM units WHERE id = %s FOR UPDATE"
 _LOCK_CLASS = "SELECT id, code, active FROM equipment_classes WHERE id = %s FOR UPDATE"
 _LOCK_TYPE = "SELECT id, class_id, name, active FROM equipment_types WHERE id = %s FOR UPDATE"
 
@@ -202,14 +210,12 @@ def _detail(cur, node):
 # touch accessible_unit_ids
 # ---------------------------------------------------------------------------
 
-def accessible_unit_ids(cur):
-    """None = every unit (equipment:read_all_units; admin bypasses has_perm).  Otherwise the
-    user's active units — an empty set is no access at all, not an error."""
-    if has_perm("equipment:read_all_units"):
-        return None
-    cur.execute("SELECT uu.unit_id FROM user_units uu JOIN units u ON u.id = uu.unit_id "
-                "WHERE uu.username = %s AND u.active = 1", (actor().lower(),))
-    return {row["unit_id"] for row in cur.fetchall()}
+def accessible_unit_ids(cur, key="equipment:read"):
+    """The units where the user holds ``key`` (S011 § 5.3): None = every unit (admin, or a
+    token role holding the key and equipment:read_all_units); otherwise a set of active unit
+    ids — an empty set is no access at all, not an error.  Memberships are read through the
+    request's connection, the one ``cur`` belongs to."""
+    return user_unit_ids(key)
 
 
 def _can_access(cur, unit_id):
@@ -217,9 +223,11 @@ def _can_access(cur, unit_id):
     return unit_ids is None or unit_id in unit_ids
 
 
-def load_node_for_user(cur, node_id, for_update):
+def load_node_for_user(cur, node_id, for_update, key=None):
     """The node being read or written → ``(locked_row or None, node)``.  A missing node and
-    one outside the user's units are the same 404, so nothing is revealed."""
+    one outside the user's units are the same 404, so nothing is revealed.  ``key`` (required
+    for a write) is then checked at the node's site: 403 (S011 § 5.4)."""
+    assert key is not None or not for_update, "a write must name the key it checks at the node's site"
     locked = None
     if for_update:
         cur.execute(LOCK_EQUIPMENT, (node_id,))   # (1)
@@ -229,12 +237,15 @@ def load_node_for_user(cur, node_id, for_update):
     node = _read_node(cur, node_id)
     if node is None or not _can_access(cur, node["root_unit_id"]):
         raise ApiError("Not found", 404)
+    if key is not None:
+        require_perm_at(key, node["site_id"])
     return locked, node
 
 
-def _load_target_node(cur, node_id, child_level):
+def _load_target_node(cur, node_id, child_level, key):
     """Lock the target parent of a create or re-parent (2), then refuse in this order:
-    unknown 400 → outside the user's units 403 → scrapped 409 → wrong level 400."""
+    unknown 400 → outside the user's units 403 → scrapped 409 → wrong level 400 → ``key``
+    not held at the parent's site 403."""
     cur.execute(LOCK_EQUIPMENT, (node_id,))
     locked = cur.fetchone()
     if locked is None:
@@ -249,12 +260,14 @@ def _load_target_node(cur, node_id, child_level):
     message = check_parent(child_level, locked["level"])
     if message:
         raise ApiError(message, 400, "parent_id")
+    require_perm_at(key, target["site_id"], "parent_id")
     return locked
 
 
-def _lock_target_unit(cur, unit_id):
+def _lock_target_unit(cur, unit_id, key):
     """Lock the unit equipment is created in or moved to (3).  A unit's existence and
-    state are public (the masters list shows every unit), so inactive comes before access."""
+    state are public (the masters list shows every unit), so inactive comes before access;
+    ``key`` at the unit's site comes last (403)."""
     cur.execute(_LOCK_UNIT, (unit_id,))
     unit = cur.fetchone()
     if unit is None:
@@ -263,6 +276,7 @@ def _lock_target_unit(cur, unit_id):
         raise ApiError("The unit is inactive", 409, "unit_id")
     if not _can_access(cur, unit_id):
         raise ApiError("You have no access to this unit", 403, "unit_id")
+    require_perm_at(key, unit["site_id"], "unit_id")
     return unit
 
 
@@ -425,11 +439,17 @@ def list_equipment():
 @require_perm("equipment:read")
 def my_units():
     """The units the screens may offer this user.  all_units true = every unit (unit_ids is
-    then empty); otherwise the user's active units.  Lets the pickers avoid choices the
+    then empty); otherwise the user's active units.  edit_unit_ids: where equipment:edit is
+    held (null = every unit), for the write pickers.  Lets the pickers avoid choices the
     write endpoints would refuse with 403."""
     with get_db().cursor() as cur:
         unit_ids = accessible_unit_ids(cur)
-    return jsonify({"all_units": unit_ids is None, "unit_ids": [] if unit_ids is None else sorted(unit_ids)})
+        edit_ids = accessible_unit_ids(cur, "equipment:edit")
+    return jsonify({
+        "all_units": unit_ids is None,
+        "unit_ids": [] if unit_ids is None else sorted(unit_ids),
+        "edit_unit_ids": None if edit_ids is None else sorted(edit_ids),
+    })
 
 
 @equipment_bp.route("/<int:node_id>")
@@ -437,7 +457,8 @@ def my_units():
 def get_equipment(node_id):
     with get_db().cursor() as cur:
         _, node = load_node_for_user(cur, node_id, for_update=False)
-        return jsonify(_detail(cur, node))
+        # The user's keys at this node's site, so the screen's buttons follow the site (S011)
+        return jsonify({**_detail(cur, node), "permissions": permissions_at_site(node["site_id"])})
 
 
 @equipment_bp.route("/", methods=["POST"], strict_slashes=False)
@@ -449,9 +470,9 @@ def create_equipment():
     with transaction(conn), conn.cursor() as cur:
         unit = None
         if clean["level"] == "equipment":
-            unit = _lock_target_unit(cur, clean["unit_id"])              # (3)
+            unit = _lock_target_unit(cur, clean["unit_id"], "equipment:edit")              # (3)
         else:
-            _load_target_node(cur, clean["parent_id"], clean["level"])   # (2)
+            _load_target_node(cur, clean["parent_id"], clean["level"], "equipment:edit")   # (2)
         equipment_class = _lock_class(cur, clean["class_id"])            # (4)
         equipment_type = None
         if "type_id" in clean:   # a null type_id was dropped by the validator
@@ -470,7 +491,9 @@ def create_equipment():
 def update_equipment(node_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked, node = load_node_for_user(cur, node_id, for_update=True)   # (1); 404
+        # (1); 404; 403 unless equipment:edit at the node's current site (a move or
+        # re-parent is checked at the target's site too, below)
+        locked, node = load_node_for_user(cur, node_id, for_update=True, key="equipment:edit")
         if locked["status"] == SCRAPPED:
             raise ApiError("This record is scrapped and cannot be changed", 409)
         this_year = _this_year()
@@ -484,9 +507,9 @@ def update_equipment(node_id):
                 del clean[field]
         unit = equipment_class = None
         if "parent_id" in clean:
-            _load_target_node(cur, clean["parent_id"], locked["level"])   # (2)
+            _load_target_node(cur, clean["parent_id"], locked["level"], "equipment:edit")   # (2)
         if "unit_id" in clean:
-            unit = _lock_target_unit(cur, clean["unit_id"])               # (3)
+            unit = _lock_target_unit(cur, clean["unit_id"], "equipment:edit")               # (3)
         if "class_id" in clean:
             equipment_class = _lock_class(cur, clean["class_id"])         # (4)
         equipment_type = _check_type_on_update(cur, locked, clean, sent_type)   # (5)

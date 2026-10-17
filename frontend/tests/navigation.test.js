@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { canOpenRoute, canSeeNavItem, isActivePath, landingNavItem, landingPath, navItems } from "../src/stores/navigation.js";
 
-// What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix
+// What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix.
+// From S011 a site role's keys come from its membership; the manager's breadth is "all units"
+// there, not equipment:read_all_units (IT admin's alone).
 const OPERATOR = ["equipment:read", "masters:read"];
-const ENGINEER = ["equipment:read", "equipment:edit", "masters:read"];
-const MANAGER = ["equipment:read", "equipment:read_all_units", "equipment:edit", "masters:read", "settings:read"];
+const SUPERVISOR = OPERATOR;
+const ENGINEER = ["equipment:read", "equipment:edit", "masters:read", "people:assign_technicians", "people:edit"];
+const MANAGER = [
+  "equipment:edit", "equipment:purge_documents", "equipment:read", "masters:read", "people:assign_technicians",
+  "people:edit", "settings:read",
+];
 const IT_ADMIN = [
-  "equipment:read", "equipment:read_all_units", "equipment:edit", "masters:edit", "masters:read",
-  "masters:read_senior", "settings:edit", "settings:read",
+  "equipment:read", "equipment:read_all_units", "equipment:edit", "equipment:purge_documents", "masters:edit",
+  "masters:read", "masters:read_senior", "settings:edit", "settings:read", "people:assign_technicians", "people:edit",
 ];
 
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
@@ -25,7 +31,7 @@ describe("navigation permissions", () => {
   });
 
   it("everyone with a role lands on Equipment", () => {
-    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN]) {
+    for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER, IT_ADMIN]) {
       expect(landingPath(perms)).toBe("/equipment");
     }
   });
@@ -47,14 +53,14 @@ describe("navigation permissions", () => {
   });
 
   it("the landing nav item is Equipment for every role", () => {
-    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN]) {
+    for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER, IT_ADMIN]) {
       expect(landingNavItem(perms)).toBe(navItems[0]);
       expect(landingNavItem(perms).label).toBe("Equipment");
     }
   });
 
   it("the not-found route opens for every role, and for none", () => {
-    for (const perms of [OPERATOR, ENGINEER, MANAGER, IT_ADMIN, []]) {
+    for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER, IT_ADMIN, []]) {
       expect(canOpenRoute("not-found", perms)).toBe(true);
     }
   });

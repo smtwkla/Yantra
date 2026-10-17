@@ -7,8 +7,9 @@ and catches permission mistakes immediately.
 import pytest
 from flask import Flask, g
 
-from auth_utils import compute_permissions, expand_roles, has_perm, require_perm
-from config_rbac import PERMISSIONS, ROLE_INCLUDES, ROLES
+from access_core import Membership
+from auth_utils import compute_permissions, expand_roles, has_perm, has_perm_at, make_user, require_perm
+from config_rbac import LOGIN_ROLE, PERMISSIONS, ROLE_INCLUDES, ROLES, SITE_ROLES, SITE_SCOPED, TOKEN_ROLES
 
 
 class TestPolicyStructure:
@@ -44,6 +45,40 @@ class TestPolicyStructure:
             assert parent in ROLES, f"ROLE_INCLUDES key '{parent}' not in ROLES"
             for child in children:
                 assert child in ROLES, f"ROLE_INCLUDES '{parent}' includes unknown role '{child}'"
+
+
+class TestRoleSources:
+    """S011 § 8: which roles come from the token, which from memberships."""
+
+    def test_site_scoped_keys_exist(self):
+        assert SITE_SCOPED <= set(PERMISSIONS)
+
+    def test_site_roles_are_roles_and_exclude_it_admin(self):
+        assert set(SITE_ROLES) <= set(ROLES)
+        assert "it_admin" not in SITE_ROLES
+        assert set(TOKEN_ROLES) == {"it_admin"}
+
+    def test_login_role_is_not_a_role(self):
+        assert LOGIN_ROLE not in ROLES
+        assert compute_permissions([LOGIN_ROLE]) == []
+
+    def test_all_units_is_it_admins_only(self):
+        assert PERMISSIONS["equipment:read_all_units"] == ("it_admin",)
+
+    @pytest.mark.parametrize("key", ["masters:edit", "masters:read_senior", "settings:edit"])
+    def test_no_site_role_holds_the_grant_power(self, key):
+        """BR3-04: granting stays IT admin's; no site role may hold masters:edit."""
+        for role in SITE_ROLES:
+            assert key not in compute_permissions([role]), (role, key)
+
+    def test_assign_technicians_holders(self):
+        holders = {role for role in ROLES if "people:assign_technicians" in compute_permissions([role])}
+        assert holders == {"maint_engineer", "maint_manager", "it_admin"}
+
+    def test_supervisor_is_off_the_maintenance_ladder(self):
+        assert expand_roles(["maint_supervisor"]) == {"maint_supervisor", "maint_operator"}
+        assert compute_permissions(["maint_supervisor"]) == compute_permissions(["maint_operator"])
+        assert not any("maint_supervisor" in expand_roles([r]) for r in ROLES if r != "maint_supervisor")
 
 
 class TestRoleExpansion:
@@ -82,12 +117,16 @@ class TestComputePermissions:
     @pytest.mark.parametrize("role, expected", [
         ("maint_operator",    {"equipment:read", "masters:read"}),
         ("maint_technician",  {"equipment:read", "masters:read"}),
-        ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit"}),
-        ("maint_manager",     {"equipment:read", "equipment:read_all_units", "masters:read", "equipment:edit",
-                               "equipment:purge_documents", "settings:read"}),
+        ("maint_supervisor",  {"equipment:read", "masters:read"}),
+        ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit", "people:edit",
+                               "people:assign_technicians"}),
+        # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
+        ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
+                               "equipment:purge_documents", "settings:read", "people:edit",
+                               "people:assign_technicians"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
-                               "settings:read", "settings:edit"}),
+                               "settings:read", "settings:edit", "people:edit", "people:assign_technicians"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):
@@ -109,8 +148,10 @@ def ctx():
 
 
 def _user(roles):
-    return {"username": "u", "name": "U", "role": roles[0], "roles": roles,
-            "permissions": compute_permissions(roles)}
+    """Token roles; a site role in the list becomes a wildcard membership (no DB needed)."""
+    token = [r for r in roles if r not in SITE_ROLES]
+    memberships = [Membership(None, r, False) for r in roles if r in SITE_ROLES]
+    return make_user("u", "U", token, memberships)
 
 
 class TestHasPerm:
@@ -131,6 +172,17 @@ class TestHasPerm:
         g.user = _user(["maint_operator"])
         assert has_perm("masters:read") is True
         assert has_perm("settings:read") is False
+
+    def test_held_somewhere_from_a_site_role(self, ctx):
+        g.user = make_user("u", "U", [LOGIN_ROLE], [Membership(1, "maint_engineer", False)])
+        assert has_perm("equipment:edit") is True
+        assert has_perm_at("equipment:edit", 1) is True
+        assert has_perm_at("equipment:edit", 2) is False
+
+    def test_a_global_key_at_a_site_is_a_programming_error(self, ctx):
+        g.user = _user(["it_admin"])
+        with pytest.raises(AssertionError):
+            has_perm_at("masters:edit", 1)
 
 
 @require_perm("settings:edit")
@@ -153,3 +205,22 @@ class TestRequirePerm:
     def test_blocks_anonymous(self, ctx):
         _, status = _guarded()
         assert status == 403
+
+
+class TestDevStub:
+    """S011 § 5.8: DEV_STUB_ROLE set to a site role gives that role at every site."""
+
+    @pytest.mark.parametrize("role, roles, memberships", [
+        ("maint_engineer", ["maintenance_team"], [Membership(None, "maint_engineer", True)]),
+        ("it_admin", ["it_admin"], None),
+        ("maintenance_team", ["maintenance_team"], None),
+        ("admin", ["admin"], None),
+        ("nobody", [], []),
+    ])
+    def test_stub_user(self, monkeypatch, role, roles, memberships):
+        import auth_utils
+        import config
+        monkeypatch.setattr(config, "DEV_STUB_ROLE", role)
+        monkeypatch.setattr(auth_utils, "_DEV_STUB_USER", None)
+        user = auth_utils._get_dev_stub_user()
+        assert (user["roles"], user["memberships"]) == (roles, memberships)

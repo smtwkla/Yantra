@@ -17,9 +17,14 @@ import { apiGet } from "../api";
 // Reactive state — imported directly by components
 export const authenticated = ref(false);
 export const userName = ref("");
+/** The Keycloak username (preferred_username), as Yantra matches logins. */
+export const userLogin = ref("");
 export const userRole = ref("");
 export const userRoles = ref([]);
+/** Every key the user holds somewhere (token roles and every site role, S011). */
 export const userPermissions = ref([]);
+/** True when /api/auth/me answered from the token alone because the database is down. */
+export const dbUnavailable = ref(false);
 export const devBypass = ref(false);
 /** Set when login cannot complete — App.vue shows it instead of the spinner. */
 export const authError = ref("");
@@ -63,17 +68,19 @@ async function loadProfile() {
   try {
     me = await apiGet("/api/auth/me");
   } catch (err) {
-    // 401 after a successful Keycloak login = signed in, but holding no Yantra role
+    // 401 after a successful Keycloak login = signed in, but without the maintenance_team role
     authError.value = err.status === 401
-      ? "You are signed in, but your account has no Yantra role. Ask IT to assign one."
+      ? "Your account is not in the maintenance team. Ask IT to add you in Keycloak."
       : `Could not load your profile: ${err.message}`;
     return;
   }
   authenticated.value = true;
   userName.value = me.name || me.username;
+  userLogin.value = me.username;
   userRole.value = me.role;
   userRoles.value = me.roles;
   userPermissions.value = me.permissions;
+  dbUnavailable.value = Boolean(me.db_unavailable);
 }
 
 /**

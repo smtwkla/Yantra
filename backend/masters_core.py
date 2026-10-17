@@ -9,12 +9,17 @@ be present; for an update (``creating=False``) an absent field means
 
 import re
 
+from config_rbac import SITE_ROLES, TECHNICIAN_ROLE
+
 SITE_CODE_RE = re.compile(r"^[A-Z][A-Z0-9-]{1,19}$")
 UNIT_CODE_RE = re.compile(r"^[A-Z0-9][A-Z0-9-]{1,19}$")
 CLASS_CODE_RE = re.compile(r"^[A-Z]{2,4}$")
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,99}$")
 
 NAME_MAX = 100
+TRADE_NAME_MAX = 50
+# A person in the Team register is a direct employee or comes through a contractor (S010 A1)
+EMPLOYMENT = ("direct", "contractor")
 # History shows "no type" as this word, so no type may be called it (S004 § 5.1)
 RESERVED_TYPE_NAME = "none"
 ADDRESS_MAX = 255
@@ -30,13 +35,21 @@ def _code_parser(pattern, label, rule):
     return parse
 
 
-def parse_name(raw):
+def _parse_bounded_name(raw, max_len):
     name = raw.strip() if isinstance(raw, str) else ""
     if not name:
         raise ValueError("Name is required")
-    if len(name) > NAME_MAX:
-        raise ValueError(f"Name must be at most {NAME_MAX} characters")
+    if len(name) > max_len:
+        raise ValueError(f"Name must be at most {max_len} characters")
     return name
+
+
+def parse_name(raw):
+    return _parse_bounded_name(raw, NAME_MAX)
+
+
+def _parse_trade_name(raw):
+    return _parse_bounded_name(raw, TRADE_NAME_MAX)
 
 
 def _parse_type_name(raw):
@@ -111,6 +124,42 @@ _TYPE_FIELDS = {
     "active": (_parse_active, False),
 }
 
+def _parse_employment(raw):
+    if raw not in EMPLOYMENT:
+        raise ValueError("Employment must be direct or contractor")
+    return raw
+
+
+def _parse_trade_ids(raw):
+    """A list of trade ids, possibly empty (engineers and operators usually have none);
+    de-duplicated, order kept."""
+    if not isinstance(raw, list) or any(isinstance(i, bool) or not isinstance(i, int) or i < 1 for i in raw):
+        raise ValueError("trade_ids must be a list of trade ids")
+    return list(dict.fromkeys(raw))
+
+
+def _parse_login(raw):
+    """None or "" clears the login; anything else is a Keycloak username (not checked against Keycloak)."""
+    if raw is None or raw == "":
+        return None
+    username, errors = validate_username(raw)
+    if errors:
+        raise ValueError(errors[0]["message"])
+    return username
+
+
+_TRADE_FIELDS = {
+    "name": (_parse_trade_name, True),
+    "active": (_parse_active, False),
+}
+_PERSON_FIELDS = {
+    "name": (parse_name, True),
+    "employment": (_parse_employment, True),
+    "trade_ids": (_parse_trade_ids, False),
+    "username": (_parse_login, False),
+    "active": (_parse_active, False),
+}
+
 
 def _validate(data, fields, creating):
     clean, errors = {}, []
@@ -142,6 +191,14 @@ def validate_equipment_type(data, creating):
     return _validate(data, _TYPE_FIELDS, creating)
 
 
+def validate_trade(data, creating):
+    return _validate(data, _TRADE_FIELDS, creating)
+
+
+def validate_person(data, creating):
+    return _validate(data, _PERSON_FIELDS, creating)
+
+
 def normalise_username(raw):
     """Keycloak ``preferred_username``: stripped and lower-cased."""
     return raw.strip().lower() if isinstance(raw, str) else ""
@@ -161,3 +218,69 @@ def validate_unit_ids(raw):
     if not isinstance(raw, list) or any(isinstance(i, bool) or not isinstance(i, int) or i < 1 for i in raw):
         return [], [{"field": "unit_ids", "message": "unit_ids must be a list of unit ids"}]
     return list(dict.fromkeys(raw)), []
+
+
+# ---------------------------------------------------------------------------
+# Site roles of a person (S011 A1): one role per site, all units or chosen units
+# ---------------------------------------------------------------------------
+
+NO_LOGIN_ROLE_MESSAGE = "Without a login, a person can only be a technician"
+
+
+def validate_site_row(body):
+    """One site row ``{role, all_units, unit_ids}`` -> ``(clean, errors)``; ``clean`` has all
+    three, ``unit_ids`` de-duplicated.  A row has a role (a legacy row without one must get
+    one first) and either all units or at least one unit, never both."""
+    if not isinstance(body, dict):
+        return {}, [{"field": "sites", "message": "Each site must be an object"}]
+    role = body.get("role")
+    if role is None or role == "":
+        return {}, [{"field": "role", "message": "Choose a role"}]
+    if role not in SITE_ROLES:
+        return {}, [{"field": "role", "message": f"Unknown role {role}"}]
+    try:
+        all_units = bool(_flag_parser("All units")(body.get("all_units", False)))
+    except ValueError as exc:
+        return {}, [{"field": "all_units", "message": str(exc)}]
+    unit_ids, errors = validate_unit_ids(body.get("unit_ids", []))
+    if errors:
+        return {}, errors
+    if all_units and unit_ids:
+        return {}, [{"field": "unit_ids", "message": "With all units, choose no single units"}]
+    if not all_units and not unit_ids:
+        return {}, [{"field": "unit_ids", "message": "Choose units or all units"}]
+    return {"role": role, "all_units": all_units, "unit_ids": unit_ids}, []
+
+
+def validate_site_rows(raw):
+    """The whole set of a person's sites (``sites`` of a login save) -> ``(rows, errors)``;
+    each row is validate_site_row's plus ``site_id``.  An empty list removes every site."""
+    if not isinstance(raw, list):
+        return [], [{"field": "sites", "message": "sites must be a list"}]
+    rows, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return [], [{"field": "sites", "message": "Each site must be an object"}]
+        site_id = entry.get("site_id")
+        if isinstance(site_id, bool) or not isinstance(site_id, int) or site_id < 1:
+            return [], [{"field": "site_id", "message": "site_id must be a site id"}]
+        if site_id in seen:
+            return [], [{"field": "sites", "message": "A site can appear only once"}]
+        seen.add(site_id)
+        clean, errors = validate_site_row(entry)
+        if errors:
+            return [], errors
+        rows.append({"site_id": site_id, **clean})
+    return rows, []
+
+
+def no_login_role_error(roles):
+    """A person without a login can only be a technician (S011 A1, gate A): their site roles
+    describe them for pick-lists; everyone else logs in.  The message, or None."""
+    return NO_LOGIN_ROLE_MESSAGE if any(role != TECHNICIAN_ROLE for role in roles) else None
+
+
+def technician_only(stored_role, new_role):
+    """True when a site-row change stays within what an engineer may do (S011 A1, gate A):
+    the stored and the new role are each Technician or absent (None)."""
+    return stored_role in (None, TECHNICIAN_ROLE) and new_role in (None, TECHNICIAN_ROLE)

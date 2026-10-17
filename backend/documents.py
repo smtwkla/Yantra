@@ -77,9 +77,10 @@ def _read_item(cur, node_id, doc_id):
     return cur.fetchone()
 
 
-def _lock_node_for_change(cur, node_id):
-    """Lock the node (1) and refuse a scrapped one from the locked row (S002 BR3-01)."""
-    locked, _ = load_node_for_user(cur, node_id, for_update=True)
+def _lock_node_for_change(cur, node_id, key):
+    """Lock the node (1), check ``key`` at its site (403, S011) and refuse a scrapped one from
+    the locked row (S002 BR3-01)."""
+    locked, _ = load_node_for_user(cur, node_id, for_update=True, key=key)
     if locked["status"] == SCRAPPED:
         raise ApiError(SCRAPPED_MESSAGE, 409)
 
@@ -154,10 +155,11 @@ def _write_files(node_id, name, data, thumb):
 @require_perm("equipment:edit")
 def upload_document(node_id):
     conn = get_db()
-    # Step 1 — plain read: access (404) and an early scrapped check, so a scrapped node
-    # gets no file read or written.  The decision that counts is the locked one below.
+    # Step 1 — plain read: access (404), equipment:edit at the node's site (403, S011) and an
+    # early scrapped check, so a refused or scrapped node gets no file read or written.  The
+    # decisions that count are the locked ones below.
     with conn.cursor() as cur:
-        _, node = load_node_for_user(cur, node_id, for_update=False)
+        _, node = load_node_for_user(cur, node_id, for_update=False, key="equipment:edit")
         if node["status"] == SCRAPPED:
             raise ApiError(SCRAPPED_MESSAGE, 409)
         limit_mb = upload_max_mb(cur)
@@ -172,7 +174,7 @@ def upload_document(node_id):
 
     try:                                                                    # step 4
         with transaction(conn), conn.cursor() as cur:
-            _lock_node_for_change(cur, node_id)   # (1); 404 (access, from the locked state); 409
+            _lock_node_for_change(cur, node_id, "equipment:edit")   # (1); 404 (access, from the locked state); 403; 409
             doc_id = insert_row(cur, "equipment_documents", {
                 "equipment_id": node_id,
                 "kind": clean["kind"],
@@ -251,7 +253,7 @@ def _validate_title_body(body, _creating):
 def update_document_title(node_id, doc_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_node_for_change(cur, node_id)   # (1); 404; 409
+        _lock_node_for_change(cur, node_id, "equipment:edit")   # (1); 404; 403; 409
         clean = clean_body(_validate_title_body, creating=False)
         # The SELECT decides the 404, not rowcount: MariaDB counts an unchanged row as
         # 0 affected, so saving the same title would look like a missing document.  The node
@@ -268,7 +270,7 @@ def update_document_title(node_id, doc_id):
 def remove_document(node_id, doc_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_node_for_change(cur, node_id)   # (1); 404; 409
+        _lock_node_for_change(cur, node_id, "equipment:edit")   # (1); 404; 403; 409
         # One conditional statement: two removes at once give one 204 and one 404
         cur.execute("UPDATE equipment_documents SET removed_at = NOW(), removed_by = %s "
                     "WHERE id = %s AND equipment_id = %s AND removed_at IS NULL", (actor(), doc_id, node_id))
@@ -318,7 +320,7 @@ def list_removed_documents():
         params.extend([like_pattern(q)] * 3)
 
     with get_db().cursor() as cur:
-        unit_ids = accessible_unit_ids(cur)
+        unit_ids = accessible_unit_ids(cur, "equipment:purge_documents")   # only the sites where it is held (S011)
         if unit_ids is not None:
             if not unit_ids:
                 return jsonify({"items": [], "total": 0, "page": page, "per_page": per_page})
@@ -337,7 +339,7 @@ def list_removed_documents():
 def restore_document(node_id, doc_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_node_for_change(cur, node_id)   # (1); 404; 409
+        _lock_node_for_change(cur, node_id, "equipment:purge_documents")   # (1); 404; 403; 409
         cur.execute("SELECT id, title, kind, removed_by, removed_at FROM equipment_documents "
                     "WHERE id = %s AND equipment_id = %s AND removed_at IS NOT NULL", (doc_id, node_id))
         doc = cur.fetchone()
@@ -381,7 +383,7 @@ def purge_document(node_id, doc_id):
     with transaction(conn), conn.cursor() as cur:
         # No scrapped check: erasing a file is disposition of information, not a change to
         # the asset record
-        load_node_for_user(cur, node_id, for_update=True)   # (1); 404
+        load_node_for_user(cur, node_id, for_update=True, key="equipment:purge_documents")   # (1); 404; 403
         cur.execute("SELECT id, title, kind, stored_name, has_thumb, created_by, removed_by, removed_at "
                     "FROM equipment_documents WHERE id = %s AND equipment_id = %s", (doc_id, node_id))
         doc = cur.fetchone()

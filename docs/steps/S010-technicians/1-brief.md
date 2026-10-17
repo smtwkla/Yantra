@@ -3,7 +3,7 @@ Step: S010 — Technicians and trades
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-review r1)
-Status: Approved 16-10-2026 by KLA
+Status: In code review — amendment A1 (A1 approved 16-10-2026 by KLA)
 ```
 
 # S010 — Technicians and trades
@@ -15,8 +15,9 @@ staff and which come from a contractor. Breakdown tickets (phase 3) and PM jobs
 (phase 4) will record who worked and how long (Plan § 4.2, `breakdown_labour`).
 This step makes the list of people they pick from.
 
-**Depends on:** S009 committed. S009 takes migration v7; this step is
-migration **v8**.
+**Depends on:** S008 committed. This step is migration **v7** (S009 was
+dropped on 16-10-2026 and its v7 reverted, so v7 is free; corrected before
+coding, no design change).
 
 **Related:** S011 (planned next) moves roles from Keycloak into Yantra, per
 site. It will change how `technicians:edit` is *evaluated*, not this step's
@@ -125,7 +126,7 @@ Background reading:
 
 ### Backend
 
-- **Migration v8** in `backend/local_db.py`, each statement safe to run twice
+- **Migration v7** in `backend/local_db.py`, each statement safe to run twice
   (§ 4).
 - **`backend/masters_core.py`:** `validate_trade(data, creating)` and
   `validate_technician(data, creating)` through `_validate`'s field table, so
@@ -179,7 +180,7 @@ Background reading:
   `user_units.username`; whether S011 links logins to a users table is S011's
   call (BR2-04).
 
-## 4. Data model (migration v8)
+## 4. Data model (migration v7)
 
 Audit columns as S001 (`created_at/by`, `updated_at/by`). Default collation
 (`utf8mb4_general_ci`), so unique names compare ignoring case, as S004 § 4.
@@ -311,6 +312,7 @@ Audit columns as S001 (`created_at/by`, `updated_at/by`). Default collation
 | No site or unit on a technician | Unit access already says where a login works (S001; per site after S011) | A home site |
 | The login is a link, not checked against Keycloak | Yantra can't list Keycloak users (S001) | A role check on save |
 | Names not unique | Two people may share a name. A known limit: "ABC Engg" and "ABC Engineering" can both exist; no merge | Unique names |
+| A firm and a person look alike (A1) | A contractor's name may be a firm or a person, the user's choice per entry; a known limit: nothing in the record tells them apart, so phase 3's labour lines can't either | An "is a firm" flag |
 
 ## 8. Tests and acceptance
 
@@ -375,7 +377,167 @@ Audit columns as S001 (`created_at/by`, `updated_at/by`). Default collation
 
 ## 10. Amendments
 
-(none)
+### A1 — Team: a register of people, not only technicians
+
+```
+Requested by: KLA, 16-10-2026
+Status: Approved 16-10-2026 by KLA
+```
+
+**Why.** The user wants one register of the people around the machines, with
+or without a Yantra login, whatever their role, and S011's access attached to
+the same person instead of a separately typed username (user, 16-10-2026). A
+technician is then one kind of person. S011 amendment A1 adds the site roles;
+this amendment reshapes S010's record so S011 can hang off it. Nothing of S010
+is committed or deployed, so it is reworked in place.
+
+**What changes** (supersedes the parts of § 1, § 3–§ 8 named below):
+
+1. **"Technicians" becomes "Team"** (Masters section "Team",
+   `fa-solid fa-people-group`): one record per **person**, or per contractor
+   firm when the user chooses to record a firm.
+2. **Fields of a person:**
+   - **name**: a person's name, or a contractor firm's (the user's choice per
+     entry; no rule);
+   - **employment**: `direct` (direct employee) or `contractor`; replaces
+     `kind` (`in_house` / `contract`). Labels "Direct employee", "Contractor";
+   - **login** (optional): as S010's `username`. **Set and changed only by IT
+     admin** (`masters:edit`), not by engineers, because from S011 a login
+     turns the person's site roles into Yantra access (S011 A1). Engineers see
+     it read-only;
+   - **trades**: now **optional** (none, one or more). Engineers, operators
+     and supervisors usually have none;
+   - **active**: as S010. Deactivating a person will also end their access
+     (S011 A1).
+3. **Tables** (migration **v7**, edited in place: v7 is not committed or
+   deployed anywhere; the dev databases are reset, per the CLAUDE-COMMON rule
+   that dev databases are disposable):
+   - `technicians` → **`people`**: `employment ENUM('direct','contractor')`
+     instead of `kind`; `uq_people_username`;
+   - `technician_trades` → **`person_trades`** (`person_id`, `trade_id`),
+     FKs renamed accordingly;
+   - `trades` unchanged.
+4. **Permission key** `technicians:edit` → **`people:edit`** (engineer, IT
+   admin; the manager inherits). It covers people's name, employment, trades,
+   active, and the trades list. The login field needs `masters:edit` too
+   (IT admin) on create and update; a `PUT` or `POST` carrying `username`
+   without it → 403 field `username`.
+5. **API** under `/api/masters/people` (was `/technicians`); same shapes with
+   `employment` instead of `kind`. The login masking of § 5.3 stays (shown to
+   `people:edit` holders). The trades routes are unchanged.
+6. **Rules that change:** trades may be empty on create and update (the
+   "at least one trade" 400 goes); the duplicate-login message becomes
+   "Another person already has this login (it may be an inactive one)".
+   Everything else in § 5 holds (absent field = unchanged; lock order person →
+   trades; the audit stamp on a trades-only change; held inactive trades kept;
+   duplicates caught by the unique indexes).
+7. **Frontend:** `TechniciansPanel.vue` → `PeoplePanel.vue` (title "Team");
+   columns name, employment badge, trades, login (editors only), active; the
+   dialog's login field is editable only with `masters:edit`, read-only text
+   otherwise. The help line under it stays as the user worded it.
+
+**Standards.** As S010 § 2. Adds: ISO 55001 § 7.2 (competence) asks for the
+competence of *all* persons doing work affecting the assets, not only
+technicians; one register of people is closer to that. ISO 27001 A.5.18:
+one record per person is where joiners and leavers are handled (with S011 A1).
+
+**Tests.** S010 § 8 re-pointed to `/people` and `employment`; plus: a person
+with no trades → 201; an engineer setting or changing a login → 403; IT admin
+→ 201 / 200; an engineer's update without `username` on a person who has a
+login keeps it.
+
+**Open points.**
+- Contractor with a login: allowed, no rule (the user can't think of a case,
+  but it costs nothing to allow).
+- The Masters tab order: Sites, Units, Equip Class, Equip Type, Trades, Team,
+  User access (until S011 A1 merges User access into Team).
+
+#### A1 rules added after review (`2-brief-review-r3.md`)
+
+These override the A1 text above where they differ.
+
+1. **Active of a person with a login is IT admin's** (BR-A1-01). On a person
+   who has a login, changing `active` needs `masters:edit`, checked on the
+   **locked** person row in `PUT /people/<id>` → 403 field `active`. An
+   engineer can't deactivate a manager (revocation) or reactivate a leaver IT
+   admin deactivated (restoring access). The frontend hides Deactivate /
+   Reactivate in that case. Persons without a login: `people:edit`, as before.
+2. **Not your own login** (BR-A1-02). In `POST` / `PUT /people`, a normalised
+   `username` equal to `normalise_username(actor())` → 403 field `username`
+   "You can't set your own login", for every role. Otherwise IT admin could
+   give roles to a person without a login, then set the login to their own
+   username and gain access S011 § 9.6 forbids.
+3. **The login check, exactly** (BR-A1-03):
+   - "carrying `username`" includes clearing it (`null` / `""`): set, changed
+     or cleared all need `masters:edit`;
+   - the check is in the route, after `clean_body` (`"username" in clean`),
+     before the transaction: `ApiError("Only IT admin can set the login",
+     403, "username")`;
+   - the dialog's `toBody` **omits** `username` when the user lacks
+     `masters:edit`, so an engineer's save never carries it;
+   - `trade_ids` is optional on create (absent = no trades); `[]` is accepted
+     on create and update; the "at least one" rule and its tests go.
+4. **Where** (BR-A1-04), besides the files named in points 3–7:
+   - `frontend/src/views/masters/TradesPanel.vue`: `canEdit` checks
+     `people:edit` (it checks `technicians:edit` today and would become
+     read-only for everyone);
+   - `masters_core.py`: `EMPLOYMENT = ("direct", "contractor")`,
+     `_parse_employment` ("Employment must be direct or contractor"),
+     `validate_person`; `masters.py`: routes, helpers, SQL on `people` /
+     `person_trades`, docstrings, `UNIQUE_KEY_ERRORS["uq_people_username"]`;
+     `config_rbac.py` comment and key; `local_db.py` v7 description;
+   - tests: `test_technicians_api.py` → `test_people_api.py`; `conftest.py`
+     `_TABLES` (`person_trades`, `people`, `trades`) and `make_person(trades=None,
+     **overrides)`; `test_masters_core.py` (`TestPerson`); `test_rbac.py`;
+     `navigation.test.js`;
+   - frontend: `MastersView.vue` (section key `people`, label, icon, import);
+     the panel's `canEdit` (`people:edit`) and `canEditLogin` (`masters:edit`);
+   - docs: Plan § 3 matrix (`people:edit`), § 5 (`people`, `person_trades`,
+     `breakdown_labour` "person"); `docs/Keycloak.md` § 5 ("Team › login",
+     IT admin only); the README index row title (the folder slug stays);
+   - **S010 text superseded:** § 1 out of scope "naming individual contract
+     workers" (now the user's choice per entry); § 2's ISO 55001 § 7.2
+     "Departure, deliberate" (now partial: a contractor may be a firm or a
+     person); § 5.2 "Kind" and the "Contractor firm" label switch; the dialog's
+     form-text "Contract labour is recorded by the contractor's firm".
+5. **Migration v7 in place, exactly** (BR-A1-05). Acceptable: v7 is in no
+   commit and no deployed database; only the disposable dev container has it.
+   The coder (1) edits v7 (description "Trades, people", the three `CREATE
+   TABLE` statements; v8 is left to S011); (2) **runs
+   `tooling/dev/dev-db-reset.bat` before any test**, because both dev
+   databases hold `db_version` 7 and would skip the edited v7; (3) runs the
+   tests; (4) records the in-place edit and its reason in the impl report's
+   `Amendment A1` section.
+6. **Manual checks for A1** (BR-A1-06), replacing S010 § 8's:
+   - **important** — as engineer: add a person (direct, two trades, no
+     login); the Login field is read-only with no help line; rename them and
+     change their trades: saves (no 403);
+   - **important** — as IT admin: set that person's login; then as engineer:
+     the dialog shows "Has a Yantra login: yes" read-only; Deactivate /
+     Reactivate isn't offered on that person;
+   - **important** — as engineer: add a contractor named as a firm and one
+     named as a person; deactivate a person without a login: works;
+   - plain — as operator: Team and Trades listed, no Login column, no
+     buttons; the S007 guard on the Team dialog; the employment badges.
+7. **Who sees the login** (BR-A1-07, option 1): engineers and managers
+   (`people:edit`) get `has_login: true/false`; the username itself only to
+   `masters:read_senior` holders (IT admin). The Login column shows a tick for
+   engineers and the username for IT admin. S010 § 2's A.5.15 reason then
+   holds again: the login list goes only to those who maintain it.
+8. **Standards** (BR-A1-08): the login split is ISO 27001 **A.5.3**
+   (segregation of duties) and **A.8.2** (privileged access rights);
+   **A.5.16 (identity management)**: the person record with one login per
+   person is where an identity is created, changed and retired; **A.5.34**:
+   a contract worker may now be named, still with nothing beyond name,
+   employment, trades and maybe a login.
+9. **Small points** (BR-A1-09): the name label is "Name" for both
+   employments, with help "A person, or a contractor firm"; the login help
+   line ("Their Maintenance Team Login ID. …") shows only when the field is
+   editable; badges "Direct" / "Contractor"; known limit, added to § 7: a firm
+   and a person are indistinguishable in the record. **The section name
+   ("Team" or "People") is put to the user at gate A**, since Keycloak's login
+   role is `maintenance_team` and the register also holds operators and
+   supervisors.
 
 ## Review log
 
@@ -412,3 +574,25 @@ answers below are not re-reviewed.
 - Assumptions § 9.2–9.4 confirmed.
 - Coder: Sonnet (master-data screens on the existing pattern).
 - Approved by KLA. Coding starts after S009 is committed.
+- 16-10-2026: S009 dropped; the migration is v7, not v8 (numbering only).
+
+### Amendment A1 — `2-brief-review-r3.md` (Fable), answered 16-10-2026
+
+One round, as the user asked; the answers are not re-reviewed. Both majors are
+answered in A1's "rules added after review" and put to the user at gate A.
+
+| Finding | Severity | Response |
+|---|---|---|
+| BR-A1-01 An engineer can (re)activate a person with a login | major | **Accepted.** `active` of a person with a login needs `masters:edit`, on the locked row (rule 1). |
+| BR-A1-02 IT admin can set a login to their own username | major | **Accepted.** Own username → 403 for everyone (rule 2). |
+| BR-A1-03 The login check leaves three decisions; the dialog always sends `username` | minor | **Accepted** (rule 3). |
+| BR-A1-04 "Where" is thin; `TradesPanel.vue` would lock | minor | **Accepted** (rule 4). |
+| BR-A1-05 Migration v7 in place | minor | **Accepted.** Acceptable; the exact steps incl. the dev DB reset (rule 5). |
+| BR-A1-06 Manual checks not re-pointed | minor | **Accepted** (rule 6). |
+| BR-A1-07 Engineers still get every login | minor | **Accepted, option 1.** `has_login` for engineers; the username for IT admin (rule 7). |
+| BR-A1-08 Standards | nit | **Accepted** (rule 8). |
+| BR-A1-09 Small points | nit | **Accepted**; "Team" or "People" to the user (rule 9). |
+
+### Amendment A1 — user decisions at gate A, 16-10-2026
+
+- The section is called **"Team"** (matches Keycloak's `maintenance_team`).

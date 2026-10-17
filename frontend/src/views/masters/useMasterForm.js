@@ -11,7 +11,7 @@ import { apiPut } from "../../api";
 import { useFormModal } from "../../composables/useFormModal";
 import { resetMasters } from "../../stores/masters";
 
-export function useMasterForm({ path, blank, fromRecord, reload, label }) {
+export function useMasterForm({ path, blank, fromRecord, reload, label, toBody }) {
   const editingActive = ref(true);
   const confirmingDeactivate = ref(false);
 
@@ -21,6 +21,7 @@ export function useMasterForm({ path, blank, fromRecord, reload, label }) {
     blank,
     fromRecord,
     label,
+    toBody,
     afterSave: async () => {
       resetMasters();
       await reload();
@@ -43,9 +44,10 @@ export function useMasterForm({ path, blank, fromRecord, reload, label }) {
     return base.send(() => apiPut(`${path}/${base.editingId.value}`, { active }));
   }
 
-  const { modal, form, editingId, editingLabel, saving, dirty, fieldError, modalError, save } = base;
+  // send: for a dialog whose save is more than one request (the Team dialog's site rows, S011)
+  const { modal, form, editingId, editingLabel, saving, dirty, fieldError, modalError, save, send } = base;
   return {
     modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving, dirty,
-    fieldError, modalError, openCreate, openEdit, save, changeActive,
+    fieldError, modalError, openCreate, openEdit, save, send, changeActive,
   };
 }

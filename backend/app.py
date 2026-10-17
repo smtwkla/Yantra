@@ -8,7 +8,8 @@ from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
 from api_common import register_error_handlers
-from auth_utils import require_auth
+from access_core import display_role
+from auth_utils import current_memberships, global_permissions, membership_sites, require_auth
 from config import (
     APP_VERSION, DB_CONFIG, DEV_AUTH_BYPASS, KEYCLOAK_CLIENT_ID,
     KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL, MB,
@@ -115,14 +116,24 @@ def auth_config():
 
 @app.route("/api/auth/me")
 def auth_me():
-    """Return the current user's profile and permissions."""
-    return jsonify({
-        "username": g.user["username"],
-        "name": g.user["name"],
-        "role": g.user["role"],
-        "roles": g.user["roles"],
-        "permissions": g.user["permissions"],
-    })
+    """Return the current user's profile, permissions and site roles (S011 § 6).
+
+    Called once per page load, the de-facto login: it logs the stale Keycloak maintenance
+    roles a token still carries (S011 § 5.1), and answers while the database is down with
+    the token's permissions only, so IT admin can still reach Settings › Database."""
+    user = g.user
+    if user["stale_roles"]:
+        logger.warning("User %s still carries old Keycloak roles %s; they are ignored (S011 § 5.7)",
+                       user["username"], ",".join(user["stale_roles"]))
+    body = {"username": user["username"], "name": user["name"], "roles": user["roles"]}
+    try:
+        memberships = current_memberships()
+        body.update(role=display_role(user["roles"], memberships), permissions=global_permissions(),
+                    sites=membership_sites(memberships), db_unavailable=False)
+    except DBUnavailable:
+        body.update(role=display_role(user["roles"], []), permissions=user["permissions"], sites=None,
+                    db_unavailable=True)
+    return jsonify(body)
 
 
 # ---------------------------------------------------------------------------

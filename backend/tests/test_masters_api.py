@@ -4,13 +4,13 @@ Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).  Codes and
 warehouse names come from the ``uniq`` fixture, never fixed values.
 """
 
-import logging
 
 import pymysql
 import pytest
 
 import config
 from local_db import get_local_db
+from tests.access_helpers import site_rows
 
 BASE = "/api/masters"
 
@@ -24,11 +24,6 @@ def _row(sql, params):
             return cur.fetchone()
     finally:
         conn.close()
-
-
-def _user_units(admin, username):
-    items = admin.get(f"{BASE}/user-units").get_json()["items"]
-    return next((i for i in items if i["username"] == username), None)
 
 
 class TestSites:
@@ -243,17 +238,17 @@ class TestUnitCodeFreeze:
         assert res.status_code == 409
         assert res.get_json()["field"] == "code"
 
-    def test_unit_with_access_rows_cannot_change_code_or_site(self, admin, make_unit, make_site, uniq):
+    def test_unit_with_access_rows_cannot_change_code_or_site(self, admin, make_unit, make_site, make_person, uniq):
         unit = make_unit()
-        admin.put(f"{BASE}/user-units/jdoe", json={"unit_ids": [unit["id"]]})
+        make_person(username=uniq.username(), sites=site_rows("maint_operator", [unit]))
         by_code = admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()})
         assert by_code.status_code == 409 and by_code.get_json()["field"] == "code"
         by_site = admin.put(f"{BASE}/units/{unit['id']}", json={"site_id": make_site()["id"]})
         assert by_site.status_code == 409 and by_site.get_json()["field"] == "site_id"
 
-    def test_unchanged_code_or_site_is_accepted_when_in_use(self, admin, make_unit):
+    def test_unchanged_code_or_site_is_accepted_when_in_use(self, admin, make_unit, make_person, uniq):
         unit = make_unit()
-        admin.put(f"{BASE}/user-units/jdoe", json={"unit_ids": [unit["id"]]})
+        make_person(username=uniq.username(), sites=site_rows("maint_operator", [unit]))
         res = admin.put(f"{BASE}/units/{unit['id']}",
                         json={"code": unit["code"], "site_id": unit["site_id"], "name": "Renamed"})
         assert res.status_code == 200
@@ -496,105 +491,6 @@ class TestEquipmentTypes:
         assert engineer.put(f"{BASE}/equipment-types/999999", json={"name": "x"}).status_code == 404
 
 
-class TestUserUnits:
-
-    def test_replace_set_and_read_back(self, admin, make_unit):
-        unit_a, unit_b = make_unit(), make_unit()
-        res = admin.put(f"{BASE}/user-units/JDoe", json={"unit_ids": [unit_a["id"], unit_b["id"]]})
-        assert res.status_code == 200
-        body = res.get_json()
-        assert body["username"] == "jdoe"
-        assert {u["id"] for u in body["units"]} == {unit_a["id"], unit_b["id"]}
-        assert set(body["units"][0]) == {"id", "full_code", "name", "active"}
-
-        res = admin.put(f"{BASE}/user-units/jdoe", json={"unit_ids": [unit_b["id"]]})
-        assert [u["id"] for u in res.get_json()["units"]] == [unit_b["id"]]
-        assert [u["id"] for u in _user_units(admin, "jdoe")["units"]] == [unit_b["id"]]
-
-    def test_kept_unit_keeps_its_original_grant(self, admin, make_unit):
-        unit_a, unit_b = make_unit(), make_unit()
-        admin.put(f"{BASE}/user-units/keeper", json={"unit_ids": [unit_a["id"]]})
-        first = _row("SELECT granted_at, granted_by FROM user_units WHERE username = 'keeper'", ())
-        admin.put(f"{BASE}/user-units/keeper", json={"unit_ids": [unit_a["id"], unit_b["id"]]})
-        again = _row("SELECT granted_at, granted_by FROM user_units WHERE username = 'keeper' AND unit_id = %s",
-                     (unit_a["id"],))
-        assert again == first
-        assert first["granted_by"] == "test_it_admin"
-
-    def test_empty_list_removes_the_user(self, admin, make_unit):
-        unit = make_unit()
-        admin.put(f"{BASE}/user-units/gone", json={"unit_ids": [unit["id"]]})
-        res = admin.put(f"{BASE}/user-units/gone", json={"unit_ids": []})
-        assert res.status_code == 200
-        assert res.get_json() == {"username": "gone", "units": []}
-        assert _user_units(admin, "gone") is None
-
-    def test_unknown_unit_id_is_400_and_nothing_changes(self, admin, make_unit):
-        unit = make_unit()
-        admin.put(f"{BASE}/user-units/atomic", json={"unit_ids": [unit["id"]]})
-        res = admin.put(f"{BASE}/user-units/atomic", json={"unit_ids": [make_unit()["id"], 999999]})
-        assert res.status_code == 400
-        assert res.get_json()["field"] == "unit_ids"
-        assert [u["id"] for u in _user_units(admin, "atomic")["units"]] == [unit["id"]]
-
-    def test_inactive_unit_not_already_held_is_400(self, admin, make_unit):
-        unit = make_unit()
-        admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
-        res = admin.put(f"{BASE}/user-units/newbie", json={"unit_ids": [unit["id"]]})
-        assert res.status_code == 400
-        assert _user_units(admin, "newbie") is None
-
-    def test_inactive_unit_already_held_may_stay_and_be_removed(self, admin, make_unit):
-        kept, other = make_unit(), make_unit()
-        admin.put(f"{BASE}/user-units/holder", json={"unit_ids": [kept["id"]]})
-        admin.put(f"{BASE}/units/{kept['id']}", json={"active": False})
-
-        stays = admin.put(f"{BASE}/user-units/holder", json={"unit_ids": [kept["id"], other["id"]]})
-        assert stays.status_code == 200
-        by_id = {u["id"]: u for u in stays.get_json()["units"]}
-        assert by_id[kept["id"]]["active"] == 0
-
-        revoked = admin.put(f"{BASE}/user-units/holder", json={"unit_ids": [other["id"]]})
-        assert [u["id"] for u in revoked.get_json()["units"]] == [other["id"]]
-
-    @pytest.mark.parametrize("body", [{}, {"unit_ids": "1"}, {"unit_ids": [True]}, [1]])
-    def test_bad_body_is_400(self, admin, body):
-        res = admin.put(f"{BASE}/user-units/someone", json=body)
-        assert res.status_code == 400
-
-    def test_bad_username_is_400(self, admin):
-        res = admin.put(f"{BASE}/user-units/.bad", json={"unit_ids": []})
-        assert res.status_code == 400
-        assert res.get_json()["field"] == "username"
-
-    def test_change_is_logged(self, admin, make_unit, caplog):
-        unit_a, unit_b = make_unit(), make_unit()
-        admin.put(f"{BASE}/user-units/logged", json={"unit_ids": [unit_a["id"]]})
-        caplog.clear()
-        with caplog.at_level(logging.INFO, logger="masters"):
-            admin.put(f"{BASE}/user-units/logged", json={"unit_ids": [unit_b["id"]]})
-        lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("user_units changed")]
-        assert lines == [f"user_units changed: actor=test_it_admin user=logged "
-                         f"before=[{unit_a['full_code']}] after=[{unit_b['full_code']}]"]
-
-    def test_unchanged_set_is_not_logged(self, admin, make_unit, caplog):
-        unit = make_unit()
-        admin.put(f"{BASE}/user-units/same", json={"unit_ids": [unit["id"]]})
-        caplog.clear()
-        with caplog.at_level(logging.INFO, logger="masters"):
-            admin.put(f"{BASE}/user-units/same", json={"unit_ids": [unit["id"]]})
-        assert not [r for r in caplog.records if r.getMessage().startswith("user_units changed")]
-
-    def test_list_groups_by_user_and_flags_inactive_units(self, admin, make_unit):
-        unit_a, unit_b = make_unit(), make_unit()
-        admin.put(f"{BASE}/user-units/grouped", json={"unit_ids": [unit_a["id"], unit_b["id"]]})
-        admin.put(f"{BASE}/units/{unit_b['id']}", json={"active": False})
-        body = admin.get(f"{BASE}/user-units").get_json()
-        assert body["total"] == len(body["items"])
-        item = next(i for i in body["items"] if i["username"] == "grouped")
-        assert {u["id"]: u["active"] for u in item["units"]} == {unit_a["id"]: 1, unit_b["id"]: 0}
-
-
 class TestPermissions:
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_storekeeper",
@@ -608,13 +504,12 @@ class TestPermissions:
         assert role_client("nobody").get(f"{BASE}/sites").status_code == 403
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_engineer", "maint_manager"])
-    def test_only_it_admin_writes_sites_units_and_access(self, role_client, role):
+    def test_only_it_admin_writes_sites_and_units(self, role_client, role):
         client = role_client(role)
         assert client.post(f"{BASE}/sites", json={"code": "XX", "name": "x"}).status_code == 403
         assert client.put(f"{BASE}/sites/1", json={"name": "x"}).status_code == 403
         assert client.post(f"{BASE}/units", json={"site_id": 1, "code": "XX", "name": "x"}).status_code == 403
         assert client.put(f"{BASE}/units/1", json={"name": "x"}).status_code == 403
-        assert client.put(f"{BASE}/user-units/someone", json={"unit_ids": []}).status_code == 403
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_storekeeper"])
     def test_floor_roles_cannot_write_classes(self, role_client, role):
@@ -633,12 +528,10 @@ class TestPermissions:
         assert res.status_code == 201
         assert client.put(f"{BASE}/equipment-types/{res.get_json()['id']}", json={"name": "y"}).status_code == 200
 
-    @pytest.mark.parametrize("role, status", [
-        ("maint_operator", 403), ("maint_technician", 403), ("maint_engineer", 403),
-        ("maint_manager", 403), ("it_admin", 200), ("admin", 200),
-    ])
-    def test_only_it_admin_reads_user_units(self, role_client, role, status):
-        assert role_client(role).get(f"{BASE}/user-units").status_code == status
+    def test_user_units_routes_are_gone(self, admin):
+        """S011 A1: access lives on the person (Team); /user-units is removed."""
+        assert admin.get(f"{BASE}/user-units").status_code == 404
+        assert admin.put(f"{BASE}/user-units/someone", json={"unit_ids": []}).status_code == 404
 
 
 def _default_ids(admin):

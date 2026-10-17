@@ -3,8 +3,9 @@
 import pytest
 
 from masters_core import (
-    normalise_username, validate_equipment_class, validate_equipment_type, validate_site, validate_unit,
-    validate_unit_ids, validate_username,
+    NO_LOGIN_ROLE_MESSAGE, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
+    validate_equipment_type, validate_person, validate_site, validate_site_row, validate_site_rows,
+    validate_trade, validate_unit, validate_unit_ids, validate_username,
 )
 
 
@@ -218,3 +219,139 @@ class TestUnitIds:
     def test_invalid(self, raw):
         _, errors = validate_unit_ids(raw)
         assert _fields(errors) == ["unit_ids"]
+
+
+class TestTrade:
+
+    def test_name_is_trimmed(self):
+        clean, errors = validate_trade({"name": "  Fitter "}, creating=True)
+        assert errors == [] and clean == {"name": "Fitter"}
+
+    @pytest.mark.parametrize("name, ok", [("a" * 50, True), ("a" * 51, False), ("", False), ("   ", False)])
+    def test_name_boundaries(self, name, ok):
+        _, errors = validate_trade({"name": name}, creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert _fields(errors) == ["name"]
+
+    def test_name_required_on_create_only(self):
+        assert _fields(validate_trade({}, creating=True)[1]) == ["name"]
+        assert validate_trade({"active": 0}, creating=False) == ({"active": 0}, [])
+
+
+def _person(**overrides):
+    return {"name": "Ravi", "employment": "direct", "trade_ids": [1], **overrides}
+
+
+class TestPerson:
+
+    def test_create_requires_name_and_employment_only(self):
+        _, errors = validate_person({}, creating=True)
+        assert set(_fields(errors)) == {"name", "employment"}
+
+    def test_valid_create(self):
+        clean, errors = validate_person(_person(name=" Ravi K ", employment="contractor"), creating=True)
+        assert errors == []
+        assert clean == {"name": "Ravi K", "employment": "contractor", "trade_ids": [1]}
+
+    def test_unknown_employment(self):
+        _, errors = validate_person(_person(employment="in_house"), creating=True)
+        assert _fields(errors) == ["employment"]
+        assert errors[0]["message"] == "Employment must be direct or contractor"
+
+    def test_trades_absent_on_create_is_left_out(self):
+        clean, errors = validate_person({"name": "Ravi", "employment": "direct"}, creating=True)
+        assert errors == [] and "trade_ids" not in clean
+
+    @pytest.mark.parametrize("creating", [True, False])
+    def test_empty_trades_accepted(self, creating):
+        clean, errors = validate_person(_person(trade_ids=[]), creating=creating)
+        assert errors == [] and clean["trade_ids"] == []
+
+    @pytest.mark.parametrize("bad", ["1", [1, "2"], [True], [0], None])
+    def test_trade_ids_must_be_ids(self, bad):
+        assert _fields(validate_person(_person(trade_ids=bad), creating=True)[1]) == ["trade_ids"]
+
+    def test_trade_ids_deduplicated_order_kept(self):
+        clean, _ = validate_person(_person(trade_ids=[3, 1, 3, 2, 1]), creating=True)
+        assert clean["trade_ids"] == [3, 1, 2]
+
+    def test_update_leaves_absent_fields_out(self):
+        assert validate_person({"active": 0}, creating=False) == ({"active": 0}, [])
+
+    @pytest.mark.parametrize("raw", [None, ""])
+    def test_login_cleared(self, raw):
+        clean, errors = validate_person(_person(username=raw), creating=False)
+        assert errors == [] and clean["username"] is None
+
+    def test_login_normalised(self):
+        clean, errors = validate_person(_person(username="  Ravi.K "), creating=True)
+        assert errors == [] and clean["username"] == "ravi.k"
+
+    @pytest.mark.parametrize("raw", ["ravi k", "ravi/k", 5])
+    def test_login_invalid(self, raw):
+        assert _fields(validate_person(_person(username=raw), creating=True)[1]) == ["username"]
+
+    def test_login_absent_on_create_is_left_out(self):
+        clean, _ = validate_person(_person(), creating=True)
+        assert "username" not in clean
+
+
+class TestSiteRow:
+    """S011 A1: one site row of a person."""
+
+    def test_valid_rows(self):
+        assert validate_site_row({"role": "maint_operator", "all_units": True}) == (
+            {"role": "maint_operator", "all_units": True, "unit_ids": []}, [])
+        assert validate_site_row({"role": "maint_technician", "unit_ids": [3, 2, 3]})[0]["unit_ids"] == [3, 2]
+
+    @pytest.mark.parametrize("body, field", [
+        ({}, "role"), ({"role": ""}, "role"), ({"role": "it_admin", "all_units": True}, "role"),
+        ({"role": "maint_boss", "all_units": True}, "role"),
+        ({"role": "maint_operator", "all_units": "yes"}, "all_units"),
+        ({"role": "maint_operator", "all_units": True, "unit_ids": [1]}, "unit_ids"),
+        ({"role": "maint_operator", "all_units": False}, "unit_ids"),
+        ({"role": "maint_operator", "unit_ids": [True]}, "unit_ids"),
+        ([1], "sites"),
+    ])
+    def test_refusals(self, body, field):
+        assert _fields(validate_site_row(body)[1]) == [field]
+
+    def test_missing_role_message(self):
+        assert validate_site_row({"all_units": True})[1][0]["message"] == "Choose a role"
+
+
+class TestSiteRows:
+
+    def test_whole_set(self):
+        rows, errors = validate_site_rows([{"site_id": 1, "role": "maint_manager", "all_units": True},
+                                           {"site_id": 2, "role": "maint_operator", "unit_ids": [5]}])
+        assert errors == [] and [r["site_id"] for r in rows] == [1, 2]
+        assert validate_site_rows([]) == ([], [])
+
+    @pytest.mark.parametrize("raw, field", [
+        ("x", "sites"), ({}, "sites"), ([1], "sites"), ([{"role": "maint_operator", "all_units": True}], "site_id"),
+        ([{"site_id": 0, "role": "maint_operator", "all_units": True}], "site_id"),
+        ([{"site_id": True, "role": "maint_operator", "all_units": True}], "site_id"),
+        ([{"site_id": 1, "role": "maint_operator", "all_units": True},
+          {"site_id": 1, "role": "maint_manager", "all_units": True}], "sites"),
+    ])
+    def test_refusals(self, raw, field):
+        assert _fields(validate_site_rows(raw)[1]) == [field]
+
+
+class TestEngineerLimits:
+
+    def test_no_login_only_technician(self):
+        assert no_login_role_error(["maint_technician", "maint_technician"]) is None
+        assert no_login_role_error([]) is None
+        assert no_login_role_error(["maint_technician", "maint_operator"]) == NO_LOGIN_ROLE_MESSAGE
+
+    @pytest.mark.parametrize("stored, new, ok", [
+        (None, "maint_technician", True), ("maint_technician", "maint_technician", True),
+        ("maint_technician", None, True), (None, None, True),
+        ("maint_operator", "maint_technician", False), (None, "maint_supervisor", False),
+        ("maint_technician", "maint_engineer", False),
+    ])
+    def test_technician_only(self, stored, new, ok):
+        assert technician_only(stored, new) is ok
