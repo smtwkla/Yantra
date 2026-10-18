@@ -104,11 +104,28 @@ brief's header (`Track: light | full`) and in the index row.
    as a private artifact page too.
 
    Only the user sets `Approved`. When they approve, record it (status, index
-   row, and their answers in the brief), and record lasting decisions in
-   `docs/Plan.MD`.
+   row, and their answers in the brief), copy the last review's `Reviewed
+   against:` into the brief's header as `Baseline:`, and record lasting
+   decisions in `docs/Plan.MD`.
 
 ## Phase 2: implement and review
 
+0. **Stale brief check** (README § Stale brief check), before the step or an
+   approved amendment is coded:
+   - list the files in the brief's *Where* and the modules they call; compare
+     them between the brief's `Baseline:` and the working tree now
+     (`git diff --stat <baseline>` covers commits and uncommitted changes; add
+     untracked files from `git status`). A brief without `Baseline:` takes
+     the commit and uncommitted steps named in its last review, or else the
+     commit current on its approval date;
+   - **nothing changed:** say so in one line and go on;
+   - **something changed:** spawn `brief-reviewer` in **staleness mode** with
+     the brief's path, the round (`s1`, `s2`, …), the baseline and the list of
+     changed files. Answer its `BS` findings in the Review log and fix the
+     brief text. A `blocker` or `major` finding returns the step to gate A:
+     show the user what changed and why, and wait for approval again;
+   - set `Baseline:` to the code just checked;
+   - skip the check only when the user says so, and record that in the brief.
 1. **Choose the coder's model, and tell the user which one and why.**
    - The default is **Sonnet**.
    - Pass `model: "opus"` to the `coder` agent when the step involves any of:

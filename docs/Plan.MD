@@ -1,7 +1,7 @@
 # Yantra — Plan (v1)
 
 Yantra is a computerised maintenance management system (CMMS) for VEL's plants.
-Operators report breakdowns and log equipment readings from their phones; the
+Operators report breakdowns and defects and log equipment readings from their phones; the
 maintenance team works the jobs; engineers plan preventive maintenance and sign
 it off; managers see downtime and compliance.
 
@@ -33,7 +33,7 @@ module before each is built.
 ### In v1
 
 1. **Equipment register** — equipment and its component-units and components, equipment class, unit, documents, QR label.
-2. **Breakdown tickets** — raised on the shop floor, worked by maintenance, closed by the engineer, with downtime timestamps and cause/action codes.
+2. **Tickets: breakdowns and defects** (maintenance requests that become work orders) — raised on the shop floor, worked by maintenance, closed by the engineer, with downtime timestamps and cause/action codes.
 3. **Preventive maintenance (PM)** — PM templates applied to equipment; plans with checklists and readings, triggered by calendar or by meter; jobs filled on the phone with photos; engineer sign-off.
 4. **CIL** (clean / inspect / lubricate) — operator checks, defined per equipment as part of its maintenance plan (§ 4.4).
 5. **Meter readings** — manual entry on the phone.
@@ -236,9 +236,30 @@ CIL jobs at their units and nothing else.
   drawings (S012); drawings of a later alteration to one press stay on that **equipment**;
   a photographed sketch counts. Replacing a drawing is remove then attach; the removed file
   stays (S008), which is enough version control.
-- **QR label:** printable per equipment; scanning it on a phone opens the equipment page, from where an operator can raise a breakdown or log a reading in one tap.
+- **QR label** (S014, decided 18-10-2026): 52 mm square, printed on A4 paper (15 per sheet) for now, for any node of the tree. It shows the QR, the **code**, the **site** code and the name. The QR holds a short link `<label address>/e/<code>` (address a setting, default `https://vel-yantra.mspv.app`), so a label never goes out of date; error correction level Q for dirty paper. Scanning it with a phone camera opens the equipment page, from where an operator can raise a ticket or log a reading in one tap. QR made in the backend with `qrcode` (python-qrcode).
 
-### 4.2 Breakdown tickets
+### 4.2 Tickets: breakdowns and defects
+
+**One ticket for every problem found on equipment** (decided 18-10-2026). A ticket is the
+**maintenance request** of EN 13460 (ISO 14224 calls it a *notification*); once maintenance
+acknowledges it, the same record is the **work order**: who worked, what they did, when, parts,
+sign-off. One table with states, not a request table and a work-order table: right-sized for
+about 50 users, and the record of the event stays in one place (ISO 14224).
+
+- **Breakdown or defect** comes from the **intensity** (below), not from a separate field:
+  - **breakdown** — *critical*: the equipment has stopped; downtime runs; notifications and
+    escalation apply;
+  - **defect** — *degraded* or *initial*: the equipment still runs but something is abnormal (a
+    leak, a noise, a loose guard, a worn scraper). No downtime. This is the TPM tag an operator
+    hangs during autonomous maintenance (*fuguai*, abnormality); catching defects before they
+    stop the machine is what TPM and the detection-method mix (below) measure.
+  - A defect that gets worse is **re-graded critical** with the event time; downtime starts then.
+  - Most defects are **deferred work** (below): planned for a slot, parts or a vendor.
+- **Sources:** raised by hand (an operator, supervisor or technician), from a Not OK item on a
+  CIL or PM job (phase 4), from an out-of-limits reading (phase 4), or by another system (the
+  shared ticket API, later). Every source lands in the same ticket.
+- Table and permission-key names (`breakdowns` / `breakdown:*` today in this plan) are settled
+  in the phase 3 brief.
 
 States and who moves them:
 
@@ -311,8 +332,8 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   times, the technician named, cause and action, parts used. The record matters more than the
   workflow (ISO 14224 wants every maintenance event recorded, whoever asked for it).
 - **Photos and remarks** at any step.
-- **Notifications:** new ticket → maintenance; escalation if not acknowledged within a set time (per criticality).
-- Serial: `BD-YYYY-MM-NNN`.
+- **Notifications:** new breakdown → maintenance; escalation if not acknowledged within a set time (per criticality). A new defect shows in the open-tickets list; whether it notifies is settled with the notification step.
+- Serial: `BD-YYYY-MM-NNN` (one series for breakdowns and defects, since a defect can become a breakdown; the prefix is settled in the phase 3 brief).
 - **Shared ticket API (later)** — the intended way for other systems (plant-3i,
   VelKilnMaster, any later one) to raise tickets: one authenticated endpoint, not
   one integration per system. The caller sends the equipment's permanent code,
@@ -543,7 +564,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `pm_routes`, `pm_route_plans` | *Proposed* (§ 4.3): a named walk — performer, the plans it covers in order; jobs stay one per equipment |
 | `equipment_documents` | Files attached to equipment or to an equipment model (exactly one owner, S012): kind (document / photo; a pick-list of kinds is proposed, § 4.1), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
-| `breakdowns` | Ticket: equipment, state, intensity, codes, remarks, serial |
+| `breakdowns` | Ticket (breakdown or defect, by intensity): equipment, component, state, intensity, codes, remarks, serial, source |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |
 | `breakdown_labour` | Person, trade worked and time spent per ticket |
 | `parts_used` | *Proposed* (§ 4.2): per ticket or PM job — part number, description, quantity, maker, component |
@@ -571,7 +592,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 
 - Home: "my jobs" (assigned tickets and PM jobs due; CIL jobs for operators), "raise breakdown", "scan equipment".
 - Equipment page (from QR): status, open tickets, due PMs; buttons "raise breakdown", "log reading", "start CIL" (before-use equipment).
-- Raise breakdown: equipment, intensity, symptom, remark, photo — four taps for the common case.
+- Raise breakdown or defect: equipment, intensity (critical = breakdown, else defect), symptom, remark, photo — four taps for the common case.
 - Ticket: timeline, act on the next step, add photos, labour.
 - PM job: checklist and readings one item per row, out-of-limit flagged as you type, photos, "done".
 
@@ -593,6 +614,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 | Mail server | Daily summary | send |
 | Web Push | Phone notifications | send |
 | plant-3i (later) | Telemetry: production counts, run hours, gauge values, PLC malfunction flags; raises tickets via the shared ticket API (§ 4.2) | read / receive |
+| aibots (later) | Reasoning over Yantra's history and plant-3i's data: forecasts from reading trends and failure history (predictive maintenance), remote-monitoring alerts, and later ad-hoc questions over the records. Bots never talk to devices (the aibots boundary rule: plant-3i acquires, aibots reasons and communicates) | read / receive |
 | VelKilnMaster (later) | Kiln sensors flagged as needing maintenance, via the shared ticket API (§ 4.2) | receive |
 
 ## 8. Build phases
@@ -601,10 +623,19 @@ Each phase ends usable on its own.
 
 1. **Foundation** — app skeleton per the base: Keycloak login, roles and RBAC, internet exposure (real client IP, network gate, access log), migrations, job queue, version endpoint and stale-bundle check, PWA shell. Deployment in `smtw_erp_devops/erp_server/yantra/` via `erp_spanner.py` (add `yantra` to its known apps; Yantra migrates its DB at startup, so `erp_spanner migrate` is not used), first deploy to customer7:8990.
 2. **Equipment register** — sites and units, users' unit access, equipment classes, equipment tree, documents, QR labels. Lets the team load the equipment list.
-3. **Breakdowns** — the full ticket flow, codes, labour, photos, Telegram + web push for new tickets and escalation. First module the shop floor uses. *Proposed* (16-10-2026): the **pressing shops** (SMTW and SSVT) as the pilot, since press availability is the plant's worst loss and its diagnosis bottleneck is what the diagnostic procedures address.
-4. **Meters, PM and CIL** — meters and readings, PM templates and plans with checklists and readings, calendar / meter / before-use triggers, PM and CIL jobs, verification.
+3. **Breakdowns and defects** — the full ticket flow for both (decided 18-10-2026), deferred work, codes, labour, photos, Telegram + web push for new tickets and escalation. First module the shop floor uses. *Proposed* (16-10-2026): the **pressing shops** (SMTW and SSVT) as the pilot, since press availability is the plant's worst loss and its diagnosis bottleneck is what the diagnostic procedures address.
+4. **Meters, PM and CIL** — the PM engine (decided 18-10-2026: phase 4, after tickets; daily inspection is a CIL / PM plan and its Not OK items raise defect tickets, so tickets come first): meters and readings, PM templates and plans with checklists and readings, calendar / meter / before-use triggers, PM and CIL jobs, verification.
 5. **History, reports, daily email** — history card, downtime, MTBF/MTTR, PM compliance, reading trends, Excel export, daily summary.
 6. **OneERP warehouse sync** — unit mapping from OneERP (can move earlier if wanted; it is independent).
+
+**Later rungs** (decided 18-10-2026, not phases of v1): **predictive maintenance,
+digital twins and remote monitoring**, built with the sister repos and not
+inside Yantra alone. plant-3i runs the digital twins (press today; extruder and
+compressor twins to follow) and feeds readings and malfunction flags (§ 7);
+aibots reasons over Yantra's coded history and plant-3i's data and sends the
+alerts; Yantra stays the register, the failure history and the readings with
+limits. The order is fixed by the maturity ladder (Maintenance-Philosophy § 8):
+these rungs need a year of coded tickets and readings first.
 
 ## 9. Open questions
 

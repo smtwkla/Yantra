@@ -175,7 +175,7 @@ Maintenance types (EN 13306) and where they live:
 | Preventive — calendar | Fixed-interval tasks | PM plans, calendar trigger — v1 |
 | Preventive — usage | Every N run hours / production count | PM plans, meter trigger — v1 |
 | Condition-based | Act when a measured value crosses a limit | Gauge meters with limits — v1, manual readings; IIoT later |
-| Predictive | Forecast failure from trends | Not planned |
+| Predictive | Forecast failure from trends | A later rung (decided 18-10-2026): once Yantra holds a year of coded tickets and readings, **aibots** reasons over them and over **plant-3i**'s telemetry (Plan § 8, later rungs) |
 
 **Deferred corrective maintenance** (**Proposed**, 16-10-2026). EN 13306 splits
 corrective work into *immediate* (the door sensor: fix now) and *deferred* (worn
@@ -297,6 +297,21 @@ compliance window, e.g. ±10 % of the interval — **Proposed**); shutdown / ann
   tickets automatically (**Proposed**).
 - **VelKilnMaster** (the kiln app, later) may likewise flag kiln sensors as
   needing maintenance — another candidate source of automatic tickets.
+- **The later rungs** (decided 18-10-2026). Maintenance maturity climbs reactive →
+  preventive → condition-based → predictive; no rung can be skipped, because each
+  rests on the records of the one below. Yantra builds the first three. The
+  fourth, **predictive maintenance**, **digital twins** and **remote monitoring**,
+  is built across the three sister repos with a fixed division of labour:
+  **plant-3i** acquires (one digital twin per machine, polling the PLC: the
+  press twin exists, extruder and compressor twins follow), **Yantra** holds the
+  asset register, the coded failure history and the readings with limits, and
+  **aibots** reasons and communicates (forecasts from Yantra's and plant-3i's
+  data, alerts, questions answered over the records). Bots never touch devices.
+  The national context (MRAM 2026, ABB survey, NITI Aayog "AI for Viksit
+  Bharat", reported 18-10-2026): 88 % of Indian industrial businesses see an
+  unplanned outage at least monthly and 19 % run to failure; the report names
+  AI-based predictive maintenance, digital twins and remote monitoring as the
+  enablers. The plant is in that 19 % today; the ladder is how it leaves it.
 
 TBD — which meters matter per equipment class, and the limits for each.
 

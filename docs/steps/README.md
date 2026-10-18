@@ -35,6 +35,7 @@ progress:
 |---|---|---|
 | `1-brief.md` | Planner | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
 | `2-brief-review-r1.md`, `-r2.md`, … | Brief reviewer | One file per review round |
+| `2-brief-review-s1.md`, `-s2.md`, … | Brief reviewer | A staleness review: does the approved brief still hold for code changed since its baseline (§ Stale brief check) |
 | `3-impl-report.md` | Coder | The mandatory post-implementation report (CLAUDE-COMMON "Report after implementation"). Its **Fix rounds** section answers each code-review finding. |
 | `4-code-review-r1.md`, `-r2.md`, … | Code reviewer | One file per review round, reviewing the working-tree diff against the brief |
 
@@ -48,11 +49,13 @@ Doc: brief | brief-review r1 | impl-report | code-review r1
 Author: <role> (<model>)
 Date: DD-MM-YYYY
 Track: light | full
+Baseline: <commit> [+ uncommitted S0NN, …]
 Status: Draft | In review | Approved DD-MM-YYYY by <user> | Implementing | In code review | Done | Dropped
 ```
 
-`Track` and `Status` appear in the brief only. The brief's status is the step's
-status. Briefs written before 16-10-2026 have no `Track` line: they are full.
+`Track`, `Baseline` and `Status` appear in the brief only. The brief's status
+is the step's status. `Baseline` is the code the brief was last reviewed against
+(§ Stale brief check). Briefs written before 16-10-2026 have no `Track` line: they are full.
 
 ## Tracks
 
@@ -108,8 +111,9 @@ section; the rest stay plain notes.
 
 ## Findings
 
-- Brief-review findings are `BR<round>-<nn>` (e.g. `BR1-03`), and code-review
-  findings are `CR<round>-<nn>` (e.g. `CR2-01`).
+- Brief-review findings are `BR<round>-<nn>` (e.g. `BR1-03`), staleness-review
+  findings `BS<round>-<nn>` (e.g. `BS1-02`), and code-review findings
+  `CR<round>-<nn>` (e.g. `CR2-01`).
 - Each finding has a severity: `blocker`, `major`, `minor` or `nit`.
 - The author answers every finding with one of these:
   - `Accepted`, with what changed;
@@ -127,7 +131,7 @@ section; the rest stay plain notes.
    decision-relevant sections verbatim (what, out of scope, standards, design
    decisions, open questions) and lists the others by heading, rather than a
    summary; on the light track, a bullet summary and the path (§ Tracks). The coder
-   never starts on an unapproved brief. Anything the brief doesn't cover is raised with the user,
+   never starts on an unapproved brief, nor on a stale one (§ Stale brief check). Anything the brief doesn't cover is raised with the user,
    not decided in code.
 3. **Code review.** Status `In code review`. Rounds repeat until no `blocker`
    or `major` finding is open.
@@ -155,6 +159,30 @@ becomes an **amendment** rather than a new step:
 5. **Review the code.** The next code-review round covers it.
 
 A change too big for the step being reviewed becomes a new step.
+
+## Stale brief check
+
+A brief is checked against the code as it stood when it was reviewed. Other
+steps can change that code before this one is coded, so the brief can go stale
+between approval and coding. The check catches it before the coder starts.
+
+1. **Record the baseline.** Every brief review names the code it read:
+   `Reviewed against: <commit> [+ uncommitted S0NN, …]`. When the user approves,
+   the planner copies the last one into the brief's header as `Baseline:`.
+2. **Check before coding** (the step, or an approved amendment):
+   - the planner compares the files named in the brief's *Where*, and the
+     modules they call, between the baseline and the working tree now (commits
+     since the baseline plus uncommitted changes);
+   - **nothing changed:** the coder starts;
+   - **something changed:** one **staleness review**, `2-brief-review-sN.md`.
+     The brief reviewer gets that diff and answers one question: does each
+     statement in the brief still hold? Findings are `BS<n>-<nn>`;
+   - the planner answers them in the Review log as usual. A `blocker` or
+     `major` finding changes what the user approved, so the brief goes back to
+     the user (gate A) before coding. Minor findings and nits are fixed in the
+     brief text and the coder starts;
+   - after the check, `Baseline:` is set to the code just checked.
+3. **Skipped** only when the user says so; the planner records it in the brief.
 
 ## IDE reformatting
 
@@ -192,6 +220,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
   - the final check and commit.
 - **Each review loop is capped at 3 rounds,** then the orchestrator asks the
   user.
+- **The stale brief check** (above) runs before each `/step implement`.
 - **The files and conventions above are unchanged.** The separate terminals
   below still work.
 
@@ -218,7 +247,9 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | In code review — amendment A1 (Team; A1 approved 16-10-2026) | 16-10-2026 |
 | S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | In code review (A1 approved 16-10-2026; built on uncommitted S010, baseline tree 15227de) | 16-10-2026 |
 | S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | In code review (approved 17-10-2026; on top of c486a4a) | 16-10-2026 |
-| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | Approved (18-10-2026) | 17-10-2026 |
+| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | In code review (approved 18-10-2026; on top of 3e338b4; A1 approved 18-10-2026 — one row per sighting per day) | 18-10-2026 |
+| S014 | [QR labels](S014-qr-labels/1-brief.md) — 52 mm labels on A4 paper, 15 per sheet; link `/e/<code>` opens the equipment page; link address in Settings | 2 | In code review (approved 18-10-2026; on top of uncommitted S013) | 18-10-2026 |
+| S022 | [Software inventory and vulnerability check](S022-dependency-inventory/1-brief.md) — CycloneDX SBOMs in `sbom/` from the lockfiles; OSV lookup for CVEs; stale direct dependencies | — | Approved (18-10-2026; full track; baseline c2c45d2 + uncommitted S013, S014) | 18-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -227,7 +258,14 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 
 | Idea | From | Note |
 |---|---|---|
-| **S014** QR labels, 52 mm square, on paper for now | Plan.MD phase 2; ID assigned by the user 17-10-2026 | A durable printer or label stock later (user) |
-| **S015** Printable asset list per site / unit, for audit and stock verification | user, 17-10-2026; ID assigned | Then phase 3 (breakdowns) |
+| **S015** Printable asset list per site / unit, for audit and stock verification | user, 17-10-2026; ID assigned | Then phase 3 (breakdowns and defects) |
+| **S016** Failure codes — failure mode (symptom, scoped by class), cause, action; ISO 14224 Annex B; engineers maintain | phase 3 plan, user 18-10-2026 | Press class first (pilot) |
+| **S017** Raise and see tickets — breakdown or defect by intensity; equipment, component, symptom, description, reported by, photo, event time; open-tickets list by unit; ticket page with timeline | phase 3 plan, user 18-10-2026 | Decide: serial prefix (`BD-` or neutral) |
+| **S018** Work the ticket — acknowledge, in progress, back in service (production too), close with cause/action codes; labour rows; frivolous close; send back; downtime, response, repair times | phase 3 plan, user 18-10-2026 | Decide: operator reopen "not fixed" (Plan.MD Q4) |
+| **S019** Deferred work — scheduled state, planned date, waiting reason; planned vs breakdown downtime; waiting split on critical tickets | phase 3 plan, user 18-10-2026 | Plan.MD Q13; meter-value targets wait for phase 4 |
+| **S020** Work done without a ticket (raise-and-close) and parts used | phase 3 plan, user 18-10-2026 | Plan.MD Q23, Q21 |
+| **S021** Alerts — PWA shell, web push, Telegram via the job queue; new breakdown and escalation; escalation times as settings; not-closed-by-end-of-shift list | phase 3 plan, user 18-10-2026 | Plan.MD Q2, Q12; decide whether defects notify. Then phase 4 (PM engine) |
+| Image SBOM at build — an SBOM of each built image (base image, OS packages, venv), stored with the image in GHCR. Candidate: Docker's built-in `docker build --sbom=true` (SPDX; needs the containerd image store), no third-party scanner; `BUILDKIT_SBOM_SCAN_STAGE` to see the frontend's bundled libraries | S022 U1, user 18-10-2026 (keep both repo and image checks) | Each repo's build script changes; any shared part in `smtw-common` |
+| aibots scanner bot — reads every app's `sbom/` (CycloneDX) and the SBOM of the **deployed** image version (SPDX; not `latest`), looks them up in OSV, reports, with LLM advice on updates and migrations | S022 U1, user 18-10-2026 | In the aibots repo; needs S022's SBOM files. Separately, aibots's containers install from unpinned `requirements.txt`, so its lockfile isn't what runs |
 | Malware scanning of uploads (ISO 27001 A.8.7) | user, 16-10-2026 | S006 § 10.3; ClamAV in its own container is the candidate |
 | Drop the legacy `user_units` table | S011 A1, 16-10-2026 | After S011 is live and a rollback is no longer wanted (S011 A1 rule 3) |

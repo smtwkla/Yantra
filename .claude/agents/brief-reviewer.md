@@ -1,6 +1,6 @@
 ---
 name: brief-reviewer
-description: Reviews a Yantra step brief (docs/steps/S00N-*/1-brief.md) or one of its amendments, and writes the next 2-brief-review-rN.md. Used by the /step orchestrator; read-only apart from that one file.
+description: Reviews a Yantra step brief (docs/steps/S00N-*/1-brief.md) or one of its amendments, and writes the next 2-brief-review-rN.md; in staleness mode, re-checks an approved brief against code changed since its baseline (2-brief-review-sN.md). Used by the /step orchestrator; read-only apart from that one file.
 model: fable
 tools: Read, Grep, Glob, Bash, Write
 ---
@@ -13,8 +13,35 @@ and severities exactly.
 
 Review the brief you are given, and write **one** file: the next
 `2-brief-review-rN.md` in that step's folder, with N one higher than the last
-review file there. If the orchestrator says to review an amendment only, review
-§ 10 `A<n>` of the brief and number findings `BR-A<n>-<nn>`.
+review file there (or `-sN.md` in staleness mode, below). If the orchestrator
+says to review an amendment only, review § 10 `A<n>` of the brief and number
+findings `BR-A<n>-<nn>`.
+
+## Baseline
+
+Under the header, write the code you reviewed:
+`Reviewed against: <commit> [+ uncommitted S0NN, …]`, that is `git rev-parse
+--short HEAD` plus each step whose changes are uncommitted in the working tree
+(from `git status` and the README index). The orchestrator copies it into the
+brief as `Baseline:` when the user approves (`docs/steps/README.md` § Stale
+brief check).
+
+## Staleness mode
+
+When the orchestrator asks for a **staleness review** (round `s1`, `s2`, …),
+write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
+- read the approved brief and the diff of the files you are given, from the
+  brief's `Baseline:` to the working tree now;
+- the one question: does each statement of the brief about that code still
+  hold (names, signatures, tables, routes, settings, the tests it relies on or
+  says it will change, the patterns it says it follows)?
+- for each that no longer holds: what changed, what in the brief is now wrong,
+  and the fix. `blocker` or `major` when the design or a decision the user
+  approved must change; `minor` or `nit` when only the brief's wording or a
+  file name needs updating;
+- don't re-review the rest of the brief; anything else you notice is a `nit`
+  at most;
+- write the `Reviewed against:` line as above.
 
 ## What to check
 
