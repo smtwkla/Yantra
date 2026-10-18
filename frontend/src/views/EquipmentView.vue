@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Equipment list — a paged, filterable table (docs/steps/S003-equipment-screens/1-brief.md § 4.1;
- * type filter and the search in notes and type names: S004).
+ * type filter and the search in notes and type names: S004; ticks for QR labels: S014).
  * The filters live in the URL query, so Back returns to the same page and a filtered list
  * can be bookmarked. The route is the single source of truth: controls write to it with
  * router.replace and the list reloads when it changes.
@@ -19,6 +19,7 @@ import {
   ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses, equipmentTypes, sites, units,
 } from "../stores/masters";
 import { STATUS_LABELS } from "../utils/equipmentLabels";
+import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 
 const PAGE_SIZE = 50; // the API default
@@ -176,6 +177,62 @@ watch(() => route.fullPath, load);
 function openNode(id) {
   router.push(`/equipment/${id}`);
 }
+
+// ---- ticks for QR labels (S014): kept across pages of the same filters, cleared when a filter
+// or the search changes (a new filter is a new group), at most MAX_LABELS ----
+
+const selected = ref(new Set());
+const selectionHint = ref("");
+const CAP_HINT = `${MAX_LABELS} labels at most — print this group first`;
+
+// Everything in the query but the page number
+const filterKey = computed(() => {
+  const { page: _page, ...filters } = query.value;
+  return JSON.stringify(Object.keys(filters).sort().map((k) => [k, filters[k]]));
+});
+watch(filterKey, () => {
+  selected.value.clear();
+  selectionHint.value = "";
+});
+
+const pageIds = computed(() => (page.value?.items ?? []).map((e) => e.id));
+const allOnPage = computed(() => pageIds.value.length > 0 && pageIds.value.every((id) => selected.value.has(id)));
+
+/** A refused tick: the box is unticked again, as the selection did not change. */
+function refuse(event) {
+  event.target.checked = false;
+  selectionHint.value = CAP_HINT;
+}
+
+function toggleOne(id, event) {
+  if (!event.target.checked) {
+    selected.value.delete(id);
+    selectionHint.value = "";
+  } else if (selected.value.size >= MAX_LABELS) {
+    refuse(event);
+  } else {
+    selected.value.add(id);
+  }
+}
+
+function toggleAllOnPage(event) {
+  if (!event.target.checked) {
+    for (const id of pageIds.value) selected.value.delete(id);
+    selectionHint.value = "";
+    return;
+  }
+  const missing = pageIds.value.filter((id) => !selected.value.has(id));
+  if (selected.value.size + missing.length > MAX_LABELS) {
+    refuse(event);
+    return;
+  }
+  for (const id of missing) selected.value.add(id);
+}
+
+// A new tab, so this list and its ticks stay as they are (base pattern § Print / Export Views)
+function printLabels() {
+  window.open(router.resolve(labelsPath([...selected.value])).href, "_blank");
+}
 </script>
 
 <template>
@@ -209,7 +266,10 @@ function openNode(id) {
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
       <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, model, notes…" aria-label="Search" />
-      <button v-if="canEdit" class="btn btn-sm btn-primary ms-auto" @click="formModal.openCreateEquipment()">
+      <button class="btn btn-sm btn-outline-primary ms-auto" :disabled="selected.size === 0" @click="printLabels">
+        <i class="fa-solid fa-qrcode me-1"></i>Print labels ({{ selected.size }})
+      </button>
+      <button v-if="canEdit" class="btn btn-sm btn-primary" @click="formModal.openCreateEquipment()">
         <i class="fa-solid fa-plus me-1"></i>Add equipment
       </button>
     </div>
@@ -217,6 +277,7 @@ function openNode(id) {
       <input id="eq-show-scrapped" :checked="showScrapped" class="form-check-input" type="checkbox" @change="toggleScrapped($event.target.checked)" />
       <label class="form-check-label small" for="eq-show-scrapped">Show scrapped</label>
     </div>
+    <div v-if="selectionHint" class="text-warning-emphasis small mb-2">{{ selectionHint }}</div>
 
     <div v-if="loading && page" class="text-secondary small mb-1">Loading…</div>
     <div v-if="loadError" class="alert alert-danger d-flex justify-content-between align-items-center">
@@ -233,6 +294,16 @@ function openNode(id) {
       <table class="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
+            <th class="tick-cell">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                :checked="allOnPage"
+                title="Select all on this page"
+                aria-label="Select all on this page"
+                @change="toggleAllOnPage"
+              />
+            </th>
             <th>Code</th><th>Name</th><th>Class</th><th>Model</th><th>{{ level === "equipment" ? "Unit" : "Path" }}</th>
             <th>Crit.</th><th>Status</th><th class="text-end">Parts</th>
           </tr>
@@ -246,6 +317,15 @@ function openNode(id) {
             :class="{ 'text-secondary': e.status === 'scrapped' }"
             @click="openNode(e.id)"
           >
+            <td class="tick-cell" @click.stop>
+              <input
+                class="form-check-input"
+                type="checkbox"
+                :checked="selected.has(e.id)"
+                :aria-label="`Select ${e.code} for labels`"
+                @change="toggleOne(e.id, $event)"
+              />
+            </td>
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>
             <td>{{ e.class_code }}<span v-if="e.type_name" class="text-secondary"> · {{ e.type_name }}</span></td>
@@ -270,3 +350,9 @@ function openNode(id) {
     <EquipmentFormModal ref="formModal" @saved="({ result }) => openNode(result.id)" />
   </div>
 </template>
+
+<style scoped>
+.tick-cell {
+  width: 2rem;
+}
+</style>

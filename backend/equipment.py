@@ -1,5 +1,6 @@
 """Equipment register — the equipment tree API
-(docs/steps/S002-equipment-register/1-brief.md; types and notes: S004; models: S012).
+(docs/steps/S002-equipment-register/1-brief.md; types and notes: S004; models: S012;
+QR labels and the by-code lookup: S014 — read-only, no locks).
 
 Thin shell: equipment_core holds the rules (validation, codes, level table,
 paths, tracked changes, the class and type taken from the model); this module checks
@@ -60,7 +61,9 @@ from equipment_core import (
     CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, derive_from_model, effective_criticality,
     format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
+from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters_core import model_label
+from settings import label_base_url
 
 equipment_bp = Blueprint("equipment", __name__)
 
@@ -220,8 +223,8 @@ def _detail(cur, node):
 
 
 # ---------------------------------------------------------------------------
-# Unit access — only these helpers, the list, /my-units and documents.py's removed list
-# touch accessible_unit_ids
+# Unit access — only these helpers, the list, /my-units, the labels and documents.py's
+# removed list touch accessible_unit_ids
 # ---------------------------------------------------------------------------
 
 def accessible_unit_ids(cur, key="equipment:read"):
@@ -473,6 +476,84 @@ def get_equipment(node_id):
         _, node = load_node_for_user(cur, node_id, for_update=False)
         # The user's keys at this node's site, so the screen's buttons follow the site (S011)
         return jsonify({**_detail(cur, node), "permissions": permissions_at_site(node["site_id"])})
+
+
+# ---------------------------------------------------------------------------
+# QR labels (S014) — read-only: the lookup behind /e/<code>, and the label sheets
+# ---------------------------------------------------------------------------
+
+@equipment_bp.route("/by-code/<code>")
+@require_perm("equipment:read")
+def get_equipment_by_code(code):
+    """The id behind a label's code.  Not a code, unknown, or outside the user's units: the
+    same 404, so a label reveals nothing about a unit the user may not see."""
+    code = parse_code(code)
+    if code is None:
+        raise ApiError("Not found", 404)
+    with get_db().cursor() as cur:
+        cur.execute("SELECT id FROM equipment WHERE code = %s", (code,))
+        row = cur.fetchone()
+        if row is None:
+            raise ApiError("Not found", 404)
+        _, node = load_node_for_user(cur, row["id"], for_update=False)
+    return jsonify({"id": node["id"]})
+
+
+def _validate_labels_request(body, _creating):
+    """ids: a non-empty list of distinct positive integers (not booleans), at most
+    MAX_LABELS_PER_REQUEST; with_parts: a boolean, default false."""
+    ids, with_parts = body.get("ids"), body.get("with_parts", False)
+    if (not isinstance(ids, list) or not ids
+            or any(isinstance(i, bool) or not isinstance(i, int) or i < 1 for i in ids)
+            or len(set(ids)) != len(ids)):
+        return {}, [{"field": "ids", "message": "Choose the equipment to print (a list of distinct ids)"}]
+    if len(ids) > MAX_LABELS_PER_REQUEST:
+        return {}, [{"field": "ids", "message": TOO_MANY_LABELS}]
+    if not isinstance(with_parts, bool):
+        return {}, [{"field": "with_parts", "message": "Must be true or false"}]
+    return {"ids": ids, "with_parts": with_parts}, []
+
+
+_LABELS_NOT_FOUND = "Some of the selected equipment was not found or is not at your units"
+
+
+@equipment_bp.route("/labels", methods=["POST"])
+@require_perm("equipment:read")
+def equipment_labels():
+    """The labels for the selected nodes (and, with_parts, their parts), in print order.
+    One query over the three levels; any selected node missing or outside the user's units
+    → 404 for the whole request, naming none (as the equipment page answers)."""
+    clean = clean_body(_validate_labels_request, creating=False)
+    ids, with_parts = clean["ids"], clean["with_parts"]
+    in_ids = f"({', '.join(['%s'] * len(ids))})"
+    with get_db().cursor() as cur:
+        unit_ids = accessible_unit_ids(cur)
+        if unit_ids is not None and not unit_ids:
+            raise ApiError(_LABELS_NOT_FOUND, 404)   # no units: an empty IN () would be an SQL error
+        if with_parts:
+            # The tree is at most three levels: equipment, component-unit, component
+            where, params = f"(e.id IN {in_ids} OR e.parent_id IN {in_ids} OR p.parent_id IN {in_ids})", ids * 3
+        else:
+            where, params = f"e.id IN {in_ids}", list(ids)
+        if unit_ids is not None:
+            where += f" AND u.id IN ({', '.join(['%s'] * len(unit_ids))})"
+            params += sorted(unit_ids)
+        cur.execute(f"SELECT e.id, e.parent_id, e.code, e.name, e.status, s.code AS site_code{_NODE_FROM}"
+                    f" WHERE {where}", params)
+        rows = cur.fetchall()
+        base_url = label_base_url(cur)
+    found = {row["id"] for row in rows}
+    if any(node_id not in found for node_id in ids):
+        raise ApiError(_LABELS_NOT_FOUND, 404)
+    ordered, message = expand_selection(ids, rows, with_parts)
+    if message:
+        raise ApiError(message, 400, "ids")
+    labels = []
+    for row in ordered:
+        url = label_url(base_url, row["code"])
+        labels.append({"id": row["id"], "code": row["code"], "name": row["name"], "site_code": row["site_code"],
+                       "url": url, "qr_svg": qr_svg(url)})
+    return jsonify({"labels": labels})
 
 
 @equipment_bp.route("/", methods=["POST"], strict_slashes=False)

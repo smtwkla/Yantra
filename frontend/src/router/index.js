@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
+import EquipmentByCodeView from "../views/EquipmentByCodeView.vue";
 import EquipmentDetailView from "../views/EquipmentDetailView.vue";
 import EquipmentView from "../views/EquipmentView.vue";
+import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
 import SettingsView from "../views/SettingsView.vue";
@@ -20,6 +22,19 @@ const routes = [
     name: "equipment-detail",
     component: EquipmentDetailView,
     meta: { title: "Equipment" },
+  },
+  // The link on a QR label (S014): the code, never the internal id
+  {
+    path: "/e/:code([A-Za-z0-9]{1,12})",
+    name: "equipment-by-code",
+    component: EquipmentByCodeView,
+    meta: { title: "Equipment" },
+  },
+  {
+    path: "/labels",
+    name: "labels",
+    component: LabelsPrintView,
+    meta: { title: "QR labels" },
   },
   {
     path: "/masters",

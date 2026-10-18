@@ -3,7 +3,7 @@
  * Equipment page — one node at any level: path, details, parts and history
  * (docs/steps/S003-equipment-screens/1-brief.md § 4.2; type and notes: S004; documents and
  * photos: S006, loaded separately by DocumentsCards, with the model's: S012; manufacturer and
- * model: S012). Reloaded from the API after any save. The type name and the model's label come
+ * model: S012; Print label: S014). Reloaded from the API after any save. The type name and the model's label come
  * with the node, so no types or models cache is needed here.
  */
 import { computed, ref, watch } from "vue";
@@ -16,6 +16,7 @@ import { userPermissions } from "../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
+import { labelsPath } from "../utils/labelSheets";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
@@ -74,6 +75,11 @@ async function load() {
 // Vue Router reuses this component when only :id changes, so follow the route
 watch(() => route.params.id, load, { immediate: true });
 
+// A new tab, as from the list; anyone who may see the node may print its label (S014)
+function printLabel(withParts) {
+  window.open(router.resolve(labelsPath([node.value.id], withParts)).href, "_blank");
+}
+
 function onSaved({ result, created }) {
   if (created) {
     router.push(`/equipment/${result.id}`);
@@ -111,6 +117,25 @@ function onSaved({ result, created }) {
         <StatusBadge :status="node.status" />
         <CriticalityBadge :grade="node.effective_criticality" :inherited="node.criticality === null" />
         <span v-if="loading" class="text-secondary small">Loading…</span>
+        <div class="dropdown ms-auto">
+          <button
+            class="btn btn-sm btn-outline-secondary dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            :disabled="loading"
+          >
+            <i class="fa-solid fa-qrcode me-1"></i>Print label
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><button class="dropdown-item" type="button" @click="printLabel(false)">This node only</button></li>
+            <li>
+              <button class="dropdown-item" type="button" :disabled="node.children.length === 0" @click="printLabel(true)">
+                This node and all its parts
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
 
       <div v-if="scrapped" class="alert alert-secondary">Scrapped — this record is read-only.</div>

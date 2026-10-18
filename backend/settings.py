@@ -1,9 +1,10 @@
 """Settings module — system status and app settings (app_settings reads and writes).
 
 app_settings holds runtime-configurable values (key -> text).  Readers go through
-get_setting_int, so an admin typo falls back to the default instead of breaking the
-feature that reads it.  Only the keys in _APP_SETTINGS can be written through the API;
-the internal networks (S013) have their own routes, as they are a list, not a number.
+get_setting_int (or get_setting_text and a check, as label_base_url), so an admin typo
+falls back to the default instead of breaking the feature that reads it.  Only the keys in
+_APP_SETTINGS can be written through /app; the internal networks (S013) and the label link
+address (S014) have their own routes, as they are not numbers.
 
 Also the S013 read-only views: the access log and the background tasks.
 """
@@ -22,6 +23,7 @@ from api_common import (
 from auth_utils import require_perm
 from config import DB_CONFIG, UPLOAD_MAX_MB_CEILING
 from db_helpers import count, get_db, row_to_dict, rows_to_list, transaction
+from labels_core import normalise_base_url
 from local_db import db_status
 from network_core import format_networks, is_internal, parse_networks
 from scheduled_tasks import SCHEDULE, is_overdue, next_run
@@ -47,15 +49,32 @@ _WHOLE_NUMBER_RE = re.compile(r"-?[0-9]+")
 def get_setting_int(cur, key, default, minimum, maximum):
     """The integer setting ``key``; a missing, non-integer or out-of-range value gives
     ``default`` and logs a warning."""
-    cur.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s", (key,))
-    row = cur.fetchone()
-    raw = row["setting_value"] if row else None
+    raw = get_setting_text(cur, key, None)
     text = raw.strip() if isinstance(raw, str) else ""
     if _WHOLE_NUMBER_RE.fullmatch(text) and minimum <= int(text) <= maximum:
         return int(text)
     logger.warning("Setting %s is %r, not a whole number %d-%d; using the default %d",
                    key, raw, minimum, maximum, default)
     return default
+
+
+def get_setting_text(cur, key, default):
+    """The text setting ``key`` as stored, or ``default`` when there is no row.  Checking
+    the value is the caller's job (label_base_url)."""
+    cur.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s", (key,))
+    row = cur.fetchone()
+    return row["setting_value"] if row and row["setting_value"] is not None else default
+
+
+def _save_setting(cur, key, text):
+    """Write ``key`` = ``text`` inside the caller's transaction, locking the row first so the
+    logged old value is the one replaced.  The one place app_settings is written."""
+    cur.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s FOR UPDATE", (key,))
+    row = cur.fetchone()
+    cur.execute("INSERT INTO app_settings (setting_key, setting_value) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE setting_value = %s", (key, text, text))
+    # app_settings has no updated_by, so this log line is the record of who changed it (A.8.15)
+    logger.info("Setting %s changed by %s: %s -> %s", key, actor(), row["setting_value"] if row else None, text)
 
 
 def upload_max_mb(cur):
@@ -100,15 +119,56 @@ def put_app_settings():
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         for key, value in clean.items():
-            cur.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s FOR UPDATE", (key,))
-            row = cur.fetchone()
-            cur.execute("INSERT INTO app_settings (setting_key, setting_value) VALUES (%s, %s) "
-                        "ON DUPLICATE KEY UPDATE setting_value = %s", (key, str(value), str(value)))
-            # app_settings has no updated_by, so this log line is the record of who changed it (A.8.15)
-            logger.info("Setting %s changed by %s: %s -> %s",
-                        key, actor(), row["setting_value"] if row else None, value)
+            _save_setting(cur, key, str(value))
     with conn.cursor() as cur:
         return jsonify({UPLOAD_MAX_MB: upload_max_mb(cur)})
+
+
+# ---------------------------------------------------------------------------
+# Label link address (S014 § 3) — the address QR labels carry, whoever prints them
+# ---------------------------------------------------------------------------
+
+LABEL_BASE_URL = "label_base_url"
+# In code, not a migration row: the card shows it until the first save (S014 § 6)
+DEFAULT_LABEL_BASE_URL = "https://vel-yantra.mspv.app"
+
+
+def label_base_url(cur):
+    """The stored address, normalised; the default when none is stored, or (with a
+    warning) when the stored text is no longer a valid address (edited by hand)."""
+    raw = get_setting_text(cur, LABEL_BASE_URL, None)
+    if raw is None:
+        return DEFAULT_LABEL_BASE_URL
+    url, _error = normalise_base_url(raw)
+    if url is None:
+        logger.warning("Setting %s is %r, not a valid label address; using the default %s",
+                       LABEL_BASE_URL, raw, DEFAULT_LABEL_BASE_URL)
+        return DEFAULT_LABEL_BASE_URL
+    return url
+
+
+def _validate_labels(body, _creating):
+    url, error = normalise_base_url(body.get("base_url"))
+    if error:
+        return {}, [{"field": "base_url", "message": error}]
+    return {"base_url": url}, []
+
+
+@settings_bp.route("/labels")
+@require_perm("settings:read")
+def get_labels():
+    with get_db().cursor() as cur:
+        return jsonify({"base_url": label_base_url(cur)})
+
+
+@settings_bp.route("/labels", methods=["PUT"])
+@require_perm("settings:edit")
+def put_labels():
+    url = clean_body(_validate_labels, creating=False)["base_url"]
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _save_setting(cur, LABEL_BASE_URL, url)
+    return jsonify({"base_url": url})
 
 
 # ---------------------------------------------------------------------------
@@ -153,14 +213,7 @@ def put_network():
     value = format_networks(networks)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        cur.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s FOR UPDATE",
-                    (INTERNAL_NETWORKS_KEY,))
-        row = cur.fetchone()
-        cur.execute("INSERT INTO app_settings (setting_key, setting_value) VALUES (%s, %s) "
-                    "ON DUPLICATE KEY UPDATE setting_value = %s", (INTERNAL_NETWORKS_KEY, value, value))
-        # app_settings has no updated_by, so this log line is the record of who changed it (A.8.15)
-        logger.info("Setting %s changed by %s: %s -> %s",
-                    INTERNAL_NETWORKS_KEY, actor(), row["setting_value"] if row else None, value)
+        _save_setting(cur, INTERNAL_NETWORKS_KEY, value)
     # This process at once; the other Gunicorn workers within NETWORKS_CACHE_SECONDS
     clear_networks_cache()
     return jsonify(_network_body(networks))

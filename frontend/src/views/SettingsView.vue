@@ -5,6 +5,8 @@
  * - Uploads card: the upload size limit (S006 § 5.7), editable with settings:edit,
  *   read-only with settings:read. The backend validates the range.
  * - Removed documents card: restore or delete for good, with equipment:purge_documents (S008).
+ * - Labels card: the address QR labels carry (S014 § 3), editable with settings:edit; the
+ *   backend validates it and sends the default until the first save.
  * - Network card: the plant's internal ranges, editable with settings:edit, and the address the
  *   server sees for this browser (S013 § 5.2). The backend validates and refuses a list that
  *   would block the saver.
@@ -86,6 +88,45 @@ async function saveAppSettings() {
 }
 
 // ---------------------------------------------------------------------------
+// Labels — the link address printed in every QR label
+// ---------------------------------------------------------------------------
+
+const labelBaseUrl = ref(null);    // as stored (or the default)
+const labelBaseUrlInput = ref(""); // as typed
+const labelsLoadError = ref("");
+const labelsSaveError = ref("");
+const labelsSaving = ref(false);
+const labelsSaved = ref(false);
+
+function showLabels(body) {
+  labelBaseUrl.value = body.base_url;
+  labelBaseUrlInput.value = body.base_url;
+}
+
+async function loadLabels() {
+  labelsLoadError.value = "";
+  try {
+    showLabels(await apiGet("/api/settings/labels"));
+  } catch (err) {
+    labelsLoadError.value = err.message;
+  }
+}
+
+async function saveLabels() {
+  labelsSaving.value = true;
+  labelsSaveError.value = "";
+  labelsSaved.value = false;
+  try {
+    showLabels(await apiPut("/api/settings/labels", { base_url: labelBaseUrlInput.value }));
+    labelsSaved.value = true;
+  } catch (err) {
+    labelsSaveError.value = err.message;
+  } finally {
+    labelsSaving.value = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Network — the internal ranges (IT admin may use Yantra only from inside them)
 // ---------------------------------------------------------------------------
 
@@ -159,6 +200,7 @@ async function loadTasks() {
 onMounted(() => {
   loadStatus();
   loadAppSettings();
+  loadLabels();
   loadNetwork();
   loadTasks();
 });
@@ -239,6 +281,41 @@ onMounted(() => {
         <dl v-else class="row mb-0">
           <dt class="col-sm-4">Largest file</dt>
           <dd class="col-sm-8 mb-0">{{ uploadMaxMb }} MB</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card settings-card mt-3">
+      <div class="card-header"><i class="fa-solid fa-qrcode me-2"></i>Labels</div>
+      <div class="card-body">
+        <div v-if="labelsLoadError" class="alert alert-danger mb-0">{{ labelsLoadError }}</div>
+        <div v-else-if="labelBaseUrl === null" class="text-secondary">Loading…</div>
+        <form v-else-if="canEditSettings" novalidate @submit.prevent="saveLabels">
+          <label class="form-label" for="label-base-url">Label link address</label>
+          <div class="d-flex flex-wrap align-items-start gap-2">
+            <input
+              id="label-base-url"
+              v-model="labelBaseUrlInput"
+              type="text"
+              class="form-control label-address"
+              :class="{ 'is-invalid': labelsSaveError }"
+              spellcheck="false"
+              @input="labelsSaved = false"
+            />
+            <button type="submit" class="btn btn-primary" :disabled="labelsSaving || labelBaseUrlInput === labelBaseUrl">
+              <span v-if="labelsSaving" class="spinner-border spinner-border-sm me-1"></span>Save
+            </button>
+            <span v-if="labelsSaved" class="text-success align-self-center small">Saved</span>
+          </div>
+          <div v-if="labelsSaveError" class="invalid-feedback d-block">{{ labelsSaveError }}</div>
+          <div class="form-text">
+            Each QR label opens this address + /e/ + the equipment code, whoever prints it. Only the host
+            (no path), at most 40 characters. Labels already printed keep the address they were printed with.
+          </div>
+        </form>
+        <dl v-else class="row mb-0">
+          <dt class="col-sm-4">Label link address</dt>
+          <dd class="col-sm-8 mb-0">{{ labelBaseUrl }}</dd>
         </dl>
       </div>
     </div>
@@ -339,5 +416,8 @@ onMounted(() => {
 }
 .upload-limit {
   max-width: 160px;
+}
+.label-address {
+  max-width: 360px;
 }
 </style>
