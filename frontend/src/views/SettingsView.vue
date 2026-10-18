@@ -5,11 +5,18 @@
  * - Uploads card: the upload size limit (S006 § 5.7), editable with settings:edit,
  *   read-only with settings:read. The backend validates the range.
  * - Removed documents card: restore or delete for good, with equipment:purge_documents (S008).
+ * - Network card: the plant's internal ranges, editable with settings:edit, and the address the
+ *   server sees for this browser (S013 § 5.2). The backend validates and refuses a list that
+ *   would block the saver.
+ * - Background tasks card: each scheduled task's last and next run, Overdue when the worker
+ *   seems stopped, and the failed count (S013 § 5.6).
+ * - Access log card, with access_log:view (S013 § 5.4).
  */
 import { computed, onMounted, ref } from "vue";
 import { apiGet, apiPut } from "../api";
 import { userPermissions } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
+import AccessLog from "./settings/AccessLog.vue";
 import RemovedDocuments from "./settings/RemovedDocuments.vue";
 
 const status = ref(null);
@@ -41,6 +48,7 @@ const UPLOAD_MAX_MB_MAX = 100;
 
 const canEditSettings = computed(() => userPermissions.value.includes("settings:edit"));
 const canPurgeDocuments = computed(() => userPermissions.value.includes("equipment:purge_documents"));
+const canViewAccessLog = computed(() => userPermissions.value.includes("access_log:view"));
 const uploadMaxMb = ref(null);      // as stored
 const uploadMaxMbInput = ref(null); // as typed
 const appLoadError = ref("");
@@ -77,9 +85,82 @@ async function saveAppSettings() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Network — the internal ranges (IT admin may use Yantra only from inside them)
+// ---------------------------------------------------------------------------
+
+const network = ref(null);        // {networks: [...], your_ip, your_ip_internal}, as stored
+const networksInput = ref("");    // as typed, one range per line
+const networkLoadError = ref("");
+const networkSaveError = ref("");
+const networkSaving = ref(false);
+const networkSaved = ref(false);
+
+const networksText = (body) => body.networks.join("\n");
+
+function showNetwork(body) {
+  network.value = body;
+  networksInput.value = networksText(body);
+}
+
+async function loadNetwork() {
+  networkLoadError.value = "";
+  try {
+    showNetwork(await apiGet("/api/settings/network"));
+  } catch (err) {
+    networkLoadError.value = err.message;
+  }
+}
+
+async function saveNetwork() {
+  networkSaving.value = true;
+  networkSaveError.value = "";
+  networkSaved.value = false;
+  try {
+    showNetwork(await apiPut("/api/settings/network", { networks: networksInput.value }));
+    networkSaved.value = true;
+  } catch (err) {
+    networkSaveError.value = err.message;
+  } finally {
+    networkSaving.value = false;
+  }
+}
+
+const networksChanged = computed(() => network.value !== null && networksInput.value !== networksText(network.value));
+
+// ---------------------------------------------------------------------------
+// Background tasks — the worker's scheduled tasks
+// ---------------------------------------------------------------------------
+
+const TASK_LABELS = { purge_access_log: "Delete access-log entries older than 365 days" };
+const TASK_STATUS_BADGES = {
+  done: "text-bg-success",
+  failed: "text-bg-danger",
+  pending: "text-bg-secondary",
+  running: "text-bg-info",
+};
+
+const tasks = ref(null); // {tasks: [...], failed_count}
+const tasksLoading = ref(false);
+const tasksLoadError = ref("");
+
+async function loadTasks() {
+  tasksLoading.value = true;
+  tasksLoadError.value = "";
+  try {
+    tasks.value = await apiGet("/api/settings/tasks");
+  } catch (err) {
+    tasksLoadError.value = err.message;
+  } finally {
+    tasksLoading.value = false;
+  }
+}
+
 onMounted(() => {
   loadStatus();
   loadAppSettings();
+  loadNetwork();
+  loadTasks();
 });
 </script>
 
@@ -161,6 +242,91 @@ onMounted(() => {
         </dl>
       </div>
     </div>
+
+    <div class="card settings-card mt-3">
+      <div class="card-header"><i class="fa-solid fa-network-wired me-2"></i>Network</div>
+      <div class="card-body">
+        <div v-if="networkLoadError" class="alert alert-danger mb-0">{{ networkLoadError }}</div>
+        <div v-else-if="!network" class="text-secondary">Loading…</div>
+        <template v-else>
+          <p class="mb-2">
+            Your address: <strong>{{ network.your_ip || "unknown" }}</strong> —
+            <span v-if="network.your_ip_internal" class="badge text-bg-success">internal</span>
+            <span v-else class="badge text-bg-warning">external</span>
+          </p>
+          <form v-if="canEditSettings" novalidate @submit.prevent="saveNetwork">
+            <label class="form-label" for="internal-networks">Plant network ranges</label>
+            <textarea
+              id="internal-networks"
+              v-model="networksInput"
+              class="form-control font-monospace"
+              :class="{ 'is-invalid': networkSaveError }"
+              rows="4"
+              spellcheck="false"
+              @input="networkSaved = false"
+            ></textarea>
+            <div v-if="networkSaveError" class="invalid-feedback d-block">{{ networkSaveError }}</div>
+            <div class="form-text">
+              One range per line, e.g. 10.24.0.0/16 (include the VPN pool). IT admin can use Yantra only from these;
+              other roles work from anywhere. Applies here at once, everywhere within 5 minutes. A list that leaves
+              out your own address is refused; it does not check other sites' ranges, so check each before saving.
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <button type="submit" class="btn btn-primary" :disabled="networkSaving || !networksChanged">
+                <span v-if="networkSaving" class="spinner-border spinner-border-sm me-1"></span>Save
+              </button>
+              <span v-if="networkSaved" class="text-success small">Saved</span>
+            </div>
+          </form>
+          <dl v-else class="row mb-0">
+            <dt class="col-sm-4">Plant network ranges</dt>
+            <dd class="col-sm-8 mb-0 font-monospace">
+              <div v-for="range in network.networks" :key="range">{{ range }}</div>
+            </dd>
+          </dl>
+        </template>
+      </div>
+    </div>
+
+    <div class="card settings-card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fa-solid fa-gears me-2"></i>Background tasks</span>
+        <button class="btn btn-sm btn-outline-secondary" :disabled="tasksLoading" title="Refresh" @click="loadTasks">
+          <i class="fa-solid fa-rotate" :class="{ 'fa-spin': tasksLoading }"></i>
+        </button>
+      </div>
+      <div class="card-body">
+        <div v-if="tasksLoadError" class="alert alert-danger mb-0">{{ tasksLoadError }}</div>
+        <div v-else-if="!tasks" class="text-secondary">Loading…</div>
+        <template v-else>
+          <div v-for="task in tasks.tasks" :key="task.task_type" class="mb-3">
+            <div class="fw-semibold">
+              {{ TASK_LABELS[task.task_type] || task.task_type }}
+              <span class="text-secondary small fw-normal">— daily at {{ task.daily_at }}</span>
+            </div>
+            <div class="small">
+              Last run:
+              <template v-if="task.last_run">
+                {{ formatDateTime(task.last_run) }}
+                <span class="badge ms-1" :class="TASK_STATUS_BADGES[task.last_status] || 'text-bg-light'">
+                  {{ task.last_status }}
+                </span>
+              </template>
+              <span v-else class="text-secondary">never</span>
+            </div>
+            <div class="small">
+              Next run: {{ formatDateTime(task.next_run) }}
+              <span v-if="task.overdue" class="badge text-bg-danger ms-1">Overdue — is the worker running?</span>
+            </div>
+          </div>
+          <div class="small" :class="tasks.failed_count > 0 ? 'text-danger fw-semibold' : 'text-secondary'">
+            Failed tasks: {{ tasks.failed_count }}
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <AccessLog v-if="canViewAccessLog" />
 
     <RemovedDocuments v-if="canPurgeDocuments" />
   </div>

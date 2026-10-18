@@ -7,6 +7,7 @@ module adds the names of its UNIQUE keys to UNIQUE_KEY_ERRORS at import.
 """
 
 import re
+from datetime import datetime
 
 import pymysql
 from flask import g, jsonify, request
@@ -110,3 +111,20 @@ def enum_arg(name, allowed):
 def like_pattern(text):
     escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
+
+
+# Indian first (CLAUDE-COMMON: DD-MM-YYYY preferred), then ISO, which <input type="date"> sends
+_DATE_FORMATS = ("%d-%m-%Y", "%Y-%m-%d")
+
+
+def date_arg(name):
+    """A date query argument -> a date, or None when absent or empty; anything else is a 400."""
+    raw = (request.args.get(name) or "").strip()
+    if not raw:
+        return None
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    raise ApiError(f"{name} must be a date, DD-MM-YYYY or YYYY-MM-DD", 400, name)

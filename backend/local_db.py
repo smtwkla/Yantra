@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 # DB-level named lock (GET_LOCK) — one process runs migrations at a time.
 LOCK_MIGRATIONS = "yantra_migrations"
+# The background worker's singleton lock (S013 § 5.5): one worker drains the queue
+LOCK_WORKER = "yantra_worker"
 
 # Seconds between migration attempts while the database is unavailable
 _RETRY_INTERVAL_S = 30
@@ -333,6 +335,51 @@ _MIGRATIONS = [
         # The seven old values keep their order and 'model' is appended: metadata only
         """ALTER TABLE equipment_events MODIFY event
             ENUM('created','moved_unit','moved_parent','status','criticality','class','type','model') NOT NULL""",
+    ]),
+    # S013.  access_log is append-only by design (ISO 27001 A.8.15): no foreign keys, so it
+    # keeps its rows when people or logins change; only the scheduled purge deletes, by age.
+    # ux_access_log_sighting keeps one row per sighting key per IST day across every
+    # Gunicorn worker (A1: edited in place, v10 was applied only to disposable dev/test DBs).
+    # The default internal ranges are the RFC 1918 private ranges
+    # (network_core.DEFAULT_INTERNAL_NETWORKS, repeated here: a migration is frozen text);
+    # INSERT IGNORE keeps a value already there.
+    (10, "Access log, task queue, internal networks", [
+        """CREATE TABLE IF NOT EXISTS access_log (
+            id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+            ts          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            username    VARCHAR(100) NULL,
+            role        VARCHAR(100) NULL,
+            session_id  VARCHAR(100) NULL,
+            client_ip   VARCHAR(45) NOT NULL,
+            is_internal TINYINT(1) NOT NULL,
+            outcome     ENUM('ok','auth_failed','denied_network','denied_perm') NOT NULL,
+            method      VARCHAR(10) NOT NULL,
+            path        VARCHAR(255) NOT NULL,
+            user_agent  VARCHAR(255) NULL,
+            detail      VARCHAR(255) NULL,
+            sighting_day  DATE NOT NULL,
+            sighting_hash CHAR(40) NOT NULL,
+            INDEX ix_access_log_ts (ts),
+            INDEX ix_access_log_user_ts (username, ts),
+            UNIQUE KEY ux_access_log_sighting (sighting_hash, sighting_day)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS task_queue (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            task_type     VARCHAR(50) NOT NULL,
+            payload       JSON NULL,
+            status        ENUM('pending','running','done','failed') NOT NULL DEFAULT 'pending',
+            attempts      INT NOT NULL DEFAULT 0,
+            max_attempts  INT NOT NULL DEFAULT 3,
+            scheduled_for DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            locked_until  DATETIME NULL,
+            last_error    TEXT NULL,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at  DATETIME NULL,
+            INDEX ix_task_queue_due (status, scheduled_for),
+            INDEX ix_task_queue_type_created (task_type, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """INSERT IGNORE INTO app_settings (setting_key, setting_value)
+            VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')""",
     ]),
 ]
 

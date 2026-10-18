@@ -5,7 +5,7 @@ import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopbar from "./components/layout/AppTopbar.vue";
 import AppBottomNav from "./components/layout/AppBottomNav.vue";
 import UpdateToast from "./components/layout/UpdateToast.vue";
-import { authenticated, authError, logout, userPermissions } from "./stores/auth";
+import { authenticated, authError, logout, networkDenied, userPermissions } from "./stores/auth";
 import { canOpenRoute, landingPath } from "./stores/navigation";
 import { startVersionChecks, stopVersionChecks } from "./stores/appVersion";
 import NoAccessView from "./views/NoAccessView.vue";
@@ -29,7 +29,23 @@ watch(userPermissions, (perms) => {
 </script>
 
 <template>
-  <div v-if="authenticated" class="app-shell">
+  <!-- Checked first: loadProfile also sets authError on the same 403, and a refusal can arrive mid-session (S013) -->
+  <div v-if="networkDenied" class="d-flex justify-content-center align-items-center vh-100 p-3">
+    <div class="card auth-error-card">
+      <div class="card-body text-center">
+        <h5 class="card-title"><i class="fa-solid fa-network-wired me-2 text-secondary"></i>Yantra</h5>
+        <p class="card-text">{{ networkDenied.message }}.</p>
+        <p class="card-text text-secondary small">
+          The server saw your address as <strong>{{ networkDenied.ip || "unknown" }}</strong>.
+          Connect to the plant network (Wi-Fi or VPN) and reload the page.
+        </p>
+        <button class="btn btn-sm btn-outline-secondary" @click="logout">
+          <i class="fa-solid fa-right-from-bracket me-1"></i>Sign out
+        </button>
+      </div>
+    </div>
+  </div>
+  <div v-else-if="authenticated" class="app-shell">
     <AppSidebar class="no-print" />
     <AppBottomNav class="no-print" />
     <div class="app-main">

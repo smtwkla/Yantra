@@ -9,7 +9,7 @@ from flask import Flask, g
 
 from access_core import Membership
 from auth_utils import compute_permissions, expand_roles, has_perm, has_perm_at, make_user, require_perm
-from config_rbac import LOGIN_ROLE, PERMISSIONS, ROLE_INCLUDES, ROLES, SITE_ROLES, SITE_SCOPED, TOKEN_ROLES
+from config_rbac import INTERNAL_ONLY_ROLES, LOGIN_ROLE, PERMISSIONS, ROLE_INCLUDES, ROLES, SITE_ROLES, SITE_SCOPED, TOKEN_ROLES
 
 
 class TestPolicyStructure:
@@ -39,6 +39,16 @@ class TestPolicyStructure:
         # A bare string ("it_admin") would match roles by substring
         for key, roles in PERMISSIONS.items():
             assert isinstance(roles, tuple), f"Permission '{key}' is not a tuple"
+
+    def test_internal_only_roles_are_known_and_exclude_admin(self):
+        """S013 BR1-12: the gate's deny list names real roles; admin bypasses in code."""
+        assert isinstance(INTERNAL_ONLY_ROLES, tuple)
+        assert set(INTERNAL_ONLY_ROLES) <= set(ROLES)
+        assert "admin" not in INTERNAL_ONLY_ROLES
+
+    def test_internal_only_roles_come_from_the_token(self):
+        """The gate reads token roles only (S013 § 5.3): a site role here would never match."""
+        assert set(INTERNAL_ONLY_ROLES) <= set(TOKEN_ROLES)
 
     def test_role_includes_targets_are_known(self):
         for parent, children in ROLE_INCLUDES.items():
@@ -123,10 +133,11 @@ class TestComputePermissions:
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
-                               "people:assign_technicians"}),
+                               "people:assign_technicians", "access_log:view"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
-                               "settings:read", "settings:edit", "people:edit", "people:assign_technicians"}),
+                               "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
+                               "access_log:view"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):

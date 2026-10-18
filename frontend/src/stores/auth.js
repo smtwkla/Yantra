@@ -28,6 +28,12 @@ export const dbUnavailable = ref(false);
 export const devBypass = ref(false);
 /** Set when login cannot complete — App.vue shows it instead of the spinner. */
 export const authError = ref("");
+/**
+ * {message, ip} when the server refused this user from this network (IT admin off the plant
+ * network, S013). Set by api.js on any call; App.vue shows a full-page card in place of
+ * everything else. Reconnecting on the plant network and reloading clears it.
+ */
+export const networkDenied = ref(null);
 
 let keycloak = null;
 

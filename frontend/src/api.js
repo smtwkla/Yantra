@@ -7,14 +7,16 @@
  *   <img src> or link, which could not send it (S006 § 6.3).
  */
 
-import { getToken } from "./stores/auth";
+import { getToken, networkDenied } from "./stores/auth";
 
 async function authHeaders() {
   const token = await getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// A refusal arrives as {error, field?, code?}; it becomes an Error carrying them
+// A refusal arrives as {error, field?, code?, ip?}; it becomes an Error carrying them.
+// "network_denied" on any call (IT admin off the plant network, S013) also sets the auth
+// store's networkDenied, so App.vue shows the full-page card even mid-session.
 async function throwIfFailed(response) {
   if (response.ok) return;
   const error = await response.json().catch(() => ({ error: response.statusText }));
@@ -22,6 +24,8 @@ async function throwIfFailed(response) {
   err.status = response.status;
   err.code = error.code ?? null;   // machine-readable refusal kind, when the API sends one
   err.field = error.field ?? null; // the form field the refusal is about, when the API names one
+  err.ip = error.ip ?? null;       // the address the server saw, on a network refusal
+  if (err.code === "network_denied") networkDenied.value = { message: err.message, ip: err.ip };
   throw err;
 }
 

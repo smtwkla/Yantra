@@ -85,13 +85,15 @@ def _decode(token, jwks_url):
     return jwt.decode(token, signing_key.key, algorithms=["RS256"], options=decode_opts)
 
 
-def make_user(username, name, roles, memberships=None, stale_roles=()):
+def make_user(username, name, roles, memberships=None, stale_roles=(), session_id=None):
     """The g.user dict.  ``roles`` are token roles; ``memberships`` is None to read them
     from the database (production), or a fixed list (the dev stub and the test harness).
     ``role`` is the most privileged token role, for logging; /auth/me shows the one that
-    counts the site roles too."""
+    counts the site roles too.  ``session_id`` is the token's sid claim: the Keycloak login
+    session, which the access log calls a session (S013)."""
     return {
         "username": username,
+        "session_id": session_id,
         "name": name,
         "role": access_core.display_role(roles, []),
         "roles": list(roles),
@@ -110,11 +112,14 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
         internal_realm_url: LAN URL for fetching JWKS (if different from public).
 
     Returns the g.user dict (make_user) on success, or None if the token is missing or
-    invalid, or carries none of admin, it_admin, maintenance_team.
+    invalid, or carries none of admin, it_admin, maintenance_team.  On None, g.access_detail
+    holds one fixed code for the access log (S013 § 5.4): no_token, invalid_token,
+    wrong_client or no_role — never the JWT library's message, which differs per probe.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         logger.warning("Missing or malformed Authorization header")
+        g.access_detail = "no_token"
         return None
 
     token = auth_header[7:]
@@ -130,12 +135,14 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
             payload = _decode(token, jwks_url)
         except jwt.exceptions.PyJWTError as exc:
             logger.warning("JWT validation failed after JWKS refresh: %s", exc)
+            g.access_detail = "invalid_token"
             return None
 
     # Verify the token was issued for this client (azp = authorized party)
     if payload.get("azp") != client_id:
         logger.warning("Token azp '%s' does not match client_id '%s'",
                        payload.get("azp"), client_id)
+        g.access_detail = "wrong_client"
         return None
 
     # Extract role — check both realm roles and client roles
@@ -155,13 +162,14 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
     if not matched_roles:
         logger.warning("No recognised role for user %s (roles: %s)",
                        payload.get("preferred_username"), sorted(all_roles))
+        g.access_detail = "no_role"
         return None
 
     # The maintenance roles moved into Yantra (S011): old client roles are ignored, and
     # /auth/me logs who still carries them (§ 5.7 step 4)
     stale_roles = sorted(all_roles & set(SITE_ROLES))
     return make_user(payload.get("preferred_username", ""), payload.get("name", ""), matched_roles,
-                     stale_roles=stale_roles)
+                     stale_roles=stale_roles, session_id=payload.get("sid"))
 
 
 # ---------------------------------------------------------------------------
@@ -211,9 +219,17 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
         if request.path in PUBLIC_PATHS:
             return None  # allow through
 
-        # In test mode, allow X-Test-Role header to inject user context
-        if current_app.config.get("TESTING") and request.headers.get("X-Test-Role"):
-            return None  # conftest before_request will populate g.user
+        # In test mode the X-Test-Role header sets the user through the harness's factory, here,
+        # so every later hook (the network gate, the access log) sees g.user as in production
+        # (S013 BR1-02).  No factory configured: refused, never let through.
+        test_role = request.headers.get("X-Test-Role")
+        if current_app.config.get("TESTING") and test_role:
+            factory = current_app.config.get("TEST_USER_FACTORY")
+            if factory is None:
+                g.access_outcome = "auth_failed"
+                return jsonify({"error": "Unauthorized"}), 401
+            g.user = factory(test_role, request.headers.get("X-Test-User"))
+            return None
 
         if dev_bypass:
             g.user = _get_dev_stub_user()
@@ -222,6 +238,7 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
         user = validate_keycloak_token(realm_url, client_id, internal_realm_url)
         if user is None:
             logger.warning("Auth failed for %s %s", request.method, request.path)
+            g.access_outcome = "auth_failed"
             return jsonify({"error": "Unauthorized"}), 401
 
         g.user = user
@@ -289,6 +306,12 @@ def _cached_memberships():
     """What is known without a query, for log lines."""
     fixed = g.user.get("memberships")
     return fixed if fixed is not None else g.get("_access_memberships", [])
+
+
+def logged_role(user):
+    """The display role from what is known without a query (the token roles and any
+    memberships already read this request), for the access log (S013 § 4)."""
+    return access_core.display_role(user.get("roles", []), _cached_memberships())
 
 
 def _unit_pools(memberships):
@@ -367,6 +390,7 @@ def require_perm_at(perm_key, site_id, field=None):
         row = cur.fetchone()
     logger.warning("Permission denied: %s requires '%s' at site %s (user=%s)",
                    request.path, perm_key, site_id, g.user.get("username", "?"))
+    g.access_outcome, g.access_detail = "denied_perm", f"{perm_key}@site:{site_id}"
     raise ApiError(f"You can't do this at {row['code'] if row else 'this site'}", 403, field)
 
 
@@ -404,6 +428,7 @@ def require_perm(perm_key):
                 role = access_core.display_role(user.get("roles", []), _cached_memberships()) if user else "?"
                 logger.warning("Permission denied: %s requires '%s' (user=%s, role=%s)",
                                request.path, perm_key, user.get("username", "?"), role)
+                g.access_outcome, g.access_detail = "denied_perm", perm_key
                 return jsonify({"error": f"Forbidden: requires '{perm_key}'"}), 403
             return fn(*args, **kwargs)
         return wrapper

@@ -12,6 +12,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import access_control
 import auth_utils
 import config
 import db_helpers
@@ -35,8 +36,9 @@ def stub_jwks(monkeypatch):
     monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _StubJWKClient(_KEY))
 
 
-def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe"):
+def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe", sid=None):
     payload = {
+        "sid": sid,
         "preferred_username": username,
         "name": "John Doe",
         "azp": azp,
@@ -59,8 +61,10 @@ def _validate(app, token):
 
 @pytest.fixture
 def db_down(monkeypatch):
-    """Every get_db() in the request raises DBUnavailable, as while the database is down."""
+    """Every get_db() in the request raises DBUnavailable, as while the database is down; the
+    access-log hook's own ensure_schema reference answers "down" too (S013 BR2-03)."""
     monkeypatch.setattr(db_helpers, "ensure_schema", lambda _config: "Can't connect (test)")
+    monkeypatch.setattr(access_control, "ensure_schema", lambda _config: "Can't connect (test)")
 
 
 class TestValidateToken:
@@ -220,3 +224,34 @@ class TestInternalUrl:
     def test_empty_ip_keeps_public_url(self):
         url = "https://sso.mspv.app/realms/Office.smtw.in"
         assert auth_utils._make_internal_url(url, "") == url
+
+
+class TestAccessLogMarks:
+    """S013 § 5.4, BR2-04: a failing validation leaves one fixed code; sid is the session."""
+
+    @pytest.mark.parametrize("make_headers, code", [
+        (lambda: {}, "no_token"),
+        (lambda: _bearer(_token(realm_roles=["maintenance_team"], key=_OTHER_KEY)), "invalid_token"),
+        (lambda: _bearer(_token(realm_roles=["maintenance_team"], azp="other-app")), "wrong_client"),
+        (lambda: _bearer(_token(realm_roles=["offline_access"])), "no_role"),
+    ])
+    def test_failure_codes(self, app, make_headers, code):
+        from flask import g
+        with app.test_request_context("/api/auth/me", headers=make_headers()):
+            assert auth_utils.validate_keycloak_token("https://sso.example/realms/R", CLIENT_ID) is None
+            assert g.access_detail == code
+
+    def test_sid_is_the_session(self, app):
+        user = _validate(app, _token(client_roles=["it_admin"], sid="abc-123"))
+        assert user["session_id"] == "abc-123"
+
+    def test_a_real_token_it_admin_is_gated(self, client):
+        headers = _bearer(_token(client_roles=["it_admin"]))
+        assert client.get("/api/masters/sites", headers={**headers, "X-Real-IP": "203.0.113.7"}).status_code == 403
+        assert client.get("/api/masters/sites", headers=headers).status_code == 200
+
+    def test_the_session_id_is_logged(self, client, db_rows, uniq):
+        login, sid = uniq.username(), f"sid-{uniq.username()}"
+        client.get("/api/masters/sites", headers=_bearer(_token(client_roles=["it_admin"], username=login, sid=sid)))
+        rows = db_rows("SELECT session_id, outcome FROM access_log WHERE username = %s", (login,))
+        assert [(r["session_id"], r["outcome"]) for r in rows] == [(sid, "ok")]

@@ -11,6 +11,7 @@ import sys
 import tempfile
 
 import pytest
+from flask.testing import FlaskClient
 
 # Lets config.py fall back to the example secrets template when the real one is absent
 os.environ["YANTRA_TESTING"] = "1"
@@ -29,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
 config.DB_CONFIG["database"] = "vel_yantra_test"
 
+import access_control
 from access_core import Membership
 from app import app as flask_app
 from auth_utils import make_user
@@ -39,8 +41,8 @@ from tests.access_helpers import site_rows
 
 
 # ---------------------------------------------------------------------------
-# Inject g.user when the X-Test-Role header is present. Registered once at
-# import time so it works even after the first request has been served.
+# The X-Test-Role harness: require_auth calls TEST_USER_FACTORY(role, X-Test-User) in
+# TESTING mode and sets g.user itself, so every later hook sees it (S013 BR1-02)
 # ---------------------------------------------------------------------------
 
 def harness_user(role_name, username):
@@ -57,18 +59,42 @@ def harness_user(role_name, username):
     return make_user(username, name, [], [])
 
 
-@flask_app.before_request
-def _inject_test_user():
-    from flask import current_app, g, request
-    role_name = request.headers.get("X-Test-Role")
-    if not role_name or not current_app.config.get("TESTING"):
-        return
+def _test_user_factory(role_name, username):
     # X-Test-User gives a unit-access test its own fresh username (default test_<role>)
-    g.user = harness_user(role_name, request.headers.get("X-Test-User") or f"test_{role_name}")
+    return harness_user(role_name, username or f"test_{role_name}")
+
+
+flask_app.config["TEST_USER_FACTORY"] = _test_user_factory
+
+# Every test request comes from an internal address unless it sends its own X-Real-IP
+# (S013 BR1-10): the gate stays out of tests that are not about it.  An explicit header
+# overrides this default; it can't be left out, so "missing" is tested as X-Real-IP: "".
+TEST_INTERNAL_IP = "10.0.0.5"
+
+
+class InternalClient(FlaskClient):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.environ_base["HTTP_X_REAL_IP"] = TEST_INTERNAL_IP
+
+
+flask_app.test_client_class = InternalClient
+# No socket-address fallback in tests, even with FLASK_DEBUG set in the shell (S013 § 5.1)
+access_control.REMOTE_ADDR_FALLBACK = False
+
+
+@pytest.fixture(autouse=True)
+def _fresh_access_caches():
+    """Each test starts with no sightings, no back-off and no cached ranges (per process)."""
+    access_control.reset_access_log_state()
+    access_control.clear_networks_cache()
+    yield
+    access_control.reset_access_log_state()
+    access_control.clear_networks_cache()
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("person_units", "memberships", "person_trades", "people", "trades", "equipment_documents",
+_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "people", "trades", "equipment_documents",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
 
@@ -140,7 +166,8 @@ class RoleClient:
             self._headers["X-Test-User"] = username
 
     def _call(self, method, *args, **kwargs):
-        kwargs.setdefault("headers", {}).update(self._headers)
+        # A copy: a caller's headers dict (often a module constant) is never changed
+        kwargs["headers"] = {**kwargs.get("headers", {}), **self._headers}
         return getattr(self._inner, method)(*args, **kwargs)
 
     def get(self, *args, **kwargs):

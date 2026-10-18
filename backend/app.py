@@ -7,6 +7,7 @@ import time
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
+from access_control import client_network, make_access_log_hook, require_network
 from api_common import register_error_handlers
 from access_core import display_role
 from auth_utils import current_memberships, global_permissions, membership_sites, require_auth
@@ -34,17 +35,24 @@ app.config["SECRET_KEY"] = SECRET_KEY
 # The request ceiling: the upload setting's maximum plus one MB for the multipart overhead,
 # matching Nginx's client_max_body_size 101M (S006 § 5.2)
 app.config["MAX_CONTENT_LENGTH"] = (UPLOAD_MAX_MB_CEILING + 1) * MB
+
+# The access log (S013 § 5.4) is the first after_request hook registered, above CORS(app),
+# which registers one at its call: Flask runs them in reverse, so this one runs last and
+# sees the final status, error handlers' and 500s included.
+app.after_request(make_access_log_hook(dev_bypass=DEV_AUTH_BYPASS))
 CORS(app, origins=os.environ.get("CORS_ORIGINS", "http://localhost:5176").split(","))
 
 
 # ---------------------------------------------------------------------------
-# Auth middleware — validates Bearer token and populates g.user
+# Auth middleware — validates Bearer token and populates g.user; then the network gate
+# (S013 § 5.3), which needs g.user.  Order: require_auth -> require_network -> timer.
 # ---------------------------------------------------------------------------
 
 app.before_request(require_auth(
     KEYCLOAK_REALM_URL, KEYCLOAK_CLIENT_ID, KEYCLOAK_INTERNAL_REALM_URL,
     dev_bypass=DEV_AUTH_BYPASS,
 ))
+app.before_request(require_network(dev_bypass=DEV_AUTH_BYPASS))
 
 
 app.teardown_appcontext(close_db)
@@ -120,12 +128,15 @@ def auth_me():
 
     Called once per page load, the de-facto login: it logs the stale Keycloak maintenance
     roles a token still carries (S011 § 5.1), and answers while the database is down with
-    the token's permissions only, so IT admin can still reach Settings › Database."""
+    the token's permissions only, so IT admin can still reach Settings › Database.  ``network``
+    is the address the server saw and whether it counts as internal (S013 § 6)."""
     user = g.user
     if user["stale_roles"]:
         logger.warning("User %s still carries old Keycloak roles %s; they are ignored (S011 § 5.7)",
                        user["username"], ",".join(user["stale_roles"]))
-    body = {"username": user["username"], "name": user["name"], "roles": user["roles"]}
+    ip, internal = client_network()
+    body = {"username": user["username"], "name": user["name"], "roles": user["roles"],
+            "network": {"ip": ip, "internal": internal}}
     try:
         memberships = current_memberships()
         body.update(role=display_role(user["roles"], memberships), permissions=global_permissions(),

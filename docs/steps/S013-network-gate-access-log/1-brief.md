@@ -2,9 +2,9 @@
 Step: S013 — Network gate, access log and job queue
 Doc: brief
 Author: Planner (Opus)
-Date: 17-10-2026 (revised 17-10-2026 after brief-reviews r1 and r2)
+Date: 17-10-2026 (revised 17-10-2026 after brief-reviews r1 and r2; 18-10-2026 at gate A)
 Track: full
-Status: In review
+Status: In code review (approved 18-10-2026 by KLA)
 ```
 
 # S013 — Network gate, access log and job queue
@@ -16,8 +16,8 @@ three missing pieces: the **network gate**, the **access log** and the **job
 queue** (CLAUDE.md "Not yet built").
 
 This step builds:
-- **a network gate:** IT admin and maintenance manager may use Yantra only from
-  the plant network; every other role still works from anywhere;
+- **a network gate:** IT admin may use Yantra only from the plant network;
+  every other role, the manager included, still works from anywhere;
 - **an access log:** one row each time a login session is seen from a new
   address, or refused, with a viewer in Settings;
 - **a minimal job queue and scheduler:** the worker drains a `task_queue` table
@@ -26,7 +26,8 @@ This step builds:
 **Depends on:** S012 (migration v9). This step is migration **v10**.
 
 User decisions while planning (17-10-2026):
-1. **Internal-only roles: IT admin and maintenance manager.** All other roles
+1. **Internal-only role: IT admin only** (changed at gate A, 18-10-2026: the
+   manager must be able to work from a phone on mobile data). All other roles
    keep access from anywhere (Plan.MD § 1 still holds for them).
 2. **Retention by a job queue built in this step,** not deferred and not done in
    the request path.
@@ -48,12 +49,12 @@ base pattern § Real client IP).
    can see what the server sees.
 3. **The network gate.** A request from an external address is refused with
    403 "Yantra can be used from the plant network only for your role" when the
-   user holds **IT admin** (from the token) or **maintenance manager at any
-   site** (from memberships). Everyone else passes. Admin, public paths and the
-   dev bypass skip the gate.
+   user holds **IT admin** (from the token). Everyone else passes, the manager
+   included. Admin, public paths and the dev bypass skip the gate.
 4. **The frontend** shows that 403 as a full-page card — the message, "The server
    saw your address as …", and Sign out — both on the first call and when a
-   refusal arrives mid-session (a manager who walks from Wi-Fi onto mobile data).
+   refusal arrives mid-session (an IT admin who walks from Wi-Fi onto mobile
+   data).
 5. **The access log.** One row per *sighting*: the first time a login session is
    seen from an address, again when it moves to another address (Wi-Fi → mobile
    data), and once per distinct refusal. Outcomes: `ok`, `auth_failed`,
@@ -84,10 +85,12 @@ base pattern § Real client IP).
 - **ISO 27001:2022 A.8.2 (privileged access rights)** is the control the gate
   implements (BR1-04). It asks that privileged access be restricted and managed:
   identified privileged accounts, used only for privileged work, and bound to
-  conditions such as place or device. IT admin (logins, masters) and the manager
-  (restore and erase documents, every unit of a site) are the privileged
-  accounts here; "only from the plant network" is the condition. If one of their
-  passwords leaks, an attacker on the internet still can't use it.
+  conditions such as place or device. IT admin (logins, masters, network
+  settings) is the privileged account here; "only from the plant network" is the
+  condition. If its password leaks, an attacker on the internet still can't use
+  it. The manager is privileged too (restore and erase documents, whole sites),
+  but must work from the floor on mobile data (gate A, 18-10-2026); the access
+  log (A.8.15) and Keycloak's login (A.8.5) cover that account instead.
   - **A.8.20 (networks security) and A.8.22 (segregation of networks)** support
     it: the plant network is the trusted zone the gate relies on.
   - Everyday roles stay reachable from mobile data, because the shop floor needs
@@ -106,7 +109,7 @@ base pattern § Real client IP).
   unusual places among the things to watch: the `auth_failed` rows, the external
   sightings and the "refusals only" filter serve that.
 - **ISO 27001:2022 A.8.5 (secure authentication)** is unchanged: Keycloak stays
-  the login gate. The network gate adds a second condition for two roles.
+  the login gate. The network gate adds a second condition for IT admin.
 - **Base pattern (SMTW-WebApp-Base § Internet exposure, § Job queue)** is
   followed, with two departures stated in § 7: the gate lists the roles that are
   **refused** from outside, not the roles allowed; and the scheduler is a small
@@ -126,8 +129,8 @@ base pattern § Real client IP).
 - **`backend/access_control.py`** (new, shell): reads `X-Real-IP`, loads the
   internal networks (§ 5.2), `require_network(dev_bypass=…)` (a before-request
   factory, as `require_auth`), and the access-log `after_request` hook.
-- **`backend/config_rbac.py`:** `INTERNAL_ONLY_ROLES = ("maint_manager",
-  "it_admin")`, with the date and reason as a comment; new key
+- **`backend/config_rbac.py`:** `INTERNAL_ONLY_ROLES = ("it_admin",)`, with the
+  date and reason as a comment; new key
   `access_log:view` (`maint_manager`, `it_admin`; global, not site-scoped).
 - **`backend/auth_utils.py`:**
   - `g.user` gains `session_id` (the token's `sid` claim);
@@ -206,7 +209,7 @@ base pattern § Real client IP).
   through the client's default internal address.
 
 ### Docs (at approval, by the planner)
-- `docs/Plan.MD` § 1 (the access-from-outside row: two roles internal-only),
+- `docs/Plan.MD` § 1 (the access-from-outside row: IT admin internal-only),
   § 3 (`access_log:view` row), § 5 (tables), § 8 (phase 1 items done).
 - `.claude/CLAUDE.md`: "Not yet built" (only the PWA shell left); a line on the
   worker; the deny-list `INTERNAL_ONLY_ROLES` recorded as a deliberate departure
@@ -229,8 +232,11 @@ CREATE TABLE IF NOT EXISTS access_log (
     path        VARCHAR(255) NOT NULL,
     user_agent  VARCHAR(255) NULL,
     detail      VARCHAR(255) NULL,            -- refusal reason or permission key
+    sighting_day  DATE NOT NULL,              -- A1: the IST date of ts (CURDATE())
+    sighting_hash CHAR(40) NOT NULL,          -- A1: SHA-1 of (outcome, who, ip, detail)
     INDEX ix_access_log_ts (ts),
-    INDEX ix_access_log_user_ts (username, ts)
+    INDEX ix_access_log_user_ts (username, ts),
+    UNIQUE KEY ux_access_log_sighting (sighting_hash, sighting_day)   -- A1: one row per sighting per day
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS task_queue (
@@ -295,7 +301,7 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
 - **Lock-out guard:** a `PUT` that would make the saving user's own address
   external is refused, 400 "This would block your own address (x.x.x.x) — check
   every site's range before saving", unless the user is admin. It protects the
-  saver only, not a manager at a site on another range; the message says so.
+  saver only, not an IT admin at a site on another range; the message says so.
 - The change is logged with actor and old → new, under `SELECT … FOR UPDATE`, as
   `put_app_settings` does (A.8.15).
 - Read through a 5-minute cache per process (base pattern); a save clears the
@@ -316,13 +322,13 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
   membership query is made. This keeps IT admin from the plant DB-free on
   `/api/auth/me` and `/api/settings/db-status` while the database is down (S011
   BR1-01).
-- **External: refused when the user holds any role in `INTERNAL_ONLY_ROLES`:**
-  `it_admin` from the token, or `maint_manager` in **any** membership. A person
-  who is manager at SMTW and engineer at VEL is refused from outside even for VEL
-  work: the gate protects the account, not a site.
-- **Memberships while the DB is down:** for an external address, the gate uses
-  the token roles only. The DB-backed routes answer 503 anyway; `/api/auth/me`
-  still answers (S011 BR1-01), now with `network: {ip, internal}`.
+- **External: refused when the user holds any role in `INTERNAL_ONLY_ROLES`**
+  (today `it_admin`). The roles are taken **from the token only**: the gate
+  never reads memberships, so it makes no database read at all. Should a site
+  role ever be added to the list, the gate must read memberships too (and the
+  DB-down rule of BR1-01 applies again).
+- `/api/auth/me` still answers while the DB is down (S011 BR1-01), now with
+  `network: {ip, internal}`.
 - Refusal: 403 `{"error": "...", "code": "network_denied", "ip": "..."}`;
   `g.access_outcome = "denied_network"`; a warning log line naming user, roles
   and address.
@@ -355,12 +361,16 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
     change your own access");
   - any other status on an authenticated request → `ok`;
   - public paths, `OPTIONS` and the dev bypass are not logged.
-- **Sighting key:** `(outcome, session_id or username, client_ip, detail)`; a
-  repeat within 10 minutes is not written (`SightingCache`, one per process,
-  pruned at 10 000 entries). **The sighting is cached only after a successful
-  insert**, so a sighting during a short outage is written once the DB is back
-  (BR1-01). Duplicates across Gunicorn workers are accepted (an audit trail, not
-  a counter).
+- **Sighting key:** `(outcome, session_id or username, client_ip, detail)`.
+  **One row per key per IST calendar day, enforced by the database** (A1,
+  18-10-2026): the row carries `sighting_day` and `sighting_hash`, the insert is
+  `INSERT IGNORE`, and a rejected insert (`rowcount == 0`) means another worker
+  or an earlier process wrote it today. `SightingCache` (one per process, pruned
+  at 10 000 entries) only saves the insert attempt for repeats within 10 minutes;
+  it is not the rule. **The key is cached only after a successful insert or a
+  rejected one**, never after a failed connect or insert, so a sighting during a
+  short outage is written once the DB is back (BR1-01). This replaces the
+  earlier "duplicates across Gunicorn workers are accepted".
 - **`auth_failed` rows** carry no username (the token was not valid); the
   address and path are kept.
 - **Viewer** (BR1-11): `GET /api/settings/access-log?user=&from=&to=&external=1
@@ -461,9 +471,9 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
 
 | Decision | Reason | Rejected alternative |
 |---|---|---|
-| IT admin and manager internal-only | User decision 1; privileged accounts (A.8.2): logins, masters, restore/erase, whole sites | Nobody restricted (gate in place, refuses no one) |
-| A deny list `INTERNAL_ONLY_ROLES`, not the base's `access:wan` allow list | Role inheritance (manager ⊇ engineer) and the S011 union would let a manager through an allow list that grants engineers; the deny list says "any of these roles → internal only" | `access:wan` with intersection logic over roles |
-| Manager at any site → internal-only for everything | The gate protects the account; per-site gating would mean a manager's password works from outside for half the work | Gate only at the manager's own sites |
+| IT admin internal-only | User decision 1 (gate A); the privileged account for logins, masters and network settings (A.8.2), with no need to work from outside | Manager internal-only too (rejected at gate A: managers work from the floor on mobile data); nobody restricted |
+| A deny list `INTERNAL_ONLY_ROLES`, not the base's `access:wan` allow list | A person can hold IT admin and a site role; an allow list granting the site roles would let that account through; the deny list says "any of these roles → internal only" | `access:wan` with intersection logic over roles |
+| Gate reads token roles only | IT admin comes from the token; no DB read in the gate, so it works the same while the DB is down | Reading memberships (only needed if a site role becomes internal-only) |
 | Internal decided before any DB read; ranges fall back to cache/defaults when the DB is down | IT admin must reach Settings › Database during an outage (S011 BR1-01; CLAUDE.md "DB may not exist") | Fail closed on an unreachable store (locks IT admin out exactly then) |
 | Default internal ranges: the RFC 1918 private ranges; loopback internal in code | Safe first deploy; mobile data is public or carrier-grade NAT; dev keeps working | Empty list (locks IT admin out); loopback in the editable list |
 | Lock-out guard on saving the ranges | A typo can't shut IT admin out; admin can still recover | No guard (recovery by SQL) |
@@ -483,8 +493,8 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
   bad entry named in the error.
 - `is_internal`: inside / outside / unparsable (→ external) / IPv6 / IPv4-mapped
   IPv6 / loopback v4 and v6.
-- `gate_refuses`: it_admin from the token, manager in one membership, manager
-  plus engineer, engineer only, operator, no roles; internal always passes.
+- `gate_refuses`: it_admin, it_admin plus a site role, manager only, engineer
+  only, no roles; internal always passes.
 - `classify_outcome`: gate marks win; 401/403 fallbacks with detail; 4xx/5xx
   with a user → `ok`.
 - `SightingCache`: first sighting written, repeat suppressed, after 10 min written
@@ -494,10 +504,10 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
   return); day change; overdue.
 
 ### API
-- **Gate:** external manager → 403 `network_denied` on a normal route and on
-  `/api/auth/me`; **a `role_client` manager with an external `X-Real-IP` → 403 on
-  `/api/masters/sites`** (checks the hook order, BR1-02); external engineer →
-  200; internal manager → 200; external IT admin → 403; external admin → 200;
+- **Gate:** external IT admin → 403 `network_denied` on a normal route and on
+  `/api/auth/me`; **a `role_client` IT admin with an external `X-Real-IP` → 403 on
+  `/api/masters/sites`** (checks the hook order, BR1-02); external manager → 200;
+  external engineer → 200; internal IT admin → 200; external admin → 200;
   public paths from outside → 200; a missing `X-Real-IP` → external; dev bypass
   (handler called directly) passes.
 - **DB down** (BR1-01): internal IT admin → 200 on `/api/auth/me` with
@@ -524,13 +534,17 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
   nothing; an existing `internal_networks` value is not overwritten.
 
 ### Manual checks (important, for the impl report)
-- [ ] From the plant network as a manager: Yantra works. From a phone on mobile
-  data as the same manager: the "plant network only" card with the address.
-  As an engineer on mobile data: Yantra works.
+- [ ] From the plant network as IT admin: Yantra works. From a phone on mobile
+  data as the same IT admin: the "plant network only" card with the address.
+  As a manager on mobile data: Yantra works. Over the VPN as IT admin: Yantra
+  works (the VPN pool is internal).
 - [ ] Settings › Network shows "Your address: … — internal" from the plant;
   a list that would exclude it is refused.
 - [ ] Settings › Access log shows real, varied client addresses (not the
   proxy's 10.24.x.x), including the phone's external one and the refusal.
+  From a phone on mobile data, the log shows the carrier's address, not
+  10.24.0.18, and Settings › Network says "external" — before the gate is
+  trusted (A1: VelKilnMaster's log showed the proxy address for half a day).
 - [ ] **Production, at the release:** MariaDB ≥ 10.6 (Settings › Database);
   after deploying, the worker container log shows "worker started" and the lock
   taken; next morning, Settings › Background tasks shows the 02:30 purge as done
@@ -539,24 +553,25 @@ VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
 Also (plain):
 - Stop the worker container for a minute and start it again: the Background
   tasks line still shows the last run; nothing runs twice.
-- A manager on Wi-Fi who switches to mobile data mid-session sees the card on the
-  next action.
+- An IT admin on Wi-Fi who switches to mobile data mid-session sees the card on
+  the next action.
 
 ### Acceptance
 - `tooling/run-tests.bat` green and the frontend build clean.
-- A manager on mobile data is refused; a technician on mobile data is not; both
+- IT admin on mobile data is refused; a manager on mobile data is not; both
   show in the access log with real addresses.
 
 ## 9. Open questions and assumptions
 
-1. **Open — admin from outside.** As written (base pattern), the Keycloak admin
-   (`mspv-apps-admin`) bypasses the gate and works from anywhere. It is the most
-   powerful account. Alternative: admin is internal-only too, with recovery
-   from outside impossible. **Recommendation:** keep the bypass, so the owner can
-   fix a wrong network list from anywhere; protect the admin account with
-   Keycloak's two-factor login instead.
-2. **Open — VPN.** Does anyone reach the plant through a VPN? If so, the VPN's
-   address pool must be in the internal ranges (default ranges likely cover it).
+1. **Decided (18-10-2026) — admin from anywhere.** The Keycloak admin
+   (`mspv-apps-admin`) bypasses the gate (base pattern), so the owner can fix a
+   wrong network list from anywhere. Protect the admin account with Keycloak's
+   two-factor login.
+2. **Decided (18-10-2026) — VPN.** The owner connects occasionally through the
+   VPN; that traffic arrives from the VPN subnet. The VPN pool counts as
+   internal: it must be inside the internal ranges (a private range is, by the
+   defaults); otherwise IT admin adds it in Settings › Network. Checked by
+   manual check 1.
 3. **Assumption:** the front proxy range `10.24.0.0/23` in `nginx.conf` is still
    correct (verified by manual check 3).
 4. **Assumption:** production MariaDB is ≥ 10.6 (S012 needs ≥ 10.5); checked at
@@ -567,7 +582,95 @@ Also (plain):
 
 ## 10. Amendments
 
-(none)
+### A1 — One row per sighting per day, enforced by the database
+
+```
+Requested by: KLA, 18-10-2026
+Status: Approved 18-10-2026 by KLA (user: "make the S013 amend A1"); baseline: the working tree of 18-10-2026 (S013 code in review r3, uncommitted on 3e338b4)
+```
+
+**Why.** VelKilnMaster runs the same access-log design (three sync Gunicorn
+workers, an in-process `SightingCache`, a 10-minute window) and 23 days of its
+production log (26-09 to 18-10-2026) show that "one row per sighting" is not
+what happens: 9,489 rows for twelve users, about 400 a day. Two causes, both
+designed in: each worker has its own cache, so three parallel requests from one
+phone at page load give three identical rows at the same second; and the
+10-minute window gives an active user a fresh row every 10 minutes. The log's
+question, "which addresses did each session come from", is buried under repeats.
+The same data confirmed the two other points the brief already covers (below).
+The base pattern (`SMTW-WebApp-Base.md` § Access log) is revised the same day so
+the VelKilnMaster team can fix their code from it.
+
+**What changes** (supersedes the sighting-key paragraph of § 5.4 and the
+`access_log` table of § 4):
+
+1. **Rule:** one row per sighting key per IST calendar day, enforced by the
+   database, not by the cache. The sighting key stays
+   `(outcome, session_id or username, client_ip, detail)`.
+2. **Table** (`access_log`, still migration v10 — v10 is not applied anywhere
+   but the disposable dev and test databases, so it is edited, not followed by
+   a v11):
+   - `sighting_day DATE NOT NULL` — the IST date of `ts`, set by the hook from
+     the same clock as `ts` (`CURDATE()` in the insert, the session time zone);
+   - `sighting_hash CHAR(40) NOT NULL` — SHA-1 hex of the key, the four parts
+     joined by `\x1f`, `None` written as an empty part;
+   - `UNIQUE KEY ux_access_log_sighting (sighting_hash, sighting_day)`.
+3. **Hook** (`access_control._record`): on a cache miss it runs
+   `INSERT IGNORE …`; `cur.rowcount == 0` means another worker, or an earlier
+   process, wrote the sighting today; either way the key is then remembered in
+   the cache. The pool's connections are autocommit (§ 5.4), so the row is kept
+   whatever the request did.
+4. **Cache** (`SightingCache`): unchanged in code; its role shrinks to saving
+   the insert attempt for repeats within `SIGHTING_WINDOW_MINUTES` (10). The
+   docstring and the base pattern say so.
+5. **Pure core** (`network_core.py`): `sighting_hash(outcome, who, ip, detail)`,
+   pure and tested: stable across processes; a missing part and an empty one
+   hash alike, since the key already treats a missing detail as `""`.
+6. **Viewer:** unchanged. Rows per day are now one per session per address per
+   outcome, so the list reads as intended.
+
+**Confirmed, no change** (from the same production data):
+
+- **Real client address** — the base pattern's trap (every row carrying the
+  front proxy 10.24.0.18, so an internet scanner was logged as *internal*) was
+  visible in VelKilnMaster's log for the first half-day of 26-09-2026. Manual
+  check 3 (§ 8) already covers it; its wording is tightened: *from a phone on
+  mobile data, the Access log shows the carrier's address, not 10.24.0.18, and
+  Settings › Network says "external" — before the gate is trusted.*
+- **Internal ranges** — VelKilnMaster's production list omits the VPN pools
+  and SSVT, so those users count as external. Yantra's defaults are the RFC 1918
+  ranges (§ 7), which include both; § 9.2 already decides the VPN is internal.
+  Manual check 1 names the VPN pool and SSVT's range explicitly when run.
+
+**Where**
+
+- `backend/local_db.py` — v10: the two columns and the unique key.
+- `backend/network_core.py` — `sighting_hash()`; `SightingCache` docstring.
+- `backend/access_control.py` — `_insert` returns `cur.rowcount`; `_record`
+  computes the hash, uses `INSERT IGNORE`, remembers on either result.
+- `backend/tests/test_network_core.py` — `sighting_hash` stable and
+  distinct per part.
+- `backend/tests/test_access_log_api.py` — two requests with the same key on
+  the same day, the cache cleared between them (as a second worker would be),
+  give **one** row; a different address, outcome or detail gives a second; a
+  rejected insert is remembered (no third attempt).
+- `docs/steps/S013-network-gate-access-log/1-brief.md` § 4, § 5.4 — this
+  amendment supersedes them; `.claude/SMTW-WebApp-Base.md` — synced from
+  smtw-common after the base is updated there (done 18-10-2026 in smtw-common).
+
+**Open points**
+
+- `sighting_day` on the IST calendar day: a session active across midnight
+  gets a second row. Accepted; it is the simplest "per day" there is.
+- The hash is SHA-1 for its fixed 40 characters, not for security; the key is
+  not secret.
+
+## Gate A — 18-10-2026 (KLA)
+
+Approved with one change: **only IT admin is internal-only**; the manager works
+from anywhere, including mobile data. Admin keeps working from anywhere. VPN
+traffic comes from the VPN subnet, treated as internal (§ 9). The brief text
+above is updated to match.
 
 ## Review log
 

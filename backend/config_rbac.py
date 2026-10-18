@@ -54,6 +54,14 @@ SITE_ROLES = (
 # may hold (S011 A1, user decisions at gate A)
 TECHNICIAN_ROLE = "maint_technician"
 
+# Roles that may use Yantra from the plant network only (S013 network gate): a deny list, a
+# deliberate departure from the base pattern's access:wan allow list, because a person can hold
+# IT admin and a site role at once.  Token roles only: the gate never reads memberships, so a
+# site role added here would need the gate to read them (S013 § 5.3).
+# 18-10-2026 (KLA, S013 gate A): IT admin only, the privileged account for logins, masters and
+# network settings (ISO 27001 A.8.2); managers work from the floor on mobile data, so not them.
+INTERNAL_ONLY_ROLES = ("it_admin",)
+
 # Role inheritance — a role automatically gains all permissions of included roles.
 # Maintenance is a ladder: manager ⊇ engineer ⊇ technician ⊇ maint_operator.
 # it_admin stands apart: housekeeping and settings, not maintenance work.
@@ -96,6 +104,10 @@ PERMISSIONS = {
     # Settings — DB status, escalation times, notification channels
     "settings:read": ("maint_manager", "it_admin"),
     "settings:edit": ("it_admin",),
+
+    # Access log (S013): who reached the API, from where, and the refusals.  The people who
+    # own the security question; global, not site-scoped.
+    "access_log:view": ("maint_manager", "it_admin"),
 }
 
 # Keys checked at the record's site (has_perm_at, accessible_unit_ids).  Every later
