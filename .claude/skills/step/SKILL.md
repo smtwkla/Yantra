@@ -1,6 +1,6 @@
 ---
 name: step
-description: Orchestrate Yantra's step workflow (docs/steps) from one terminal — plan a step and loop it through the Fable brief reviewer, then implement it with the coder subagent (Sonnet, or Opus when complex) and loop it through the Opus code reviewer, stopping only at the user's gates. Use when the user says /step, "run S00N", "plan/implement/review step …", or asks to drive the step loop.
+description: Orchestrate Yantra's step workflow (docs/steps) from one terminal — plan a step and loop it through the Fable brief reviewer, then implement it with the coder subagent (Sonnet, or Opus when complex) and loop it through the Opus code reviewer, stopping only at the user's gates. Use when the user says /step, "run S00N", "plan/implement/review step …", asks to drive the step loop, or asks which steps are open (`/step ls`).
 ---
 
 # /step — step-workflow orchestrator
@@ -28,6 +28,9 @@ Read it before starting.
 - `/step review S00N`: run **phase 2** from its code-review loop, for code that
   already exists.
 - `/step status [S00N]`: report the step's files, status and open findings.
+  Change nothing.
+- `/step ls [all]`: list the steps not yet `Done` or `Dropped`, then the queued
+  ideas, as one table (§ Listing). `all` also lists Done and Dropped steps.
   Change nothing.
 
 When the user just says "go on" or "next", find where the step stands from its
@@ -167,6 +170,33 @@ brief's header (`Track: light | full`) and in the index row.
    impl report's checklist (`[x]`, or `[skipped] <reason>` in the user's words)
    and in the status, e.g. `Done (committed abc123; checks: 3 done, 1 skipped —
    iPhone)`. Never tick a check yourself.
+
+## Listing
+
+`/step ls` builds the table fresh from the step files and git every time; it
+is never stored, so it can't go stale. Columns:
+
+`Step | Title | Stage | Committed? | Remarks`
+
+- **Step, Title**: from the index in `docs/steps/README.md`, then its
+  "Queued" table (queued items with a step ID only; ideas without one are left
+  out). Order by step ID.
+- **Stage**: the brief's `Status:` line, shortened (e.g. "In code review (A1)",
+  "Approved, not coded"). Queued items: "Queued".
+- **Committed?**: `git log --oneline --grep "^S0NN"` → `Yes, <hash>`. With no
+  commit, run `git status --short` on the step folder and on the files listed in
+  its `3-impl-report.md`: "No — code in working tree" when they show changes,
+  "No — no code yet" when there is no impl report, "No — no folder" for queued
+  items.
+- **Remarks**: the latest review's verdict (`2-brief-review-*` before coding,
+  `4-code-review-*` after) with its open `blocker`/`major` count and minor/nit
+  count, then the next action in a few words: "ready to commit", "ready for
+  `/step implement`", "answer CR3-02", etc. Flag a mismatch, e.g. Stage says
+  "In code review" but the step is committed → "set Status to Done".
+
+Read only the files' header blocks and verdict lines, not whole files. Below the
+table, list working-tree changes that belong to no step (not in any impl
+report's file list), so the user can sort them before committing.
 
 ## Rules
 
