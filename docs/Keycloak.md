@@ -73,7 +73,12 @@ union. They apply at **every** site.
 | `it_admin` | IT: masters housekeeping, user access, settings |
 
 Realm role **`mspv-apps-admin`** (org-wide, or a realm role `admin`) = Yantra's
-**admin**: every permission, bypassing all checks.
+**admin**: every permission, bypassing all checks, the network gate included
+(S013): give this account two-factor login (OTP) in Keycloak.
+
+IT admin (`it_admin`) works only from the plant network (S013). The token's
+`sid` claim (the Keycloak login session) is what Yantra's access log calls a
+session.
 
 ### 3.2 After S011 (roles per site, held in Yantra)
 

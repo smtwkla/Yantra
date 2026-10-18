@@ -218,7 +218,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | In code review — amendment A1 (Team; A1 approved 16-10-2026) | 16-10-2026 |
 | S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | In code review (A1 approved 16-10-2026; built on uncommitted S010, baseline tree 15227de) | 16-10-2026 |
 | S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | In code review (approved 17-10-2026; on top of c486a4a) | 16-10-2026 |
-| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin and manager from the plant network only; access log; task_queue + daily scheduler | 1 | In review | 17-10-2026 |
+| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | Approved (18-10-2026) | 17-10-2026 |
 
 ## Queued (not yet briefed)
 

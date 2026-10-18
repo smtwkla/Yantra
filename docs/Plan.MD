@@ -24,7 +24,7 @@ module before each is built.
 | Shop-floor access | Which units a user may see is held in **Yantra's DB**, not in Keycloak (decided 12-10-2026). Since S011 (16-10-2026) a user's **role is per site** too: per site one role, and either all units of the site or chosen units. A manager normally has all units of their site(s). Since S011 A1 the roles hang off the person in **Team**: the token's login → the active person with that login → their site roles (deactivating the person ends access). |
 | OneERP | Read-only. OneERP warehouses become equipment units. The warehouse mapping may be deferred. **Yantra's nomenclature leads** (decided 13-10-2026): OneERP warehouse codes may be renamed to match Yantra's `SITE.UNIT` codes (e.g. `SMTW.MCC` → `SMTW.MCC1` / `SMTW.MCC2`), rather than Yantra adopting OneERP's names. Renames are done in OneERP by its owners. |
 | Hosting | customer7 (10.24.0.112), web container published on port **8990**. Front-proxy vhost is public (Keycloak is the gate); live since 11-10-2026. |
-| Access from outside | Shop-floor phones use **mobile data**, so all roles get `access:wan` (decided 11-10-2026): the network gate does not restrict by role; Keycloak login is the gate. The real-client-IP handling and access log of the base pattern still apply. |
+| Access from outside | Shop-floor phones use **mobile data**, so every role works from anywhere (decided 11-10-2026), **except IT admin, which works only from the plant network** (S013, 18-10-2026; ISO 27001 A.8.2). Managers work from anywhere too. Admin (`mspv-apps-admin`) bypasses the gate, so a wrong network list can be fixed from anywhere; protect it with Keycloak two-factor login. The VPN pool counts as internal. Internal ranges are set in Settings › Network. The real client IP comes from `X-Real-IP`; every sighting is in the access log (365 days, purged by the worker). |
 | Files | Photos and documents on disk under `data/`, which is an **App-FS** NFS export mounted into the container (like OneERP's files). No MinIO. |
 | Repos | App code and docs here. Deployment in `smtw_erp_devops/erp_server/yantra/`, run with `erp_spanner.py <org> yantra <instance>` (like `erp_server/delivery`), so another org or a `test` instance is just a host file + settings file. |
 
@@ -115,6 +115,7 @@ with each module. First cut of the main keys:
 | `reading:log` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `report:read` | | | | ✓ | ✓ | |
 | `settings:edit` | | | | | | ✓ |
+| `access_log:view` | | | | | ✓ | ✓ |
 | `people:edit` | | | | ✓ | ✓ | ✓ |
 | `people:assign_technicians` | | | | ✓ | ✓ | ✓ |
 
@@ -557,7 +558,8 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `attachments` | Photos and files for tickets and jobs (system-generated names) |
 | `push_subscriptions` | Web push endpoints per user and device |
 | `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix from phase 2 (S002), later `BD-` and `PM-` serials |
-| `task_queue` | Base pattern: notifications, PM generation, sync |
+| `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
+| `task_queue` | Base pattern: notifications, PM generation, sync; first task the daily access-log purge (S013) |
 | `app_settings` | Escalation times, upload limits, internal networks, etc. |
 
 All timestamps are stored as IST (`DATETIME`, connection timezone Asia/Kolkata) per
