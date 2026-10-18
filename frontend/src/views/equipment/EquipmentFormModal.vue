@@ -1,35 +1,40 @@
 <script setup>
 /**
  * Create / edit dialog for equipment, component-units and components
- * (docs/steps/S003-equipment-screens/1-brief.md § 4.3, § 5.3; type and notes: S004).
+ * (docs/steps/S003-equipment-screens/1-brief.md § 4.3, § 5.3; notes: S004; model: S012).
  *
  * The parent calls openCreateEquipment(), openCreatePart(parentNode) or openEdit(node)
  * through a template ref and handles @saved ({result, created}). Edit sends only the
  * fields it owns; moving and the status have their own dialogs.
+ *
+ * The node picks its model (S012 § 1.4); its class and type come from the model and are shown,
+ * not picked. The class filter only narrows the model list and is not sent.
  */
 import { computed, ref } from "vue";
 import FormModal from "../../components/FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
 import { ensureMyUnits, myUnits, pickableUnits } from "../../stores/equipment";
 import {
-  defaultSiteId, ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses,
-  equipmentTypes, sites, units,
+  defaultSiteId, ensureEquipmentClasses, ensureModels, ensureSites, ensureUnits, equipmentClasses,
+  equipmentModels, sites, units,
 } from "../../stores/masters";
 import { LEVEL_LABELS, STATUS_LABELS } from "../../utils/equipmentLabels";
+import { classHasNoModel, modelChoices } from "../../utils/modelPicker";
 
 const emit = defineEmits(["saved"]);
 
-const COMMON_BLANK = { class_id: "", type_id: "", name: "", make: "", model: "", serial_no: "", year: "", notes: "" };
+const COMMON_BLANK = { model_id: "", name: "", serial_no: "", year: "", notes: "" };
 // A new record cannot start scrapped; the labels come from the one shared place
 const CREATE_STATUSES = Object.entries(STATUS_LABELS).filter(([value]) => value !== "scrapped");
 
 // What the open dialog is about, for display only; nothing here is sent
 const NO_CONTEXT = {
   mode: "create-equipment", level: "equipment", parentLevel: null, rootCriticality: null, label: "", place: "",
-  currentClassId: null, currentTypeId: null,
+  currentModelId: null,
 };
 const context = ref(NO_CONTEXT);
 const siteId = ref("");
+const classFilter = ref("");
 
 function blank(seed) {
   if (seed?.parent) {
@@ -44,11 +49,12 @@ function blank(seed) {
 
 const optionalText = (value) => (String(value ?? "").trim() === "" ? null : String(value).trim());
 
-// Empty optional text is sent as null, the year as a number or null, "inherit" as a null grade, "— none —" as a null type
+// Empty optional text is sent as null, the year as a number or null, "inherit" as a null grade; no
+// model picked is sent as null, which the backend refuses with "Pick a model"
 function toBody(form) {
   const body = { ...form };
-  for (const field of ["make", "model", "serial_no", "notes"]) body[field] = optionalText(form[field]);
-  body.type_id = form.type_id === "" || form.type_id === null ? null : form.type_id;
+  for (const field of ["serial_no", "notes"]) body[field] = optionalText(form[field]);
+  body.model_id = form.model_id === "" ? null : form.model_id;
   body.year = form.year === "" || form.year === null ? null : Number(form.year);
   body.criticality = form.criticality === "" ? null : form.criticality;
   return body;
@@ -60,11 +66,8 @@ const {
   path: "/api/equipment",
   blank,
   fromRecord: (node) => ({
-    class_id: node.class_id,
-    type_id: node.type_id ?? "",
+    model_id: node.model_id,
     name: node.name,
-    make: node.make ?? "",
-    model: node.model ?? "",
     serial_no: node.serial_no ?? "",
     year: node.year ?? "",
     criticality: node.criticality ?? "",
@@ -82,16 +85,17 @@ const siteChoices = computed(() =>
   (sites.value ?? []).filter((s) => s.active && pickable.value.some((u) => u.site_id === s.id))
 );
 const unitChoices = computed(() => pickable.value.filter((u) => u.site_id === siteId.value));
-// The current class stays listed on edit even if it has since been deactivated
-const classChoices = computed(() =>
-  (equipmentClasses.value ?? []).filter((c) => c.active || c.id === context.value.currentClassId)
+// The class filter offers active classes only: it narrows the models that may be newly picked
+const classChoices = computed(() => (equipmentClasses.value ?? []).filter((c) => c.active));
+const modelOptions = computed(() =>
+  modelChoices(equipmentModels.value, {
+    classId: classFilter.value,
+    currentId: context.value.currentModelId,
+    selectedId: form.value.model_id,
+  })
 );
-// The chosen class's active types; the node's current type stays listed on edit even if since deactivated
-const typeChoices = computed(() =>
-  (equipmentTypes.value ?? []).filter(
-    (t) => t.class_id === form.value.class_id && (t.active || t.id === context.value.currentTypeId)
-  )
-);
+const pickedModel = computed(() => (equipmentModels.value ?? []).find((m) => m.id === form.value.model_id) ?? null);
+const showNoModelHint = computed(() => classHasNoModel(equipmentModels.value, classFilter.value));
 const levelChoices = computed(() =>
   context.value.parentLevel === "equipment" ? ["component_unit", "component"] : ["component"]
 );
@@ -106,10 +110,11 @@ const title = computed(() => {
 async function open(prepare) {
   let loadError = null;
   try {
-    await Promise.all([ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureEquipmentTypes(), ensureMyUnits()]);
+    await Promise.all([ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureModels(), ensureMyUnits()]);
   } catch (err) {
     loadError = err.message;
   }
+  classFilter.value = "";
   prepare();
   if (loadError) error.value = { field: null, message: loadError };
 }
@@ -138,8 +143,7 @@ function openCreatePart(parent) {
       rootCriticality: parent.root_criticality,
       label: parent.code,
       place: parent.full_path,
-      currentClassId: null,
-      currentTypeId: null,
+      currentModelId: null,
     };
     openCreate({ parent });
   });
@@ -154,8 +158,7 @@ function openEdit(node) {
       rootCriticality: node.root_criticality,
       label: node.code,
       place: node.level === "equipment" ? node.unit : (node.ancestors.at(-1)?.code ?? ""),
-      currentClassId: node.class_id,
-      currentTypeId: node.type_id,
+      currentModelId: node.model_id,
     };
     openEditForm(node);
   });
@@ -205,32 +208,33 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
       <div v-if="isEdit" class="form-text">Changed with Move.</div>
     </div>
 
-    <div class="mb-3">
-      <label class="form-label" for="eq-class">Class</label>
-      <!-- @change, not a watch: a watch would also fire when fromRecord fills the form and clear the type -->
-      <select
-        id="eq-class"
-        v-model="form.class_id"
-        class="form-select"
-        :class="{ 'is-invalid': fieldError('class_id') }"
-        @change="form.type_id = ''"
-      >
-        <option value="" disabled>Select a class…</option>
-        <option v-for="c in classChoices" :key="c.id" :value="c.id">
-          {{ c.code }} — {{ c.name }}{{ c.active ? "" : " (inactive)" }}
-        </option>
+    <div class="mb-2">
+      <label class="form-label" for="eq-class-filter">Class filter</label>
+      <select id="eq-class-filter" v-model="classFilter" class="form-select form-select-sm">
+        <option value="">All classes</option>
+        <option v-for="c in classChoices" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("class_id") }}</div>
-      <div class="form-text">The class sets the code prefix. Changing it later keeps the code.</div>
     </div>
 
     <div class="mb-3">
-      <label class="form-label" for="eq-type">Type</label>
-      <select id="eq-type" v-model="form.type_id" class="form-select" :class="{ 'is-invalid': fieldError('type_id') }">
-        <option value="">— none —</option>
-        <option v-for="t in typeChoices" :key="t.id" :value="t.id">{{ t.name }}{{ t.active ? "" : " (inactive)" }}</option>
+      <label class="form-label" for="eq-model">Model</label>
+      <select
+        id="eq-model"
+        v-model="form.model_id"
+        class="form-select"
+        :class="{ 'is-invalid': fieldError('model_id') }"
+      >
+        <option value="" disabled>Select a model…</option>
+        <option v-for="m in modelOptions" :key="m.id" :value="m.id">{{ m.text }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("type_id") }}</div>
+      <div class="invalid-feedback">{{ fieldError("model_id") }}</div>
+      <div v-if="showNoModelHint" class="form-text">
+        This class has no model yet. Add a model in Masters › Models (a Generic one if the maker is unknown).
+      </div>
+      <div v-if="pickedModel" class="form-text">
+        Class: {{ pickedModel.class_code }} — {{ pickedModel.class_name }} · Type: {{ pickedModel.type_name ?? "none" }}
+      </div>
+      <div class="form-text">The model's class sets the code prefix. A model of another class later keeps the code.</div>
     </div>
 
     <div class="mb-3">
@@ -244,25 +248,12 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
       <div class="invalid-feedback">{{ fieldError("name") }}</div>
     </div>
 
-    <div class="row g-3 mb-3">
-      <div class="col-sm-4">
-        <label class="form-label" for="eq-make">Make</label>
-        <input id="eq-make" v-model="form.make" class="form-control" :class="{ 'is-invalid': fieldError('make') }" maxlength="100" />
-        <div class="invalid-feedback">{{ fieldError("make") }}</div>
-      </div>
-      <div class="col-sm-4">
-        <label class="form-label" for="eq-model">Model</label>
-        <input id="eq-model" v-model="form.model" class="form-control" :class="{ 'is-invalid': fieldError('model') }" maxlength="100" />
-        <div class="invalid-feedback">{{ fieldError("model") }}</div>
-      </div>
+    <div class="row g-3">
       <div class="col-sm-4">
         <label class="form-label" for="eq-serial">Serial no.</label>
         <input id="eq-serial" v-model="form.serial_no" class="form-control" :class="{ 'is-invalid': fieldError('serial_no') }" maxlength="100" />
         <div class="invalid-feedback">{{ fieldError("serial_no") }}</div>
       </div>
-    </div>
-
-    <div class="row g-3">
       <div class="col-sm-4">
         <label class="form-label" for="eq-year">Year</label>
         <input id="eq-year" v-model="form.year" type="number" class="form-control" :class="{ 'is-invalid': fieldError('year') }" />

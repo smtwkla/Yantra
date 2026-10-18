@@ -375,8 +375,10 @@ class TestEquipmentClasses:
 
     def test_deactivated_class_with_equipment_stays_frozen(self, engineer, make_class, make_equipment, uniq):
         cls = make_class()
-        make_equipment(cls=cls)
-        engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False})
+        node = make_equipment(cls=cls)
+        # Its models first (S012 § 5.2), then the class
+        assert engineer.put(f"{BASE}/equipment-models/{node['model_id']}", json={"active": False}).status_code == 200
+        assert engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False}).status_code == 200
         res = engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"code": uniq.class_code()})
         assert res.status_code == 409
 
@@ -472,9 +474,10 @@ class TestEquipmentTypes:
         # Renaming it is still fine: only reactivation needs an active class
         assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"name": "Renamed"}).status_code == 200
 
-    def test_deactivating_a_type_in_use_is_allowed(self, engineer, make_type, make_equipment):
+    def test_deactivating_a_type_in_use_is_allowed(self, engineer, make_type, make_model, make_equipment):
         record = make_type()
-        make_equipment(cls={"id": record["class_id"]}, type_id=record["id"])
+        model = make_model(cls={"id": record["class_id"]}, type_id=record["id"])
+        make_equipment(model=model)
         assert engineer.put(f"{BASE}/equipment-types/{record['id']}", json={"active": False}).status_code == 200
 
     def test_class_cannot_change_but_may_be_sent_back(self, engineer, make_class, make_type):

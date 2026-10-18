@@ -14,10 +14,14 @@ import pytest
 import config_rbac
 import documents
 import file_store
-from tests.documents_helpers import EQUIPMENT, JPEG, PDF, docs_url, folder_files, refusal, scrap, uploaded
+from tests.documents_helpers import (
+    EQUIPMENT, JPEG, PDF, docs_url, folder_files, model_docs_url, owner_files, refusal, scrap, uploaded,
+    uploaded_to,
+)
 
 REMOVED = f"{EQUIPMENT}/removed-documents"
 PURGE_KEY = "equipment:purge_documents"
+UNKNOWN_MODEL_DOCS = "/api/masters/equipment-models/999999999/documents"
 
 
 @pytest.fixture
@@ -140,7 +144,83 @@ class TestList:
         assert ids(listing(engineer, q=cls["code"])) == [mine["id"]]
         assert theirs["id"] not in ids(listing(engineer, q=cls["code"]))
         nobody = user_with_units("maint_engineer", [])
-        assert listing(nobody) == {"items": [], "total": 0, "page": 1, "per_page": 50}
+        # No units leaves out the node branch, not the whole list: model rows stay (S012 § 5.6)
+        assert listing(nobody, q=cls["code"]) == {"items": [], "total": 0, "page": 1, "per_page": 50}
+        assert all(item["owner"] == "model" for item in listing(nobody)["items"])
+
+
+class TestModelRows:
+    """S012 § 5.6: removed model documents in the same list, at every site."""
+
+    @pytest.fixture
+    def model(self, make_manufacturer, make_model, uniq):
+        return make_model(manufacturer=make_manufacturer(name=f"Atlas Copco {uniq.manufacturer_name()}"))
+
+    def _removed(self, admin, model, **kwargs):
+        url = model_docs_url(model)
+        doc = uploaded_to(admin, url, **kwargs)
+        assert admin.delete(f"{url}/{doc['id']}").status_code == 204
+        return doc
+
+    def test_listed_with_owner_path_and_label_and_ordered_with_node_rows(self, admin, manager, root, cls, model):
+        node_doc = removed_doc(admin, root, title=f"Manual {cls['code']}")
+        model_doc = self._removed(admin, model, title=f"Manual {cls['code']}")
+        page = listing(manager, q=cls["code"])
+        assert (page["total"], ids(page)) == (2, [model_doc["id"], node_doc["id"]])
+        model_row, node_row = page["items"]
+        assert {key: model_row[key] for key in ("owner", "path", "name", "code", "equipment_id", "level", "status",
+                                                "unit", "full_path")} == {
+            "owner": "model", "path": model_docs_url(model), "name": model["label"], "code": None,
+            "equipment_id": None, "level": None, "status": None, "unit": None, "full_path": None}
+        assert (node_row["owner"], node_row["path"], node_row["code"]) == ("equipment", docs_url(root), root["code"])
+        assert model_row["removed_by"] == "test_it_admin"
+        assert ids(listing(manager, q=cls["code"], per_page=1, page=2)) == [node_doc["id"]]
+
+    def test_q_matches_designation_manufacturer_title_and_file_name(self, admin, manager, model):
+        doc = self._removed(admin, model, title="Parts list", filename=f"{model['designation']}-parts.pdf")
+        for q in (model["designation"], model["manufacturer_name"], model["label"], f"{model['designation']}-parts"):
+            assert doc["id"] in ids(listing(manager, q=q)), q
+        photo = self._removed(admin, model, kind="photo", title="Plate", data=JPEG, filename="a.jpg")
+        assert ids(listing(manager, q=model["manufacturer_name"], kind="photo")) == [photo["id"]]
+
+    def test_a_manager_limited_to_one_site_sees_them(self, admin, user_at_sites, make_site, make_unit, model):
+        site = make_site()
+        manager_a, _ = user_at_sites([(site, "maint_manager", [make_unit(site)])])
+        doc = self._removed(admin, model)
+        assert ids(listing(manager_a, q=model["designation"])) == [doc["id"]]
+
+    def test_restore_and_purge(self, caplog, admin, manager, model, db_rows):
+        url = model_docs_url(model)
+        restored = self._removed(admin, model, title="Manual")
+        res = manager.post(f"{url}/{restored['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, restored["id"])
+        assert [d["id"] for d in admin.get(url).get_json()["items"]] == [restored["id"]]
+
+        photo = self._removed(admin, model, kind="photo", title="Plate", data=JPEG, filename="a.jpg")
+        stored = row(db_rows, photo)["stored_name"]
+        assert stored in owner_files("model", model["id"])
+        caplog.set_level(logging.INFO, logger="documents")
+        assert manager.post(f"{url}/{photo['id']}/purge").status_code == 204
+        assert row(db_rows, photo) is None
+        assert stored not in owner_files("model", model["id"])
+        assert f"{stored}.thumb.jpg" not in owner_files("model", model["id"])
+        messages = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
+        assert any(f"of model {model['id']} deleted for good by test_maint_manager" in m for m in messages), messages
+
+    def test_refusals(self, admin, manager, engineer, role_client, make_model, model):
+        url = model_docs_url(model)
+        removed = self._removed(admin, model)
+        active = uploaded_to(admin, url)
+        assert refusal(manager.post(f"{url}/{active['id']}/purge")) == (409, None, "Remove the document first")
+        assert manager.post(f"{url}/{active['id']}/restore").status_code == 404
+        other = model_docs_url(make_model())
+        assert manager.post(f"{other}/{removed['id']}/restore").status_code == 404
+        assert manager.post(f"{other}/{removed['id']}/purge").status_code == 404
+        for client in (engineer, role_client("maint_operator")):
+            assert client.post(f"{url}/{removed['id']}/restore").status_code == 403
+            assert client.post(f"{url}/{removed['id']}/purge").status_code == 403
+        assert manager.post(f"{UNKNOWN_MODEL_DOCS}/1/purge").status_code == 404
+
 
 
 class TestRestore:
@@ -238,7 +318,7 @@ class TestPurge:
 
     def test_a_file_already_missing_is_204_and_a_warning(self, caplog, admin, manager, root, cls, db_rows):
         doc = removed_doc(admin, root, title=f"Manual {cls['code']}")
-        path = file_store.file_path(root["id"], row(db_rows, doc)["stored_name"])
+        path = file_store.file_path("equipment", root["id"], row(db_rows, doc)["stored_name"])
         os.remove(path)
         caplog.set_level(logging.INFO, logger="documents")
         assert manager.post(action_url(root, doc, "purge")).status_code == 204
@@ -249,7 +329,7 @@ class TestPurge:
                                                                   root, cls, db_rows):
         doc = removed_doc(admin, root, kind="photo", title=f"Shot {cls['code']}", data=JPEG, filename="a.jpg")
         stored = row(db_rows, doc)["stored_name"]
-        main = file_store.file_path(root["id"], stored)
+        main = file_store.file_path("equipment", root["id"], stored)
         real = file_store.remove_file
 
         def failing(path):
@@ -270,7 +350,7 @@ class TestPurge:
                                                                        root, cls, db_rows):
         doc = removed_doc(admin, root, kind="photo", title=f"Shot {cls['code']}", data=JPEG, filename="a.jpg")
         stored = row(db_rows, doc)["stored_name"]
-        thumb = file_store.file_path(root["id"], f"{stored}.thumb.jpg")
+        thumb = file_store.file_path("equipment", root["id"], f"{stored}.thumb.jpg")
         real = file_store.remove_file
 
         def failing(path):

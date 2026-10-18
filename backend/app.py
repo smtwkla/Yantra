@@ -144,7 +144,8 @@ from equipment import equipment_bp
 app.register_blueprint(equipment_bp, url_prefix="/api/equipment")
 
 from documents import documents_bp
-app.register_blueprint(documents_bp, url_prefix="/api/equipment")
+# Its routes spell out /equipment/... and /masters/equipment-models/... (two owners, S012)
+app.register_blueprint(documents_bp, url_prefix="/api")
 
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")

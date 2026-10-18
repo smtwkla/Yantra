@@ -5,6 +5,9 @@ and locks rows, passes plain values in, and acts on what comes back.
 
 The tree has three fixed levels (ISO 14224 levels 6-8): equipment, component
 unit, component.  Only equipment has a unit; a part sits under a parent.
+
+Every node has a model (S012); its class and type come from the model and are never
+set apart from it.
 """
 
 from masters_core import RESERVED_TYPE_NAME, optional_text_parser, parse_name
@@ -124,18 +127,37 @@ def check_status_change(old, new):
     return None
 
 
-def check_type_class(type_class_id, node_class_id):
-    """Return an error message if a type of type_class_id may not be given to a node of
-    node_class_id (ISO 14224: a type belongs to one class), else None."""
-    if type_class_id != node_class_id:
+def check_type_class(type_class_id, owner_class_id):
+    """Return an error message if a type of type_class_id may not be given to a record of
+    owner_class_id (ISO 14224: a type belongs to one class), else None.  Since S012 the
+    record is an equipment model; equipment takes its type from the model."""
+    if type_class_id != owner_class_id:
         return "This type belongs to another class"
     return None
+
+
+MODEL_INACTIVE = "This model is inactive"
+
+
+def derive_from_model(stored_model_id, model):
+    """The class and type a node gets from the model a write picks (S012 § 5.3) ->
+    ``(class_id, type_id, message)``.
+
+    ``stored_model_id`` is the locked node's model (None on create); ``model`` is the locked
+    row ``{id, class_id, type_id, active}``.  A newly picked model must be active; an
+    unchanged inactive one is kept.  The type is taken as it is (None when the model has
+    none), never checked for active: the model's own flag governs what can be picked.
+    ``message`` is None or MODEL_INACTIVE; the shell picks the status (409)."""
+    newly_picked = model["id"] != stored_model_id
+    message = MODEL_INACTIVE if newly_picked and not model["active"] else None
+    return model["class_id"], model["type_id"], message
 
 
 # Tracked display value -> event name.  The move is named by the node's level:
 # equipment moves between units, a part moves between parents.
 _TRACKED = (
     ("full_path", None),
+    ("model_label", "model"),
     ("class_code", "class"),
     ("type_name", "type"),
     ("criticality", "criticality"),
@@ -154,9 +176,9 @@ def _display(key, value):
 def tracked_changes(before, after):
     """Compare two dicts of display values; return ``[(event, old, new)]`` for each tracked change.
 
-    Keys read: ``level``, ``full_path``, ``class_code``, ``type_name`` (None = no type),
-    ``criticality`` (own value, None = inherit) and ``status``.  Any other key (name,
-    make, notes, ...) is not tracked.  Types are compared by name, so a reclassification
+    Keys read: ``level``, ``full_path``, ``model_label``, ``class_code``, ``type_name``
+    (None = no type), ``criticality`` (own value, None = inherit) and ``status``.  Any other
+    key (name, serial number, notes, ...) is not tracked.  Types are compared by name, so a reclassification
     between two types of the same name gives no type event (S004 § 5.2).
     """
     changes = []
@@ -174,16 +196,33 @@ def tracked_changes(before, after):
 # Validation
 # ---------------------------------------------------------------------------
 
+PICK_A_MODEL = "Pick a model"
+
+# Keys an old open tab may still send (S012 § 5.4): refused, even as null or unchanged, so
+# such a tab fails loudly instead of having its make, model, class or type ignored
+_REFUSED_FIELDS = {
+    "make": "Make and model are now picked from Models",
+    "model": "Make and model are now picked from Models",
+    "class_id": "Class and type come from the model",
+    "type_id": "Class and type come from the model",
+}
+
+
+def _parse_model_id(raw):
+    """Required on create and never cleared: missing and null get the same message."""
+    if not _is_id(raw):
+        raise ValueError(PICK_A_MODEL)
+    return raw
+
+
 def _fields(this_year):
-    """field -> (parser, required when creating).  level/code are handled separately."""
+    """field -> (parser, required when creating).  level/code are handled separately;
+    model_id has its own message when missing (validate_equipment)."""
     return {
         "parent_id": (_id_parser("Parent", nullable=True), False),
         "unit_id": (_id_parser("Unit", nullable=True), False),
-        "class_id": (_id_parser("Class", nullable=False), True),
-        "type_id": (_id_parser("Type", nullable=True), False),
+        "model_id": (_parse_model_id, True),
         "name": (parse_name, True),
-        "make": (optional_text_parser("Make", TEXT_MAX), False),
-        "model": (optional_text_parser("Model", TEXT_MAX), False),
         "serial_no": (optional_text_parser("Serial number", TEXT_MAX), False),
         "year": (_year_parser(this_year), False),
         "criticality": (_parse_criticality, False),
@@ -225,13 +264,19 @@ def _check_place(level, clean, creating, errors):
 def validate_equipment(data, creating, this_year, stored=None):
     """Return ``(clean, errors)`` in the masters_core shape (errors: list of {field, message}).
 
-    ``this_year`` is the current IST year, passed in by the shell.  On an update,
+    ``this_year`` is the current IST year, passed in by the shell.  ``make``, ``model``,
+    ``class_id`` and ``type_id`` are refused (S012 § 5.4); the class and type come from the
+    model (derive_from_model).  On an update,
     ``stored`` is the node's current ``{code, level}``: code and level may be sent
     back unchanged (they are then dropped) but not changed, and the place rules are
     checked against the stored level.  On create the code is issued by the shell,
     so a ``code`` in the body is ignored like any other unknown field.
     """
     clean, errors = {}, []
+
+    for field, message in _REFUSED_FIELDS.items():
+        if field in data:
+            errors.append({"field": field, "message": message})
 
     if creating:
         try:
@@ -247,7 +292,8 @@ def validate_equipment(data, creating, this_year, stored=None):
     for field, (parse, required) in _fields(this_year).items():
         if field not in data:
             if creating and required:
-                errors.append({"field": field, "message": f"{field.replace('_', ' ').capitalize()} is required"})
+                message = PICK_A_MODEL if field == "model_id" else f"{field.replace('_', ' ').capitalize()} is required"
+                errors.append({"field": field, "message": message})
             continue
         try:
             clean[field] = parse(data[field])
@@ -259,10 +305,8 @@ def validate_equipment(data, creating, this_year, stored=None):
         if creating:
             if level == "equipment" and "criticality" not in clean:
                 clean["criticality"] = DEFAULT_CRITICALITY
-            # Absent keys are not written: a part's NULL parent_id/unit_id and no type are the
-            # column defaults
-            clean = {k: v for k, v in clean.items()
-                     if not (k in ("parent_id", "unit_id", "type_id") and v is None)}
+            # Absent keys are not written: a part's NULL parent_id/unit_id are the column defaults
+            clean = {k: v for k, v in clean.items() if not (k in ("parent_id", "unit_id") and v is None)}
 
     if creating and "status" in clean:
         message = check_status_change(None, clean["status"])

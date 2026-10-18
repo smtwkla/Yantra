@@ -8,14 +8,18 @@
  * the file type from its first bytes.
  *
  * The file input has no `capture` attribute, so a phone offers the camera and the gallery.
+ *
+ * The parent passes the owner's documents collection URL (a node or a model: S012).
  */
 import { computed, ref, watch } from "vue";
 import { apiUpload } from "../../api";
-import FormModal from "../../components/FormModal.vue";
+import FormModal from "../FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
 
 const props = defineProps({
-  nodeId: { type: Number, required: true },
+  basePath: { type: String, required: true },
+  // A model document: shown at every site (S012 § 2, ISO 27001 A.5.12)
+  everySite: { type: Boolean, default: false },
   // From the list response; null until the list has loaded (the backend still checks)
   uploadMaxMb: { type: Number, default: null },
 });
@@ -87,7 +91,7 @@ function save() {
   body.append("kind", form.value.kind);
   body.append("title", form.value.title);
   body.append("file", form.value.file);
-  return send(() => apiUpload(`/api/equipment/${props.nodeId}/documents`, body));
+  return send(() => apiUpload(props.basePath, body));
 }
 
 defineExpose({ open });
@@ -141,7 +145,8 @@ defineExpose({ open });
         :maxlength="TITLE_MAX"
       />
       <div class="invalid-feedback">{{ fieldError("title") }}</div>
-      <div class="form-text">Everyone who can see this equipment can see it: no confidential documents (contracts, prices).</div>
+      <div v-if="everySite" class="form-text">Visible at every site: no confidential documents (contracts, prices).</div>
+      <div v-else class="form-text">Everyone who can see this equipment can see it: no confidential documents (contracts, prices).</div>
     </div>
   </FormModal>
 </template>

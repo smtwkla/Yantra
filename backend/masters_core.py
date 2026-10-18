@@ -18,6 +18,9 @@ USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,99}$")
 
 NAME_MAX = 100
 TRADE_NAME_MAX = 50
+# A model's designation (S012 § 4.1): "<manufacturer> <designation>" then fits the events'
+# VARCHAR(200) (100 + 1 + 80)
+DESIGNATION_MAX = 80
 # A person in the Team register is a direct employee or comes through a contractor (S010 A1)
 EMPLOYMENT = ("direct", "contractor")
 # History shows "no type" as this word, so no type may be called it (S004 § 5.1)
@@ -46,6 +49,30 @@ def _parse_bounded_name(raw, max_len):
 
 def parse_name(raw):
     return _parse_bounded_name(raw, NAME_MAX)
+
+
+def _collapsed(raw):
+    """Trimmed, with every run of inner spaces as one space (S012 § 5.1, ISO 8000: one
+    spelling per real thing); the case-insensitive collation does the rest."""
+    return " ".join(raw.split()) if isinstance(raw, str) else ""
+
+
+def _parse_manufacturer_name(raw):
+    return _parse_bounded_name(_collapsed(raw), NAME_MAX)
+
+
+def _parse_designation(raw):
+    designation = _collapsed(raw)
+    if not designation:
+        raise ValueError("Designation is required")
+    if len(designation) > DESIGNATION_MAX:
+        raise ValueError(f"Designation must be at most {DESIGNATION_MAX} characters")
+    return designation
+
+
+def model_label(manufacturer_name, designation):
+    """How a model is named everywhere (lists, pickers, events): "Atlas Copco GA37"."""
+    return f"{manufacturer_name} {designation}"
 
 
 def _parse_trade_name(raw):
@@ -95,6 +122,17 @@ def _parse_id(label):
     return parse
 
 
+def _parse_optional_id(label):
+    """A record id, or None for "none"."""
+    def parse(raw):
+        if raw is None:
+            return None
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            raise ValueError(f"{label} must be a record id")
+        return raw
+    return parse
+
+
 # field -> (parser, required when creating)
 _SITE_FIELDS = {
     "code": (_code_parser(SITE_CODE_RE, "Site", "2–20 characters: capital letters, digits and hyphen, "
@@ -123,6 +161,22 @@ _TYPE_FIELDS = {
     "name": (_parse_type_name, True),
     "active": (_parse_active, False),
 }
+
+_MANUFACTURER_FIELDS = {
+    "name": (_parse_manufacturer_name, True),
+    "active": (_parse_active, False),
+}
+
+# manufacturer_id, class_id and type_id are parsed on update too: the shell refuses a
+# different one (they are fixed after create, S012 § 5.2)
+_MODEL_FIELDS = {
+    "manufacturer_id": (_parse_id("Manufacturer"), True),
+    "designation": (_parse_designation, True),
+    "class_id": (_parse_id("Class"), True),
+    "type_id": (_parse_optional_id("Type"), False),
+    "active": (_parse_active, False),
+}
+
 
 def _parse_employment(raw):
     if raw not in EMPLOYMENT:
@@ -189,6 +243,14 @@ def validate_equipment_class(data, creating):
 
 def validate_equipment_type(data, creating):
     return _validate(data, _TYPE_FIELDS, creating)
+
+
+def validate_manufacturer(data, creating):
+    return _validate(data, _MANUFACTURER_FIELDS, creating)
+
+
+def validate_equipment_model(data, creating):
+    return _validate(data, _MODEL_FIELDS, creating)
 
 
 def validate_trade(data, creating):

@@ -3,9 +3,10 @@
 import pytest
 
 from masters_core import (
-    NO_LOGIN_ROLE_MESSAGE, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
-    validate_equipment_type, validate_person, validate_site, validate_site_row, validate_site_rows,
-    validate_trade, validate_unit, validate_unit_ids, validate_username,
+    NO_LOGIN_ROLE_MESSAGE, model_label, no_login_role_error, normalise_username, technician_only,
+    validate_equipment_class, validate_equipment_model, validate_equipment_type, validate_manufacturer,
+    validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
+    validate_unit_ids, validate_username,
 )
 
 
@@ -74,6 +75,70 @@ class TestEquipmentType:
     @pytest.mark.parametrize("raw, expected", [(True, 1), (False, 0), (1, 1), (0, 0)])
     def test_active_reaches_the_update(self, raw, expected):
         assert validate_equipment_type({"active": raw}, creating=False) == ({"active": expected}, [])
+
+
+class TestManufacturer:
+    """S012 § 5.1: one spelling per maker (ISO 8000)."""
+
+    def test_name_is_trimmed_and_inner_spaces_collapsed(self):
+        clean, errors = validate_manufacturer({"name": "  Atlas   Copco \t"}, creating=True)
+        assert (clean, errors) == ({"name": "Atlas Copco"}, [])
+
+    @pytest.mark.parametrize("name, ok", [("x" * 100, True), ("x" * 101, False), (" " * 3, False), (None, False),
+                                          (5, False)])
+    def test_name_boundaries(self, name, ok):
+        _, errors = validate_manufacturer({"name": name}, creating=True)
+        assert (errors == []) is ok
+
+    def test_collapsing_counts_towards_the_limit_after_it(self):
+        # 100 characters once the run of spaces is one
+        assert validate_manufacturer({"name": "x" * 50 + "     " + "y" * 49}, creating=True)[1] == []
+
+    def test_name_required_on_create_only(self):
+        assert _fields(validate_manufacturer({}, creating=True)[1]) == ["name"]
+        assert validate_manufacturer({"active": False}, creating=False) == ({"active": 0}, [])
+
+
+class TestEquipmentModel:
+    """S012 § 5.2."""
+
+    BODY = {"manufacturer_id": 1, "designation": "GA37", "class_id": 2}
+
+    def test_create_happy_path_with_and_without_a_type(self):
+        assert validate_equipment_model(self.BODY, creating=True) == (self.BODY, [])
+        clean, errors = validate_equipment_model({**self.BODY, "type_id": 4}, creating=True)
+        assert errors == [] and clean["type_id"] == 4
+        clean, errors = validate_equipment_model({**self.BODY, "type_id": None}, creating=True)
+        assert errors == [] and clean["type_id"] is None
+
+    def test_create_needs_manufacturer_designation_and_class(self):
+        assert sorted(_fields(validate_equipment_model({}, creating=True)[1])) == [
+            "class_id", "designation", "manufacturer_id"]
+
+    def test_designation_trimmed_and_collapsed(self):
+        clean, _ = validate_equipment_model({**self.BODY, "designation": "  GA 37  VSD "}, creating=True)
+        assert clean["designation"] == "GA 37 VSD"
+
+    @pytest.mark.parametrize("designation, ok", [("x" * 80, True), ("x" * 81, False), ("  ", False), (None, False)])
+    def test_designation_boundaries(self, designation, ok):
+        _, errors = validate_equipment_model({**self.BODY, "designation": designation}, creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert _fields(errors) == ["designation"]
+
+    @pytest.mark.parametrize("field, value", [("manufacturer_id", "1"), ("manufacturer_id", 0), ("class_id", True),
+                                              ("type_id", 0), ("type_id", "4")])
+    def test_bad_ids(self, field, value):
+        assert _fields(validate_equipment_model({**self.BODY, field: value}, creating=True)[1]) == [field]
+
+    def test_update_leaves_absent_fields_out_and_parses_the_fixed_ones(self):
+        assert validate_equipment_model({"designation": "GA55"}, creating=False) == ({"designation": "GA55"}, [])
+        # Parsed so the shell can refuse a different one (fixed after create)
+        assert validate_equipment_model({"class_id": 3, "type_id": None}, creating=False) == (
+            {"class_id": 3, "type_id": None}, [])
+
+    def test_label(self):
+        assert model_label("Atlas Copco", "GA37") == "Atlas Copco GA37"
 
 
 class TestSiteCode:

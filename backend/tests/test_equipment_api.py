@@ -77,19 +77,20 @@ class TestCodes:
         assert _number(a2, cls_a) == _number(a1, cls_a) + 1
         assert b1["code"].startswith(cls_b["code"])
 
-    def test_refused_creates_use_no_number(self, admin, make_class, make_unit, make_equipment):
+    def test_refused_creates_use_no_number(self, admin, make_class, make_unit, make_equipment, make_model):
         cls = make_class()
         first = make_equipment(cls=cls)
         unit, inactive = make_unit(), make_unit()
         admin.put(f"{MASTERS}/units/{inactive['id']}", json={"active": False})
-        refused_400 = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"]})
+        refused_400 = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
+                                                  "model_id": make_model(cls=cls)["id"]})
         refused_409 = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": inactive["id"],
-                                                  "class_id": cls["id"], "name": "x"})
+                                                  "model_id": make_model(cls=cls)["id"], "name": "x"})
         assert (refused_400.status_code, refused_409.status_code) == (400, 409)
         assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 1
 
     def test_a_failure_after_the_counter_bump_rolls_it_back(self, admin, make_class, make_unit, make_equipment,
-                                                            monkeypatch):
+                                                            monkeypatch, make_model):
         cls = make_class()
         first = make_equipment(cls=cls)
         unit = make_unit()
@@ -98,8 +99,8 @@ class TestCodes:
             raise RuntimeError("forced")
         monkeypatch.setattr(equipment, "_write_events", fail)
         with pytest.raises(RuntimeError):
-            admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"],
-                                        "name": "x"})
+            admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
+                                        "model_id": make_model(cls=cls)["id"], "name": "x"})
         monkeypatch.undo()
         assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 1
 
@@ -109,20 +110,20 @@ class TestCodes:
         assert node["full_path"] == f"{unit['full_code']}.{node['code']}"
         assert _events(admin, node) == [("created", None, node["full_path"])]
 
-    def test_code_in_the_body_is_ignored(self, admin, make_unit, make_class):
+    def test_code_in_the_body_is_ignored(self, admin, make_unit, make_class, make_model):
         cls, unit = make_class(), make_unit()
-        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"],
-                                          "name": "x", "code": "ZZ999"})
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
+                                          "model_id": make_model(cls=cls)["id"], "name": "x", "code": "ZZ999"})
         assert res.status_code == 201
         assert res.get_json()["code"].startswith(cls["code"])
 
-    def test_duplicate_code_maps_to_409_without_field(self, admin, make_class, make_unit, make_equipment):
+    def test_duplicate_code_maps_to_409_without_field(self, admin, make_class, make_unit, make_equipment, make_model):
         cls = make_class()
         make_equipment(cls=cls)
         # A counter behind the codes in use (never happens through the API) collides on the UNIQUE key
         _db("UPDATE serial_counters SET last_value = 0 WHERE scope = %s", (f"EQ:{cls['code']}",))
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
-                                          "class_id": cls["id"], "name": "x"})
+                                          "model_id": make_model(cls=cls)["id"], "name": "x"})
         assert res.status_code == 409
         assert res.get_json() == {"error": "Code collision — retry"}
 
@@ -149,53 +150,54 @@ class TestTree:
     @pytest.mark.parametrize("parent_level, child_level", [
         ("component_unit", "component_unit"), ("component", "component"), ("component", "component_unit"),
     ])
-    def test_wrong_parent_level_is_400(self, admin, make_equipment, make_class, parent_level, child_level):
+    def test_wrong_parent_level_is_400(self, admin, make_equipment, parent_level, child_level, make_model):
         mill = make_equipment()
         parent = make_equipment(parent=mill, level=parent_level)
         res = admin.post(EQUIPMENT, json={"level": child_level, "parent_id": parent["id"],
-                                          "class_id": make_class()["id"], "name": "x"})
+                                          "model_id": make_model()["id"], "name": "x"})
         assert res.status_code == 400
         assert res.get_json()["field"] == "parent_id"
 
-    def test_unit_on_a_part_or_no_unit_on_equipment_is_400(self, admin, make_equipment, make_unit, make_class):
-        mill, cls = make_equipment(), make_class()
+    def test_unit_on_a_part_or_no_unit_on_equipment_is_400(self, admin, make_equipment, make_unit, make_model):
+        mill, model = make_equipment(), make_model()
         part = admin.post(EQUIPMENT, json={"level": "component", "parent_id": mill["id"],
-                                           "unit_id": make_unit()["id"], "class_id": cls["id"], "name": "x"})
+                                           "unit_id": make_unit()["id"], "model_id": model["id"], "name": "x"})
         assert (part.status_code, part.get_json()["field"]) == (400, "unit_id")
-        bare = admin.post(EQUIPMENT, json={"level": "equipment", "class_id": cls["id"], "name": "x"})
+        bare = admin.post(EQUIPMENT, json={"level": "equipment", "model_id": model["id"], "name": "x"})
         assert (bare.status_code, bare.get_json()["field"]) == (400, "unit_id")
 
     def test_the_check_constraint_holds_when_the_shell_is_bypassed(self, make_equipment):
         mill = make_equipment()
-        row = _db("SELECT unit_id, class_id FROM equipment WHERE id = %s", (mill["id"],))[0]
+        row = _db("SELECT unit_id, class_id, model_id FROM equipment WHERE id = %s", (mill["id"],))[0]
         with pytest.raises(pymysql.err.OperationalError) as caught:
-            _db("INSERT INTO equipment (code, level, unit_id, class_id, name, created_by) "
-                "VALUES ('ZZCHK1', 'component', %s, %s, 'x', 'test')", (row["unit_id"], row["class_id"]))
+            _db("INSERT INTO equipment (code, level, unit_id, class_id, model_id, name, created_by) "
+                "VALUES ('ZZCHK1', 'component', %s, %s, %s, 'x', 'test')",
+                (row["unit_id"], row["class_id"], row["model_id"]))
         assert caught.value.args[0] == 4025
         with pytest.raises(pymysql.err.OperationalError):
-            _db("INSERT INTO equipment (code, level, parent_id, unit_id, class_id, name, created_by) "
-                "VALUES ('ZZCHK2', 'equipment', %s, %s, %s, 'x', 'test')",
-                (mill["id"], row["unit_id"], row["class_id"]))
+            _db("INSERT INTO equipment (code, level, parent_id, unit_id, class_id, model_id, name, created_by) "
+                "VALUES ('ZZCHK2', 'equipment', %s, %s, %s, %s, 'x', 'test')",
+                (mill["id"], row["unit_id"], row["class_id"], row["model_id"]))
 
 
 class TestUnknownIdsAndImmutableFields:
 
-    @pytest.mark.parametrize("field", ["unit_id", "class_id"])
-    def test_unknown_id_on_create_equipment_is_400(self, admin, make_unit, make_class, field):
-        body = {"level": "equipment", "unit_id": make_unit()["id"], "class_id": make_class()["id"],
+    @pytest.mark.parametrize("field", ["unit_id", "model_id"])
+    def test_unknown_id_on_create_equipment_is_400(self, admin, make_unit, field, make_model):
+        body = {"level": "equipment", "unit_id": make_unit()["id"], "model_id": make_model()["id"],
                 "name": "x", field: 999999}
         res = admin.post(EQUIPMENT, json=body)
         assert (res.status_code, res.get_json()["field"]) == (400, field)
 
-    def test_unknown_parent_on_create_is_400(self, admin, make_class):
+    def test_unknown_parent_on_create_is_400(self, admin, make_model):
         res = admin.post(EQUIPMENT, json={"level": "component", "parent_id": 999999,
-                                          "class_id": make_class()["id"], "name": "x"})
+                                          "model_id": make_model()["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (400, "parent_id")
 
     def test_unknown_ids_on_update_are_400(self, admin, make_equipment):
         mill = make_equipment()
         part = make_equipment(parent=mill)
-        for node, field in ((mill, "unit_id"), (mill, "class_id"), (part, "parent_id")):
+        for node, field in ((mill, "unit_id"), (mill, "model_id"), (part, "parent_id")):
             res = _put(admin, node, **{field: 999999})
             assert (res.status_code, res.get_json()["field"]) == (400, field)
 
@@ -221,35 +223,48 @@ class TestUnknownIdsAndImmutableFields:
 
 
 class TestReclassify:
+    """S012: a model of another class reclassifies the node; the code is kept (S002)."""
 
-    def test_code_unchanged_and_class_event(self, admin, make_class, make_equipment):
+    def test_code_unchanged_and_model_and_class_events(self, admin, make_class, make_model, make_equipment):
         old_cls, new_cls = make_class(), make_class()
         mill = make_equipment(cls=old_cls)
-        res = _put(admin, mill, class_id=new_cls["id"])
+        new_model = make_model(cls=new_cls)
+        res = _put(admin, mill, model_id=new_model["id"])
         assert res.status_code == 200
         body = res.get_json()
         assert body["code"] == mill["code"]
-        assert (body["class_id"], body["class_code"]) == (new_cls["id"], new_cls["code"])
-        assert _events(admin, mill)[0] == ("class", old_cls["code"], new_cls["code"])
+        assert (body["class_id"], body["class_code"], body["model_id"]) == (new_cls["id"], new_cls["code"],
+                                                                            new_model["id"])
+        assert set(_events(admin, mill)[:2]) == {("class", old_cls["code"], new_cls["code"]),
+                                                 ("model", mill["model_label"], new_model["label"])}
 
-    def test_to_an_inactive_class_is_409(self, admin, make_class, make_equipment):
+    def test_a_model_of_an_inactive_class_is_409_when_the_shell_is_bypassed(self, admin, make_class, make_model,
+                                                                           make_equipment):
+        """§ 5.3 rule 5, defence in depth (BR3-02): through the API an active model always has an
+        active class, so the class is deactivated by SQL."""
         mill, cls = make_equipment(), make_class()
-        admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False})
-        res = _put(admin, mill, class_id=cls["id"])
-        assert (res.status_code, res.get_json()["field"]) == (409, "class_id")
+        model = make_model(cls=cls)
+        _db("UPDATE equipment_classes SET active = 0 WHERE id = %s", (cls["id"],))
+        res = _put(admin, mill, model_id=model["id"])
+        assert res.get_json() == {"error": "The class is inactive", "field": "class_id"}
+        assert res.status_code == 409
 
-    def test_create_with_an_inactive_class_is_409(self, admin, make_class, make_unit):
+    def test_create_with_a_model_of_an_inactive_class_is_409(self, admin, make_class, make_unit, make_model):
         cls = make_class()
-        admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False})
+        model = make_model(cls=cls)
+        _db("UPDATE equipment_classes SET active = 0 WHERE id = %s", (cls["id"],))
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
-                                          "class_id": cls["id"], "name": "x"})
+                                          "model_id": model["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (409, "class_id")
 
     def test_existing_equipment_keeps_a_deactivated_class(self, admin, make_class, make_equipment):
         cls = make_class()
         mill = make_equipment(cls=cls)
-        admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False})
-        assert _put(admin, mill, name="Still editable", class_id=cls["id"]).status_code == 200
+        # The class's models first (S012 § 5.2), then the class
+        assert admin.put(f"{MASTERS}/equipment-models/{mill['model_id']}", json={"active": False}).status_code == 200
+        assert admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False}).status_code == 200
+        res = _put(admin, mill, name="Still editable", model_id=mill["model_id"])
+        assert (res.status_code, res.get_json()["class_code"]) == (200, cls["code"])
 
 
 class TestMoveEquipment:
@@ -340,9 +355,9 @@ class TestStatus:
         assert (res.status_code, res.get_json()["status"]) == (200, new)
         assert _events(admin, node)[0] == ("status", old, new)
 
-    def test_created_scrapped_is_400(self, admin, make_unit, make_class):
+    def test_created_scrapped_is_400(self, admin, make_unit, make_model):
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
-                                          "class_id": make_class()["id"], "name": "x", "status": "scrapped"})
+                                          "model_id": make_model()["id"], "name": "x", "status": "scrapped"})
         assert (res.status_code, res.get_json()["field"]) == (400, "status")
 
     def test_scrapping_with_live_parts_is_409(self, admin, make_equipment):
@@ -375,11 +390,11 @@ class TestStatus:
             assert res.status_code == 409
             assert res.get_json() == {"error": "This record is scrapped and cannot be changed"}
 
-    def test_a_scrapped_node_is_no_create_target(self, admin, make_equipment, make_class):
+    def test_a_scrapped_node_is_no_create_target(self, admin, make_equipment, make_model):
         mill = make_equipment()
         assert _put(admin, mill, status="scrapped").status_code == 200
         res = admin.post(EQUIPMENT, json={"level": "component", "parent_id": mill["id"],
-                                          "class_id": make_class()["id"], "name": "x"})
+                                          "model_id": make_model()["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (409, "parent_id")
 
     def test_scrapping_with_a_name_change_applies_both(self, admin, make_equipment):
@@ -405,21 +420,22 @@ class TestStatus:
 
 class TestEvents:
 
-    def test_one_event_per_changed_tracked_field(self, admin, make_class, make_equipment):
-        mill, cls = make_equipment(), make_class()
-        _put(admin, mill, class_id=cls["id"], criticality="A", status="standby", name="Renamed")
+    def test_one_event_per_changed_tracked_field(self, admin, make_model, make_equipment):
+        mill, model = make_equipment(), make_model()
+        _put(admin, mill, model_id=model["id"], criticality="A", status="standby", name="Renamed")
         events = _events(admin, mill)
-        assert sorted(events[:3]) == sorted([
-            ("class", mill["class_code"], cls["code"]), ("criticality", "C", "A"), ("status", "in_service", "standby"),
+        assert sorted(events[:4]) == sorted([
+            ("model", mill["model_label"], model["label"]), ("class", mill["class_code"], model["class_code"]),
+            ("criticality", "C", "A"), ("status", "in_service", "standby"),
         ])
-        assert len(events) == 4
+        assert len(events) == 5
 
     def test_untracked_edits_write_no_event(self, admin, make_equipment):
         mill = make_equipment()
-        res = _put(admin, mill, name="New", make="Make", model="M1", serial_no="SN-1", year=2020)
+        res = _put(admin, mill, name="New", serial_no="SN-1", year=2020)
         assert res.status_code == 200
         body = res.get_json()
-        assert (body["make"], body["model"], body["serial_no"], body["year"]) == ("Make", "M1", "SN-1", 2020)
+        assert (body["serial_no"], body["year"]) == ("SN-1", 2020)
         assert body["updated_by"] == "test_it_admin"
         assert [e[0] for e in _events(admin, mill)] == ["created"]
 
@@ -489,12 +505,13 @@ class TestRereadAfterWrite:
 
     RETRY = {"error": "This record changed while saving — try again"}
 
-    def test_create_that_cannot_read_back_is_409_and_rolls_back(self, admin, make_class, make_unit,
+    def test_create_that_cannot_read_back_is_409_and_rolls_back(self, admin, make_class, make_unit, make_model,
                                                                 make_equipment, stale_reread, monkeypatch):
         cls, unit = make_class(), make_unit()
         first = make_equipment(cls=cls)
+        model = make_model(cls=cls)
         stale_reread(lambda row: None)
-        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"],
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "model_id": model["id"],
                                           "name": "x"})
         monkeypatch.undo()
         assert (res.status_code, res.get_json()) == (409, self.RETRY)
@@ -502,16 +519,17 @@ class TestRereadAfterWrite:
         assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 1
 
     def test_create_that_cannot_read_back_after_commit_says_reload_and_is_saved(
-            self, admin, make_class, make_unit, make_equipment, stale_reread, monkeypatch):
+            self, admin, make_class, make_unit, make_model, make_equipment, stale_reread, monkeypatch):
         cls, unit = make_class(), make_unit()
         first = make_equipment(cls=cls)
+        model = make_model(cls=cls)
         reads = []
 
         def second_read_fails(row):   # the first read is in the transaction, the second after the commit
             reads.append(row)
             return row if len(reads) == 1 else None
         stale_reread(second_read_fails)
-        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"],
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"], "model_id": model["id"],
                                           "name": "x"})
         monkeypatch.undo()
         assert len(reads) == 2
@@ -530,37 +548,50 @@ class TestRereadAfterWrite:
         assert (node["unit_id"], node["status"]) == (mill["unit_id"], "in_service")
         assert [e[0] for e in _events(admin, mill)] == ["created"]
 
-    def test_a_target_parent_the_snapshot_cannot_see_is_409_parent_id(self, admin, make_class, make_equipment,
-                                                                       monkeypatch):
+    def test_a_target_parent_the_snapshot_cannot_see_is_409_parent_id(self, admin, make_equipment,
+                                                                       monkeypatch, make_model):
         mill = make_equipment()
         real_read = equipment._read_node
         monkeypatch.setattr(equipment, "_read_node",
                             lambda cur, node_id: None if node_id == mill["id"] else real_read(cur, node_id))
         res = admin.post(EQUIPMENT, json={"level": "component", "parent_id": mill["id"],
-                                          "class_id": make_class()["id"], "name": "x"})
+                                          "model_id": make_model()["id"], "name": "x"})
         monkeypatch.undo()
         assert (res.status_code, res.get_json()) == (
             409, {"error": "The parent changed while saving — try again", "field": "parent_id"})
 
-    def test_class_and_unit_codes_in_events_come_from_the_locks(self, admin, make_class, make_unit,
-                                                                make_equipment, stale_reread, monkeypatch):
+    def test_class_unit_and_designation_in_events_come_from_the_locks(self, admin, make_class, make_unit,
+                                                                      make_model, make_equipment, stale_reread,
+                                                                      monkeypatch):
         old_cls, new_cls, target = make_class(), make_class(), make_unit()
         mill = make_equipment(cls=old_cls)
-        stale_reread(lambda row: {**row, "class_code": "STALE", "unit_code": "STALE"})
-        res = _put(admin, mill, class_id=new_cls["id"], unit_id=target["id"])
+        new_model = make_model(cls=new_cls)
+        stale_reread(lambda row: {**row, "class_code": "STALE", "unit_code": "STALE", "model_designation": "STALE"})
+        res = _put(admin, mill, model_id=new_model["id"], unit_id=target["id"])
         monkeypatch.undo()
         assert res.status_code == 200
-        assert set(_events(admin, mill)[:2]) == {
+        assert set(_events(admin, mill)[:3]) == {
+            ("model", mill["model_label"], new_model["label"]),
             ("class", old_cls["code"], new_cls["code"]),
             ("moved_unit", mill["full_path"], f"{target['full_code']}.{mill['code']}"),
         }
 
-    def test_created_path_takes_the_unit_code_from_the_lock(self, admin, make_unit, make_class,
-                                                            stale_reread, monkeypatch):
+    def test_a_model_the_snapshot_cannot_see_is_409_try_again(self, admin, make_model, make_equipment,
+                                                               stale_reread, monkeypatch):
+        """BR3-04: the inner join finds no row for a model committed after the snapshot."""
+        mill, model = make_equipment(), make_model()
+        stale_reread(lambda row: None)
+        res = _put(admin, mill, model_id=model["id"])
+        monkeypatch.undo()
+        assert (res.status_code, res.get_json()) == (409, self.RETRY)
+        assert _get(admin, mill)["model_id"] == mill["model_id"]
+
+    def test_created_path_takes_the_unit_code_from_the_lock(self, admin, make_unit,
+                                                            stale_reread, monkeypatch, make_model):
         unit = make_unit()
         stale_reread(lambda row: {**row, "unit_code": "STALE"})
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
-                                          "class_id": make_class()["id"], "name": "x"})
+                                          "model_id": make_model()["id"], "name": "x"})
         monkeypatch.undo()
         assert res.status_code == 201
         node = _get(admin, res.get_json())
@@ -635,9 +666,11 @@ class TestListing:
         item = _list(admin, unit_id=unit["id"])["items"][0]
         # Exact, so it also guards that the list has no notes (S004 § 5.5)
         assert set(item) == {"id", "code", "level", "name", "class_id", "class_code", "type_id", "type_name",
+                             "model_id", "model_designation", "manufacturer_name", "model_label",
                              "unit_id", "unit", "full_path", "effective_criticality", "status", "part_count"}
         assert (item["unit_id"], item["unit"], item["full_path"]) == (unit["id"], unit["full_code"],
                                                                       mill["full_path"])
+        assert item["model_label"] == f"{item['manufacturer_name']} {item['model_designation']}"
 
     def test_level_filter_default_equipment_and_all(self, admin, make_unit, make_equipment):
         unit = make_unit()
@@ -718,15 +751,15 @@ class TestUnitAccess:
         assert _put(engineer, mill_b, name="", year="x", code="ZZ").status_code == 404
         assert engineer.put(f"{EQUIPMENT}/{mill_b['id']}", json=[1]).status_code == 404
 
-    def test_targets_outside_their_units_are_403(self, user_with_units, two_units, make_class, make_equipment):
+    def test_targets_outside_their_units_are_403(self, user_with_units, two_units, make_equipment, make_model):
         unit_a, unit_b, mill_a, mill_b = two_units
         engineer = user_with_units("maint_engineer", [unit_a])
-        cls = make_class()
+        model = make_model()
         into_b = engineer.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit_b["id"],
-                                                "class_id": cls["id"], "name": "x"})
+                                                "model_id": model["id"], "name": "x"})
         assert (into_b.status_code, into_b.get_json()["field"]) == (403, "unit_id")
         under_b = engineer.post(EQUIPMENT, json={"level": "component", "parent_id": mill_b["id"],
-                                                 "class_id": cls["id"], "name": "x"})
+                                                 "model_id": model["id"], "name": "x"})
         assert (under_b.status_code, under_b.get_json()["field"]) == (403, "parent_id")
         moved = _put(engineer, mill_a, unit_id=unit_b["id"])
         assert (moved.status_code, moved.get_json()["field"]) == (403, "unit_id")
@@ -734,31 +767,30 @@ class TestUnitAccess:
         reparented = _put(engineer, part_a, parent_id=mill_b["id"])
         assert (reparented.status_code, reparented.get_json()["field"]) == (403, "parent_id")
 
-    def test_a_scrapped_parent_elsewhere_is_403_not_409(self, admin, user_with_units, two_units, make_class):
+    def test_a_scrapped_parent_elsewhere_is_403_not_409(self, admin, user_with_units, two_units, make_model):
         """BR3-02: access is refused before the parent's state, so its state is not revealed."""
         unit_a, _, _, mill_b = two_units
         assert _put(admin, mill_b, status="scrapped").status_code == 200
         engineer = user_with_units("maint_engineer", [unit_a])
         res = engineer.post(EQUIPMENT, json={"level": "component", "parent_id": mill_b["id"],
-                                             "class_id": make_class()["id"], "name": "x"})
+                                             "model_id": make_model()["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (403, "parent_id")
 
-    def test_an_inactive_unit_elsewhere_is_409_not_403(self, admin, user_with_units, two_units, make_unit,
-                                                       make_class):
+    def test_an_inactive_unit_elsewhere_is_409_not_403(self, admin, user_with_units, two_units, make_unit, make_model):
         """Decision 4: a unit's state is public (the masters list), so inactive comes before access."""
         unit_a = two_units[0]
         inactive = make_unit()
         assert admin.put(f"{MASTERS}/units/{inactive['id']}", json={"active": False}).status_code == 200
         engineer = user_with_units("maint_engineer", [unit_a])
         res = engineer.post(EQUIPMENT, json={"level": "equipment", "unit_id": inactive["id"],
-                                             "class_id": make_class()["id"], "name": "x"})
+                                             "model_id": make_model()["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (409, "unit_id")
 
-    def test_engineer_writes_inside_their_units(self, user_with_units, two_units, make_class):
+    def test_engineer_writes_inside_their_units(self, user_with_units, two_units, make_model):
         unit_a, _, mill_a, _ = two_units
         engineer = user_with_units("maint_engineer", [unit_a])
         res = engineer.post(EQUIPMENT, json={"level": "component", "parent_id": mill_a["id"],
-                                             "class_id": make_class()["id"], "name": "Motor"})
+                                             "model_id": make_model()["id"], "name": "Motor"})
         assert res.status_code == 201
         assert _put(engineer, mill_a, criticality="A").status_code == 200
 
@@ -792,23 +824,23 @@ class TestUnitAccess:
 class TestPermissions:
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_storekeeper"])
-    def test_floor_roles_read_and_cannot_write(self, user_with_units, two_units_for_rbac, make_class, role):
+    def test_floor_roles_read_and_cannot_write(self, user_with_units, two_units_for_rbac, role, make_model):
         unit, mill = two_units_for_rbac
         client = user_with_units(role, [unit])
         assert _get(client, mill)["id"] == mill["id"]
         assert mill["id"] in _ids(client, unit_id=unit["id"])
         assert _put(client, mill, name="x").status_code == 403
         res = client.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
-                                           "class_id": make_class()["id"], "name": "x"})
+                                           "model_id": make_model()["id"], "name": "x"})
         assert res.status_code == 403
 
     @pytest.mark.parametrize("role", ["maint_engineer", "maint_manager", "it_admin"])
-    def test_writers(self, user_with_units, two_units_for_rbac, make_class, role):
+    def test_writers(self, user_with_units, two_units_for_rbac, role, make_model):
         unit, mill = two_units_for_rbac
         client = user_with_units(role, [unit])
         assert _put(client, mill, name="Edited").status_code == 200
         res = client.post(EQUIPMENT, json={"level": "component", "parent_id": mill["id"],
-                                           "class_id": make_class()["id"], "name": "x"})
+                                           "model_id": make_model()["id"], "name": "x"})
         assert res.status_code == 201
 
     def test_unknown_role_is_forbidden(self, role_client):
@@ -824,14 +856,15 @@ def two_units_for_rbac(make_unit, make_equipment):
 class TestAcceptance:
     """Brief § 9: the firewood mill loaded by an engineer, and a motor moved between breakers."""
 
-    def test_load_the_firewood_mill_and_move_a_motor(self, user_with_units, make_unit, make_class):
+    def test_load_the_firewood_mill_and_move_a_motor(self, user_with_units, make_unit, make_class, make_model):
         unit = make_unit()
         engineer = user_with_units("maint_engineer", [unit])
-        classes = {name: make_class(name=name) for name in ("Blade mill", "Drive", "Motor", "Gearbox", "Breaker")}
+        models = {name: make_model(cls=make_class(name=name))
+                  for name in ("Blade mill", "Drive", "Motor", "Gearbox", "Breaker")}
 
         def add(name, cls, **place):
             level = place.pop("level")
-            res = engineer.post(EQUIPMENT, json={"level": level, "class_id": classes[cls]["id"], "name": name,
+            res = engineer.post(EQUIPMENT, json={"level": level, "model_id": models[cls]["id"], "name": name,
                                                  **place})
             assert res.status_code == 201, res.get_json()
             return res.get_json()
@@ -923,18 +956,18 @@ class TestRootCriticality:
 
 
 class TestTypes:
-    """S004 § 5.2: an equipment's type belongs to its class; a class change needs a type decision."""
+    """S004 types on equipment, since S012 taken from the model: the type comes with the model
+    the node picks, so a model change is the only way the type changes."""
 
-    def test_create_with_a_type_of_its_class(self, admin, make_class, make_type, make_equipment):
+    def test_create_with_a_model_that_has_a_type(self, admin, make_class, make_type, make_equipment):
         cls = make_class()
         closed = make_type(cls=cls, name="Closed execution")
         pump = make_equipment(cls=cls, type_id=closed["id"])
-        assert (pump["type_id"], pump["type_name"]) == (closed["id"], "Closed execution")
+        assert (pump["class_id"], pump["type_id"], pump["type_name"]) == (cls["id"], closed["id"], "Closed execution")
         assert [e[0] for e in _events(admin, pump)] == ["created"]
 
-    def test_create_without_a_type_or_with_null(self, make_equipment):
-        assert make_equipment()["type_id"] is None
-        node = make_equipment(type_id=None)
+    def test_create_with_a_model_without_a_type(self, make_equipment):
+        node = make_equipment()
         assert (node["type_id"], node["type_name"]) == (None, None)
 
     def test_a_part_may_have_a_type(self, make_class, make_type, make_equipment):
@@ -943,123 +976,180 @@ class TestTypes:
         motor = make_equipment(parent=make_equipment(), level="component", cls=cls, type_id=squirrel["id"])
         assert motor["type_name"] == "Squirrel cage"
 
-    def test_create_refusals(self, admin, engineer, make_class, make_unit, make_type):
-        cls, unit = make_class(), make_unit()
-        foreign, retired = make_type(), make_type(cls=cls)
-        engineer.put(f"{MASTERS}/equipment-types/{retired['id']}", json={"active": False})
-        body = {"level": "equipment", "unit_id": unit["id"], "class_id": cls["id"], "name": "x"}
-        for type_id, status, message in (
-                (foreign["id"], 400, "This type belongs to another class"),
-                (999999, 400, "Unknown type"),
-                (retired["id"], 409, "The type is inactive")):
-            res = admin.post(EQUIPMENT, json={**body, "type_id": type_id})
-            assert (res.status_code, res.get_json()) == (status, {"error": message, "field": "type_id"})
-        assert _ids(admin, unit_id=unit["id"]) == []
-
-    def test_put_refusals(self, admin, engineer, make_class, make_type, make_equipment):
-        cls = make_class()
-        node = make_equipment(cls=cls)
-        retired = make_type(cls=cls)
-        engineer.put(f"{MASTERS}/equipment-types/{retired['id']}", json={"active": False})
-        foreign = _put(admin, node, type_id=make_type()["id"])
-        assert (foreign.status_code, foreign.get_json()["field"]) == (400, "type_id")
-        assert _put(admin, node, type_id=999999).status_code == 400
-        res = _put(admin, node, type_id=retired["id"])
-        assert (res.status_code, res.get_json()["error"]) == (409, "The type is inactive")
-        assert _get(admin, node)["type_id"] is None
-
     def test_a_type_deactivated_later_is_kept(self, admin, engineer, make_class, make_type, make_equipment):
         cls = make_class()
         kind = make_type(cls=cls)
         node = make_equipment(cls=cls, type_id=kind["id"])
         engineer.put(f"{MASTERS}/equipment-types/{kind['id']}", json={"active": False})
-        # Other fields only, and the type sent back unchanged as the edit dialog does
+        # Other fields only, and the model sent back unchanged as the edit dialog does
         assert _put(admin, node, name="Renamed").status_code == 200
-        res = _put(admin, node, name="Again", type_id=kind["id"], class_id=cls["id"])
+        res = _put(admin, node, name="Again", model_id=node["model_id"])
         assert res.status_code == 200
         assert res.get_json()["type_id"] == kind["id"]
 
-    def test_set_change_clear_one_event_each(self, admin, make_class, make_type, make_equipment):
+    def test_a_model_whose_type_is_inactive_can_be_picked(self, admin, engineer, make_class, make_type, make_model,
+                                                          make_equipment):
+        """BR1-06: the model's own flag governs what can be picked, not its type's."""
+        cls = make_class()
+        kind = make_type(cls=cls)
+        model = make_model(cls=cls, type_id=kind["id"])
+        engineer.put(f"{MASTERS}/equipment-types/{kind['id']}", json={"active": False})
+        node = make_equipment(cls=cls)
+        res = _put(admin, node, model_id=model["id"])
+        assert (res.status_code, res.get_json()["type_id"]) == (200, kind["id"])
+
+    def test_set_change_clear_by_model_one_event_each(self, admin, make_class, make_type, make_model,
+                                                      make_equipment):
         cls = make_class()
         closed, open_ = make_type(cls=cls, name="Closed execution"), make_type(cls=cls, name="Open execution")
-        node = make_equipment(cls=cls)
-        for type_id in (closed["id"], open_["id"], None):
-            assert _put(admin, node, type_id=type_id).status_code == 200
-        assert _events(admin, node)[:3] == [
+        untyped = make_model(cls=cls)
+        node = make_equipment(model=untyped)
+        models = [make_model(cls=cls, type_id=closed["id"]), make_model(cls=cls, type_id=open_["id"]), untyped]
+        for model in models:
+            assert _put(admin, node, model_id=model["id"]).status_code == 200
+        type_events = [e for e in _events(admin, node) if e[0] == "type"]
+        assert type_events == [
             ("type", "Open execution", "none"),
             ("type", "Closed execution", "Open execution"),
             ("type", "none", "Closed execution"),
         ]
+        assert [e[0] for e in _events(admin, node)].count("model") == 3
 
-    def test_class_change_while_typed_needs_a_type_decision(self, admin, make_class, make_type, make_equipment):
-        old_cls, new_cls = make_class(), make_class()
-        kind = make_type(cls=old_cls, name="Closed execution")
-        node = make_equipment(cls=old_cls, type_id=kind["id"])
-        res = _put(admin, node, class_id=new_cls["id"])
-        assert (res.status_code, res.get_json()) == (
-            400, {"error": "Pick a type of the new class, or none", "field": "type_id"})
-        assert _get(admin, node)["class_id"] == old_cls["id"]
-
-    def test_class_change_with_no_type(self, admin, make_class, make_type, make_equipment):
+    def test_a_model_of_another_class_without_a_type_clears_the_type(self, admin, make_class, make_type,
+                                                                     make_model, make_equipment):
+        """BR3-07.4: type_id is written NULL, so the "type X → none" event is written."""
         old_cls, new_cls = make_class(), make_class()
         node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Closed execution")["id"])
-        res = _put(admin, node, class_id=new_cls["id"], type_id=None)
+        res = _put(admin, node, model_id=make_model(cls=new_cls)["id"])
         assert res.status_code == 200
         assert (res.get_json()["class_id"], res.get_json()["type_id"]) == (new_cls["id"], None)
-        assert set(_events(admin, node)[:2]) == {
-            ("class", old_cls["code"], new_cls["code"]), ("type", "Closed execution", "none")}
+        assert {e[0]: e for e in _events(admin, node)[:3]}.keys() == {"model", "class", "type"}
+        assert ("class", old_cls["code"], new_cls["code"]) in _events(admin, node)
+        assert ("type", "Closed execution", "none") in _events(admin, node)
 
-    def test_class_change_with_a_type_of_the_new_class(self, admin, make_class, make_type, make_equipment):
+    def test_a_model_of_another_class_with_a_type(self, admin, make_class, make_type, make_model, make_equipment):
         old_cls, new_cls = make_class(), make_class()
         node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Closed execution")["id"])
-        new_kind = make_type(cls=new_cls, name="Gear")
-        res = _put(admin, node, class_id=new_cls["id"], type_id=new_kind["id"])
+        gear = make_model(cls=new_cls, type_id=make_type(cls=new_cls, name="Gear")["id"])
+        res = _put(admin, node, model_id=gear["id"])
         assert res.status_code == 200
-        assert res.get_json()["type_name"] == "Gear"
+        assert (res.get_json()["class_id"], res.get_json()["type_name"]) == (new_cls["id"], "Gear")
 
-    def test_class_change_with_the_old_type_sent_back_is_400(self, admin, make_class, make_type, make_equipment):
-        old_cls, new_cls = make_class(), make_class()
-        kind = make_type(cls=old_cls)
-        node = make_equipment(cls=old_cls, type_id=kind["id"])
-        res = _put(admin, node, class_id=new_cls["id"], type_id=kind["id"])
-        assert (res.status_code, res.get_json()) == (
-            400, {"error": "This type belongs to another class", "field": "type_id"})
-
-    def test_class_change_of_an_untyped_node_needs_nothing(self, admin, make_class, make_equipment):
-        node = make_equipment()
-        assert _put(admin, node, class_id=make_class()["id"]).status_code == 200
-
-    def test_the_same_type_name_across_a_class_change_is_a_class_event_only(self, admin, make_class, make_type,
-                                                                            make_equipment):
+    def test_the_same_type_name_across_a_class_change_gives_no_type_event(self, admin, make_class, make_type,
+                                                                          make_model, make_equipment):
         old_cls, new_cls = make_class(), make_class()
         node = make_equipment(cls=old_cls, type_id=make_type(cls=old_cls, name="Standard")["id"])
-        res = _put(admin, node, class_id=new_cls["id"], type_id=make_type(cls=new_cls, name="Standard")["id"])
+        new_model = make_model(cls=new_cls, type_id=make_type(cls=new_cls, name="Standard")["id"])
+        res = _put(admin, node, model_id=new_model["id"])
         assert res.status_code == 200
-        assert _events(admin, node) == [("class", old_cls["code"], new_cls["code"]),
-                                        ("created", None, node["full_path"])]
-
-    def test_the_type_name_in_events_comes_from_the_lock(self, admin, make_class, make_type, make_equipment,
-                                                         stale_reread, monkeypatch):
-        cls = make_class()
-        node = make_equipment(cls=cls)
-        kind = make_type(cls=cls, name="Closed execution")
-        stale_reread(lambda row: {**row, "type_name": None})
-        res = _put(admin, node, type_id=kind["id"])
-        monkeypatch.undo()
-        assert res.status_code == 200
-        assert _events(admin, node)[0] == ("type", "none", "Closed execution")
+        assert sorted(e[0] for e in _events(admin, node)) == ["class", "created", "model"]
 
     def test_the_composite_key_holds_when_the_shell_is_bypassed(self, make_type, make_equipment):
         node = make_equipment()
         with pytest.raises(pymysql.err.IntegrityError):
             _db("UPDATE equipment SET type_id = %s WHERE id = %s", (make_type()["id"], node["id"]))
 
-    def test_a_scrapped_node_takes_no_type_or_notes(self, admin, make_class, make_type, make_equipment):
-        cls = make_class()
-        node = make_equipment(cls=cls)
+    def test_a_scrapped_node_takes_no_model_or_notes(self, admin, make_model, make_equipment):
+        node = make_equipment()
         _put(admin, node, status="scrapped")
-        assert _put(admin, node, type_id=make_type(cls=cls)["id"]).status_code == 409
+        assert _put(admin, node, model_id=make_model()["id"]).status_code == 409
         assert _put(admin, node, notes="x").status_code == 409
+
+
+class TestModels:
+    """S012 § 5.3, § 5.4: equipment is created by model; old fields are refused."""
+
+    def test_create_takes_class_type_and_code_prefix_from_the_model(self, admin, make_class, make_type,
+                                                                     make_model, make_unit):
+        cls = make_class()
+        kind = make_type(cls=cls)
+        model = make_model(cls=cls, type_id=kind["id"])
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
+                                          "model_id": model["id"], "name": "Compressor"})
+        assert res.status_code == 201, res.get_json()
+        node = res.get_json()
+        assert node["code"].startswith(cls["code"])
+        assert (node["class_id"], node["type_id"], node["model_id"]) == (cls["id"], kind["id"], model["id"])
+        assert (node["manufacturer_name"], node["model_designation"]) == (model["manufacturer_name"],
+                                                                          model["designation"])
+        assert node["model_label"] == model["label"]
+        assert "make" not in node and "model" not in node
+
+    def test_no_model_is_400(self, admin, make_unit):
+        body = {"level": "equipment", "unit_id": make_unit()["id"], "name": "x"}
+        for sent in (body, {**body, "model_id": None}):
+            res = admin.post(EQUIPMENT, json=sent)
+            assert (res.status_code, res.get_json()) == (400, {"error": "Pick a model", "field": "model_id"})
+
+    def test_unknown_model_is_400(self, admin, make_unit):
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"], "model_id": 999999,
+                                          "name": "x"})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Unknown model", "field": "model_id"})
+
+    def test_an_inactive_model_is_409_on_create_and_on_change(self, admin, make_model, make_unit, make_equipment):
+        model = make_model()
+        assert admin.put(f"{MASTERS}/equipment-models/{model['id']}", json={"active": False}).status_code == 200
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
+                                          "model_id": model["id"], "name": "x"})
+        assert (res.status_code, res.get_json()) == (409, {"error": "This model is inactive", "field": "model_id"})
+        res = _put(admin, make_equipment(), model_id=model["id"])
+        assert (res.status_code, res.get_json()["field"]) == (409, "model_id")
+
+    def test_an_unchanged_inactive_model_is_kept(self, admin, make_equipment):
+        node = make_equipment()
+        admin.put(f"{MASTERS}/equipment-models/{node['model_id']}", json={"active": False})
+        res = _put(admin, node, name="Renamed", model_id=node["model_id"])
+        assert (res.status_code, res.get_json()["model_id"]) == (200, node["model_id"])
+
+    def test_a_null_model_on_update_is_400(self, admin, make_equipment):
+        res = _put(admin, make_equipment(), model_id=None)
+        assert (res.status_code, res.get_json()) == (400, {"error": "Pick a model", "field": "model_id"})
+
+    @pytest.mark.parametrize("field, message", [
+        ("make", "Make and model are now picked from Models"),
+        ("model", "Make and model are now picked from Models"),
+        ("class_id", "Class and type come from the model"),
+        ("type_id", "Class and type come from the model"),
+    ])
+    def test_old_fields_are_refused_even_null_or_unchanged(self, admin, make_unit, make_model, make_equipment,
+                                                           field, message):
+        node = make_equipment()
+        unchanged = {"make": None, "model": None, "class_id": node["class_id"], "type_id": node["type_id"]}[field]
+        for value in (None, unchanged):
+            res = _put(admin, node, **{field: value})
+            assert (res.status_code, res.get_json()) == (400, {"error": message, "field": field})
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
+                                          "model_id": make_model()["id"], "name": "x", field: None})
+        assert (res.status_code, res.get_json()) == (400, {"error": message, "field": field})
+
+    def test_same_model_sent_back_is_no_change(self, admin, make_equipment):
+        node = make_equipment()
+        assert _put(admin, node, model_id=node["model_id"]).status_code == 200
+        assert [e[0] for e in _events(admin, node)] == ["created"]
+
+    def test_search_by_designation_and_by_manufacturer(self, admin, make_unit, make_manufacturer, make_model,
+                                                       make_equipment):
+        unit = make_unit()
+        maker = make_manufacturer(name=f"Atlas Copco {unit['code']}")
+        ga37 = make_model(manufacturer=maker, designation=f"GA37-{unit['code']}")
+        node = make_equipment(unit=unit, model=ga37, name="Compressor")
+        make_equipment(unit=unit, name="Compressor")
+        assert _ids(admin, unit_id=unit["id"], q=f"ga37-{unit['code']}") == [node["id"]]
+        assert _ids(admin, unit_id=unit["id"], q="atlas copco") == [node["id"]]
+        assert _ids(admin, unit_id=unit["id"], q=ga37["label"]) == [node["id"]]
+
+    def test_a_manufacturer_rename_shows_at_once(self, admin, make_manufacturer, make_model, make_equipment):
+        maker = make_manufacturer()
+        node = make_equipment(model=make_model(manufacturer=maker))
+        admin.put(f"{MASTERS}/manufacturers/{maker['id']}", json={"name": f"{maker['name']} Renamed"})
+        assert _get(admin, node)["manufacturer_name"] == f"{maker['name']} Renamed"
+
+    def test_a_model_of_another_class_on_an_equipment_row_is_refused_by_the_database(self, make_model,
+                                                                                    make_equipment):
+        node = make_equipment()
+        with pytest.raises(pymysql.err.IntegrityError) as caught:
+            _db("UPDATE equipment SET model_id = %s WHERE id = %s", (make_model()["id"], node["id"]))
+        assert caught.value.args[0] == 1452
 
 
 class TestNotes:

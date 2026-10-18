@@ -1,7 +1,9 @@
 """File storage for equipment documents and photos — thin I/O, no rules.
 
-Layout: ``DATA_DIR/equipment/<node_id>/<stored_name>`` (and ``<stored_name>.thumb.jpg``).
-Names come from documents_core.stored_name; nothing from the client reaches a path.
+Layout: one folder per owner (S012, the design of S009) — ``DATA_DIR/equipment/<node_id>/``
+or ``DATA_DIR/equipment-models/<model_id>/`` — holding ``<stored_name>`` (and
+``<stored_name>.thumb.jpg``).  Names come from documents_core.stored_name; nothing from the
+client reaches a path.
 
 config.DATA_DIR is read at call time, so tests can point it elsewhere.  A file is never
 written in place: it goes to a temporary name in the same folder and is moved into place
@@ -17,21 +19,25 @@ import config
 
 logger = logging.getLogger(__name__)
 
-_EQUIPMENT_FOLDER = "equipment"
+# Owner (documents.OWNERS) -> its folder under DATA_DIR
+_OWNER_FOLDERS = {
+    "equipment": "equipment",
+    "model": "equipment-models",
+}
 
 
-def node_folder(node_id):
-    return os.path.join(config.DATA_DIR, _EQUIPMENT_FOLDER, str(int(node_id)))
+def owner_folder(owner, owner_id):
+    return os.path.join(config.DATA_DIR, _OWNER_FOLDERS[owner], str(int(owner_id)))
 
 
-def file_path(node_id, name):
-    return os.path.join(node_folder(node_id), name)
+def file_path(owner, owner_id, name):
+    return os.path.join(owner_folder(owner, owner_id), name)
 
 
-def write_file(node_id, name, data):
-    """Write ``data`` as ``name`` in the node's folder (created when missing) and return
+def write_file(owner, owner_id, name, data):
+    """Write ``data`` as ``name`` in the owner's folder (created when missing) and return
     its path.  Raises OSError; a temporary file is removed before the error propagates."""
-    folder = node_folder(node_id)
+    folder = owner_folder(owner, owner_id)
     os.makedirs(folder, exist_ok=True)
     final = os.path.join(folder, name)
     temp = os.path.join(folder, f".{name}.{secrets.token_hex(4)}.tmp")

@@ -4,6 +4,10 @@
  * For equipment:purge_documents: lists removed documents and photos, restores one, or deletes
  * one for good (row, file and thumbnail). A removed file is never shown or opened here
  * (S006 § 5.5): restore it to look at it. Filters are local state, not the URL.
+ *
+ * Rows are a node's documents or, since S012, an equipment model's (`owner`). Each row brings
+ * its owner's documents URL (`path`); restore and purge are that URL + the id + the action.
+ * A model row shows "Model <label>" as plain text: Masters sections are not routes.
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -71,7 +75,7 @@ function goToPage(page) {
   load();
 }
 
-const actionPath = (item, action) => `/api/equipment/${item.equipment_id}/documents/${item.id}/${action}`;
+const actionPath = (item, action) => `${item.path}/${item.id}/${action}`;
 
 async function act(item, action, onDone) {
   busy.value = true;
@@ -116,7 +120,7 @@ onMounted(load);
           v-model="searchText"
           type="search"
           class="form-control form-control-sm removed-search"
-          placeholder="Search equipment code, title or file name…"
+          placeholder="Search equipment code, model, title or file name…"
           aria-label="Search removed documents"
         />
         <select v-model="kind" class="form-select form-select-sm removed-kind" aria-label="Kind">
@@ -166,7 +170,11 @@ onMounted(load);
                   ></i>{{ item.title }}
                   <div class="small text-secondary">{{ item.original_name }}</div>
                 </td>
-                <td>
+                <td v-if="item.owner === 'model'">
+                  Model <em>{{ item.name }}</em>
+                  <div class="small text-secondary">Every machine of this model</div>
+                </td>
+                <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>
                   {{ item.name }}
                   <div v-if="item.status === 'scrapped'" class="small">scrapped</div>

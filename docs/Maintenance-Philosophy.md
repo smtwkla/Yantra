@@ -56,10 +56,10 @@ sustain). Not in Yantra's scope; recorded as context.
 |---|---|---|
 | **Autonomous maintenance** | Operators clean, inspect, lubricate and tag abnormalities | CIL jobs (§ 5) and breakdown tickets (§ 6) — v1 |
 | **Planned maintenance** | Maintenance team: breakdown, preventive, condition-based work | Breakdown tickets, PM plans, meters, limits — v1 |
-| **Focused improvement** | Remove chronic losses: why-why / root-cause analysis | Later, built on failure data |
+| **Focused improvement** | Remove chronic losses: why-why / root-cause analysis | Brought forward for the presses (16-10-2026): tickets at component level with class-scoped failure modes, and a chronic-problem report (Plan § 4.6). Its first targets: welded output relays (convert to solid-state — *maintenance prevention*, removing the failure mode instead of maintaining it) and the safety-door sensor alignment |
 | **Quality maintenance** | Equipment conditions that prevent defects | Out of scope |
 | **Early equipment management** | Use maintenance experience when buying equipment | Out of scope; equipment history may feed it later |
-| **Training & education** | Skills of operators and technicians | Later (skill matrix, one-point lessons) |
+| **Training & education** | Skills of operators and technicians | **Procedures** (Plan § 4.3a, *Proposed* 16-10-2026): one-point lessons, work instructions and the expert's diagnostic tests, written once and shown on the equipment page, the PM template and the ticket. **Onboarding** cards in Tamil with pictures, stepped through before first use, with a completion record per person (ISO 45001 § 7.2) — the seed of the skill matrix |
 | **Safety, health & environment** | Safe maintenance (e.g. lock-out / tag-out) | Later, if wanted |
 | **TPM in office** | Administrative losses | Out of scope |
 
@@ -69,7 +69,9 @@ TPM names **six big losses**: breakdowns, setup/adjustment, minor stops, reduced
 speed, start-up rejects, production rejects. Yantra tracks **breakdowns** only
 (**Proposed**). The others need production data and are not maintenance tickets.
 This also answers "what counts as a breakdown": a failure needing maintenance
-work, not a minor stop the operator clears.
+work, not a minor stop the operator clears. A stop taken for scheduled work
+(roller turning, a planned part change) is **planned downtime**, not a breakdown
+(**Proposed**, 16-10-2026; § 7).
 
 ## 5. Autonomous maintenance — CIL
 
@@ -86,10 +88,15 @@ work, not a minor stop the operator clears.
     The operator starts it from the equipment's QR.
   - **Frequency** — a fixed calendar interval.
 - A problem found during CIL is raised as a breakdown ticket (§ 6).
+- Where operators have no phone (**Decided**, 16-10-2026), the check is done from
+  the paper CIL sheet at the machine (the TPM autonomous-maintenance check sheet)
+  and the supervisor records it in Yantra, naming the operator as performer and
+  entering the time. The operator still owns the check; Yantra records the exception.
 - Detecting a *missed* before-use CIL needs evidence that the equipment ran;
   deferred until production counts exist.
 
-TBD — whether an engineer verifies CIL jobs; the CIL items per equipment class.
+TBD — the CIL items per equipment class. Whether an engineer verifies CIL jobs:
+**Proposed** (17-10-2026) no by default, a flag per plan (§ 7).
 
 Future (**Proposed**): TPM rolls autonomous maintenance out in seven steps, from
 initial cleaning to self-management. Tracking which step each area has reached
@@ -128,6 +135,14 @@ raised / acknowledged ──► closed   (engineer: frivolous, with code + remar
   the ticket's source. Mode lists may later be scoped by equipment class.
 - Frivolous closures are excluded from downtime and MTBF/MTTR (**Proposed**).
 
+**Decided** (16-10-2026, sorting-line use case): production can also mark "back in
+service", naming the technician from Team, because technicians on the floor may
+have no phone. This is requester sign-off: production confirms the restoration
+(EN 13306), where SMRP's repair time ends. Transitions recorded after the fact
+carry the event time entered by the user (ISO 14224 counts failures and
+restorations by when they happened). Operators without a login exist in Team so
+"who found it" and "who did it" can be recorded (ISO 14224 detection and labour).
+
 **Decided** (15-10-2026): downtime ends at the technician's "back in service".
 Whether the operator can mark "not fixed" to reopen is settled with the phase 3
 brief. Escalation times per criticality: **deferred** to the notification step
@@ -155,15 +170,101 @@ Maintenance types (EN 13306) and where they live:
 
 | Type | Meaning | In Yantra |
 |---|---|---|
+| Run-to-failure | Deliberately no preventive work; repair when it fails | A chosen **strategy** on the equipment (**Proposed**, 16-10-2026), right for most grade C equipment (RCM: low consequence). Still gets the fitness-for-use inspection. "Not decided" is the gap to close, not a strategy |
 | Corrective | Repair after a failure | Breakdown tickets — v1 |
 | Preventive — calendar | Fixed-interval tasks | PM plans, calendar trigger — v1 |
 | Preventive — usage | Every N run hours / production count | PM plans, meter trigger — v1 |
 | Condition-based | Act when a measured value crosses a limit | Gauge meters with limits — v1, manual readings; IIoT later |
 | Predictive | Forecast failure from trends | Not planned |
 
+**Deferred corrective maintenance** (**Proposed**, 16-10-2026). EN 13306 splits
+corrective work into *immediate* (the door sensor: fix now) and *deferred* (worn
+scrapers, a touchscreen, a liner good for another 1,000 hours: request now, plan
+parts and a slot, fix later). Most of the extrusion line's work is deferred. Yantra
+should hold it as a ticket in a *scheduled* state with a planned date or meter
+value and a waiting reason, and count the stop taken for it as **planned
+downtime**, apart from breakdown downtime. SMRP's planned-versus-reactive ratio
+is the measure of a plant moving from firefighting to TPM.
+
+**Contamination control for hydraulics** (16-10-2026, pressing shop). Most hydraulic
+failures trace to fluid contamination; the presses' sticking valves, worn pump elements,
+scored cylinders and transducer trouble are the pattern. The standard is **ISO 4406**, a
+cleanliness code from particle counts, targeted by the most sensitive component. Yantra
+holds the code as a gauge meter per press (Plan § 4.5); the offline filter runs as a
+condition-based job when the code is over target, with a measured result. Filters are
+changed on their clogging indicator. "Every sample would fail" is the reason to measure,
+not to skip: it turns filtration from a guess into a job with a before and after.
+
+**Forgotten machines** (**Proposed**, 16-10-2026). Many machines are used until they
+break and some are forgotten altogether (an electric wood cutting machine, unused
+for years). ISO 55001 § 7.5 asks the organisation to know what it has and what it
+decided for each asset. Yantra answers with three things: a maintenance strategy on
+every equipment with "not decided" shown as a gap; a periodic **fitness-for-use
+inspection** by the engineer on every machine (fit / fit with conditions / not fit),
+which also carries statutory examinations under the Factories Act; and
+**verification rounds**, a walk per unit scanning QR labels, the physical check
+ISO 55002 recommends.
+
+**Statutory and safety equipment** (**Proposed**, 17-10-2026). Lifts, hoists, EOT
+cranes and pressure vessels must be examined by a competent person at intervals the
+Factories Act 1948 sets (lifts and hoists six-monthly, lifting machines yearly,
+pressure plant per the state rules, with a fee to the government inspector), and a
+certificate obtained. Fire extinguishers follow IS 2190: periodic checks, refills,
+pressure tests and replacement by type. All are **equipment** in Yantra, graded A
+(safety), with a certification plan that records *valid until* and holds the
+certificate, so expiry is visible before an inspector finds it. ISO 55001 § 6.2 and
+ISO 45001 § 6.1.3 ask that legal requirements be identified and compliance shown;
+the compliance register (Plan § 4.6) is that evidence. Routine checks such as the
+quarterly extinguisher check need no engineer verification (a flag per plan, which
+also answers whether CIL jobs are verified: no, by default).
+
+**Parts and part numbers** (**Proposed**, 17-10-2026). Some makers (Haendle) supply
+drawings with part numbers; many do not, and their service engineer identifies the
+part and quotes. Many press spares (bearings, hydraulic valves, filters) are bought
+generic, by standard designation. The practice is to **build the parts list from
+maintenance history**: every part fitted is recorded on the ticket, against the
+component, with its maker or generic number (ISO 14224 counts parts replaced among
+the record fields). Makers' lists live on the model (EN 13460); a structured bill
+of materials and stock come with spares; ordering and the item master stay in
+OneERP (ISO 8000: one item master).
+
+**Maintenance documentation** (16-10-2026, pressing shop). EN 13460 lists what a
+maintainer should hold per equipment: hydraulic and electrical diagrams, manuals,
+parts lists. Many presses were designed or altered in house and their diagrams are
+missing, out of date or a hand sketch. Yantra cannot draw them, but it holds what
+exists on the equipment, reachable from any phone, and lists the equipment that
+has none (Plan § 4.1). A photographed sketch today beats a clean drawing nobody can find.
+
+**Usage-based replacement of wearing parts** (16-10-2026): parts with a rated life in
+operations (press output relays, which weld near end of life and stop the press) are
+replaced on the stroke counter before they fail, until the failure mode is designed out.
+
+**Rescheduling** (**Proposed**, 16-10-2026): the engineer may push a due PM job
+to a later date or meter value with a reason (e.g. oil life extended on a good
+analysis). Skipping without a reason is not allowed.
+
+**Contracted maintenance** (16-10-2026): AMC vendors (compressors, pallet truck,
+moisture analyser) are contractor records in Team and perform PM plans like
+anyone else; the engineer verifies with the vendor's report attached. ISO 55001
+§ 8.3 asks that outsourced work be controlled, so the contract terms will get a
+register later.
+
+**Inspection routes** (**Proposed**, 18-10-2026). A daily genset round and a daily
+EB meter walk are inspections (EN 13306: a check for conformity, no repair) over
+many pieces of equipment. The record stays per equipment (ISO 14224) but the work
+is one walk, so Yantra groups the plans into a **route**, the standard CMMS answer
+(SMRP: inspection and lubrication routes). Verification rounds and the CIL-due
+list are routes too (Plan § 4.3).
+
+**The daily report is generated, not written** (**Decided**, 18-10-2026). The
+electrical team head reports the day's work to the owner. In Yantra that report is
+a query over what was recorded, printed. Recording the work and writing the report
+are one effort, not two, or one of them stops being done. Odd jobs and new
+installations stay off Yantra and are written on the printout: EN 13306 keeps
+modification apart from maintenance, so the maintenance record is not diluted.
+
 TBD — how late a PM job may be before it is "overdue" (the SRS suggests a
-compliance window, e.g. ±10 % of the interval — **Proposed**); whether a PM may be
-skipped and by whom; shutdown / annual-overhaul planning.
+compliance window, e.g. ±10 % of the interval — **Proposed**); shutdown / annual-overhaul planning.
 
 ## 8. Meters, readings and production data
 
@@ -171,7 +272,17 @@ skipped and by whom; shutdown / annual-overhaul planning.
 
 - **Counter** meters only go up (run hours, production count) and trigger every N units.
 - **Gauge** meters are levels (temperature, vibration, clearance, wear in mm) and
-  trigger on crossing limits.
+  trigger on crossing limits. Also an ISO 4406 oil cleanliness code and the day's
+  maximum oil temperature (16-10-2026).
+- **Energy** (16-10-2026): a kWh counter per press, so kWh per stroke can be reported
+  later — ISO 50001's energy performance indicator, and the cost of a press that is
+  waiting with its power pack running.
+- **Which meter a plan uses** (**Proposed**, 16-10-2026): a plan names one meter, its
+  own node's or an ancestor's — a gearbox on the extruder's hours, an alternating
+  pump on its own. No inheritance logic (ISO 14224: hours at the level where they differ).
+- **Tooling** (16-10-2026): a die that moves between presses is a component with a
+  serial; a fit or removal snapshots the press's stroke counter, so strokes per die
+  per press follow from readings (Plan § 4.1).
 - A counter reading lower than the previous one is rejected unless marked as a
   meter reset.
 - Readings are entered by hand for now; every reading records its source so an
@@ -203,6 +314,10 @@ What each grade means at VEL (**Decided**, 14-10-2026, S002):
 Criticality is required on equipment (new equipment starts at C). Component-units
 and components inherit their equipment's grade unless graded themselves.
 
+A **safety function** (a press's safety door and its sensor) is graded A as a
+component-unit whatever the press's own grade (**Decided**, 16-10-2026): grade A
+covers safety risk, so its tickets outrank production tickets and escalate first.
+
 ## 10. Measures (KPIs)
 
 Definitions below are **Proposed** — confirm before reports are built (phase 5).
@@ -224,7 +339,15 @@ and whether degraded running counts towards MTBF.
 From `docs/Plan.MD` § 3 (**Decided**):
 
 - **Operators** — CIL on their equipment, raise tickets (red tags), log readings.
-- **Technicians** — work tickets and PM jobs.
+- **Production supervisors** (decided 16-10-2026, S011 A1) — an operator's rights,
+  usually over more units; more reports later. TPM autonomous maintenance: operators
+  and their supervisors own the cleaning, inspection and lubrication of their
+  machines (CIL verification may later sit with them, Plan § 9.10). Production-side,
+  off the maintenance ladder: a supervisor does not work tickets. (EN 15628's
+  "maintenance supervisor" is a maintenance-side level, about an engineer here.)
+- **Technicians** — work tickets and PM jobs. A technician without a phone (the
+  fitter on the genset round) is paired with a supervisor or engineer who records
+  for them, naming them as performed by (decided 18-10-2026).
 - **Engineers** — assign, verify and close; own the masters (equipment, classes,
   templates, plans, codes).
 - **Maintenance manager** — all units of their site(s), reports.
@@ -234,7 +357,8 @@ From `docs/Plan.MD` § 3 (**Decided**):
 Roles are **per site** (decided 16-10-2026): one person can be manager at one
 site and engineer at another. Within a site, everyone works only at the
 **units (shop floors) they are given**, or all units of the site (usually the
-manager), held in Yantra's DB. Production supervisors are left out for now.
+manager), held in Yantra's DB on the person in Team. IT admin grants the roles;
+an engineer assigns Technicians at their own site.
 
 TBD — shift patterns, on-call arrangement, and who covers when the engineer is absent.
 

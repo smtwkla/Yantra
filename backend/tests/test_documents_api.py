@@ -1,10 +1,12 @@
 """Documents and photos on equipment — the API, against the test DB and a temporary
-DATA_DIR (conftest.py).  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat)."""
+DATA_DIR (conftest.py).  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
+Node documents (S006); model documents and the node's inherited group (S012) at the end."""
 
 import errno
 import os
 from io import BytesIO
 
+import pymysql
 import pytest
 from PIL import Image
 
@@ -12,7 +14,8 @@ import documents
 import file_store
 from config import MB
 from tests.documents_helpers import (
-    EQUIPMENT, JPEG, PDF, docs_url, folder_files, jpeg_with_size, listed, refusal, scrap, upload, uploaded,
+    EQUIPMENT, JPEG, PDF, docs_url, folder_files, jpeg_with_size, listed, listed_at, model_docs_url, owner_files,
+    refusal, scrap, upload, upload_to, uploaded, uploaded_to,
 )
 
 SIZE_MESSAGE_1_MB = "The file is larger than 1 MB"
@@ -289,10 +292,10 @@ class TestFailures:
     def test_storage_error_is_503_and_leaves_nothing(self, admin, node, monkeypatch, db_rows, caplog):
         real_write = file_store.write_file
 
-        def fail_on_thumbnail(node_id, name, data):
+        def fail_on_thumbnail(owner, owner_id, name, data):
             if name.endswith(".thumb.jpg"):
                 raise OSError(errno.EIO, "Input/output error", name)
-            return real_write(node_id, name, data)
+            return real_write(owner, owner_id, name, data)
         monkeypatch.setattr(file_store, "write_file", fail_on_thumbnail)
         res = upload(admin, node, kind="photo", data=JPEG, filename="a.jpg")
         assert refusal(res) == (503, None, "File storage is unavailable — try again later")
@@ -303,6 +306,193 @@ class TestFailures:
     def test_file_missing_on_disk_is_404(self, admin, node, db_rows):
         doc = uploaded(admin, node)
         stored = db_rows("SELECT stored_name FROM equipment_documents WHERE id = %s", (doc["id"],))[0]["stored_name"]
-        os.remove(file_store.file_path(node["id"], stored))
+        os.remove(file_store.file_path("equipment", node["id"], stored))
         res = admin.get(f"{docs_url(node)}/{doc['id']}/file")
         assert (res.status_code, res.get_json()["error"]) == (404, "File missing")
+
+
+# ---------------------------------------------------------------------------
+# Documents on equipment models (S012)
+# ---------------------------------------------------------------------------
+
+MASTERS = "/api/masters"
+
+
+def doc_ids(items):
+    return [d["id"] for d in items]
+
+
+class TestModelDocuments:
+
+    def test_upload_list_open_thumb_edit_and_remove(self, role_client, make_model, db_rows):
+        engineer = role_client("maint_engineer")
+        model = make_model()
+        url = model_docs_url(model)
+        pdf = uploaded_to(engineer, url)
+        photo = uploaded_to(engineer, url, kind="photo", title="Nameplate", data=JPEG, filename="plate.jpg")
+        row = db_rows("SELECT equipment_id, model_id FROM equipment_documents WHERE id = %s", (pdf["id"],))[0]
+        assert row == {"equipment_id": None, "model_id": model["id"]}
+
+        page = listed_at(engineer, url)
+        assert doc_ids(page["items"]) == [photo["id"], pdf["id"]]
+        assert page["upload_max_mb"] == 20
+        assert "inherited" not in page
+
+        res = engineer.get(f"{url}/{pdf['id']}/file")
+        assert (res.status_code, res.data, res.headers["Content-Type"]) == (200, PDF, "application/pdf")
+        assert "private" in res.headers["Cache-Control"]
+        thumb = engineer.get(f"{url}/{photo['id']}/thumb")
+        assert (thumb.status_code, Image.open(BytesIO(thumb.data)).format) == (200, "JPEG")
+
+        res = engineer.put(f"{url}/{pdf['id']}", json={"title": "Manual rev B"})
+        assert (res.status_code, res.get_json()["title"]) == (200, "Manual rev B")
+
+        files_before = owner_files("model", model["id"])
+        assert len(files_before) == 3   # the PDF, the photo and its thumbnail
+        assert engineer.delete(f"{url}/{pdf['id']}").status_code == 204
+        assert doc_ids(listed_at(engineer, url)["items"]) == [photo["id"]]
+        assert owner_files("model", model["id"]) == files_before
+        assert engineer.get(f"{url}/{pdf['id']}/file").status_code == 404
+        assert engineer.delete(f"{url}/{pdf['id']}").status_code == 404
+
+    def test_unknown_model_is_404(self, admin):
+        url = f"{MASTERS}/equipment-models/999999999/documents"
+        assert admin.get(url).status_code == 404
+        assert upload_to(admin, url).status_code == 404
+        assert admin.get(f"{url}/1/file").status_code == 404
+        assert admin.put(f"{url}/1", json={"title": "x"}).status_code == 404
+        assert admin.delete(f"{url}/1").status_code == 404
+
+    def test_a_doc_id_of_another_owner_is_404(self, admin, make_model, make_equipment):
+        model, other_model = make_model(), make_model()
+        node = make_equipment(model=model)
+        node_doc = uploaded(admin, node)
+        model_doc = uploaded_to(admin, model_docs_url(model))
+        for url, doc in ((model_docs_url(model), node_doc),          # a node's document through its model
+                         (model_docs_url(other_model), model_doc),   # a model's through another model
+                         (docs_url(node), model_doc)):               # a model's through its node
+            assert admin.get(f"{url}/{doc['id']}/file").status_code == 404
+            assert admin.put(f"{url}/{doc['id']}", json={"title": "x"}).status_code == 404
+            assert admin.delete(f"{url}/{doc['id']}").status_code == 404
+
+    def test_an_inactive_model_keeps_editable_documents(self, admin, make_model):
+        model = make_model()
+        assert admin.put(f"{MASTERS}/equipment-models/{model['id']}", json={"active": False}).status_code == 200
+        doc = uploaded_to(admin, model_docs_url(model))
+        assert doc_ids(listed_at(admin, model_docs_url(model))["items"]) == [doc["id"]]
+        assert admin.delete(f"{model_docs_url(model)}/{doc['id']}").status_code == 204
+
+
+class TestInheritedOnTheNode:
+
+    def test_the_model_group_with_its_label_and_path(self, admin, make_manufacturer, make_model, make_equipment):
+        maker = make_manufacturer()
+        model = make_model(manufacturer=maker)
+        node = make_equipment(model=model)
+        own = uploaded(admin, node, title="Test certificate")
+        manuals = [uploaded_to(admin, model_docs_url(model), title=t) for t in ("Manual", "Parts list")]
+
+        page = listed(admin, node)
+        assert doc_ids(page["items"]) == [own["id"]]
+        group = page["inherited"][0]
+        assert len(page["inherited"]) == 1
+        assert {key: group[key] for key in ("owner", "id", "label", "path")} == {
+            "owner": "model", "id": model["id"], "label": f"{maker['name']} {model['designation']}",
+            "path": model_docs_url(model)}
+        assert doc_ids(group["items"]) == [manuals[1]["id"], manuals[0]["id"]]   # newest first
+        # The frontend joins path, the id and /file
+        assert admin.get(f"{group['path']}/{manuals[0]['id']}/file").data == PDF
+
+    def test_absent_when_the_model_has_no_documents_and_removed_ones_are_left_out(self, admin, make_model,
+                                                                                  make_equipment):
+        model = make_model()
+        node = make_equipment(model=model)
+        assert listed(admin, node)["inherited"] == []
+        kept, removed = uploaded_to(admin, model_docs_url(model)), uploaded_to(admin, model_docs_url(model))
+        assert admin.delete(f"{model_docs_url(model)}/{removed['id']}").status_code == 204
+        assert doc_ids(listed(admin, node)["inherited"][0]["items"]) == [kept["id"]]
+
+    def test_follows_a_model_change_at_once(self, admin, make_model, make_equipment):
+        ga37, ga55 = make_model(), make_model()
+        doc37, doc55 = uploaded_to(admin, model_docs_url(ga37)), uploaded_to(admin, model_docs_url(ga55))
+        node = make_equipment(model=ga37)
+        assert doc_ids(listed(admin, node)["inherited"][0]["items"]) == [doc37["id"]]
+        assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"model_id": ga55["id"]}).status_code == 200
+        assert doc_ids(listed(admin, node)["inherited"][0]["items"]) == [doc55["id"]]
+
+    def test_a_part_shows_its_own_models_documents_not_its_parents(self, admin, make_model, make_equipment):
+        parent_model = make_model()
+        uploaded_to(admin, model_docs_url(parent_model))
+        mill = make_equipment(model=parent_model)
+        part = make_equipment(parent=mill)
+        assert listed(admin, part)["inherited"] == []
+
+
+class TestModelDocumentAccess:
+
+    def test_an_operator_reads_model_documents_but_cannot_change_them(self, admin, role_client, make_model):
+        model = make_model()
+        url = model_docs_url(model)
+        doc = uploaded_to(admin, url)
+        operator = role_client("maint_operator")
+        assert operator.get(url).status_code == 200
+        assert operator.get(f"{url}/{doc['id']}/file").status_code == 200
+        assert upload_to(operator, url).status_code == 403
+        assert operator.put(f"{url}/{doc['id']}", json={"title": "x"}).status_code == 403
+        assert operator.delete(f"{url}/{doc['id']}").status_code == 403
+
+    def test_a_node_at_another_site_is_404_while_its_models_documents_stay_reachable(
+            self, admin, make_unit, make_model, make_equipment, user_with_units):
+        """The stated ISO 27001 A.8.3 decision (S012 § 2): model documents at every site."""
+        model = make_model()
+        node = make_equipment(model=model)
+        doc = uploaded_to(admin, model_docs_url(model))
+        outsider = user_with_units("maint_engineer", [make_unit()])
+        assert outsider.get(docs_url(node)).status_code == 404
+        assert outsider.get(model_docs_url(model)).status_code == 200
+        assert outsider.get(f"{model_docs_url(model)}/{doc['id']}/file").status_code == 200
+        # An engineer at one site maintains model documents (equipment:edit held anywhere)
+        assert upload_to(outsider, model_docs_url(model)).status_code == 201
+
+
+class TestModelDocumentFailures:
+
+    def test_insert_failure_leaves_no_file(self, admin, make_model, monkeypatch):
+        model = make_model()
+
+        def fail(*args):
+            raise RuntimeError("forced")
+        monkeypatch.setattr(documents, "insert_row", fail)
+        with pytest.raises(RuntimeError):
+            upload_to(admin, model_docs_url(model), kind="photo", data=JPEG, filename="a.jpg")
+        assert owner_files("model", model["id"]) == []
+
+    def test_storage_error_is_503_and_leaves_nothing(self, admin, make_model, monkeypatch, db_rows):
+        model = make_model()
+        real_write = file_store.write_file
+
+        def fail_on_thumbnail(owner, owner_id, name, data):
+            if name.endswith(".thumb.jpg"):
+                raise OSError(errno.EIO, "Input/output error", name)
+            return real_write(owner, owner_id, name, data)
+        monkeypatch.setattr(file_store, "write_file", fail_on_thumbnail)
+        res = upload_to(admin, model_docs_url(model), kind="photo", data=JPEG, filename="a.jpg")
+        assert refusal(res) == (503, None, "File storage is unavailable — try again later")
+        assert owner_files("model", model["id"]) == []
+        assert db_rows("SELECT id FROM equipment_documents WHERE model_id = %s", (model["id"],)) == ()
+
+
+class TestOwnerCheckConstraint:
+
+    @pytest.mark.parametrize("owners", ["two", "none"])
+    def test_exactly_one_owner_holds_when_the_shell_is_bypassed(self, make_model, make_equipment, db_rows,
+                                                                uniq, owners):
+        model = make_model()
+        node = make_equipment(model=model)
+        equipment_id, model_id = (node["id"], model["id"]) if owners == "two" else (None, None)
+        with pytest.raises(pymysql.err.OperationalError) as caught:
+            db_rows("INSERT INTO equipment_documents (equipment_id, model_id, kind, title, original_name, stored_name,"
+                    " content_type, size_bytes, created_by) VALUES (%s, %s, 'document', 'x', 'x.pdf', %s,"
+                    " 'application/pdf', 1, 'test')", (equipment_id, model_id, f"chk-{uniq.username()}.pdf"))
+        assert caught.value.args[0] == 4025
+        assert "chk_equipment_documents_owner" in caught.value.args[1]

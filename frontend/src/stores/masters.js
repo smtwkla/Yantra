@@ -1,5 +1,6 @@
 /**
- * Masters cache — sites, units, equipment classes and types, trades, fetched once and shared.
+ * Masters cache — sites, units, equipment classes and types, manufacturers and equipment
+ * models (S012), trades, fetched once and shared.
  *
  * Lists include inactive records (consumers filter on `active`). Pickers (the equipment
  * form, the move dialog) take the cached copy: a list a few minutes old is harmless there.
@@ -16,6 +17,8 @@ export const sites = ref(null);
 export const units = ref(null);
 export const equipmentClasses = ref(null);
 export const equipmentTypes = ref(null);
+export const manufacturers = ref(null);
+export const equipmentModels = ref(null);
 export const trades = ref(null);
 
 async function fetchItems(path) {
@@ -44,6 +47,14 @@ export function ensureEquipmentTypes({ refresh = false } = {}) {
   return ensure(equipmentTypes, "equipment-types", refresh);
 }
 
+export function ensureManufacturers({ refresh = false } = {}) {
+  return ensure(manufacturers, "manufacturers", refresh);
+}
+
+export function ensureModels({ refresh = false } = {}) {
+  return ensure(equipmentModels, "equipment-models", refresh);
+}
+
 export function ensureTrades({ refresh = false } = {}) {
   return ensure(trades, "trades", refresh);
 }
@@ -58,5 +69,7 @@ export function resetMasters() {
   units.value = null;
   equipmentClasses.value = null;
   equipmentTypes.value = null;
+  manufacturers.value = null;
+  equipmentModels.value = null;
   trades.value = null;
 }

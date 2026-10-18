@@ -1,6 +1,7 @@
 /**
  * Display labels for the equipment register — one vocabulary for every screen
- * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004). Pure: no imports.
+ * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004; model events:
+ * S012). Pure: no imports.
  */
 
 export const LEVEL_LABELS = {
@@ -34,9 +35,10 @@ export const STATUS_BADGE_CLASS = {
 export const CRITICALITY_LABELS = { A: "A", B: "B", C: "C" };
 
 export const CRITICALITY_BADGE_CLASS = {
-  A: "text-bg-danger",
-  B: "text-bg-warning",
-  C: "border border-secondary text-secondary",
+  // Shades of blue, strongest = most critical: a grade is a ranking, not an alarm, so no red/amber.
+  A: "text-bg-primary",
+  B: "bg-primary-subtle text-primary-emphasis border border-primary-subtle",
+  C: "border border-primary text-primary",
 };
 
 /** S002 writes this literal for "no own grade" in criticality events. */
@@ -66,6 +68,9 @@ export function describeEvent(event) {
       return change("Class", oldValue, newValue);
     case "type":
       return change("Type", typeText(oldValue), typeText(newValue));
+    case "model":
+      // Every node has a model (S012), so neither side is ever empty
+      return change("Model", oldValue, newValue);
     default:
       return String(event.event);
   }

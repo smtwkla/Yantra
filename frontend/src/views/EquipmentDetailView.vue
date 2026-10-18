@@ -2,17 +2,20 @@
 /**
  * Equipment page — one node at any level: path, details, parts and history
  * (docs/steps/S003-equipment-screens/1-brief.md § 4.2; type and notes: S004; documents and
- * photos: S006, loaded separately by EquipmentDocuments). Reloaded from the API after any save. The type name comes with the node, so no types cache is needed here.
+ * photos: S006, loaded separately by DocumentsCards, with the model's: S012; manufacturer and
+ * model: S012). Reloaded from the API after any save. The type name and the model's label come
+ * with the node, so no types or models cache is needed here.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import DocumentsCards from "../components/documents/DocumentsCards.vue";
+import { userPermissions } from "../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
-import EquipmentDocuments from "./equipment/EquipmentDocuments.vue";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
@@ -31,6 +34,7 @@ let loadSeq = 0;
 const formModal = ref(null);
 const moveModal = ref(null);
 const statusModal = ref(null);
+const documentsCards = ref(null);
 
 const scrapped = computed(() => node.value?.status === "scrapped");
 // No actions while another node is loading: they would act on the node still on screen.
@@ -38,6 +42,9 @@ const scrapped = computed(() => node.value?.status === "scrapped");
 const canEdit = computed(
   () => (node.value?.permissions ?? []).includes("equipment:edit") && !scrapped.value && !loading.value
 );
+// Model documents are maintained in Masters by equipment:edit held at any site (S012 § 5.5), so
+// the "Managed in Masters" hint follows the global permissions, not this node's site
+const canEditModels = computed(() => userPermissions.value.includes("equipment:edit"));
 const siteAndUnit = computed(() => node.value.unit.split("."));
 const classLabel = computed(() => {
   const cls = (equipmentClasses.value ?? []).find((c) => c.id === node.value.class_id);
@@ -68,8 +75,13 @@ async function load() {
 watch(() => route.params.id, load, { immediate: true });
 
 function onSaved({ result, created }) {
-  if (created) router.push(`/equipment/${result.id}`);
-  else load();
+  if (created) {
+    router.push(`/equipment/${result.id}`);
+  } else {
+    load();
+    // The model may have changed, and with it the inherited documents
+    documentsCards.value?.reload();
+  }
 }
 </script>
 
@@ -126,8 +138,8 @@ function onSaved({ result, created }) {
                 <dt class="col-5">Level</dt><dd class="col-7">{{ LEVEL_LABELS[node.level] }}</dd>
                 <dt class="col-5">Class</dt><dd class="col-7">{{ classLabel }}</dd>
                 <dt class="col-5">Type</dt><dd class="col-7">{{ node.type_name }}</dd>
-                <dt class="col-5">Make</dt><dd class="col-7">{{ node.make }}</dd>
-                <dt class="col-5">Model</dt><dd class="col-7">{{ node.model }}</dd>
+                <dt class="col-5">Manufacturer</dt><dd class="col-7">{{ node.manufacturer_name }}</dd>
+                <dt class="col-5">Model</dt><dd class="col-7">{{ node.model_designation }}</dd>
                 <dt class="col-5">Serial no.</dt><dd class="col-7">{{ node.serial_no }}</dd>
                 <dt class="col-5">Year</dt><dd class="col-7">{{ node.year }}</dd>
                 <template v-if="node.level === 'equipment'">
@@ -161,7 +173,12 @@ function onSaved({ result, created }) {
         <div class="card-body notes-text">{{ node.notes }}</div>
       </div>
 
-      <EquipmentDocuments :node-id="node.id" :can-edit="canEdit" />
+      <DocumentsCards
+        ref="documentsCards"
+        :base-path="`/api/equipment/${node.id}/documents`"
+        :can-edit="canEdit"
+        :show-managed-in="canEditModels"
+      />
     </template>
 
     <EquipmentFormModal ref="formModal" @saved="onSaved" />

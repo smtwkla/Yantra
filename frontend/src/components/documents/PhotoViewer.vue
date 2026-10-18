@@ -3,9 +3,11 @@
  * Photo viewer — one photo large, with previous/next (docs/steps/S006-equipment-documents/1-brief.md § 1).
  *
  * The parent owns the photos and their object URLs: `loadImage(photo)` resolves to a URL
- * of the full image, so revoking stays in one place (EquipmentDocuments). The parent calls
+ * of the full image, so revoking stays in one place (DocumentsCards). The parent calls
  * open(index) / close() through a template ref; close() resolves once the modal is hidden,
- * so another dialog can open after it. Edit and Remove are emitted, not done here.
+ * so another dialog can open after it. Edit and Remove are emitted, not done here, and
+ * offered only on the owner's own photos (`photo.own`), not on a model's shown on a node
+ * (S012).
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Modal } from "bootstrap";
@@ -15,6 +17,8 @@ const props = defineProps({
   loadImage: { type: Function, required: true },
   canEdit: { type: Boolean, default: false },
   removing: { type: Boolean, default: false },
+  // Added to the remove confirmation, e.g. that a model photo leaves every machine of the model
+  removeNote: { type: String, default: "" },
 });
 const emit = defineEmits(["edit", "remove"]);
 
@@ -29,6 +33,7 @@ const confirmingRemove = ref(false);
 let loadSeq = 0;
 
 const photo = computed(() => props.photos[index.value] ?? null);
+const editable = computed(() => props.canEdit && Boolean(photo.value?.own));
 
 async function show() {
   const current = photo.value;
@@ -105,9 +110,9 @@ defineExpose({ open, close });
         </div>
         <div class="modal-footer">
           <div class="me-auto d-flex flex-wrap align-items-center gap-2">
-            <template v-if="canEdit && photo">
+            <template v-if="editable">
               <span v-if="confirmingRemove" class="d-inline-flex align-items-center gap-2">
-                <span>Remove this photo?</span>
+                <span>Remove this photo?<template v-if="removeNote"> {{ removeNote }}</template></span>
                 <button type="button" class="btn btn-sm btn-danger" :disabled="removing" @click="emit('remove', photo)">Yes</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" @click="confirmingRemove = false">No</button>
               </span>

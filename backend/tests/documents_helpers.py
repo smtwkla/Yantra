@@ -40,32 +40,54 @@ def docs_url(node):
     return f"{EQUIPMENT}/{node['id']}/documents"
 
 
-def upload(client, node, kind="document", title="Pump manual", data=PDF, filename="manual.pdf", **kwargs):
+def model_docs_url(model):
+    return f"/api/masters/equipment-models/{model['id']}/documents"
+
+
+def upload_to(client, url, kind="document", title="Pump manual", data=PDF, filename="manual.pdf", **kwargs):
+    """Upload to any owner's documents collection URL (a node's or a model's, S012)."""
     form = {"kind": kind, "title": title}
     if data is not None:
         form["file"] = (BytesIO(data), filename)
-    return client.post(docs_url(node), data=form, content_type="multipart/form-data", **kwargs)
+    return client.post(url, data=form, content_type="multipart/form-data", **kwargs)
 
 
-def uploaded(client, node, **kwargs):
-    res = upload(client, node, **kwargs)
+def uploaded_to(client, url, **kwargs):
+    res = upload_to(client, url, **kwargs)
     assert res.status_code == 201, res.get_json()
     return res.get_json()
 
 
-def listed(client, node):
-    res = client.get(docs_url(node))
+def listed_at(client, url):
+    res = client.get(url)
     assert res.status_code == 200, res.get_json()
     return res.get_json()
+
+
+def upload(client, node, **kwargs):
+    return upload_to(client, docs_url(node), **kwargs)
+
+
+def uploaded(client, node, **kwargs):
+    return uploaded_to(client, docs_url(node), **kwargs)
+
+
+def listed(client, node):
+    return listed_at(client, docs_url(node))
 
 
 def refusal(res):
     return res.status_code, res.get_json().get("field"), res.get_json()["error"]
 
 
-def folder_files(node):
-    folder = file_store.node_folder(node["id"])
+def owner_files(owner, owner_id):
+    """The files in an owner's folder (file_store owner: equipment or model)."""
+    folder = file_store.owner_folder(owner, owner_id)
     return sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+
+
+def folder_files(node):
+    return owner_files("equipment", node["id"])
 
 
 def scrap(admin, node):

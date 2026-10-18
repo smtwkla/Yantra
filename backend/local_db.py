@@ -277,6 +277,63 @@ _MIGRATIONS = [
             SELECT p.id, uu.unit_id, uu.granted_at, uu.granted_by
             FROM user_units uu JOIN people p ON p.username = uu.username""",
     ]),
+    # Manufacturers and equipment models (S012).  A model belongs to one class and at most one
+    # type of it, fixed for life; equipment picks its model and its class and type come from
+    # it.  The composite FKs make "the model's type is of the model's class" and "the
+    # equipment's model is of the equipment's class" database rules (as v5); each index comes
+    # before its FK, so the FK uses it.  A model document has model_id instead of
+    # equipment_id, and the CHECK keeps exactly one owner per document (S009's design).
+    # Every statement is safe to run twice, as in v5.
+    # equipment.model_id is NOT NULL: production had no equipment when v9 was written (S012
+    # § 4.2).  On a table that has equipment rows the ADD COLUMN fills them with 0 and the
+    # FOREIGN KEY then fails (1452): v9 stays half-applied and fails on every retry until
+    # those rows are gone.  Dev and test databases are reset (tooling/dev/dev-db-reset.bat).
+    (9, "Manufacturers, equipment models, model documents", [
+        """CREATE TABLE IF NOT EXISTS manufacturers (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(100) NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_manufacturers_name UNIQUE (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS equipment_models (
+            id               INT AUTO_INCREMENT PRIMARY KEY,
+            manufacturer_id  INT NOT NULL,
+            designation      VARCHAR(80) NOT NULL,
+            class_id         INT NOT NULL,
+            type_id          INT NULL,
+            active           TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_models_maker_designation UNIQUE (manufacturer_id, designation),
+            CONSTRAINT uq_equipment_models_id_class UNIQUE (id, class_id),
+            CONSTRAINT fk_equipment_models_manufacturer FOREIGN KEY (manufacturer_id) REFERENCES manufacturers (id),
+            CONSTRAINT fk_equipment_models_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id),
+            CONSTRAINT fk_equipment_models_type FOREIGN KEY (type_id, class_id)
+                REFERENCES equipment_types (id, class_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        "ALTER TABLE equipment ADD COLUMN IF NOT EXISTS model_id INT NOT NULL AFTER type_id",
+        "ALTER TABLE equipment ADD INDEX IF NOT EXISTS ix_equipment_model (model_id, class_id)",
+        """ALTER TABLE equipment ADD CONSTRAINT fk_equipment_model FOREIGN KEY IF NOT EXISTS
+            (model_id, class_id) REFERENCES equipment_models (id, class_id)""",
+        "ALTER TABLE equipment DROP COLUMN IF EXISTS make",
+        "ALTER TABLE equipment DROP COLUMN IF EXISTS model",
+        "ALTER TABLE equipment_documents MODIFY equipment_id INT NULL",
+        "ALTER TABLE equipment_documents ADD COLUMN IF NOT EXISTS model_id INT NULL AFTER equipment_id",
+        "ALTER TABLE equipment_documents ADD INDEX IF NOT EXISTS ix_equipment_documents_model (model_id, removed_at)",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT fk_equipment_documents_model FOREIGN KEY IF NOT EXISTS
+            (model_id) REFERENCES equipment_models (id)""",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+            CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) = 1)""",
+        # The seven old values keep their order and 'model' is appended: metadata only
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','status','criticality','class','type','model') NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

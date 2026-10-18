@@ -68,15 +68,29 @@ PEOPLE = [
     ("Devi N", "direct", [], "store.smtw", [("SMTW", "maint_storekeeper", "all")]),
 ]
 
-# unit full code, class, type or None, name, make, model, criticality, [(class, name)] component units
+# Manufacturers (S012): makers, plus "Generic" (maker unknown) and our own designs
+MANUFACTURERS = ["Haendle GmbH", "Atlas Copco", "Generic", "SMTW (in-house)"]
+
+# key, manufacturer, designation, class, type or None.  The designations of the Haendle and
+# in-house models are made up; Generic models are named by what they are (S012 § 4.1).
+MODELS = [
+    ("GA37", "Atlas Copco", "GA37", "CMP", "Screw compressor"),
+    ("HAENDLE", "Haendle GmbH", "VAH 600", "EXT", "Vacuum extruder"),
+    ("HYP", "SMTW (in-house)", "SMTW-HYP-01", "HP", None),
+    ("GEN-VBM", "Generic", "Generic vertical blade mill", "VBM", None),
+    ("GEN-PMP", "Generic", "Generic bore pump", "PMP", "Bore pump"),
+    ("GEN-GBX", "Generic", "Generic gearbox", "GBX", None),
+]
+
+# unit full code, model key, name, criticality, [(model key, name)] component units.
+# Class and type come from the model (S012).
 EQUIPMENT = [
-    ("SMTW.FWMILL", "VBM", None, "Vertical blade mill", None, None, "B", []),
-    ("SMTW.MCC2", "EXT", "Vacuum extruder", "Main extruder", "Haendle GmbH", None, "A",
-     [("GBX", "Extruder main gearbox")]),
-    ("SMTW.MCC2", "CMP", "Screw compressor", "Screw compressor 1", "Atlas Copco", None, "A", []),
-    ("SMTW.MCC2", "CMP", "Screw compressor", "Screw compressor 2", "Atlas Copco", None, "B", []),
-    ("BRICKS.FILTER", "PMP", "Bore pump", "Bore well pump", None, None, "C", []),
-    ("SSVT.SHOP", "HP", None, "Hydraulic press 1", None, None, "A", []),
+    ("SMTW.FWMILL", "GEN-VBM", "Vertical blade mill", "B", []),
+    ("SMTW.MCC2", "HAENDLE", "Main extruder", "A", [("GEN-GBX", "Extruder main gearbox")]),
+    ("SMTW.MCC2", "GA37", "Screw compressor 1", "A", []),
+    ("SMTW.MCC2", "GA37", "Screw compressor 2", "B", []),
+    ("BRICKS.FILTER", "GEN-PMP", "Bore well pump", "C", []),
+    ("SSVT.SHOP", "HYP", "Hydraulic press 1", "A", []),
 ]
 
 
@@ -113,6 +127,13 @@ def main():
             type_ids[type_name] = call("POST", "/api/masters/equipment-types",
                                        {"class_id": class_ids[code], "name": type_name})["id"]
 
+    maker_ids = {name: call("POST", "/api/masters/manufacturers", {"name": name})["id"] for name in MANUFACTURERS}
+    model_ids = {}
+    for key, maker, designation, cls, type_name in MODELS:
+        model_ids[key] = call("POST", "/api/masters/equipment-models", {
+            "manufacturer_id": maker_ids[maker], "designation": designation, "class_id": class_ids[cls],
+            "type_id": type_ids[type_name] if type_name else None})["id"]
+
     trade_ids = {name: call("POST", "/api/masters/trades", {"name": name})["id"] for name in TRADES}
 
     for name, employment, trades, login, roles in PEOPLE:
@@ -129,22 +150,17 @@ def main():
             site_id = row.pop("site_id")
             call("PUT", f"/api/masters/people/{person_id}/sites/{site_id}", row)
 
-    for unit, cls, type_name, name, make, model, criticality, parts in EQUIPMENT:
-        body = {"level": "equipment", "unit_id": unit_ids[unit], "class_id": class_ids[cls],
-                "name": name, "criticality": criticality}
-        if type_name:
-            body["type_id"] = type_ids[type_name]
-        if make:
-            body["make"] = make
-        if model:
-            body["model"] = model
-        node = call("POST", "/api/equipment/", body)
-        for part_class, part_name in parts:
+    for unit, model, name, criticality, parts in EQUIPMENT:
+        node = call("POST", "/api/equipment/", {"level": "equipment", "unit_id": unit_ids[unit],
+                                                "model_id": model_ids[model], "name": name,
+                                                "criticality": criticality})
+        for part_model, part_name in parts:
             call("POST", "/api/equipment/", {"level": "component_unit", "parent_id": node["id"],
-                                             "class_id": class_ids[part_class], "name": part_name})
+                                             "model_id": model_ids[part_model], "name": part_name})
 
-    print(f"Seeded {len(SITES)} sites, {len(UNITS)} units, {len(CLASSES)} classes, {len(TRADES)} trades, "
-          f"{len(PEOPLE)} people, {len(EQUIPMENT)} equipment.")
+    print(f"Seeded {len(SITES)} sites, {len(UNITS)} units, {len(CLASSES)} classes, {len(MANUFACTURERS)} "
+          f"manufacturers, {len(MODELS)} models, {len(TRADES)} trades, {len(PEOPLE)} people, "
+          f"{len(EQUIPMENT)} equipment.")
 
 
 if __name__ == "__main__":

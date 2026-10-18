@@ -58,6 +58,11 @@ describe("describeEvent", () => {
     expect(describeEvent(ev("type", "Open execution", "none"))).toBe("Type: Open execution → None");
   });
 
+  it("model shows the model labels", () => {
+    expect(describeEvent(ev("model", "Atlas Copco GA37", "Atlas Copco GA55")))
+      .toBe("Model: Atlas Copco GA37 → Atlas Copco GA55");
+  });
+
   it("an unknown event is shown by name", () => {
     expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
   });

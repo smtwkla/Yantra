@@ -1,7 +1,8 @@
 <script setup>
 /**
- * Masters — sites, units, equipment classes and types, trades, Team with each person's
- * roles per site (docs/steps/S001-basic-masters, S004, S010, S011; S011 A1 moved unit access into Team).
+ * Masters — sites, units, equipment classes and types, manufacturers and models, trades, Team
+ * with each person's roles per site (docs/steps/S001-basic-masters, S004, S010, S011, S012;
+ * S011 A1 moved unit access into Team).
  * The level-2 toolbar switches sections as local state, not routes.
  */
 import { computed, ref } from "vue";
@@ -10,6 +11,8 @@ import { userPermissions } from "../stores/auth";
 import { canSeeNavItem } from "../stores/navigation";
 import EquipmentClassesPanel from "./masters/EquipmentClassesPanel.vue";
 import EquipmentTypesPanel from "./masters/EquipmentTypesPanel.vue";
+import ManufacturersPanel from "./masters/ManufacturersPanel.vue";
+import ModelsPanel from "./masters/ModelsPanel.vue";
 import SitesPanel from "./masters/SitesPanel.vue";
 import PeoplePanel from "./masters/PeoplePanel.vue";
 import TradesPanel from "./masters/TradesPanel.vue";
@@ -20,6 +23,8 @@ const sections = [
   { key: "units", icon: "fa-solid fa-warehouse", label: "Units", perm: "masters:read" },
   { key: "classes", icon: "fa-solid fa-shapes", label: "Equip Class", perm: "masters:read" },
   { key: "types", icon: "fa-solid fa-sitemap", label: "Equip Type", perm: "masters:read" },
+  { key: "manufacturers", icon: "fa-solid fa-industry", label: "Manufacturers", perm: "masters:read" },
+  { key: "models", icon: "fa-solid fa-tag", label: "Models", perm: "masters:read" },
   { key: "trades", icon: "fa-solid fa-screwdriver-wrench", label: "Trades", perm: "masters:read" },
   { key: "people", icon: "fa-solid fa-people-group", label: "Team", perm: "masters:read" },
 ];
@@ -28,6 +33,8 @@ const panels = {
   units: UnitsPanel,
   classes: EquipmentClassesPanel,
   types: EquipmentTypesPanel,
+  manufacturers: ManufacturersPanel,
+  models: ModelsPanel,
   trades: TradesPanel,
   people: PeoplePanel,
 };

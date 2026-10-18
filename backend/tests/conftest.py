@@ -69,8 +69,8 @@ def _inject_test_user():
 
 # Tables emptied once per session so tests start from a known state, child tables first
 _TABLES = ("person_units", "memberships", "person_trades", "people", "trades", "equipment_documents",
-           "equipment_events", "equipment", "equipment_types", "user_units", "units", "sites", "equipment_classes",
-           "serial_counters")
+           "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
+           "units", "sites", "equipment_classes", "serial_counters")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -195,6 +195,12 @@ class Uniq:
     def trade_name(self):
         return f"Trade {self._next():04d}"
 
+    def manufacturer_name(self):
+        return f"Maker {self._next():04d}"
+
+    def designation(self):
+        return f"M-{self._next():04d}"
+
     def username(self):
         return f"user{self._next():04d}"
 
@@ -255,11 +261,37 @@ def make_class(admin, uniq):
 
 
 @pytest.fixture
-def make_equipment(admin, make_unit, make_class):
-    """make_equipment() → equipment in a fresh unit and class;
-    make_equipment(parent=node) → a component unit under it (level= to choose)."""
-    def make(unit=None, parent=None, cls=None, level=None, **overrides):
-        body = {"class_id": (cls or make_class())["id"], "name": "Test node"}
+def make_manufacturer(admin, uniq):
+    def make(**overrides):
+        body = {"name": uniq.manufacturer_name(), **overrides}
+        res = admin.post(f"{MASTERS}/manufacturers", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_model(admin, uniq, make_class, make_manufacturer):
+    """make_model() -> a model of a fresh class and manufacturer, with no type;
+    make_model(cls=c, type_id=t, manufacturer=m, designation=...) to choose (S012)."""
+    def make(cls=None, type_id=None, manufacturer=None, **overrides):
+        body = {"manufacturer_id": (manufacturer or make_manufacturer())["id"], "designation": uniq.designation(),
+                "class_id": (cls or make_class())["id"], "type_id": type_id, **overrides}
+        res = admin.post(f"{MASTERS}/equipment-models", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_equipment(admin, make_unit, make_model):
+    """make_equipment() → equipment in a fresh unit, of a fresh model and class;
+    make_equipment(parent=node) → a component unit under it (level= to choose).
+    Equipment is created by model (S012): cls= and type_id= make a model of that class and
+    type for it; model= picks a given one."""
+    def make(unit=None, parent=None, cls=None, level=None, model=None, type_id=None, **overrides):
+        model = model or make_model(cls=cls, type_id=type_id)
+        body = {"model_id": model["id"], "name": "Test node"}
         if parent is None:
             body.update(level=level or "equipment", unit_id=(unit or make_unit())["id"])
         else:

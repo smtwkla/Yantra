@@ -44,7 +44,7 @@ Conventions:
 | **SMTW-KP** | Stock yard 2, Keelapavoor village (Karambai plot) | Clay stock, a shed for goats and cows, bore wells | TBD |
 | **AGRI-VKM** | Vettaikarankulam farm | Gooseberry, drip system, bore pumps, solar pump | TBD |
 | **AGRI-KDK** | Kadabokaathi farm | Coconut, open wells, bore pumps, solar | TBD |
-| **SSVT** | Sister concern's job-work unit (§ 1) | Hydraulic presses | TBD |
+| **SSVT** | Sister concern's job-work unit (§ 1) | Hydraulic presses — about 12 (user, 16-10-2026) | TBD |
 
 Source: user, 13-10-2026.
 
@@ -53,7 +53,7 @@ Source: user, 13-10-2026.
 | Group | Areas |
 |---|---|
 | Raw material | Clay stock; clay blending plots |
-| Forming | Old extrusion and pressing line; new extrusion and punching line (called **MCC**, in two parts MCC1 and MCC2); hydraulic presses |
+| Forming | Old extrusion and pressing line; new extrusion and punching line (called **MCC**, in two parts MCC1 and MCC2); hydraulic presses (two at SMTW; user, 16-10-2026) |
 | Drying and firing | Drying areas; kiln; firewood processing mill |
 | Quality | Lab |
 | Finishing and dispatch | Sorting and packing line; delivery |
@@ -69,7 +69,7 @@ Codes follow `SITE.UNIT`. Recorded as they are fixed:
 | Code | Unit | Equipment (known so far) | Source |
 |---|---|---|---|
 | `SMTW.FWMILL` | SMTW's firewood processing mill | Vertical blade mill, breakers, electric saw, others | User, 13-10-2026 |
-| `SMTW.MCC1` | New extrusion and punching line — first part | TBD | User, 13-10-2026 |
+| `SMTW.MCC1` | New extrusion and punching line — first part | One line, one operator: two box feeders, a coarse roller mill, a fine roller mill, a clay spreader on a conveyor, conveyors between them (as dictated 16-10-2026; names to confirm) | User, 16-10-2026 |
 | `SMTW.MCC2` | New extrusion and punching line — second part | New extruder (Haendle GmbH); puncher (Keller-HCW GmbH); Atlas Copco screw compressors (2); others | User, 13-10-2026 |
 
 The new extrusion line is known internally as **MCC** (origin of the name not known).
@@ -94,6 +94,9 @@ TBD — how the remaining OneERP warehouse codes map to sites and units.
 | About 500 machines and equipment in total | SRS draft, 12-10-2026 (its "three sites" predates the site list in § 2) |
 
 | No existing equipment-numbering scheme | User, 13-10-2026 |
+| **Hydraulic presses** (two at SMTW, about 12 at SSVT), one class in several types: 40 t direct-operated (two cylinders, 4–6 valves); gravity-assisted direct-operated; pilot-operated gravity-assisted with prefill; the same with a locked safety door. Each press is a different model, so filters and pump elements differ per press. Higher types have proportional valves with analog pressure control from the PLC | User, 16-10-2026 |
+| Each press carries a top die, a bottom die and a mould box, all with serial numbers, which move between presses. Bottom dies are surface-ground in the plant's machine shop and refitted, possibly on another press | User, 16-10-2026 |
+| Each press has one operator at the selection screen and 4–5 workers around it; a floor supervisor with a phone | User, 16-10-2026 |
 
 TBD — split per site; equipment classes and counts; which equipment is critical;
 equipment used daily vs. rarely.
@@ -107,6 +110,23 @@ equipment used daily vs. rarely.
 | Operators already do informal autonomous maintenance on all machines: cleaning, lubricating, flagging malfunctions | User, 12-10-2026 |
 | Repairs happen in-situ (on the machine), in the Mechanical shop, in the Electrical shop, or externally (vendor) | SRS draft, 12-10-2026 |
 | Important equipment is under **annual maintenance contracts (AMC)** with vendors. AMC vendors visit to do preventive maintenance and attend breakdown calls as per the contract | User, 13-10-2026 |
+| AMC vendors known so far: **Atlas Copco** for the two screw compressors shared by the extrusion line (one runs, one on standby; vendor does A / B / D checks and may ask for filter changes); **Toyota Material Handling** for an electric pallet truck (batteries); **Sartorius** moisture analyser calibrated and serviced by the vendor on call | User, 16-10-2026 |
+| Extruder main gearbox: synthetic oil, changed every 5,000 run hours. Oil samples go to an outside lab now and then; contaminants (e.g. silicon, pointing to a failed seal) or oil condition decide whether to change early or run another 1,000–2,000 h | User, 16-10-2026 |
+| Fine roller mill: the roller shells are trued every 60–70 run hours with a lathe mounted on the mill; remaining shell thickness is measured (a thin shell can break); the roller gap is measured by passing soft aluminium wire and reading it with a vernier, kept about 1.5–2.5 mm and adjusted above 2.5 | User, 16-10-2026 |
+| Extruder wear parts (augers, mixer paddles, shredding knives, liners) are kept in stock and changed on inspection; 3–4 auger sets on site, refurbished in the plant's own workshop. A spare gearbox exists; a failed one is swapped out and sent for repair, coming back repaired or scrapped | User, 16-10-2026 |
+| Extrusion-line operators read run hours and production counts off the PLC HMI into a notebook and enter them at the end of the day | User, 16-10-2026 |
+| **Press availability** has fallen over the last year; at times only about 70 % of the presses are operable. Fault diagnosis depends on the project owner, who guides the engineers by phone test by test; some problems take months to resolve | User, 16-10-2026 |
+| Press hydraulic oil is contaminated (air and particles). An offline filtration machine is connected to a press and run for days to weeks. No oil condition monitoring is done, on the view that every sample would fail | User, 16-10-2026 |
+| Frequent press failures: output relay contacts **weld** (the PLC drives electromechanical relay boards) — a hard stop, the press misbehaves until the relay is replaced; the plan is to convert to solid-state relays. Also: pressure transducer failures; proportional-valve zero/span drift (PLC reads low, auto cycle fails; adjusted with a laptop on the PLC); pump radial piston elements; suction strainer clogging; return filters per press model; cracked pipelines welded in the workshop; cylinder seal failure, scoring or body cracks — cylinders go to the maker for 2–3 weeks; rarely a cracked press body, welded in place; safety-door magnetic sensor misalignment (intermittent, worst on some presses, sensor and cylinder guiding need redesign); pneumatic door cylinder seals | User, 16-10-2026 |
+| Press PLC panels get dusty and need frequent cleaning; one press had oil ingress into the panel and PLC | User, 16-10-2026 |
+| Many machines are run until they break with no preventive work, and some are forgotten: an electric wood cutting machine went unused for years and almost nobody remembered it existed | User, 16-10-2026 |
+| The factory has conveyor belts, lifts and EOT cranes that are checked and certified periodically by a competent person, and pressure vessels examined periodically by a government official against a fee. Fire extinguishers of several types: some replaced every 5 years, some every 3, some refilled yearly. The owner wants each extinguisher QR-labelled and its check recorded by a technician on scanning | User, 17-10-2026 |
+| Operators are not formally trained on a machine before using it; the owner wants step-by-step dos and don'ts in Tamil with pictures | User, 16-10-2026 |
+| Many presses were designed, fabricated or redesigned in house. Hydraulic and electrical circuit diagrams exist for only some presses, and may be out of date, hand-drawn or missing; finding one during a breakdown is a hunt. Know-how (how to clean a press, change pump elements) is not written down anywhere | User, 16-10-2026 |
+| Press supervisors will enter per press at the end of the day: strokes, run hours, energy meter reading, maximum power-pack oil temperature seen | User, 16-10-2026 |
+| Gensets at several sites (e.g. 140 kVA at SSVT, 63 kVA at stockyard 1) and an EB incoming connection at every site. A turner-cum-fitter does a daily round of all gensets: visual check, fuel level, battery, running properly. The electrical department looks after some gensets and reads all EB incoming meters daily | User, 18-10-2026 |
+| The electrical team head sends the owner a written report of each day's work. A typical day (09-10-2026): 7 packing machines cleaned with air; 2 SSVT stacker machines cleaned, batteries checked; 140 kVA genset battery check; stockyard 1 63 kVA genset battery maintenance and fuel level; portable vibrator carbon brushes replaced; SSVT press V201 photo guard cleaned, function restored; RO water purifier outlet cleaned; a new concrete vibrator's switchboard wired (commissioning); packing-machine AMC technician on site, trials of new packing machines | User, 18-10-2026 |
+| The daily report will be printed from Yantra; odd jobs and new installations are written on the printout by hand (decided) | User, 18-10-2026 |
 
 TBD — which equipment is under AMC, with which vendors, and the contract terms (visits per year, response time, what is covered); how breakdowns are reported and recorded today; existing PM routines;
 where the Mechanical and Electrical shops are and which sites they serve.
@@ -121,6 +141,9 @@ where the Mechanical and Electrical shops are and which sites they serve.
 | No RFID / badge cards in use for employees | User, 13-10-2026 |
 | Raspberry Pi kiosks are planned on the shop floor for operators and supervisors to log on and enter things fast | User, 13-10-2026 |
 | Kiosk locations are inside the plant, not accessible to the public | User, 13-10-2026 |
+| Sorting line: a sorting supervisor with a phone and 5–6 automatic packing machines (APK01–06 or so) whose operators have no phone; they report CIL and faults to the supervisor orally or on a paper form | User, 16-10-2026 |
+| Extrusion line: operators have a company mobile today and will get a shared kiosk or desktop, where they log in with their own account | User, 16-10-2026 |
+| The fitter on the genset round has no phone; a supervisor or engineer will be assigned to record for him | User, 18-10-2026 |
 
 TBD — headcount per role per site; shift pattern; on-call arrangement; phones
 company-issued or personal.
@@ -132,6 +155,7 @@ company-issued or personal.
 | One master store plus a few sub-stores (not necessarily one per site) | SRS draft, 12-10-2026 |
 | Storekeepers issue parts; technicians only request | SRS draft, 12-10-2026 |
 | No existing spares list or PM schedule to migrate | SRS draft, 12-10-2026 |
+| Parts: Haendle (extruder) supplies drawings with part numbers usable for ordering. Many makers give no parts list; their service engineer visits, identifies the part and quotes. Generic spares (bearings, hydraulic valves, filters) are bought by standard designation, e.g. for the hydraulic presses | User, 17-10-2026 |
 
 TBD — store names and locations; how issues are booked in OneERP today.
 
@@ -168,3 +192,9 @@ installations, major failures, rebuilds, layout changes). TBD.
 | 13-10-2026 | First unit code: `SMTW.FWMILL` |
 | 13-10-2026 | Unit codes `SMTW.MCC1`, `SMTW.MCC2` (the new extrusion line) |
 | 13-10-2026 | AMC practice recorded |
+| 16-10-2026 | Sorting-line and extrusion-line use cases: MCC1 machines, AMC vendors, extruder and roller-mill practices, how operators record readings |
+| 16-10-2026 | Pressing-shop use case: press counts and types, dies, availability, failure modes, oil condition, end-of-day readings |
+| 16-10-2026 | Drawings and know-how; forgotten machines and operator onboarding |
+| 17-10-2026 | Statutory inspections (lifts, cranes, pressure vessels, conveyors) and fire extinguishers |
+| 17-10-2026 | Parts: makers' part lists, service-engineer quotes, generic spares |
+| 18-10-2026 | Daily-report use case: genset round, EB meter readings, the electrical head's daily report, fitter without a phone |

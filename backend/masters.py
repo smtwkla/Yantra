@@ -1,13 +1,23 @@
-"""Masters module — sites, units, equipment classes and types, trades, the Team register of
-people and their roles per site (docs/steps/S001-basic-masters/1-brief.md; equipment types:
-S004; trades and Team: S010 A1; site roles: S011 A1).
+"""Masters module — sites, units, equipment classes and types, manufacturers and equipment
+models, trades, the Team register of people and their roles per site
+(docs/steps/S001-basic-masters/1-brief.md; equipment types: S004; trades and Team: S010 A1;
+site roles: S011 A1; manufacturers and models: S012).
 
 Thin shell: masters_core validates input, this module fetches, checks the
 rules that need the database, and stores.  Pooled connections are autocommit,
 so anything that checks and then writes runs in transaction() with the parent
 row locked first.
 
-Equipment types lock class → type, the order equipment.py uses (class (4), type (5)).
+Equipment types lock class → type.  Manufacturers and models lock manufacturer → model →
+class → type (S012 § 5.5), the order equipment.py also follows (model (4), class (5)):
+- model create: manufacturer → class → type → insert;
+- model reactivate: manufacturer → model → class (the model's ids, which never change,
+  read plainly first);
+- model designation edit or deactivate: the model row alone;
+- manufacturer deactivate: its row, then a plain count of its active models (a concurrent
+  model reactivate waits on the manufacturer lock);
+- class deactivate: its row, then a plain count of its active models (a concurrent model
+  create or reactivate waits on the class lock).
 People lock person → trades → the person's memberships and person_units rows → units; the
 membership insert then takes its site row through the FK (unit → site, as update_unit).
 """
@@ -19,9 +29,11 @@ from flask import Blueprint, jsonify, request
 from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import has_perm, has_perm_at, require_perm, require_perm_at
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
+from equipment_core import check_type_class
 from masters_core import (
-    no_login_role_error, normalise_username, technician_only, validate_equipment_class, validate_equipment_type,
-    validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
+    model_label, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
+    validate_equipment_model, validate_equipment_type, validate_manufacturer, validate_person, validate_site,
+    validate_site_row, validate_site_rows, validate_trade, validate_unit,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +52,10 @@ UNIQUE_KEY_ERRORS.update({
     # Migration v7 (S010, amendment A1)
     "uq_trades_name": ("name", "A trade with this name exists"),
     "uq_people_username": ("username", "Another person already has this login (it may be an inactive one)"),
+    # Migration v9 (S012)
+    "uq_manufacturers_name": ("name", "A manufacturer with this name exists"),
+    "uq_equipment_models_maker_designation": ("designation",
+                                              "This manufacturer already has a model with this designation"),
 })
 
 # is_default is 1 / NULL in the table; the API shows it as a boolean (see _site_out)
@@ -55,6 +71,12 @@ _UNIT_SELECT = (
 
 _TYPE_SELECT = (
     "SELECT t.*, c.code AS class_code FROM equipment_types t JOIN equipment_classes c ON c.id = t.class_id"
+)
+
+_MODEL_SELECT = (
+    "SELECT m.*, mf.name AS manufacturer_name, c.code AS class_code, c.name AS class_name, t.name AS type_name "
+    "FROM equipment_models m JOIN manufacturers mf ON mf.id = m.manufacturer_id "
+    "JOIN equipment_classes c ON c.id = m.class_id LEFT JOIN equipment_types t ON t.id = m.type_id"
 )
 
 _PERSON_UNITS_SELECT = (
@@ -285,6 +307,11 @@ def update_equipment_class(class_id):
         if clean.get("code", record["code"]) != record["code"] and count(
                 cur, "SELECT COUNT(*) AS n FROM equipment WHERE class_id = %s", (class_id,)):
             raise ApiError("Code is in use and cannot be changed", 409, "code")
+        # Otherwise the class could be inactive while its models still put new equipment in it
+        # (S012 § 5.2); a concurrent model create or reactivate waits on this class lock
+        if clean.get("active") == 0 and count(
+                cur, "SELECT COUNT(*) AS n FROM equipment_models WHERE class_id = %s AND active = 1", (class_id,)):
+            raise ApiError("Deactivate this class's models first", 409, "active")
         update_row(cur, "equipment_classes", class_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,)))
@@ -293,17 +320,6 @@ def update_equipment_class(class_id):
 # ---------------------------------------------------------------------------
 # Equipment types — per class (ISO 14224); the class is fixed after create
 # ---------------------------------------------------------------------------
-
-def _lock_class_for_type(cur, class_id, field):
-    """Lock the class a type is created or reactivated under: it must exist (400) and be
-    active (409).  ``field`` is class_id on create, active on reactivation."""
-    cur.execute("SELECT id, active FROM equipment_classes WHERE id = %s FOR UPDATE", (class_id,))
-    equipment_class = cur.fetchone()
-    if equipment_class is None:
-        raise ApiError("Unknown class", 400, field)
-    if not equipment_class["active"]:
-        raise ApiError("The class is inactive", 409, field)
-
 
 def _fetch_type(cur, type_id):
     return fetch_one(cur, f"{_TYPE_SELECT} WHERE t.id = %s", (type_id,))
@@ -330,7 +346,7 @@ def create_equipment_type():
     clean = clean_body(validate_equipment_type, creating=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_class_for_type(cur, clean["class_id"], "class_id")
+        _lock_active_parent(cur, "equipment_classes", clean["class_id"], "class_id", "class")
         type_id = insert_row(cur, "equipment_types", clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_type(cur, type_id)), 201
@@ -350,7 +366,7 @@ def update_equipment_type(type_id):
         if stored is None:
             raise ApiError("Not found", 404)
         if clean.get("active") == 1:
-            _lock_class_for_type(cur, stored["class_id"], "active")
+            _lock_active_parent(cur, "equipment_classes", stored["class_id"], "active", "class")
         record = _lock_row(cur, "equipment_types", type_id)
         if "class_id" in clean:
             if clean["class_id"] != record["class_id"]:
@@ -359,6 +375,143 @@ def update_equipment_type(type_id):
         update_row(cur, "equipment_types", type_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_type(cur, type_id))
+
+
+# ---------------------------------------------------------------------------
+# Manufacturers and equipment models (S012) — ISO 14224's manufacturer's name and model
+# designation.  A model belongs to one class and at most one type of it, fixed after create.
+# ---------------------------------------------------------------------------
+
+@masters_bp.route("/manufacturers")
+@require_perm("masters:read")
+def list_manufacturers():
+    where = "" if _include_inactive() else "WHERE active = 1 "
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"SELECT * FROM manufacturers {where}ORDER BY name")
+
+
+@masters_bp.route("/manufacturers", methods=["POST"])
+@require_perm("equipment:edit")
+def create_manufacturer():
+    clean = clean_body(validate_manufacturer, creating=True)
+    with get_db().cursor() as cur:
+        manufacturer_id = insert_row(cur, "manufacturers", clean, actor())
+        return jsonify(fetch_one(cur, "SELECT * FROM manufacturers WHERE id = %s", (manufacturer_id,))), 201
+
+
+@masters_bp.route("/manufacturers/<int:manufacturer_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_manufacturer(manufacturer_id):
+    """Rename (a typo: models and equipment show the new name at once), deactivate or
+    reactivate.  Deactivating needs its models deactivated first, as a site its units."""
+    clean = clean_body(validate_manufacturer, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_row(cur, "manufacturers", manufacturer_id)
+        if clean.get("active") == 0 and count(
+                cur, "SELECT COUNT(*) AS n FROM equipment_models WHERE manufacturer_id = %s AND active = 1",
+                (manufacturer_id,)):
+            raise ApiError("The manufacturer has active models; deactivate them first", 409, "active")
+        update_row(cur, "manufacturers", manufacturer_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(fetch_one(cur, "SELECT * FROM manufacturers WHERE id = %s", (manufacturer_id,)))
+
+
+def _model_out(row):
+    row["label"] = model_label(row["manufacturer_name"], row["designation"])
+    return row
+
+
+def _fetch_model(cur, model_id):
+    return _model_out(fetch_one(cur, f"{_MODEL_SELECT} WHERE m.id = %s", (model_id,)))
+
+
+def _lock_active_parent(cur, table, record_id, field, label):
+    """Lock the manufacturer or class a model is created or reactivated under: it must exist
+    (400 Unknown …) and be active (409).  ``table`` is a code constant, never client input;
+    ``field`` is the id field on create, active on reactivation."""
+    cur.execute(f"SELECT id, active FROM {table} WHERE id = %s FOR UPDATE", (record_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise ApiError(f"Unknown {label}", 400, field)
+    if not row["active"]:
+        raise ApiError(f"The {label} is inactive", 409, field)
+
+
+def _lock_type_for_model(cur, type_id, class_id):
+    """Lock the type a new model gets: a type of the model's class (400, S004), active (409)."""
+    cur.execute("SELECT id, class_id, active FROM equipment_types WHERE id = %s FOR UPDATE", (type_id,))
+    equipment_type = cur.fetchone()
+    if equipment_type is None:
+        raise ApiError("Unknown type", 400, "type_id")
+    message = check_type_class(equipment_type["class_id"], class_id)
+    if message:
+        raise ApiError(message, 400, "type_id")
+    if not equipment_type["active"]:
+        raise ApiError("The type is inactive", 409, "type_id")
+
+
+@masters_bp.route("/equipment-models")
+@require_perm("masters:read")
+def list_equipment_models():
+    conditions, params = [], []
+    if not _include_inactive():
+        conditions.append("m.active = 1")
+    for name in ("class_id", "manufacturer_id"):
+        value = _int_filter(name)
+        if value is not None:
+            conditions.append(f"m.{name} = %s")
+            params.append(value)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"{_MODEL_SELECT}{where} ORDER BY mf.name, m.designation", params,
+                              convert=_model_out)
+
+
+@masters_bp.route("/equipment-models", methods=["POST"])
+@require_perm("equipment:edit")
+def create_equipment_model():
+    clean = clean_body(validate_equipment_model, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_active_parent(cur, "manufacturers", clean["manufacturer_id"], "manufacturer_id", "manufacturer")
+        _lock_active_parent(cur, "equipment_classes", clean["class_id"], "class_id", "class")
+        if clean.get("type_id") is not None:
+            _lock_type_for_model(cur, clean["type_id"], clean["class_id"])
+        model_id = insert_row(cur, "equipment_models", clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_model(cur, model_id)), 201
+
+
+@masters_bp.route("/equipment-models/<int:model_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_equipment_model(model_id):
+    """Edit the designation (a typo), deactivate or reactivate.  The manufacturer, class and
+    type are fixed: a wrong model is deactivated and a new one created (S012 § 5.2).  An
+    inactive model stays on its equipment; it just can't be newly picked."""
+    clean = clean_body(validate_equipment_model, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        # A plain read of the fixed ids is safe (they never change) and lets the reactivation
+        # lock the manufacturer before the model: the manufacturer → model → class order
+        stored = fetch_one(cur, "SELECT manufacturer_id, class_id, type_id FROM equipment_models WHERE id = %s",
+                           (model_id,))
+        if stored is None:
+            raise ApiError("Not found", 404)
+        for field, label in (("manufacturer_id", "Manufacturer"), ("class_id", "Class"), ("type_id", "Type")):
+            if field in clean:
+                if clean[field] != stored[field]:
+                    raise ApiError(f"{label} cannot be changed", 400, field)
+                del clean[field]
+        reactivating = clean.get("active") == 1
+        if reactivating:
+            _lock_active_parent(cur, "manufacturers", stored["manufacturer_id"], "active", "manufacturer")
+        _lock_row(cur, "equipment_models", model_id)
+        if reactivating:
+            _lock_active_parent(cur, "equipment_classes", stored["class_id"], "active", "class")
+        update_row(cur, "equipment_models", model_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_model(cur, model_id))
 
 
 # ---------------------------------------------------------------------------

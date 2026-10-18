@@ -3,8 +3,8 @@
 import pytest
 
 from equipment_core import (
-    check_parent, check_status_change, check_type_class, effective_criticality, format_equipment_code,
-    full_path, tracked_changes, validate_equipment,
+    MODEL_INACTIVE, PICK_A_MODEL, check_parent, check_status_change, check_type_class, derive_from_model,
+    effective_criticality, format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 
 THIS_YEAR = 2026
@@ -23,8 +23,8 @@ def _update(stored_level="equipment", stored_code="VBM001", **data):
                               stored={"code": stored_code, "level": stored_level})
 
 
-EQUIPMENT = {"level": "equipment", "unit_id": 1, "class_id": 2, "name": "Vertical blade mill"}
-PART = {"level": "component", "parent_id": 5, "class_id": 2, "name": "Motor"}
+EQUIPMENT = {"level": "equipment", "unit_id": 1, "model_id": 2, "name": "Vertical blade mill"}
+PART = {"level": "component", "parent_id": 5, "model_id": 2, "name": "Motor"}
 
 
 class TestFormatCode:
@@ -85,10 +85,34 @@ class TestCheckTypeClass:
         assert check_type_class(4, 5) == "This type belongs to another class"
 
 
+class TestDeriveFromModel:
+    """S012 § 5.3: the class and type come from the model."""
+
+    GA37 = {"id": 7, "class_id": 3, "type_id": 11, "active": 1}
+
+    def test_create_takes_class_and_type_from_the_model(self):
+        assert derive_from_model(None, self.GA37) == (3, 11, None)
+
+    def test_a_model_without_a_type_gives_none(self):
+        assert derive_from_model(None, {**self.GA37, "type_id": None}) == (3, None, None)
+
+    def test_a_newly_picked_inactive_model_is_refused(self):
+        inactive = {**self.GA37, "active": 0}
+        assert derive_from_model(None, inactive)[2] == MODEL_INACTIVE == "This model is inactive"
+        assert derive_from_model(5, inactive)[2] == MODEL_INACTIVE
+
+    def test_an_unchanged_inactive_model_is_kept(self):
+        assert derive_from_model(7, {**self.GA37, "active": 0}) == (3, 11, None)
+
+    def test_a_model_whose_type_is_inactive_can_be_picked(self):
+        # The model row carries no type state: the model's own flag decides (BR1-06)
+        assert derive_from_model(None, self.GA37)[2] is None
+
+
 def _state(**overrides):
-    base = {"level": "equipment", "full_path": "S.U.VBM001", "class_code": "VBM", "type_name": None,
-            "criticality": "C", "status": "in_service", "name": "Mill", "make": "X", "year": 2020,
-            "notes": None}
+    base = {"level": "equipment", "full_path": "S.U.VBM001", "model_label": "Atlas Copco GA37", "class_code": "VBM",
+            "type_name": None, "criticality": "C", "status": "in_service", "name": "Mill", "serial_no": "X",
+            "year": 2020, "notes": None}
     return {**base, **overrides}
 
 
@@ -98,9 +122,10 @@ class TestTrackedChanges:
         assert tracked_changes(_state(), _state()) == []
 
     def test_untracked_fields_give_no_event(self):
-        assert tracked_changes(_state(), _state(name="Mill 2", make="Y", year=2021)) == []
+        assert tracked_changes(_state(), _state(name="Mill 2", serial_no="Y", year=2021)) == []
 
     @pytest.mark.parametrize("field, old, new, event", [
+        ("model_label", "Atlas Copco GA37", "Atlas Copco GA55", "model"),
         ("class_code", "VBM", "HP", "class"),
         ("criticality", "C", "A", "criticality"),
         ("status", "in_service", "standby", "status"),
@@ -143,6 +168,13 @@ class TestTrackedChanges:
         after = _state(class_code="HP", type_name="Standard")
         assert tracked_changes(before, after) == [("class", "RPP", "HP")]
 
+    def test_a_model_of_another_class_and_type_gives_three_events(self):
+        before = _state(model_label="Atlas Copco GA37", class_code="CMP", type_name="Screw compressor")
+        after = _state(model_label="Haendle VAH-600", class_code="EXT", type_name=None)
+        assert tracked_changes(before, after) == [
+            ("model", "Atlas Copco GA37", "Haendle VAH-600"), ("class", "CMP", "EXT"),
+            ("type", "Screw compressor", "none")]
+
     def test_notes_change_gives_no_event(self):
         assert tracked_changes(_state(), _state(notes="Mounted on the\nleft side")) == []
 
@@ -168,28 +200,28 @@ class TestCheckStatusChange:
 class TestValidateCreate:
 
     def test_equipment_happy_path_defaults_criticality_c(self):
-        clean, errors = _create(**EQUIPMENT, make="  Kirloskar ", serial_no="")
+        clean, errors = _create(**EQUIPMENT, serial_no="")
         assert errors == []
-        assert clean == {"level": "equipment", "unit_id": 1, "class_id": 2, "name": "Vertical blade mill",
-                         "make": "Kirloskar", "serial_no": None, "criticality": "C"}
+        assert clean == {"level": "equipment", "unit_id": 1, "model_id": 2, "name": "Vertical blade mill",
+                         "serial_no": None, "criticality": "C"}
 
     def test_part_happy_path_inherits(self):
         clean, errors = _create(**PART)
         assert errors == []
-        assert clean == {"level": "component", "parent_id": 5, "class_id": 2, "name": "Motor"}
+        assert clean == {"level": "component", "parent_id": 5, "model_id": 2, "name": "Motor"}
 
     @pytest.mark.parametrize("level, missing", [
-        ("equipment", ["class_id", "name", "unit_id"]),
-        ("component_unit", ["class_id", "name", "parent_id"]),
-        ("component", ["class_id", "name", "parent_id"]),
+        ("equipment", ["model_id", "name", "unit_id"]),
+        ("component_unit", ["model_id", "name", "parent_id"]),
+        ("component", ["model_id", "name", "parent_id"]),
     ])
     def test_required_fields_per_level(self, level, missing):
         _, errors = _create(level=level)
         assert sorted(_fields(errors)) == missing
 
     def test_level_is_required_and_an_enum(self):
-        assert _fields(_create(class_id=1, name="x")[1]) == ["level"]
-        assert _fields(_create(level="assembly", class_id=1, name="x")[1]) == ["level"]
+        assert _fields(_create(model_id=1, name="x")[1]) == ["level"]
+        assert _fields(_create(level="assembly", model_id=1, name="x")[1]) == ["level"]
 
     def test_unit_on_a_part_is_400(self):
         _, errors = _create(**PART, unit_id=1)
@@ -208,8 +240,9 @@ class TestValidateCreate:
         assert errors == [] and "code" not in clean
 
     @pytest.mark.parametrize("field, value", [
-        ("status", "broken"), ("criticality", "D"), ("criticality", "a"), ("class_id", "2"),
-        ("class_id", True), ("unit_id", 0), ("make", 5), ("make", "x" * 101), ("name", "  "),
+        ("status", "broken"), ("criticality", "D"), ("criticality", "a"), ("model_id", "2"),
+        ("model_id", True), ("model_id", 0), ("unit_id", 0), ("serial_no", 5), ("serial_no", "x" * 101),
+        ("name", "  "),
     ])
     def test_bad_values(self, field, value):
         _, errors = _create(**{**EQUIPMENT, field: value})
@@ -240,22 +273,32 @@ class TestValidateCreate:
         assert errors == [] and clean["criticality"] is None
 
 
-class TestTypeAndNotes:
+class TestModelAndRefusedFields:
+    """S012 § 5.3 rules 1 and 6, § 5.4."""
 
-    def test_type_id_is_an_id(self):
-        clean, errors = _create(**EQUIPMENT, type_id=7)
-        assert errors == [] and clean["type_id"] == 7
+    def test_a_model_is_required_on_create_with_its_own_message(self):
+        body = {key: value for key, value in EQUIPMENT.items() if key != "model_id"}
+        for data in (body, {**body, "model_id": None}):
+            _, errors = _create(**data)
+            assert errors == [{"field": "model_id", "message": PICK_A_MODEL}]
+        assert PICK_A_MODEL == "Pick a model"
 
-    @pytest.mark.parametrize("type_id", [0, "7", True, 1.5])
-    def test_bad_type_id(self, type_id):
-        assert _fields(_create(**EQUIPMENT, type_id=type_id)[1]) == ["type_id"]
+    def test_a_model_may_be_left_out_on_update_but_not_cleared(self):
+        assert _update(name="x") == ({"name": "x"}, [])
+        assert _update(model_id=9) == ({"model_id": 9}, [])
+        assert _update(model_id=None)[1] == [{"field": "model_id", "message": PICK_A_MODEL}]
 
-    def test_null_type_is_dropped_on_create(self):
-        clean, errors = _create(**EQUIPMENT, type_id=None)
-        assert errors == [] and "type_id" not in clean
-
-    def test_null_type_is_kept_on_update(self):
-        assert _update(type_id=None) == ({"type_id": None}, [])
+    @pytest.mark.parametrize("field, message", [
+        ("make", "Make and model are now picked from Models"),
+        ("model", "Make and model are now picked from Models"),
+        ("class_id", "Class and type come from the model"),
+        ("type_id", "Class and type come from the model"),
+    ])
+    @pytest.mark.parametrize("value", [None, 2, "Kirloskar"])
+    def test_old_fields_are_refused_even_as_null(self, field, message, value):
+        expected = [{"field": field, "message": message}]
+        assert _create(**EQUIPMENT, **{field: value})[1] == expected
+        assert _update(**{field: value})[1] == expected
 
     @pytest.mark.parametrize("raw", ["", "   ", "\n \n", None])
     def test_empty_notes_become_null(self, raw):

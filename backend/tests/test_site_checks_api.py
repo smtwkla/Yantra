@@ -17,13 +17,15 @@ REMOVED = f"{EQUIPMENT}/removed-documents"
 
 
 @pytest.fixture
-def world(make_site, make_unit, make_equipment, make_class):
+def world(make_site, make_unit, make_equipment, make_class, make_model):
     site_a, site_b = make_site(), make_site()
     unit_a, unit_b = make_unit(site_a), make_unit(site_b)
     cls = make_class()
+    model = make_model(cls=cls)
     return {
-        "site_a": site_a, "site_b": site_b, "unit_a": unit_a, "unit_b": unit_b, "cls": cls,
-        "mill_a": make_equipment(unit=unit_a, cls=cls), "mill_b": make_equipment(unit=unit_b, cls=cls),
+        "site_a": site_a, "site_b": site_b, "unit_a": unit_a, "unit_b": unit_b, "cls": cls, "model": model,
+        "other_model": make_model(),   # of another class
+        "mill_a": make_equipment(unit=unit_a, model=model), "mill_b": make_equipment(unit=unit_b, model=model),
     }
 
 
@@ -49,22 +51,25 @@ class TestEquipmentWrites:
     def test_read_at_b(self, user, world):
         assert user.get(f"{EQUIPMENT}/{world['mill_b']['id']}").status_code == 200
 
-    @pytest.mark.parametrize("body", [{"status": "standby"}, {"notes": "Bearing 6205"}, {"type_id": None},
+    @pytest.mark.parametrize("body", [{"status": "standby"}, {"notes": "Bearing 6205"}, {"model_id": "other"},
                                       {"criticality": "A"}])
-    def test_status_notes_type_at_b(self, user, world, body):
+    def test_status_notes_model_at_b(self, user, world, body):
+        if body.get("model_id") == "other":
+            # A model of another class: a reclassification, refused at B (BR3-03)
+            body = {"model_id": world["other_model"]["id"]}
         _refused_at(user.put(f"{EQUIPMENT}/{world['mill_b']['id']}", json=body), world["site_b"])
 
     def test_create_in_a_unit_at_b(self, user, world):
         res = user.post(EQUIPMENT, json={"level": "equipment", "unit_id": world["unit_b"]["id"],
-                                         "class_id": world["cls"]["id"], "name": "x"})
+                                         "model_id": world["model"]["id"], "name": "x"})
         _refused_at(res, world["site_b"], "unit_id")
         res = user.post(EQUIPMENT, json={"level": "equipment", "unit_id": world["unit_a"]["id"],
-                                         "class_id": world["cls"]["id"], "name": "x"})
+                                         "model_id": world["model"]["id"], "name": "x"})
         assert res.status_code == 201
 
     def test_part_under_a_parent_at_b(self, user, world):
         res = user.post(EQUIPMENT, json={"level": "component", "parent_id": world["mill_b"]["id"],
-                                         "class_id": world["cls"]["id"], "name": "x"})
+                                         "model_id": world["model"]["id"], "name": "x"})
         _refused_at(res, world["site_b"], "parent_id")
 
     def test_move_between_sites(self, user, world):

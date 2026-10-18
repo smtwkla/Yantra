@@ -208,7 +208,7 @@ function openNode(id) {
       <select v-model="levelModel" class="form-select form-select-sm w-auto" aria-label="Level">
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
-      <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, notes…" aria-label="Search" />
+      <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, model, notes…" aria-label="Search" />
       <button v-if="canEdit" class="btn btn-sm btn-primary ms-auto" @click="formModal.openCreateEquipment()">
         <i class="fa-solid fa-plus me-1"></i>Add equipment
       </button>
@@ -233,7 +233,7 @@ function openNode(id) {
       <table class="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
-            <th>Code</th><th>Name</th><th>Class</th><th>{{ level === "equipment" ? "Unit" : "Path" }}</th>
+            <th>Code</th><th>Name</th><th>Class</th><th>Model</th><th>{{ level === "equipment" ? "Unit" : "Path" }}</th>
             <th>Crit.</th><th>Status</th><th class="text-end">Parts</th>
           </tr>
         </thead>
@@ -249,6 +249,8 @@ function openNode(id) {
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>
             <td>{{ e.class_code }}<span v-if="e.type_name" class="text-secondary"> · {{ e.type_name }}</span></td>
+            <!-- So a row found by "GA37" shows why (S012) -->
+            <td>{{ e.model_label }}</td>
             <td>{{ level === "equipment" ? e.unit : e.full_path }}</td>
             <td><CriticalityBadge :grade="e.effective_criticality" /></td>
             <td><StatusBadge :status="e.status" /></td>
