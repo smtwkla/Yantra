@@ -249,7 +249,9 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | In code review (approved 17-10-2026; on top of c486a4a) | 16-10-2026 |
 | S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | In code review (approved 18-10-2026; on top of 3e338b4; A1 approved 18-10-2026 — one row per sighting per day) | 18-10-2026 |
 | S014 | [QR labels](S014-qr-labels/1-brief.md) — 52 mm labels on A4 paper, 15 per sheet; link `/e/<code>` opens the equipment page; link address in Settings | 2 | In code review (approved 18-10-2026; on top of uncommitted S013) | 18-10-2026 |
-| S022 | [Software inventory and vulnerability check](S022-dependency-inventory/1-brief.md) — CycloneDX SBOMs in `sbom/` from the lockfiles; OSV lookup for CVEs; stale direct dependencies | — | Approved (18-10-2026; full track; baseline c2c45d2 + uncommitted S013, S014) | 18-10-2026 |
+| S015 | [Printable asset list](S015-asset-list/1-brief.md) — per site / unit, one page per unit; parts optional; checklist columns and signature footer optional | 2 | Approved (20-10-2026; light track; baseline a2190f3 + uncommitted S022) | 18-10-2026 |
+| S016 | [Failure codes](S016-failure-codes/1-brief.md) — failure modes (symptoms, per class or general), causes in ISO groups, maintenance actions; pre-filled from ISO 14224 Annex B | 3 | Approved 20-10-2026, not coded (full track; baseline a2190f3) | 18-10-2026 |
+| S022 | [Software inventory and vulnerability check](S022-dependency-inventory/1-brief.md) — CycloneDX SBOMs in `sbom/` from the lockfiles; OSV lookup for CVEs; stale direct dependencies | — | In code review (approved 18-10-2026; full track; baseline 167e178 after stale check s1) | 18-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -258,8 +260,6 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 
 | Idea | From | Note |
 |---|---|---|
-| **S015** Printable asset list per site / unit, for audit and stock verification | user, 17-10-2026; ID assigned | Then phase 3 (breakdowns and defects) |
-| **S016** Failure codes — failure mode (symptom, scoped by class), cause, action; ISO 14224 Annex B; engineers maintain | phase 3 plan, user 18-10-2026 | Press class first (pilot) |
 | **S017** Raise and see tickets — breakdown or defect by intensity; equipment, component, symptom, description, reported by, photo, event time; open-tickets list by unit; ticket page with timeline | phase 3 plan, user 18-10-2026 | Decide: serial prefix (`BD-` or neutral) |
 | **S018** Work the ticket — acknowledge, in progress, back in service (production too), close with cause/action codes; labour rows; frivolous close; send back; downtime, response, repair times | phase 3 plan, user 18-10-2026 | Decide: operator reopen "not fixed" (Plan.MD Q4) |
 | **S019** Deferred work — scheduled state, planned date, waiting reason; planned vs breakdown downtime; waiting split on critical tickets | phase 3 plan, user 18-10-2026 | Plan.MD Q13; meter-value targets wait for phase 4 |

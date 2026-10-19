@@ -22,6 +22,7 @@ Conventions:
 | Sree Murugan Tile Works (SMTW), manufacturing, India — a partnership firm | SRS draft 12-10-2026; user 13-10-2026 |
 | Partners: Lakshmi Anand Kaliappan (the project owner), Mithunvel K L | User, 13-10-2026 |
 | Established 01-04-1958 (the plant is close to 70 years old) | User, 13-10-2026 |
+| CARO 2020 (auditor's report on physical verification of fixed assets) does not apply to the businesses | User, 20-10-2026 |
 | Main factory and working head office: SMTW, 10/712, Surandai Road, Pavoorchatram | User, 13-10-2026 |
 | Registered head office: 10/710, Surandai Road, Pavoorchatram — a formal office only, no operations | User, 13-10-2026 |
 | **VEL** is the combined org unit (SMTW with its sites and SSVT) for which Yantra is implemented — hence deployment ID `vel_yantra_master` | User, 13-10-2026 |

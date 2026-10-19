@@ -387,6 +387,11 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Red tag | An abnormality needing maintenance — in Yantra, a breakdown ticket |
 | Intensity | How bad a ticket's problem is: critical / degraded / initial (ISO 14224 failure impact) |
 | Breakdown | An unplanned failure that needs repair (ticket `BD-YYYY-MM-NNN`) |
+| Failure mode | How a failure is seen — the operator's "symptom" (ISO 14224), per equipment class or General |
+| Failure cause | Why it failed: the circumstances in design, manufacture or use that led to it (ISO 14224) |
+| Cause group | ISO 14224's five groups of causes: design, fabrication / installation, operation / maintenance, management, miscellaneous |
+| Failure mechanism | The physical process of the failure: wear, corrosion, short circuit (ISO 14224) — not recorded in v1 |
+| Maintenance action | What was done: replace, repair, adjust, check, … (ISO 14224 maintenance activity) |
 | PM | Preventive maintenance — planned work from a PM plan (job `PM-YYYY-MM-NNN`) |
 | Equipment class | What a piece of equipment is (hydraulic press, ball mill, …) |
 | Equipment type | How equipment of a class is built, e.g. a radial piston pump in closed or open execution (ISO 14224 type within class) |

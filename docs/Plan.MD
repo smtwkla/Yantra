@@ -118,6 +118,7 @@ with each module. First cut of the main keys:
 | `access_log:view` | | | | | ✓ | ✓ |
 | `people:edit` | | | | ✓ | ✓ | ✓ |
 | `people:assign_technicians` | | | | ✓ | ✓ | ✓ |
+| `failure_codes:edit` | | | | ✓ | ✓ | ✓ |
 
 Site-scoped keys (`config_rbac.SITE_SCOPED`: `equipment:read`, `equipment:edit`,
 `equipment:purge_documents`, `people:assign_technicians`, and every later breakdown,
@@ -141,6 +142,9 @@ any person; roles above Technician stay IT admin's (ISO 27001 A.5.18 lets the
 information owner grant, A.8.2 least privilege). Engineers see a person's site rows
 when the person has no login, and of a person with a login only the rows at their
 own sites.
+`failure_codes:edit` (S016, approved 20-10-2026) — engineers (and so the manager) and
+IT admin — maintains the failure modes, causes and maintenance actions. Global, not
+site-scoped: the lists are the same at every site.
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -226,6 +230,12 @@ CIL jobs at their units and nothing else.
   unregistered machines found on the walk are added. ISO 55002 recommends periodic physical
   verification (the accounting fixed-asset audit is the same walk). Cheap: labels and unit
   lists exist.
+- **Printable asset list** (S015, decided 20-10-2026): the paper form of the verification
+  walk until the rounds exist. From the equipment list's filters, one A4 portrait section
+  per unit; the filters choose machines, parts optional (indented, following their machine);
+  an optional checklist (Found, Remarks, signature footer for maintenance and accounts).
+  The Yantra code and serial number identify the item; no accounts asset number. Print
+  only, no export. CARO 2020 does not apply to the businesses.
 - **Document kinds** (*Proposed*, 16-10-2026, pressing-shop use case): a document's kind
   becomes a short pick-list — hydraulic diagram, electrical diagram, manual, parts list,
   certificate, photo, other — instead of document / photo. Then a **missing-drawings list**
@@ -312,7 +322,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   stuck on", … Tickets point at the **component** (unloading valve, transducer, relay board,
   door sensor), so chronic problems are visible per component (§ 4.6).
 - **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Scale (decided 15-10-2026), from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **initial** (still fine, early signs; ISO 14224 calls it *incipient*). Only critical time counts as downtime.
-- **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below).
+- **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below). **S016 (approved 20-10-2026):** three masters, pre-filled from Annex B with ISO's codes and plain-word labels. A failure mode belongs to **one equipment class or is General**; the picker shows the class of the ticket's equipment (level 6, even when the ticket is on a component) plus General — checked in the API, since a General mode has no class. A cause carries one of ISO's five **cause groups** (design, fabrication / installation, operation / maintenance, management, miscellaneous), so the plant's own causes roll up the ISO way; the group stays editable once in use. A code is frozen once a ticket uses it (added by S017/S018). *Later:* failure mechanism as a fourth list, if technicians keep writing mechanisms ("worn", "contaminated") as causes.
 - **No approval step:** a raised ticket goes straight to maintenance. If it turns out frivolous, the engineer **closes it directly** from raised or acknowledged, with a required code (e.g. *no fault found*, *not a breakdown*) and remarks.
 - **Parts used** (*Proposed*, 17-10-2026, parts use case): a structured line on tickets and
   PM jobs — part number, description, quantity, maker if any — replacing "action *replaced* plus
@@ -563,7 +573,9 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `verification_rounds`, `verification_items` | *Proposed* (§ 4.1): a walk per unit; per equipment confirmed / not found, who, when |
 | `pm_routes`, `pm_route_plans` | *Proposed* (§ 4.3): a named walk — performer, the plans it covers in order; jobs stay one per equipment |
 | `equipment_documents` | Files attached to equipment or to an equipment model (exactly one owner, S012): kind (document / photo; a pick-list of kinds is proposed, § 4.1), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
-| `codes` | Symptom / cause / action pick-lists (`kind`, code, label, active) |
+| `failure_modes` | Symptoms (S016): code, label, description, class (NULL = General), active |
+| `failure_causes` | Causes (S016): code, label, description, ISO cause group, active |
+| `maintenance_actions` | Actions (S016): code, label, description, active |
 | `breakdowns` | Ticket (breakdown or defect, by intensity): equipment, component, state, intensity, codes, remarks, serial, source |
 | `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |
 | `breakdown_labour` | Person, trade worked and time spent per ticket |
@@ -643,7 +655,7 @@ these rungs need a year of coded tickets and readings first.
 2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
 4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). Whether the operator can mark "not fixed" to reopen the ticket is settled with the phase 3 brief.
-5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class.
+5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class. *Scoped by class (one class or General) from S016, approved 20-10-2026.*
 6. **Template edits:** when a PM template changes, do plans created from it update, or keep their copy until re-applied?
 7. ~~**Unit access upkeep**~~ Decided 13-10-2026: IT admin maintains users' unit lists (and sites and units) — `masters:edit`.
 8. ~~**CIL shifts**~~ Superseded: CIL is per equipment, before use or by frequency (§ 4.4); missed before-use detection is deferred.
