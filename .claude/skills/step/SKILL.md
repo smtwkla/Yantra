@@ -176,8 +176,15 @@ brief's header (`Track: light | full`) and in the index row.
 `/step ls` builds the table fresh from the step files and git every time; it
 is never stored, so it can't go stale. Columns:
 
-`Step | Title | Stage | Committed? | Remarks`
+`  | Step | Title | Stage | Committed? | Remarks`
 
+- **Bulb** (first column, no header): whose move it is.
+  - 🟢 **the user's**: a gate is waiting: approve a brief or amendment (gate
+    A), answer a question Claude raised, run the manual checks or commit
+    (gate B), or confirm the commit so the step can be set `Done`;
+  - 🟡 **Claude's**: a brief or code review is due or running, findings are to
+    be answered or fixed, or an approved step is ready for `/step implement`;
+  - blank: queued, `Done` or `Dropped`; nothing to do now.
 - **Step, Title**: from the index in `docs/steps/README.md`, then its
   "Queued" table (queued items with a step ID only; ideas without one are left
   out). Order by step ID.
