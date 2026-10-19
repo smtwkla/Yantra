@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-reviews r1 and r2, and for portability, U1)
 Track: full (switched from light after BR1-01, a major finding)
-Baseline: c2c45d2 + uncommitted S013, S014
-Status: Approved 18-10-2026 by KLA
+Baseline: 167e178 (stale brief check s1, 18-10-2026: no findings)
+Status: In code review (approved 18-10-2026 by KLA)
 ```
 
 # S022 — Software inventory and vulnerability check
@@ -348,3 +348,9 @@ the loop ends here.
 | BR3-03 log rows describe superseded mechanisms | nit | **Accepted**: BR1-04, BR2-01, BR2-05 rows updated |
 | BR3-04 name collisions; listed lockfile missing on disk | nit | **Accepted**: both → exit 2 naming the files (§ 5.1) |
 | BR3-05 `npx` only when needed; meaning of "runtime" | nit | **Accepted** (§ 3, § 5.2) |
+
+### Stale brief check s1 — `2-brief-review-s1.md` (Fable), 18-10-2026
+
+Before coding. Changed since the baseline: S014's `qrcode` in `backend/uv.lock` and
+`backend/pyproject.toml` (already in the reviewed tree, then uncommitted). No findings;
+`Baseline:` set to 167e178.

@@ -1,0 +1,40 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "library",
+      "bom-ref": "yantra-1@0.1.0",
+      "name": "yantra",
+      "version": "0.1.0",
+      "properties": [
+        {
+          "name": "uv:package:is_project_root",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "python-dotenv-2@1.2.4",
+      "name": "python-dotenv",
+      "version": "1.2.4",
+      "purl": "pkg:pypi/python-dotenv@1.2.4"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "python-dotenv-2@1.2.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "yantra-1@0.1.0",
+      "dependsOn": [
+        "python-dotenv-2@1.2.4"
+      ]
+    }
+  ]
+}
