@@ -3,6 +3,7 @@
 - validate_keycloak_token() — decode Bearer JWT via Keycloak JWKS
 - require_auth()            — before_request handler, populates g.user (no DB access)
 - require_perm(key)         — route decorator, 403 unless the key is held somewhere
+- check_perm(key)           — the same 403, raised inside a route whose key depends on its arguments
 - has_perm(key)             — inline boolean check for field masking ("held somewhere")
 - has_perm_at(key, site_id) / require_perm_at(...) — a site-scoped key at one site (S011)
 - permissions_at_site(site_id) — every key the user holds at one site
@@ -415,6 +416,18 @@ def user_unit_ids(perm_key):
     return access_core.unit_ids_for(perm_key, user["roles"], memberships, units, own)
 
 
+def _log_denied(perm_key):
+    user = getattr(g, "user", None) or {}
+    role = access_core.display_role(user.get("roles", []), _cached_memberships()) if user else "?"
+    logger.warning("Permission denied: %s requires '%s' (user=%s, role=%s)",
+                   request.path, perm_key, user.get("username", "?"), role)
+    g.access_outcome, g.access_detail = "denied_perm", perm_key
+
+
+def _forbidden_message(perm_key):
+    return f"Forbidden: requires '{perm_key}'"
+
+
 def require_perm(perm_key):
     """Route decorator — returns 403 if the user lacks the permission everywhere.
     Place immediately after @bp.route().  Site-scoped keys are checked again at the
@@ -424,12 +437,17 @@ def require_perm(perm_key):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             if not has_perm(perm_key):
-                user = getattr(g, "user", None) or {}
-                role = access_core.display_role(user.get("roles", []), _cached_memberships()) if user else "?"
-                logger.warning("Permission denied: %s requires '%s' (user=%s, role=%s)",
-                               request.path, perm_key, user.get("username", "?"), role)
-                g.access_outcome, g.access_detail = "denied_perm", perm_key
-                return jsonify({"error": f"Forbidden: requires '{perm_key}'"}), 403
+                _log_denied(perm_key)
+                return jsonify({"error": _forbidden_message(perm_key)}), 403
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+def check_perm(perm_key):
+    """require_perm inside a route, for a key that depends on the route's arguments
+    (documents.py: each owner names its keys, S017 § 5.5): the same 403, raised."""
+    from api_common import ApiError
+    if not has_perm(perm_key):
+        _log_denied(perm_key)
+        raise ApiError(_forbidden_message(perm_key), 403)

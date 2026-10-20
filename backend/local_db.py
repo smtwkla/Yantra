@@ -486,6 +486,69 @@ _MIGRATIONS = [
             ('11', 'Combination', 'Several of the above', 'migration-v11'),
             ('12', 'Other', 'Other action', 'migration-v11')""",
     ]),
+    # Tickets (S017): one record per problem found on equipment, a breakdown (critical) or a
+    # defect (degraded, initial) — EN 13460's work request, ISO 14224's failure record.
+    # equipment_id is always the machine; component_id the component-unit or component it
+    # was raised on, when lower.  unit_id is the machine's unit at raise, kept when it moves.
+    # The intensity ENUM's order puts critical first in ORDER BY; state holds S018's whole set
+    # so S018 adds no ENUM change.  ticket_events is the timeline S018's figures come from.
+    # Ticket photos are a third owner of equipment_documents: the v9 owner CHECK is dropped and
+    # re-added under the same name, so a re-run of v9 (its ADD … IF NOT EXISTS) stays a no-op
+    # instead of bringing the two-owner rule back beside this one (S017 BR2-01).
+    # Every statement is safe to run twice, as in v5.
+    (12, "Tickets, ticket events, ticket photos", [
+        """CREATE TABLE IF NOT EXISTS tickets (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            serial          VARCHAR(16) NOT NULL,
+            equipment_id    INT NOT NULL,
+            component_id    INT NULL,
+            unit_id         INT NOT NULL,
+            intensity       ENUM('critical','degraded','initial') NOT NULL,
+            state           ENUM('raised','acknowledged','in_progress','back_in_service','closed')
+                            NOT NULL DEFAULT 'raised',
+            failure_mode_id INT NULL,
+            description     VARCHAR(1000) NULL,
+            reported_by_id  INT NULL,
+            occurred_at     DATETIME NOT NULL,
+            source          ENUM('manual') NOT NULL DEFAULT 'manual',
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_tickets_serial UNIQUE (serial),
+            KEY ix_tickets_unit_state (unit_id, state),
+            KEY ix_tickets_equipment_state (equipment_id, state),
+            KEY ix_tickets_component_state (component_id, state),
+            CONSTRAINT fk_tickets_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_tickets_component FOREIGN KEY (component_id) REFERENCES equipment (id),
+            CONSTRAINT fk_tickets_unit FOREIGN KEY (unit_id) REFERENCES units (id),
+            CONSTRAINT fk_tickets_failure_mode FOREIGN KEY (failure_mode_id) REFERENCES failure_modes (id),
+            CONSTRAINT fk_tickets_reported_by FOREIGN KEY (reported_by_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS ticket_events (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id   INT NOT NULL,
+            event       VARCHAR(30) NOT NULL,
+            from_state  VARCHAR(20) NULL,
+            to_state    VARCHAR(20) NULL,
+            occurred_at DATETIME NOT NULL,
+            intensity   ENUM('critical','degraded','initial') NULL,
+            person_id   INT NULL,
+            remark      VARCHAR(1000) NULL,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            KEY ix_ticket_events_ticket (ticket_id, occurred_at, id),
+            CONSTRAINT fk_ticket_events_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id),
+            CONSTRAINT fk_ticket_events_person FOREIGN KEY (person_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        "ALTER TABLE equipment_documents ADD COLUMN IF NOT EXISTS ticket_id INT NULL AFTER model_id",
+        "ALTER TABLE equipment_documents ADD INDEX IF NOT EXISTS ix_equipment_documents_ticket (ticket_id, removed_at)",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT fk_equipment_documents_ticket FOREIGN KEY IF NOT EXISTS
+            (ticket_id) REFERENCES tickets (id)""",
+        "ALTER TABLE equipment_documents DROP CONSTRAINT IF EXISTS chk_equipment_documents_owner",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+            CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL) = 1)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

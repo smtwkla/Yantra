@@ -75,6 +75,17 @@ def update_row(cur, table, record_id, clean, actor):
                 [*clean.values(), actor, record_id])
 
 
+def next_counter(cur, scope):
+    """Bump the serial_counters row ``scope`` and read it back on the same connection, inside
+    the caller's transaction -> the new number.  The row stays locked until the commit, and
+    a failed write rolls the bump back, so failures leave no gaps (equipment codes, ticket
+    serials)."""
+    cur.execute("INSERT INTO serial_counters (scope, last_value) VALUES (%s, 1) "
+                "ON DUPLICATE KEY UPDATE last_value = last_value + 1", (scope,))
+    cur.execute("SELECT last_value FROM serial_counters WHERE scope = %s", (scope,))
+    return cur.fetchone()["last_value"]
+
+
 def count(cur, sql, params):
     """Run a ``SELECT COUNT(*) AS n …`` and return n."""
     cur.execute(sql, params)

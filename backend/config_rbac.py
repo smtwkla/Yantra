@@ -50,9 +50,13 @@ SITE_ROLES = (
     "maint_storekeeper",
 )
 
-# The one role an engineer may give at their site, and the one a person without a login
-# may hold (S011 A1, user decisions at gate A)
+# The one role an engineer may give at their site (S011 A1, user decision at gate A)
 TECHNICIAN_ROLE = "maint_technician"
+
+# The roles a person without a login may hold (S017 user decision 5, changing S011 A1's
+# "technician only"): such a row grants nothing, it places the person at the site's units for
+# the pick-lists (a ticket's reported-by, S018's labour).  Only IT admin sets an Operator row.
+NO_LOGIN_ROLES = (TECHNICIAN_ROLE, "maint_operator")
 
 # Roles that may use Yantra from the plant network only (S013 network gate): a deny list, a
 # deliberate departure from the base pattern's access:wan allow list, because a person can hold
@@ -64,7 +68,8 @@ INTERNAL_ONLY_ROLES = ("it_admin",)
 
 # Role inheritance — a role automatically gains all permissions of included roles.
 # Maintenance is a ladder: manager ⊇ engineer ⊇ technician ⊇ maint_operator.
-# it_admin stands apart: housekeeping and settings, not maintenance work.
+# it_admin stands apart: housekeeping and settings, not maintenance work — with one
+# exception, tickets (S017 user decision 7: IT admin may read and raise them).
 # maint_storekeeper stands apart too: issuing stock is not part of the
 # maintenance ladder. No v1 permissions beyond '*' — spares come later.
 # maint_supervisor is production-side (TPM autonomous maintenance): above the operator,
@@ -87,6 +92,13 @@ PERMISSIONS = {
     # Removed documents (S008): list them, restore one, delete one for good.  Senior roles
     # only: engineers remove, but do not bring back or erase (ISO 27001 A.5.3, A.8.2).
     "equipment:purge_documents": ("maint_manager", "it_admin"),
+
+    # Tickets (S017) — one ticket for every problem found on equipment, a breakdown or a
+    # defect (Plan.MD § 4.2).  Granted to the operator, so the maintenance ladder and the
+    # supervisor inherit them.  IT admin holds them too (user decision 7, 20-10-2026), a
+    # departure from "maintenance work is not IT admin's"; the storekeeper holds neither.
+    "ticket:read": ("maint_operator", "it_admin"),
+    "ticket:raise": ("maint_operator", "it_admin"),
 
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
@@ -116,10 +128,12 @@ PERMISSIONS = {
 }
 
 # Keys checked at the record's site (has_perm_at, accessible_unit_ids).  Every later
-# breakdown, PM, reading and report key joins this list.  A key not listed here is global.
+# ticket, PM, reading and report key joins this list.  A key not listed here is global.
 SITE_SCOPED = frozenset({
     "equipment:read",
     "equipment:edit",
     "equipment:purge_documents",
     "people:assign_technicians",
+    "ticket:read",
+    "ticket:raise",
 })

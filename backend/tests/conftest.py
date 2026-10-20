@@ -94,7 +94,7 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "people", "trades", "equipment_documents",
+_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "people", "trades", "ticket_events", "equipment_documents", "tickets",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
 
@@ -419,6 +419,48 @@ def db_rows():
         finally:
             conn.close()
     return query
+
+
+# ---------------------------------------------------------------------------
+# Failure modes and tickets (S016, S017; shared by the failure-code, ticket, document and
+# equipment tests)
+# ---------------------------------------------------------------------------
+
+TICKETS = "/api/tickets"
+
+
+@pytest.fixture
+def make_mode(engineer, uniq):
+    """make_mode() -> a General mode; make_mode(cls=c, label=...) to choose."""
+    def make(cls=None, **overrides):
+        body = {"code": uniq.failure_code(), "label": uniq.failure_label(), **overrides}
+        if cls is not None:
+            body["class_id"] = cls["id"]
+        res = engineer.post(f"{MASTERS}/failure-modes", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_ticket(admin):
+    """make_ticket(node) -> a critical ticket raised on the node by IT admin, with a
+    description; client= to raise as someone else, any body field to override."""
+    def make(node, client=None, **overrides):
+        body = {"equipment_id": node["id"], "intensity": "critical", "description": "Stopped", **overrides}
+        res = (client or admin).post(TICKETS, json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def set_ticket_state(db_rows):
+    """set_ticket_state(ticket, "closed"): S017 never changes a state, so tests that need a
+    closed ticket write it straight to the row."""
+    def write(ticket, state):
+        db_rows("UPDATE tickets SET state = %s WHERE id = %s", (state, ticket["id"]))
+    return write
 
 
 # ---------------------------------------------------------------------------

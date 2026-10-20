@@ -9,7 +9,7 @@ be present; for an update (``creating=False``) an absent field means
 
 import re
 
-from config_rbac import SITE_ROLES, TECHNICIAN_ROLE
+from config_rbac import NO_LOGIN_ROLES, SITE_ROLES, TECHNICIAN_ROLE
 
 SITE_CODE_RE = re.compile(r"^[A-Z][A-Z0-9-]{1,19}$")
 UNIT_CODE_RE = re.compile(r"^[A-Z0-9][A-Z0-9-]{1,19}$")
@@ -357,7 +357,7 @@ def validate_unit_ids(raw):
 # Site roles of a person (S011 A1): one role per site, all units or chosen units
 # ---------------------------------------------------------------------------
 
-NO_LOGIN_ROLE_MESSAGE = "Without a login, a person can only be a technician"
+NO_LOGIN_ROLE_MESSAGE = "Without a login, a person can only be a technician or an operator"
 
 
 def validate_site_row(body):
@@ -408,9 +408,11 @@ def validate_site_rows(raw):
 
 
 def no_login_role_error(roles):
-    """A person without a login can only be a technician (S011 A1, gate A): their site roles
-    describe them for pick-lists; everyone else logs in.  The message, or None."""
-    return NO_LOGIN_ROLE_MESSAGE if any(role != TECHNICIAN_ROLE for role in roles) else None
+    """A person without a login can only be a technician or an operator (config_rbac.
+    NO_LOGIN_ROLES; S011 A1, widened by S017 user decision 5 so the phone-less operator who
+    found a fault can be named on the ticket): their site roles describe them for pick-lists;
+    everyone else logs in.  The message, or None."""
+    return NO_LOGIN_ROLE_MESSAGE if any(role not in NO_LOGIN_ROLES for role in roles) else None
 
 
 def technician_only(stored_role, new_role):

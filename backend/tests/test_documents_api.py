@@ -496,3 +496,114 @@ class TestOwnerCheckConstraint:
                     " 'application/pdf', 1, 'test')", (equipment_id, model_id, f"chk-{uniq.username()}.pdf"))
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]
+
+
+# ---------------------------------------------------------------------------
+# Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise, photos only
+# ---------------------------------------------------------------------------
+
+def ticket_docs_url(ticket):
+    return f"/api/tickets/{ticket['id']}/documents"
+
+
+def ticket_photo(client, ticket, **kwargs):
+    return uploaded_to(client, ticket_docs_url(ticket), kind="photo", title="Leak", data=JPEG,
+                       filename="IMG_1.jpg", **kwargs)
+
+
+class TestTicketPhotos:
+
+    def test_an_operator_uploads_lists_opens_retitles_and_removes(self, at_unit, node, make_ticket, db_rows):
+        operator = at_unit("maint_operator")
+        ticket = make_ticket(node, client=operator)
+        url = ticket_docs_url(ticket)
+        photo = ticket_photo(operator, ticket)
+        assert (photo["kind"], photo["has_thumb"], photo["created_by"]) == ("photo", True,
+                                                                           operator._headers["X-Test-User"])
+        page = listed_at(operator, url)
+        assert [d["id"] for d in page["items"]] == [photo["id"]] and "inherited" not in page
+        assert operator.get(f"{url}/{photo['id']}/file").data == JPEG
+        assert operator.get(f"{url}/{photo['id']}/thumb").status_code == 200
+        stored = db_rows("SELECT stored_name, ticket_id, equipment_id FROM equipment_documents WHERE id = %s",
+                         (photo["id"],))[0]
+        assert (stored["ticket_id"], stored["equipment_id"]) == (ticket["id"], None)
+        assert owner_files("ticket", ticket["id"]) == sorted([stored["stored_name"],
+                                                              f"{stored['stored_name']}.thumb.jpg"])
+        res = operator.put(f"{url}/{photo['id']}", json={"title": "Oil on the floor"})
+        assert (res.status_code, res.get_json()["title"]) == (200, "Oil on the floor")
+        assert operator.delete(f"{url}/{photo['id']}").status_code == 204
+        assert listed_at(operator, url)["items"] == []
+
+    def test_a_document_kind_is_400_before_the_file_is_read(self, admin, node, make_ticket):
+        ticket = make_ticket(node)
+        res = upload_to(admin, ticket_docs_url(ticket))
+        assert refusal(res) == (400, "kind", "Only photos can be added here")
+        assert owner_files("ticket", ticket["id"]) == []
+
+    def test_a_closed_ticket_refuses_upload_title_and_remove(self, admin, node, make_ticket, set_ticket_state):
+        ticket = make_ticket(node)
+        url = ticket_docs_url(ticket)
+        photo = ticket_photo(admin, ticket)
+        set_ticket_state(ticket, "closed")
+        closed = (409, None, "This ticket is closed")
+        assert refusal(upload_to(admin, url, kind="photo", data=JPEG, filename="b.jpg")) == closed
+        assert refusal(admin.put(f"{url}/{photo['id']}", json={"title": "x"})) == closed
+        assert refusal(admin.delete(f"{url}/{photo['id']}")) == closed
+        # Still listed and served
+        assert [d["id"] for d in listed_at(admin, url)["items"]] == [photo["id"]]
+        assert admin.get(f"{url}/{photo['id']}/file").status_code == 200
+
+    def test_another_units_ticket_is_404(self, user_with_units, make_unit, unit, node, make_ticket):
+        ticket = make_ticket(node)
+        photo = ticket_photo(user_with_units("maint_operator", [unit]), ticket)
+        other = user_with_units("maint_operator", [make_unit()])
+        url = ticket_docs_url(ticket)
+        assert other.get(url).status_code == 404
+        assert other.get(f"{url}/{photo['id']}/file").status_code == 404
+        assert upload_to(other, url, kind="photo", data=JPEG, filename="a.jpg").status_code == 404
+
+    def test_the_storekeeper_is_403(self, role_client, node, make_ticket):
+        ticket = make_ticket(node)
+        storekeeper = role_client("maint_storekeeper")
+        assert storekeeper.get(ticket_docs_url(ticket)).status_code == 403
+        res = upload_to(storekeeper, ticket_docs_url(ticket), kind="photo", data=JPEG, filename="a.jpg")
+        assert res.status_code == 403
+
+    def test_read_but_not_write_after_a_move_to_another_site(self, admin, user_at_sites, make_site, make_unit,
+                                                             make_equipment, make_ticket):
+        """BR2-03: a user at the machine's new site reads the ticket (its machine's current
+        unit) but may not change it: ticket:raise is checked at the ticket's site."""
+        site_a, site_b = make_site(), make_site()
+        unit_a, unit_b = make_unit(site_a), make_unit(site_b)
+        machine = make_equipment(unit=unit_a)
+        ticket = make_ticket(machine)
+        url = ticket_docs_url(ticket)
+        photo = ticket_photo(admin, ticket)
+        assert admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": unit_b["id"]}).status_code == 200
+        reader, _ = user_at_sites([(site_b, "maint_operator", [unit_b])])
+        assert reader.get(f"/api/tickets/{ticket['id']}").status_code == 200
+        assert [d["id"] for d in listed_at(reader, url)["items"]] == [photo["id"]]
+        assert reader.get(f"/api/tickets/{ticket['id']}").get_json()["can_add_photos"] is False
+        forbidden = f"You can't do this at {site_a['code']}"
+        assert refusal(upload_to(reader, url, kind="photo", data=JPEG, filename="a.jpg")) == (403, None, forbidden)
+        assert refusal(reader.put(f"{url}/{photo['id']}", json={"title": "x"})) == (403, None, forbidden)
+        assert refusal(reader.delete(f"{url}/{photo['id']}")) == (403, None, forbidden)
+        assert owner_files("ticket", ticket["id"]) != []
+
+    def test_access_comes_before_the_key(self, user_at_sites, make_site, make_unit, make_equipment, make_ticket):
+        """BR2-02: ticket:raise at the ticket's site but not its unit -> 404, not 403."""
+        site = make_site()
+        unit, other_unit = make_unit(site), make_unit(site)
+        ticket = make_ticket(make_equipment(unit=unit))
+        client, _ = user_at_sites([(site, "maint_operator", [other_unit])])
+        res = upload_to(client, ticket_docs_url(ticket), kind="photo", data=JPEG, filename="a.jpg")
+        assert res.status_code == 404
+        assert owner_files("ticket", ticket["id"]) == []
+
+    def test_node_and_model_keys_are_unchanged(self, role_client, node, make_model):
+        """The owners' keys are data now (S017 § 5.5): equipment:edit still needed on a node or model."""
+        operator = role_client("maint_operator")
+        for url in (docs_url(node), model_docs_url(make_model())):
+            res = upload_to(operator, url)
+            assert res.status_code == 403
+            assert res.get_json()["error"] == "Forbidden: requires 'equipment:edit'"

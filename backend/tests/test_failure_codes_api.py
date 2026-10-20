@@ -30,17 +30,6 @@ def _refused(res, status, field):
     assert (res.status_code, res.get_json().get("field")) == (status, field), res.get_json()
 
 
-@pytest.fixture
-def make_mode(engineer, uniq):
-    """make_mode() -> a General mode; make_mode(cls=c, label=...) to choose."""
-    def make(cls=None, **overrides):
-        body = {"code": uniq.failure_code(), "label": uniq.failure_label(), **overrides}
-        if cls is not None:
-            body["class_id"] = cls["id"]
-        return _created(engineer.post(MODES, json=body))
-    return make
-
-
 def _body(path, uniq):
     body = {"code": uniq.failure_code(), "label": uniq.failure_label()}
     if path == CAUSES:
@@ -251,3 +240,27 @@ class TestOrder:
     def test_actions_in_number_order(self, engineer):
         seeds = [a["code"] for a in _items(engineer.get(ACTIONS)) if a["created_by"] == "migration-v11"]
         assert seeds == [str(n) for n in range(1, 13)]
+
+
+class TestModeCodeFrozenOnceUsed:
+    """S017 § 5.7: once a ticket uses a mode, its code can no longer change; the label,
+    description and active flag stay editable."""
+
+    def test_a_used_modes_code_is_409_and_its_label_still_changes(self, engineer, make_equipment, make_mode,
+                                                                    make_ticket, uniq):
+        machine = make_equipment()
+        mode = make_mode()
+        make_ticket(machine, failure_mode_id=mode["id"])
+        res = engineer.put(f"{MODES}/{mode['id']}", json={"code": uniq.failure_code()})
+        _refused(res, 409, "code")
+        assert res.get_json()["error"] == "This code is used by tickets and can no longer change"
+        same = engineer.put(f"{MODES}/{mode['id']}", json={"code": mode["code"], "label": uniq.failure_label(),
+                                                         "description": "Plain words"})
+        assert same.status_code == 200, same.get_json()
+        assert engineer.put(f"{MODES}/{mode['id']}", json={"active": False}).status_code == 200
+
+    def test_an_unused_modes_code_still_changes(self, engineer, make_mode, uniq):
+        mode = make_mode()
+        code = uniq.failure_code()
+        res = engineer.put(f"{MODES}/{mode['id']}", json={"code": code})
+        assert (res.status_code, res.get_json()["code"]) == (200, code)

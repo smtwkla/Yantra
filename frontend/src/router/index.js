@@ -6,7 +6,10 @@ import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
+import RaiseTicketView from "../views/RaiseTicketView.vue";
 import SettingsView from "../views/SettingsView.vue";
+import TicketDetailView from "../views/TicketDetailView.vue";
+import TicketsView from "../views/TicketsView.vue";
 import { authenticated, userPermissions } from "../stores/auth";
 import { canOpenRoute, landingPath } from "../stores/navigation";
 
@@ -30,6 +33,26 @@ const routes = [
     name: "equipment-by-code",
     component: EquipmentByCodeView,
     meta: { title: "Equipment" },
+  },
+  // Tickets (S017). Only the list is a nav item; for /tickets/new and /tickets/:id the API's
+  // 403 / 404 is the gate, and the buttons that lead there are hidden by permission (BR1-10)
+  {
+    path: "/tickets",
+    name: "tickets",
+    component: TicketsView,
+    meta: { title: "Tickets" },
+  },
+  {
+    path: "/tickets/new",
+    name: "ticket-new",
+    component: RaiseTicketView,
+    meta: { title: "Raise ticket" },
+  },
+  {
+    path: "/tickets/:id(\\d+)",
+    name: "ticket-detail",
+    component: TicketDetailView,
+    meta: { title: "Ticket" },
   },
   {
     path: "/labels",

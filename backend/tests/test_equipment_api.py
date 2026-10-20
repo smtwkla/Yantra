@@ -418,6 +418,43 @@ class TestStatus:
         assert _get(admin, mill)["status"] == "in_service"
 
 
+class TestScrapWithOpenTickets:
+    """S017 § 5.8, user decision 6: scrapping waits until the tickets on the node and its
+    parts are closed."""
+
+    CLOSE_FIRST = {"error": "Close its tickets first", "field": "status"}
+
+    def test_an_open_ticket_on_the_node_refuses_until_closed(self, admin, make_equipment, make_ticket,
+                                                             set_ticket_state):
+        mill = make_equipment()
+        ticket = make_ticket(mill, intensity="degraded")
+        res = _put(admin, mill, status="scrapped")
+        assert (res.status_code, res.get_json()) == (409, self.CLOSE_FIRST)
+        set_ticket_state(ticket, "closed")
+        assert _put(admin, mill, status="scrapped").status_code == 200
+
+    def test_an_open_ticket_on_a_component_below_refuses(self, admin, make_equipment, make_ticket,
+                                                        set_ticket_state):
+        mill = make_equipment()
+        drive = make_equipment(parent=mill)
+        motor = make_equipment(parent=drive, level="component")
+        ticket = make_ticket(motor)
+        # The ticket is on the motor itself: scrapping it is refused
+        assert (_put(admin, motor, status="scrapped").get_json()) == self.CLOSE_FIRST
+        # With the motor and its component-unit forced to scrapped, the motor's open ticket
+        # still blocks scrapping the machine
+        _db("UPDATE equipment SET status = 'scrapped' WHERE id IN (%s, %s)", (motor["id"], drive["id"]))
+        assert (_put(admin, mill, status="scrapped").get_json()) == self.CLOSE_FIRST
+        set_ticket_state(ticket, "closed")
+        assert _put(admin, mill, status="scrapped").status_code == 200
+
+    def test_a_ticket_on_a_sibling_does_not_block(self, admin, make_equipment, make_ticket):
+        mill = make_equipment()
+        drive, pump = make_equipment(parent=mill), make_equipment(parent=mill)
+        make_ticket(pump)
+        assert _put(admin, drive, status="scrapped").status_code == 200
+
+
 class TestEvents:
 
     def test_one_event_per_changed_tracked_field(self, admin, make_model, make_equipment):

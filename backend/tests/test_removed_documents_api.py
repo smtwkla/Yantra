@@ -366,3 +366,56 @@ class TestPurge:
         assert folder_files(root) == [f"{stored}.thumb.jpg"]   # the main file went, the thumbnail stayed
         errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
         assert any(thumb in m for m in errors), errors
+
+
+class TestTicketRows:
+    """S017 § 5.5: removed ticket photos in the same list, scoped by the ticket's unit."""
+
+    def _removed(self, admin, ticket, title):
+        url = f"/api/tickets/{ticket['id']}/documents"
+        doc = uploaded_to(admin, url, kind="photo", title=title, data=JPEG, filename="IMG_7.jpg")
+        assert admin.delete(f"{url}/{doc['id']}").status_code == 204
+        return url, doc
+
+    def test_listed_restored_and_purged_by_the_units_manager(self, admin, user_at_sites, make_site, make_unit,
+                                                            make_equipment, make_ticket, cls, db_rows):
+        site = make_site()
+        unit, other_unit = make_unit(site), make_unit(site)
+        ticket = make_ticket(make_equipment(unit=unit, cls=cls))
+        url, doc = self._removed(admin, ticket, f"Leak {cls['code']}")
+        _, elsewhere = self._removed(admin, make_ticket(make_equipment(unit=other_unit, cls=cls)),
+                                     f"Leak {cls['code']}")
+        manager, _ = user_at_sites([(site, "maint_manager", [unit])])
+        page = listing(manager, q=cls["code"])
+        assert ids(page) == [doc["id"]]
+        item = page["items"][0]
+        assert {key: item[key] for key in ("owner", "path", "name", "unit", "full_path", "state", "code")} == {
+            "owner": "ticket", "path": url, "name": ticket["serial"], "unit": f"{site['code']}.{unit['code']}",
+            "full_path": None, "state": "raised", "code": None}
+        assert elsewhere["id"] not in ids(listing(manager, q=ticket["serial"]))
+        assert ids(listing(manager, q=ticket["serial"])) == [doc["id"]]
+
+        res = manager.post(f"{url}/{doc['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, doc["id"])
+        assert admin.delete(f"{url}/{doc['id']}").status_code == 204
+        stored = row(db_rows, doc)["stored_name"]
+        assert manager.post(f"{url}/{doc['id']}/purge").status_code == 204
+        assert row(db_rows, doc) is None
+        assert stored not in owner_files("ticket", ticket["id"])
+
+    def test_a_closed_ticket_refuses_restore_but_allows_purge(self, admin, manager, make_equipment, make_ticket,
+                                                              cls, unit, set_ticket_state, db_rows):
+        ticket = make_ticket(make_equipment(unit=unit, cls=cls))
+        url, doc = self._removed(admin, ticket, f"Leak {cls['code']}")
+        set_ticket_state(ticket, "closed")
+        assert [i["state"] for i in listing(manager, q=ticket["serial"])["items"]] == ["closed"]
+        assert refusal(manager.post(f"{url}/{doc['id']}/restore")) == (409, None, "This ticket is closed")
+        assert manager.post(f"{url}/{doc['id']}/purge").status_code == 204
+        assert row(db_rows, doc) is None
+
+    def test_others_may_not_restore_or_purge(self, admin, role_client, make_equipment, make_ticket, cls, unit):
+        ticket = make_ticket(make_equipment(unit=unit, cls=cls))
+        url, doc = self._removed(admin, ticket, "Leak")
+        for role in ("maint_engineer", "maint_operator"):
+            assert role_client(role).post(f"{url}/{doc['id']}/restore").status_code == 403
+            assert role_client(role).post(f"{url}/{doc['id']}/purge").status_code == 403

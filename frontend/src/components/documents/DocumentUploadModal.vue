@@ -9,12 +9,15 @@
  *
  * The file input has no `capture` attribute, so a phone offers the camera and the gallery.
  *
- * The parent passes the owner's documents collection URL (a node or a model: S012).
+ * The parent passes the owner's documents collection URL (a node or a model: S012; a
+ * ticket: S017). With `photosOnly` (a ticket, which takes photos only) the Kind choice is
+ * hidden and the kind is photo, so a PDF is never picked only to be refused by the server.
  */
 import { computed, ref, watch } from "vue";
 import { apiUpload } from "../../api";
 import FormModal from "../FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
+import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../../utils/documentTypes";
 
 const props = defineProps({
   basePath: { type: String, required: true },
@@ -22,15 +25,13 @@ const props = defineProps({
   everySite: { type: Boolean, default: false },
   // From the list response; null until the list has loaded (the backend still checks)
   uploadMaxMb: { type: Number, default: null },
+  // A ticket's photos (S017): no Kind choice
+  photosOnly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["saved"]);
 
 const MB = 1024 * 1024;
 const TITLE_MAX = 200;
-const ACCEPT = {
-  document: "application/pdf",
-  photo: "image/jpeg,image/png,image/webp",
-};
 const KIND_LABELS = {
   document: "Document (PDF)",
   photo: "Photo (JPEG, PNG or WebP)",
@@ -64,11 +65,6 @@ function clearFile() {
 // A file chosen for one kind may not suit the other
 watch(() => form.value.kind, clearFile);
 
-function withoutExtension(name) {
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(0, dot) : name;
-}
-
 function onFileChosen(event) {
   const file = event.target.files[0] ?? null;
   form.value.file = file;
@@ -81,7 +77,7 @@ function onFileChosen(event) {
 
 function open(kind) {
   prefilledTitle = "";
-  openCreate(kind);
+  openCreate(props.photosOnly ? "photo" : kind);
   fileInputKey.value += 1;
 }
 
@@ -108,7 +104,7 @@ defineExpose({ open });
     save-label="Upload"
     @save="save"
   >
-    <div class="mb-3">
+    <div v-if="!photosOnly" class="mb-3">
       <label class="form-label d-block">Kind</label>
       <div v-for="(label, kind) in KIND_LABELS" :key="kind" class="form-check form-check-inline">
         <input :id="`doc-kind-${kind}`" v-model="form.kind" class="form-check-input" type="radio" :value="kind" />
@@ -130,9 +126,7 @@ defineExpose({ open });
       <div class="invalid-feedback">{{ fileError }}</div>
       <div class="form-text">
         <template v-if="uploadMaxMb">At most {{ uploadMaxMb }} MB.</template>
-        <template v-if="form.kind === 'photo'">
-          iPhone photos shared from Files or WhatsApp: set Camera › Formats › Most Compatible, or share as JPEG.
-        </template>
+        <template v-if="form.kind === 'photo'">{{ IPHONE_PHOTO_HINT }}</template>
       </div>
     </div>
     <div class="mb-0">
@@ -146,6 +140,7 @@ defineExpose({ open });
       />
       <div class="invalid-feedback">{{ fieldError("title") }}</div>
       <div v-if="everySite" class="form-text">Visible at every site: no confidential documents (contracts, prices).</div>
+      <div v-else-if="photosOnly" class="form-text">Everyone who can see this ticket can see it.</div>
       <div v-else class="form-text">Everyone who can see this equipment can see it: no confidential documents (contracts, prices).</div>
     </div>
   </FormModal>

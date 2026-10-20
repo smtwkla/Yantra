@@ -531,8 +531,8 @@ def update_equipment_model(model_id):
 # ---------------------------------------------------------------------------
 # Failure codes (S016) — ISO 14224 § 9 and Annex B: failure modes (what is seen: the
 # operator's symptom), failure causes (in ISO's five groups) and maintenance actions.
-# Read by everyone, kept by failure_codes:edit.  Nothing references them yet: S017 and
-# S018 add "code frozen once in use" when tickets point at them (S016 § 5.4).
+# Read by everyone, kept by failure_codes:edit.  A failure mode's code is frozen once a ticket
+# uses it (S017 § 5.7, S016 § 5.4); S018 does the same for causes and actions.
 # ---------------------------------------------------------------------------
 
 def _fetch_failure_mode(cur, mode_id):
@@ -595,7 +595,9 @@ def create_failure_mode():
 def update_failure_mode(mode_id):
     """Edit code, label, description; deactivate or reactivate.  The class is fixed (S016
     § 5.2): a mode made under the wrong class is deactivated and made again, so tickets that
-    use it are never re-labelled.  Deactivating needs no check."""
+    use it are never re-labelled.  The code is frozen once a ticket uses the mode (S017 § 5.7):
+    decided under the mode's lock, which a ticket insert's foreign-key check waits for, so the
+    count cannot miss a ticket.  Deactivating needs no check."""
     clean = clean_body(validate_failure_mode, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
@@ -610,7 +612,13 @@ def update_failure_mode(mode_id):
             del clean["class_id"]
         if clean.get("active") == 1 and stored["class_id"] is not None:
             _lock_active_parent(cur, "equipment_classes", stored["class_id"], "active", "class")
-        _lock_row(cur, "failure_modes", mode_id)
+        locked = _lock_row(cur, "failure_modes", mode_id)
+        # A locking read: the plain snapshot was taken by the read above, before a raise that
+        # held the mode's FK lock had committed
+        if ("code" in clean and clean["code"] != locked["code"]
+                and count(cur, "SELECT COUNT(*) AS n FROM tickets WHERE failure_mode_id = %s LOCK IN SHARE MODE",
+                          (mode_id,))):
+            raise ApiError("This code is used by tickets and can no longer change", 409, "code")
         if "label" in clean:
             _check_mode_label(cur, clean["label"], stored["class_id"], mode_id)
         update_row(cur, "failure_modes", mode_id, clean, actor())

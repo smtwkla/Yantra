@@ -8,6 +8,8 @@
  * Rows are a node's documents or, since S012, an equipment model's (`owner`). Each row brings
  * its owner's documents URL (`path`); restore and purge are that URL + the id + the action.
  * A model row shows "Model <label>" as plain text: Masters sections are not routes.
+ * Since S017 a row can also be a ticket's photo: "Ticket <serial>" and its unit; Restore is
+ * disabled on a closed ticket, as on scrapped equipment (the server refuses both).
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -77,6 +79,13 @@ function goToPage(page) {
 
 const actionPath = (item, action) => `${item.path}/${item.id}/${action}`;
 
+// Why Restore is disabled for a row, or "" when it is not: the server would refuse it
+function restoreBlocked(item) {
+  if (item.status === "scrapped") return "Scrapped equipment cannot be changed";
+  if (item.owner === "ticket" && item.state === "closed") return "Closed tickets cannot be changed";
+  return "";
+}
+
 async function act(item, action, onDone) {
   busy.value = true;
   actionError.value = "";
@@ -120,7 +129,7 @@ onMounted(load);
           v-model="searchText"
           type="search"
           class="form-control form-control-sm removed-search"
-          placeholder="Search equipment code, model, title or file name…"
+          placeholder="Search equipment code, model, ticket, title or file name…"
           aria-label="Search removed documents"
         />
         <select v-model="kind" class="form-select form-select-sm removed-kind" aria-label="Kind">
@@ -151,14 +160,14 @@ onMounted(load);
               <tr>
                 <th>Removed</th>
                 <th>Title</th>
-                <th>Equipment</th>
+                <th>Belongs to</th>
                 <th>Uploaded</th>
                 <th>Size</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in result.items" :key="item.id" :class="{ 'text-secondary': item.status === 'scrapped' }">
+              <tr v-for="item in result.items" :key="item.id" :class="{ 'text-secondary': restoreBlocked(item) }">
                 <td>
                   {{ formatDateTime(item.removed_at) }}
                   <div class="small text-secondary">{{ item.removed_by }}</div>
@@ -173,6 +182,11 @@ onMounted(load);
                 <td v-if="item.owner === 'model'">
                   Model <em>{{ item.name }}</em>
                   <div class="small text-secondary">Every machine of this model</div>
+                </td>
+                <td v-else-if="item.owner === 'ticket'">
+                  Ticket {{ item.name }}
+                  <div v-if="item.state === 'closed'" class="small">closed</div>
+                  <div class="small text-secondary">{{ item.unit }}</div>
                 </td>
                 <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>
@@ -192,15 +206,15 @@ onMounted(load);
                     <button class="btn btn-sm btn-outline-secondary" :disabled="busy" @click="confirmingId = null">No</button>
                   </span>
                   <span v-else class="d-inline-flex flex-wrap gap-1 justify-content-end">
-                    <!-- Bootstrap gives a disabled .btn no pointer events, so the title (and the tab stop, for keyboard users) sits on the wrapper, only when scrapped -->
+                    <!-- Bootstrap gives a disabled .btn no pointer events, so the title (and the tab stop, for keyboard users) sits on the wrapper, only when blocked -->
                     <span
                       class="d-inline-block"
-                      :tabindex="item.status === 'scrapped' ? 0 : undefined"
-                      :title="item.status === 'scrapped' ? 'Scrapped equipment cannot be changed' : undefined"
+                      :tabindex="restoreBlocked(item) ? 0 : undefined"
+                      :title="restoreBlocked(item) || undefined"
                     >
                       <button
                         class="btn btn-sm btn-outline-primary"
-                        :disabled="busy || item.status === 'scrapped'"
+                        :disabled="busy || Boolean(restoreBlocked(item))"
                         @click="restore(item)"
                       >
                         <i class="fa-solid fa-rotate-left me-1"></i>Restore

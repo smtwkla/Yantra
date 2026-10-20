@@ -3,31 +3,42 @@ import { canOpenRoute, canSeeNavItem, isActivePath, landingNavItem, landingPath,
 
 // What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix.
 // From S011 a site role's keys come from its membership; the manager's breadth is "all units"
-// there, not equipment:read_all_units (IT admin's alone).
-const OPERATOR = ["equipment:read", "masters:read"];
+// there, not equipment:read_all_units (IT admin's alone).  S017: ticket:read and ticket:raise
+// for every maintenance role, the supervisor and IT admin; not the storekeeper.
+const TICKETS = ["ticket:read", "ticket:raise"];
+const OPERATOR = ["equipment:read", "masters:read", ...TICKETS];
+const STOREKEEPER = ["equipment:read", "masters:read"];
 const SUPERVISOR = OPERATOR;
-const ENGINEER = ["equipment:read", "equipment:edit", "masters:read", "people:assign_technicians", "people:edit"];
+const ENGINEER = [
+  "equipment:read", "equipment:edit", "masters:read", "people:assign_technicians", "people:edit", ...TICKETS,
+];
 const MANAGER = [
   "equipment:edit", "equipment:purge_documents", "equipment:read", "masters:read", "people:assign_technicians",
-  "people:edit", "settings:read",
+  "people:edit", "settings:read", ...TICKETS,
 ];
 const IT_ADMIN = [
   "equipment:read", "equipment:read_all_units", "equipment:edit", "equipment:purge_documents", "masters:edit",
   "masters:read", "masters:read_senior", "settings:edit", "settings:read", "people:assign_technicians", "people:edit",
+  ...TICKETS,
 ];
 
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
 describe("navigation permissions", () => {
-  it("maint_operator sees Equipment and Masters, and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["equipment", "masters"]);
+  it("maint_operator sees Equipment, Tickets and Masters, and cannot open Settings", () => {
+    expect(visible(OPERATOR)).toEqual(["equipment", "tickets", "masters"]);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
   });
 
   it("Equipment is first for every role; manager and IT admin also see Settings", () => {
-    expect(visible(ENGINEER)).toEqual(["equipment", "masters"]);
-    expect(visible(MANAGER)).toEqual(["equipment", "masters", "settings"]);
-    expect(visible(IT_ADMIN)).toEqual(["equipment", "masters", "settings"]);
+    expect(visible(ENGINEER)).toEqual(["equipment", "tickets", "masters"]);
+    expect(visible(MANAGER)).toEqual(["equipment", "tickets", "masters", "settings"]);
+    expect(visible(IT_ADMIN)).toEqual(["equipment", "tickets", "masters", "settings"]);
+  });
+
+  it("the storekeeper sees no Tickets and cannot open the list (S017 user decision 7)", () => {
+    expect(visible(STOREKEEPER)).toEqual(["equipment", "masters"]);
+    expect(canOpenRoute("tickets", STOREKEEPER)).toBe(false);
   });
 
   it("everyone with a role lands on Equipment", () => {

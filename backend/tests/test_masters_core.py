@@ -408,10 +408,17 @@ class TestSiteRows:
 
 class TestEngineerLimits:
 
-    def test_no_login_only_technician(self):
+    def test_no_login_technician_or_operator(self):
+        """S017 user decision 5: an Operator row without a login is accepted too."""
         assert no_login_role_error(["maint_technician", "maint_technician"]) is None
         assert no_login_role_error([]) is None
-        assert no_login_role_error(["maint_technician", "maint_operator"]) == NO_LOGIN_ROLE_MESSAGE
+        assert no_login_role_error(["maint_technician", "maint_operator"]) is None
+        assert no_login_role_error(["maint_operator"]) is None
+        assert NO_LOGIN_ROLE_MESSAGE == "Without a login, a person can only be a technician or an operator"
+
+    @pytest.mark.parametrize("role", ["maint_supervisor", "maint_engineer", "maint_manager", "maint_storekeeper"])
+    def test_no_login_other_roles_refused(self, role):
+        assert no_login_role_error(["maint_technician", role]) == NO_LOGIN_ROLE_MESSAGE
 
     @pytest.mark.parametrize("stored, new, ok", [
         (None, "maint_technician", True), ("maint_technician", "maint_technician", True),

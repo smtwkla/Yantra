@@ -41,10 +41,20 @@ The type is no longer locked here: it comes from the model, whose type never cha
 - Every write checks its key at the record's site (S011 § 5.4) inside the three choke
   points below (load_node_for_user, _load_target_node, _lock_target_unit), after their
   own refusals, so no write route can skip it.
-- documents.py (S006, S008, S012) takes exactly one owner lock per write, briefly: the
-  node (1) through LOCK_EQUIPMENT and load_node_for_user, or a model row (4), never two;
-  then it touches only equipment_documents rows, which nothing else locks.  So it adds no
-  lock cycle.
+- documents.py (S006, S008, S012, S017) takes exactly one owner lock per write, briefly: the
+  node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4) or a ticket row
+  (7, below), never two; then it touches only equipment_documents rows, which nothing else
+  locks.  So it adds no lock cycle.
+- tickets.py (S017) raises a ticket under (1) the node raised on → (6) the serial counter
+  (scope TK:YYYY-MM) → (7) the ticket row.  Ticket rows come last everywhere: nothing that
+  holds one then takes an equipment, unit or counter lock.  The ticket insert takes shared
+  locks through its foreign keys (machine, unit, person, failure mode), which gives two
+  accepted deadlocks, as the scrap check's (S017 § 5.4): scrapping a machine (machine, then
+  its parts) against a raise on one of its parts (the part, then the machine's FK lock); and
+  a person's site-row edit (person, then units) against a raise naming that person (unit,
+  then person).  InnoDB rolls one side back (1213).  The scrap path counts open tickets on
+  the node and its parts while they are locked (_check_no_open_tickets), so a raise and a
+  scrap of the same node serialise on (1).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -58,7 +68,7 @@ from api_common import (
 import asset_list_core
 from asset_list_core import build_asset_list
 from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
-from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
+from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
     CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, derive_from_model, effective_criticality,
     format_equipment_code, full_path, tracked_changes, validate_equipment,
@@ -66,6 +76,7 @@ from equipment_core import (
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters_core import model_label
 from settings import label_base_url
+from tickets_core import CLOSED
 
 equipment_bp = Blueprint("equipment", __name__)
 
@@ -340,13 +351,9 @@ def _pick_model(cur, clean, stored_model_id):
 # ---------------------------------------------------------------------------
 
 def _next_code(cur, prefix):
-    """Bump the per-prefix counter (6) and read it back on the same connection, inside the
-    caller's transaction: a failed create rolls the bump back, so failures leave no gaps."""
-    scope = f"EQ:{prefix}"
-    cur.execute("INSERT INTO serial_counters (scope, last_value) VALUES (%s, 1) "
-                "ON DUPLICATE KEY UPDATE last_value = last_value + 1", (scope,))
-    cur.execute("SELECT last_value FROM serial_counters WHERE scope = %s", (scope,))
-    return format_equipment_code(prefix, cur.fetchone()["last_value"])
+    """Bump the per-prefix counter (6) in the caller's transaction: a failed create rolls the
+    bump back, so failures leave no gaps."""
+    return format_equipment_code(prefix, next_counter(cur, f"EQ:{prefix}"))
 
 
 def _write_events(cur, equipment_id, changes):
@@ -357,7 +364,7 @@ def _write_events(cur, equipment_id, changes):
 
 def _check_parts_scrapped(cur, node_id):
     """Scrapping needs every child and grandchild scrapped — decided from locking reads, so
-    a part cannot be revived or slipped in while we decide."""
+    a part cannot be revived or slipped in while we decide.  Returns the locked parts' ids."""
     cur.execute("SELECT id, status FROM equipment WHERE parent_id = %s FOR UPDATE", (node_id,))
     parts = cur.fetchall()
     if parts:
@@ -367,6 +374,21 @@ def _check_parts_scrapped(cur, node_id):
         parts = [*parts, *cur.fetchall()]
     if any(p["status"] != SCRAPPED for p in parts):
         raise ApiError("Scrap or move its parts first", 409, "status")
+    return [p["id"] for p in parts]
+
+
+def _check_no_open_tickets(cur, node_ids):
+    """Scrapping waits until the tickets on the node and its parts are closed (S017 § 5.8,
+    user decision 6): a scrapped record is read-only, so an open ticket on it could never be
+    closed.  Counted while the node and its parts are locked; a raise locks its node first,
+    so whichever gets the node first wins (S017 § 5.8).  A plain count is enough: this
+    transaction's snapshot is taken by load_node_for_user's plain read, after the node's lock
+    was granted, so a raise committed before that grant is seen."""
+    placeholders = ", ".join(["%s"] * len(node_ids))
+    sql = (f"SELECT COUNT(*) AS n FROM tickets WHERE state <> %s"
+           f" AND (equipment_id IN ({placeholders}) OR component_id IN ({placeholders}))")
+    if count(cur, sql, [CLOSED, *node_ids, *node_ids]):
+        raise ApiError("Close its tickets first", 409, "status")
 
 
 def _tracked_state(node):
@@ -670,7 +692,7 @@ def update_equipment(node_id):
             # Another class is a reclassification: the code is kept (S002)
             equipment_model, equipment_class = _pick_model(cur, clean, locked["model_id"])   # (4), (5)
         if clean.get("status") == SCRAPPED:
-            _check_parts_scrapped(cur, node_id)
+            _check_no_open_tickets(cur, [node_id, *_check_parts_scrapped(cur, node_id)])
         before = _tracked_state(node)
         update_row(cur, "equipment", node_id, clean, actor())
         after = _written_state(cur, node_id, unit, equipment_class, equipment_model)

@@ -155,8 +155,12 @@ from equipment import equipment_bp
 app.register_blueprint(equipment_bp, url_prefix="/api/equipment")
 
 from documents import documents_bp
-# Its routes spell out /equipment/... and /masters/equipment-models/... (two owners, S012)
+# Its routes spell out /equipment/..., /masters/equipment-models/... and /tickets/<id>/documents
+# (three owners, S012, S017); Flask matches the longer rule, so no clash with tickets_bp
 app.register_blueprint(documents_bp, url_prefix="/api")
+
+from tickets import tickets_bp
+app.register_blueprint(tickets_bp, url_prefix="/api/tickets")
 
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")

@@ -9,7 +9,10 @@ from flask import Flask, g
 
 from access_core import Membership
 from auth_utils import compute_permissions, expand_roles, has_perm, has_perm_at, make_user, require_perm
-from config_rbac import INTERNAL_ONLY_ROLES, LOGIN_ROLE, PERMISSIONS, ROLE_INCLUDES, ROLES, SITE_ROLES, SITE_SCOPED, TOKEN_ROLES
+from config_rbac import (
+    INTERNAL_ONLY_ROLES, LOGIN_ROLE, NO_LOGIN_ROLES, PERMISSIONS, ROLE_INCLUDES, ROLES, SITE_ROLES, SITE_SCOPED,
+    TOKEN_ROLES,
+)
 
 
 class TestPolicyStructure:
@@ -92,6 +95,19 @@ class TestRoleSources:
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert "failure_codes:edit" not in SITE_SCOPED
 
+    @pytest.mark.parametrize("key", ["ticket:read", "ticket:raise"])
+    def test_ticket_keys(self, key):
+        """S017 § 5.6: every maintenance role, the supervisor and IT admin; not the storekeeper.
+        Site-scoped, so checked at the ticket's site."""
+        holders = {role for role in ROLES if key in compute_permissions([role])}
+        assert holders == set(ROLES) - {"maint_storekeeper"}
+        assert key in SITE_SCOPED
+
+    def test_no_login_roles(self):
+        """S017 user decision 5: without a login, Technician or Operator; both site roles."""
+        assert set(NO_LOGIN_ROLES) == {"maint_technician", "maint_operator"}
+        assert set(NO_LOGIN_ROLES) <= set(SITE_ROLES)
+
     def test_supervisor_is_off_the_maintenance_ladder(self):
         assert expand_roles(["maint_supervisor"]) == {"maint_supervisor", "maint_operator"}
         assert compute_permissions(["maint_supervisor"]) == compute_permissions(["maint_operator"])
@@ -132,19 +148,22 @@ class TestComputePermissions:
             assert wildcard <= set(compute_permissions([role])), role
 
     @pytest.mark.parametrize("role, expected", [
-        ("maint_operator",    {"equipment:read", "masters:read"}),
-        ("maint_technician",  {"equipment:read", "masters:read"}),
-        ("maint_supervisor",  {"equipment:read", "masters:read"}),
+        # S017: ticket:read and ticket:raise to the operator, so to every maintenance role and
+        # the supervisor; IT admin too (user decision 7); never the storekeeper
+        ("maint_operator",    {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
+        ("maint_technician",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
+        ("maint_supervisor",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit", "people:edit",
-                               "people:assign_technicians", "failure_codes:edit"}),
+                               "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
-                               "people:assign_technicians", "access_log:view", "failure_codes:edit"}),
+                               "people:assign_technicians", "access_log:view", "failure_codes:edit",
+                               "ticket:read", "ticket:raise"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
-                               "access_log:view", "failure_codes:edit"}),
+                               "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):

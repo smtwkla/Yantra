@@ -241,16 +241,35 @@ class TestLoginSave:
 
 
 class TestNoLoginTechnicianOnly:
-    """Gate A: without a login a person can only be a technician."""
+    """Gate A: without a login a person can only be a technician — or, since S017 (user
+    decision 5), an operator, set by IT admin only."""
 
-    @pytest.mark.parametrize("role", ["maint_engineer", "maint_operator", "maint_manager", "maint_supervisor"])
+    @pytest.mark.parametrize("role", ["maint_engineer", "maint_manager", "maint_supervisor"])
     def test_other_roles_are_400(self, admin, engineer_at_a, make_person, two_sites, role):
         site_a = two_sites[0]
         person = make_person()
         for client in (engineer_at_a[0], admin):
             res = client.put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}", json=_row(role=role, all_units=True))
             assert (res.status_code, res.get_json()["field"]) == (400, "role")
-            assert res.get_json()["error"] == "Without a login, a person can only be a technician"
+            assert res.get_json()["error"] == "Without a login, a person can only be a technician or an operator"
+
+    def test_operator_is_200_for_it_admin(self, admin, make_person, two_sites):
+        site_a = two_sites[0]
+        person = make_person()
+        res = admin.put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}",
+                        json=_row(role="maint_operator", all_units=True))
+        assert res.status_code == 200
+        assert [s["role"] for s in res.get_json()["sites"]] == ["maint_operator"]
+
+    def test_operator_is_403_for_an_engineer(self, engineer_at_a, make_person, two_sites):
+        """Was 400 before S017 (the no-login check refused Operator first); now Operator passes
+        it and the engineer's Technician-only rule answers."""
+        site_a = two_sites[0]
+        person = make_person()
+        res = engineer_at_a[0].put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}",
+                                   json=_row(role="maint_operator", all_units=True))
+        assert (res.status_code, res.get_json()["field"]) == (403, "role")
+        assert res.get_json()["error"] == "Only IT admin can set this role"
 
     def test_technician_is_200(self, engineer_at_a, make_person, two_sites):
         site_a, units_a, _, _ = two_sites

@@ -1,8 +1,8 @@
 """File storage for equipment documents and photos — thin I/O, no rules.
 
 Layout: one folder per owner (S012, the design of S009) — ``DATA_DIR/equipment/<node_id>/``
-or ``DATA_DIR/equipment-models/<model_id>/`` — holding ``<stored_name>`` (and
-``<stored_name>.thumb.jpg``).  Names come from documents_core.stored_name; nothing from the
+or ``DATA_DIR/equipment-models/<model_id>/`` or, for ticket photos (S017),
+``DATA_DIR/tickets/<ticket_id>/`` — holding ``<stored_name>`` (and ``<stored_name>.thumb.jpg``).  Names come from documents_core.stored_name; nothing from the
 client reaches a path.
 
 config.DATA_DIR is read at call time, so tests can point it elsewhere.  A file is never
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _OWNER_FOLDERS = {
     "equipment": "equipment",
     "model": "equipment-models",
+    "ticket": "tickets",
 }
 
 

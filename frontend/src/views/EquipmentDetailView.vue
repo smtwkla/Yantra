@@ -5,11 +5,17 @@
  * photos: S006, loaded separately by DocumentsCards, with the model's: S012; manufacturer and
  * model: S012; Print label: S014). Reloaded from the API after any save. The type name and the model's label come
  * with the node, so no types or models cache is needed here.
+ *
+ * Tickets (S017): an Open tickets section (the machine's open tickets; on a part, those raised
+ * on that part) and a Raise ticket button, each from the node detail's `permissions` (the
+ * user's keys at the node's site): the section with ticket:read, the button with ticket:raise
+ * on equipment that is not scrapped. The storekeeper holds neither and sees neither.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
+import IntensityBadge from "../components/IntensityBadge.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import { userPermissions } from "../stores/auth";
@@ -17,6 +23,7 @@ import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
 import { labelsPath } from "../utils/labelSheets";
+import { ageText, problemText } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
@@ -46,7 +53,28 @@ const canEdit = computed(
 // Model documents are maintained in Masters by equipment:edit held at any site (S012 § 5.5), so
 // the "Managed in Masters" hint follows the global permissions, not this node's site
 const canEditModels = computed(() => userPermissions.value.includes("equipment:edit"));
+const canReadTickets = computed(() => (node.value?.permissions ?? []).includes("ticket:read"));
+const canRaiseTicket = computed(
+  () => (node.value?.permissions ?? []).includes("ticket:raise") && !scrapped.value && !loading.value
+);
 const siteAndUnit = computed(() => node.value.unit.split("."));
+
+// The node's open tickets, loaded after the node (its permissions say whether to)
+const openTickets = ref(null); // null until loaded
+const ticketsError = ref("");
+let ticketsSeq = 0;
+
+async function loadTickets(nodeId) {
+  const seq = ++ticketsSeq;
+  openTickets.value = null;
+  ticketsError.value = "";
+  try {
+    const page = await apiGet(`/api/tickets?equipment_id=${nodeId}&state=open`);
+    if (seq === ticketsSeq) openTickets.value = page.items;
+  } catch (err) {
+    if (seq === ticketsSeq) ticketsError.value = err.message;
+  }
+}
 const classLabel = computed(() => {
   const cls = (equipmentClasses.value ?? []).find((c) => c.id === node.value.class_id);
   return cls ? `${cls.code} — ${cls.name}` : node.value.class_code;
@@ -61,7 +89,10 @@ async function load() {
   loadError.value = "";
   try {
     const [loaded] = await Promise.all([apiGet(`/api/equipment/${id}`), ensureEquipmentClasses()]);
-    if (seq === loadSeq) node.value = loaded;
+    if (seq === loadSeq) {
+      node.value = loaded;
+      if (loaded.permissions.includes("ticket:read")) loadTickets(loaded.id);
+    }
   } catch (err) {
     if (seq !== loadSeq) return;
     node.value = null;
@@ -138,6 +169,10 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
+      <router-link v-if="canRaiseTicket" :to="`/tickets/new?equipment=${node.id}`" class="btn btn-danger mb-3">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i>Raise ticket
+      </router-link>
+
       <div v-if="scrapped" class="alert alert-secondary">Scrapped — this record is read-only.</div>
       <div v-else-if="canEdit" class="d-flex flex-wrap gap-2 mb-3">
         <button class="btn btn-sm btn-outline-primary" @click="formModal.openEdit(node)">
@@ -152,6 +187,32 @@ function onSaved({ result, created }) {
         <button class="btn btn-sm btn-outline-primary" @click="statusModal.open(node)">
           <i class="fa-solid fa-toggle-on me-1"></i>Change status
         </button>
+      </div>
+
+      <div v-if="canReadTickets" class="card mb-3">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span>Open tickets</span>
+          <router-link :to="`/tickets?equipment_id=${node.id}&state=all`" class="small">All its tickets</router-link>
+        </div>
+        <div v-if="ticketsError" class="card-body text-danger">Tickets could not be loaded: {{ ticketsError }}</div>
+        <div v-else-if="openTickets === null" class="card-body text-secondary">Loading…</div>
+        <div v-else-if="openTickets.length === 0" class="card-body text-secondary">No open tickets.</div>
+        <div v-else class="list-group list-group-flush">
+          <router-link
+            v-for="t in openTickets"
+            :key="t.id"
+            :to="`/tickets/${t.id}`"
+            class="list-group-item list-group-item-action"
+          >
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <IntensityBadge :intensity="t.intensity" />
+              <span class="fw-semibold">{{ t.serial }}</span>
+              <span v-if="t.component && t.component.id !== node.id" class="text-secondary">{{ t.component.code }}</span>
+              <span class="ms-auto small text-secondary"><i class="fa-regular fa-clock me-1"></i>{{ ageText(t.occurred_at) }}</span>
+            </div>
+            <div class="ticket-text">{{ problemText(t) }}</div>
+          </router-link>
+        </div>
       </div>
 
       <div class="row g-3">
@@ -215,6 +276,9 @@ function onSaved({ result, created }) {
 <style scoped>
 .notes-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ticket-text {
   overflow-wrap: anywhere;
 }
 </style>

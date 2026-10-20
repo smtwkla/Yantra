@@ -22,7 +22,7 @@ import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import { userLogin, userPermissions } from "../../stores/auth";
 import { ensureSites, ensureTrades, ensureUnits, sites, trades, units } from "../../stores/masters";
-import { describeSiteRow, roleLabel, SITE_ROLES, TECHNICIAN } from "../../utils/siteRoles";
+import { describeSiteRow, roleLabel, siteRoleChoices, TECHNICIAN } from "../../utils/siteRoles";
 import { useMasterForm } from "./useMasterForm";
 
 const PATH = "/api/masters/people";
@@ -87,10 +87,9 @@ const rowBody = (row) => ({ role: row.role || null, all_units: row.all_units, un
 const willHaveLogin = computed(() =>
   canEditLogin.value ? form.value.username.trim() !== "" : Boolean(editing.value?.has_login)
 );
-// Without a login a person can only be a Technician (S011 A1, gate A); an engineer gives only that
-const roleChoices = computed(() =>
-  canEditLogin.value && willHaveLogin.value ? SITE_ROLES : SITE_ROLES.filter((r) => r.value === TECHNICIAN)
-);
+// Without a login a person can only be a Technician or an Operator, and only IT admin sets an
+// Operator row (S017 user decision 5); an engineer gives Technician only (S011 A1, gate A)
+const roleChoices = computed(() => siteRoleChoices(canEditLogin.value, willHaveLogin.value));
 
 // Units of the row's site: the active ones, plus inactive ones the row already holds
 function unitChoices(row) {

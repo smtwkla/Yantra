@@ -7,6 +7,7 @@
 
 export const navItems = [
   { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
+  { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
   { name: "masters", path: "/masters", icon: "fa-solid fa-industry", label: "Masters", perm: "masters:read" },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];
