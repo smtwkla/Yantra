@@ -36,6 +36,16 @@ The orchestrator gives you one of three tasks:
     tables or endpoints, a different rule, permissions, behaviour the user would
     notice, or a conflict between the brief and the code. Put the question at
     the top of your final message, under **QUESTIONS FOR THE USER**.
+- **Design and structure** (CLAUDE-COMMON principles):
+  - put each rule in its layer: business rules and calculations in the pure
+    core, fetching, locking and storing in the route and DB shell, display
+    and simple input checks in the frontend;
+  - before writing a helper, query or component, search for one that already
+    does it (`grep` the backend modules, `components/`, `utils/`, the
+    stores). Reuse or extend it; if it doesn't fit, say why under "Decisions
+    taken". Never paste a near-copy of an existing block;
+  - right-sized: no new layer, interface, base class or config flag without
+    a second real use. Simple and explicit beats general.
 - **Order of work.** Pure core and its tests first (green), then the shell, then
   the UI.
 - **Run the tests.** Run `tooling/run-tests.bat` (it needs the dev DB up). Run
