@@ -178,16 +178,19 @@ is never stored, so it can't go stale. Columns:
 
 `| Step | Title | Stage | Committed? | Remarks |  |`
 
-- **Bulb** (last column, no header): whose move it is. Last, because the
+- **Bulb** (last column, no header): where the step stands. Last, because the
   terminal draws an emoji two cells wide while the table pads it as one, so
   every column to its right would shift; at the end only the closing border
   moves.
-  - 🟢 **the user's**: a gate is waiting: approve a brief or amendment (gate
-    A), answer a question Claude raised, run the manual checks or commit
-    (gate B), or confirm the commit so the step can be set `Done`;
-  - 🟡 **Claude's**: a brief or code review is due or running, findings are to
-    be answered or fixed, or an approved step is ready for `/step implement`;
-  - blank: queued, `Done` or `Dropped`; nothing to do now.
+  - 🟡 **needs the user**: a gate is waiting: approve a brief or amendment
+    (gate A), answer a question Claude raised, run the manual checks or
+    commit (gate B), or confirm the commit so the step can be set `Done`;
+  - 🔵 **an agent is working**: a brief or code review, the coder, or Claude
+    answering or fixing findings — due or running;
+  - ⚪ **ready for coding**: approved, waiting for `/step implement` (or for
+    the step it is coded after);
+  - 🟢 **Done** (shown only by `/step ls all`);
+  - blank: queued or `Dropped`.
 - **Step, Title**: from the index in `docs/steps/README.md`, then its
   "Queued" table (queued items with a step ID only; ideas without one are left
   out). Order by step ID.
