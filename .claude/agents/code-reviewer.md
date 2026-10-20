@@ -52,6 +52,26 @@ review file there.
 - **Scope.** Is everything built that the brief asks for? Is anything built that
   it doesn't? Was every departure listed in the report's "Decisions taken"? An
   unreported departure is at least `major`.
+- **Use on the floor (UX).** Apply the "Use on the floor (UX)" checklist in
+  `.claude/agents/brief-reviewer.md` (one list, kept there) to the screens as
+  built, reading the Vue code and the messages the backend returns. A brief
+  can't show these, so check them in the code:
+  - dialogs: the body scrolls and the footer with the action buttons stays
+    fixed (e.g. Bootstrap `modal-dialog-scrollable`), so buttons are never
+    pushed off a phone screen; nothing that grows with its rows without a
+    limit or its own scroll;
+  - irreversible or significant actions: a confirm step or undo is really
+    wired, and the button is styled and placed apart from everyday ones;
+  - every error string the user can see (`ApiError` messages, frontend
+    validation): one short plain line, what is wrong and what to do;
+  - layout at phone width: no fixed widths or wide tables without a phone
+    layout; tap targets not shrunk (`btn-sm` on floor screens);
+  - empty, no-permission and no-Team-record states rendered, not blank or
+    a 403.
+
+  Severities as in the brief reviewer: a flow the floor would not use as
+  built is `major`; smaller friction `minor` or `nit`. What only a real phone
+  can show goes on the manual-check list.
 - **Test quality.** Do the tests cover the brief's § Tests list and the failure
   modes, or only the happy path?
 - **Earlier rounds.** If there are earlier rounds, verify that each finding

@@ -65,6 +65,37 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   standards (ISO 14224, EN 13306, ISO 55000/55001, SMRP, TPM, ISO 27001) and
   cites them correctly. The project owner is learning maintenance practice, so
   explain briefly what the standard says.
+- **Use on the floor (UX).** User-friendliness is reviewed, not assumed:
+  judge each screen as the person who must use it, and propose the simpler
+  version where one exists. For every screen, dialog or flow the brief adds
+  or changes, check it against how the plant works (`docs/Plant-Facts.md`,
+  Plan.MD § 3 and § 6):
+  - straightforward screens: one main job per screen, obvious what to do
+    next, nothing on it the user doesn't need for that job;
+  - taps and fields to finish the main job on a phone; nothing asked that
+    could be defaulted (now, the user's own person, the only option);
+  - large tap targets and a layout that works at phone width, for gloved
+    hands on the floor;
+  - dialogs that fit a phone screen: the action buttons always visible, never
+    pushed below the fold; no dialog that grows with its content until it
+    shows only part of it — split it or make it a page;
+  - irreversible or significant actions (close, not a fault, remove, scrap,
+    send back) never on a single tap: a confirm step naming what will happen,
+    or an undo; and kept apart from everyday buttons so they aren't hit by
+    mistake;
+  - entry after the fact: a supervisor typing several records at shift end;
+  - shared kiosk logins: who is acting is always visible;
+  - error messages short and plain: one line saying what is wrong and what to
+    do, no codes, no field names, no explanation of the rule;
+  - empty and edge states: no records, no Team record, no permission (the
+    control hidden, not a 403);
+  - list order and what a row shows, as the person scanning it needs it;
+  - wording a low-literacy or Tamil-speaking user would follow, where they
+    use the screen.
+
+  A flow the floor would not use as described (too many steps for the person
+  who must do it, a field nobody can fill at that moment) is `major`; smaller
+  friction is `minor` or `nit`.
 - **Earlier rounds.** If there are earlier rounds, first verify that every
   earlier finding marked `Accepted` is actually reflected in the brief text, not
   only in the Review log.
