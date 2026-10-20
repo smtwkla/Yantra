@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-review r1; gate A 20-10-2026)
 Track: light (full at review; set light by the user at gate A, 20-10-2026)
 Baseline: 90284ec + uncommitted S016 (stale brief check s1, 20-10-2026)
-Status: In code review (approved 20-10-2026 by KLA)
+Status: Committed 6c771e1; manual checks pending (approved 20-10-2026 by KLA)
 ```
 
 # S015 — Printable asset list
