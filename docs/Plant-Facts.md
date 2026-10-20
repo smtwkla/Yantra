@@ -27,6 +27,7 @@ Conventions:
 | Registered head office: 10/710, Surandai Road, Pavoorchatram — a formal office only, no operations | User, 13-10-2026 |
 | **VEL** is the combined org unit (SMTW with its sites and SSVT) for which Yantra is implemented — hence deployment ID `vel_yantra_master` | User, 13-10-2026 |
 | Products — TBD (tiles; full product range to be listed) | — |
+| **Not ISO 9001 certified; certification is a future goal.** Yantra is to be ISO 9001 compliant and nudge the plant towards it | User, 20-10-2026 |
 
 ### Sister concern
 
@@ -128,6 +129,9 @@ equipment used daily vs. rarely.
 | Gensets at several sites (e.g. 140 kVA at SSVT, 63 kVA at stockyard 1) and an EB incoming connection at every site. A turner-cum-fitter does a daily round of all gensets: visual check, fuel level, battery, running properly. The electrical department looks after some gensets and reads all EB incoming meters daily | User, 18-10-2026 |
 | The electrical team head sends the owner a written report of each day's work. A typical day (09-10-2026): 7 packing machines cleaned with air; 2 SSVT stacker machines cleaned, batteries checked; 140 kVA genset battery check; stockyard 1 63 kVA genset battery maintenance and fuel level; portable vibrator carbon brushes replaced; SSVT press V201 photo guard cleaned, function restored; RO water purifier outlet cleaned; a new concrete vibrator's switchboard wired (commissioning); packing-machine AMC technician on site, trials of new packing machines | User, 18-10-2026 |
 | The daily report will be printed from Yantra; odd jobs and new installations are written on the printout by hand (decided) | User, 18-10-2026 |
+| **No calibration policy or SOP.** Measuring instruments in use: vernier calipers, digital multimeters, pressure transducers, temperature indicators, thermocouples, weigh scales, moisture analysers, energy meters, thermal imaging cameras, IR thermometers, a flexural strength testing machine. Owned by the **Quality lab and by production**; the lab's machines are to be in Yantra too | User, 20-10-2026 |
+| A **weighbridge** and weigh scales are in use and need Legal Metrology stamping (verification by the state department) | User, 20-10-2026 |
+| Calibration certificates come from agencies that are not NABL-accredited but state traceability; the Sartorius moisture analyser is calibrated by its vendor | User, 20-10-2026 |
 
 TBD — which equipment is under AMC, with which vendors, and the contract terms (visits per year, response time, what is covered); how breakdowns are reported and recorded today; existing PM routines;
 where the Mechanical and Electrical shops are and which sites they serve.
@@ -198,4 +202,5 @@ installations, major failures, rebuilds, layout changes). TBD.
 | 16-10-2026 | Drawings and know-how; forgotten machines and operator onboarding |
 | 17-10-2026 | Statutory inspections (lifts, cranes, pressure vessels, conveyors) and fire extinguishers |
 | 17-10-2026 | Parts: makers' part lists, service-engineer quotes, generic spares |
+| 20-10-2026 | ISO 9001 as a future goal; measuring instruments, their owners, weighbridge stamping, certificate sources |
 | 18-10-2026 | Daily-report use case: genset round, EB meter readings, the electrical head's daily report, fitter without a phone |

@@ -98,6 +98,10 @@ _TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_tr
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
 
+# The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
+_SEEDED_TABLES = ("failure_modes", "failure_causes", "maintenance_actions")
+SEED_CREATOR = "migration-v11"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _clean_tables():
@@ -112,6 +116,8 @@ def _clean_tables():
             cur.execute("SET FOREIGN_KEY_CHECKS = 0")
             try:
                 with transaction(conn):
+                    for table in _SEEDED_TABLES:
+                        cur.execute(f"DELETE FROM {table} WHERE created_by <> %s", (SEED_CREATOR,))
                     for table in _TABLES:
                         cur.execute(f"DELETE FROM {table}")
             finally:
@@ -230,6 +236,13 @@ class Uniq:
 
     def username(self):
         return f"user{self._next():04d}"
+
+    def failure_code(self):
+        """Fits the failure-code rule (S016 § 5.1) and never matches a seed code."""
+        return f"T{self._next():04d}"
+
+    def failure_label(self):
+        return f"Test label {self._next():04d}"
 
 
 @pytest.fixture(scope="session")

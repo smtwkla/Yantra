@@ -28,6 +28,16 @@ RESERVED_TYPE_NAME = "none"
 ADDRESS_MAX = 255
 WAREHOUSE_MAX = 140
 
+# Failure codes (S016 § 5.1): ISO 14224 Annex B codes such as NOI, 3.4 or 12 — letters and
+# digits in parts joined by single dots, so a typo like "3." or "1..2" is refused
+FAILURE_CODE_RE = re.compile(r"^[A-Z0-9]+(\.[A-Z0-9]+)*$")
+FAILURE_CODE_MAX = 8
+# A label fits one line of a phone picker
+FAILURE_LABEL_MAX = 60
+FAILURE_DESCRIPTION_MAX = 255
+# ISO 14224 Table B.3's five cause groups, in the order of failure_causes.cause_group's ENUM
+CAUSE_GROUPS = ("design", "fabrication", "operation", "management", "misc")
+
 
 def _code_parser(pattern, label, rule):
     def parse(raw):
@@ -178,6 +188,55 @@ _MODEL_FIELDS = {
 }
 
 
+def _parse_failure_code(raw):
+    code = raw.strip().upper() if isinstance(raw, str) else ""
+    if not (len(code) <= FAILURE_CODE_MAX and FAILURE_CODE_RE.match(code)):
+        raise ValueError(f"Code must be 1–{FAILURE_CODE_MAX} characters: letters and digits, "
+                         "parts joined by single dots (e.g. NOI, 3.4)")
+    return code
+
+
+def _parse_failure_label(raw):
+    label = _collapsed(raw)
+    if not label:
+        raise ValueError("Label is required")
+    if len(label) > FAILURE_LABEL_MAX:
+        raise ValueError(f"Label must be at most {FAILURE_LABEL_MAX} characters")
+    return label
+
+
+def _parse_cause_group(raw):
+    if raw not in CAUSE_GROUPS:
+        raise ValueError(f"Cause group must be one of: {', '.join(CAUSE_GROUPS)}")
+    return raw
+
+
+_parse_failure_description = optional_text_parser("Description", FAILURE_DESCRIPTION_MAX)
+
+# class_id is parsed on update too: the shell refuses a different one (fixed after create,
+# S016 § 5.2).  Absent or null on create = General (every class).
+_FAILURE_MODE_FIELDS = {
+    "code": (_parse_failure_code, True),
+    "label": (_parse_failure_label, True),
+    "description": (_parse_failure_description, False),
+    "class_id": (_parse_optional_id("Class"), False),
+    "active": (_parse_active, False),
+}
+_FAILURE_CAUSE_FIELDS = {
+    "code": (_parse_failure_code, True),
+    "label": (_parse_failure_label, True),
+    "description": (_parse_failure_description, False),
+    "cause_group": (_parse_cause_group, True),
+    "active": (_parse_active, False),
+}
+_MAINTENANCE_ACTION_FIELDS = {
+    "code": (_parse_failure_code, True),
+    "label": (_parse_failure_label, True),
+    "description": (_parse_failure_description, False),
+    "active": (_parse_active, False),
+}
+
+
 def _parse_employment(raw):
     if raw not in EMPLOYMENT:
         raise ValueError("Employment must be direct or contractor")
@@ -259,6 +318,18 @@ def validate_trade(data, creating):
 
 def validate_person(data, creating):
     return _validate(data, _PERSON_FIELDS, creating)
+
+
+def validate_failure_mode(data, creating):
+    return _validate(data, _FAILURE_MODE_FIELDS, creating)
+
+
+def validate_failure_cause(data, creating):
+    return _validate(data, _FAILURE_CAUSE_FIELDS, creating)
+
+
+def validate_maintenance_action(data, creating):
+    return _validate(data, _MAINTENANCE_ACTION_FIELDS, creating)
 
 
 def normalise_username(raw):

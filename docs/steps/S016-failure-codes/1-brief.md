@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-review r1)
 Track: full
-Baseline: a2190f3 + uncommitted S022 (tooling/deps/, docs; none of this brief's files)
-Status: Approved 20-10-2026 by KLA
+Baseline: 90284ec (stale brief check 20-10-2026: no file of this brief changed since a2190f3)
+Status: In code review (approved 20-10-2026 by KLA)
 ```
 
 # S016 — Failure codes

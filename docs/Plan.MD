@@ -25,6 +25,7 @@ module before each is built.
 | OneERP | Read-only. OneERP warehouses become equipment units. The warehouse mapping may be deferred. **Yantra's nomenclature leads** (decided 13-10-2026): OneERP warehouse codes may be renamed to match Yantra's `SITE.UNIT` codes (e.g. `SMTW.MCC` → `SMTW.MCC1` / `SMTW.MCC2`), rather than Yantra adopting OneERP's names. Renames are done in OneERP by its owners. |
 | Hosting | customer7 (10.24.0.112), web container published on port **8990**. Front-proxy vhost is public (Keycloak is the gate); live since 11-10-2026. |
 | Access from outside | Shop-floor phones use **mobile data**, so every role works from anywhere (decided 11-10-2026), **except IT admin, which works only from the plant network** (S013, 18-10-2026; ISO 27001 A.8.2). Managers work from anywhere too. Admin (`mspv-apps-admin`) bypasses the gate, so a wrong network list can be fixed from anywhere; protect it with Keycloak two-factor login. The VPN pool counts as internal. Internal ranges are set in Settings › Network. The real client IP comes from `X-Real-IP`; every sighting is in the access log (365 days, purged by the worker). |
+| Standards | **ISO 9001 certification is a future goal; Yantra is built to be compliant and to nudge the plant towards it** (decided 20-10-2026). The clauses that touch maintenance and measurement, and where Yantra serves them: **§ 7.1.3** infrastructure is maintained (equipment register, PM); **§ 7.1.5** monitoring and measuring resources (calibration, § 4.3); **§ 7.5** documented information (who changed what and when; retention); **§ 8.5.1** production under controlled conditions (suitable equipment and instruments); **§ 9.1** monitoring and measurement (KPIs, § 4.6); **§ 10.2** nonconformity and corrective action (tickets with cause and action codes). Each brief names the clause it serves, as it already does for ISO 14224 and ISO 55001. |
 | Files | Photos and documents on disk under `data/`, which is an **App-FS** NFS export mounted into the container (like OneERP's files). No MinIO. |
 | Repos | App code and docs here. Deployment in `smtw_erp_devops/erp_server/yantra/`, run with `erp_spanner.py <org> yantra <instance>` (like `erp_server/delivery`), so another org or a `test` instance is just a host file + settings file. |
 
@@ -65,7 +66,7 @@ module before each is built.
 
 ## 3. Roles
 
-**Roles per site** (S011, decided 16-10-2026; A1). The maintenance roles below are held in Yantra, on the person in **Team**: per person and site, **one** role, with all the site's units or chosen ones. For a person with a login those rows are their access. IT admin grants every role; an engineer (`people:assign_technicians` at the site) assigns **Technicians** at their own site only; nobody changes their own access. A person without a login can be a Technician **or an Operator** (the row then says where they work, for pick-lists). **Operators without a login** are created by supervisors and engineers at their own site (decided 16-10-2026, sorting-line use case; the permission key is settled in the brief that builds it, on the pattern of `people:assign_technicians`). They are needed so CIL jobs and tickets can say who did the check and who found the fault when the operator has no phone (ISO 14224: who detected, who worked). At a record, a user's rights are those of their role at the record's site; navigation and site-less masters use the union over their sites. `it_admin` and `admin` stay in Keycloak and apply everywhere; Keycloak's `maintenance_team` only lets a user log in. A deliberate departure from the base RBAC pattern (roles from the token), recorded in `.claude/CLAUDE.md`.
+**Roles per site** (S011, decided 16-10-2026; A1). The maintenance roles below are held in Yantra, on the person in **Team**: per person and site, **one** role, with all the site's units or chosen ones. For a person with a login those rows are their access. IT admin grants every role; an engineer (`people:assign_technicians` at the site) assigns **Technicians** at their own site only; nobody changes their own access. A person without a login can be a Technician **or an Operator** (the row then says where they work, for pick-lists). **Operators without a login** are created by supervisors and engineers at their own site (decided 16-10-2026, sorting-line use case; the permission key is settled in the brief that builds it, on the pattern of `people:assign_technicians`; queued). Until then only IT admin sets an Operator row on a person without a login (S017, approved 20-10-2026; it changes S011 A1's "without a login, only a technician"). They are needed so CIL jobs and tickets can say who did the check and who found the fault when the operator has no phone (ISO 14224: who detected, who worked). At a record, a user's rights are those of their role at the record's site; navigation and site-less masters use the union over their sites. `it_admin` and `admin` stay in Keycloak and apply everywhere; Keycloak's `maintenance_team` only lets a user log in. A deliberate departure from the base RBAC pattern (roles from the token), recorded in `.claude/CLAUDE.md`.
 
 | Role | Who | Can do |
 |---|---|---|
@@ -75,7 +76,7 @@ module before each is built.
 | `maint_manager` | Maintenance manager | Everything the engineer can, plus reports and dashboards across all units of their site(s) |
 | `maint_supervisor` | Production supervisors (S011 A1, decided 16-10-2026) | An operator's rights today (CIL, raise issues, readings), more reports later; usually wider units than an operator. Production-side (TPM autonomous maintenance): above the operator, **off** the maintenance ladder, so a supervisor does not work tickets. Records on behalf of operators without a phone: CIL done, fault found, **back in service** with the technician's name, each with the event time; creates operators without a login at their site (sorting-line use case, 16-10-2026) |
 | `maint_storekeeper` | Maintenance stores | No v1 work (spares are not in v1); the role exists so these users can sign in. Stands outside the maintenance ladder. |
-| `it_admin` | IT | Users' role view, master data housekeeping (units, OneERP sync), settings, notification channels. **Not** maintenance work and not all-powerful. |
+| `it_admin` | IT | Users' role view, master data housekeeping (units, OneERP sync), settings, notification channels. **Full access to tickets** at every site (S017, user 20-10-2026: a deliberate departure from "not maintenance work" and from ISO 27001 A.5.3 segregation of duties; every ticket action is logged with its user, A.8.15). Not all-powerful. |
 | `admin` | Admin | Everything (bypass in code, per the RBAC pattern; also the org-wide `mspv-apps-admin` Keycloak role) |
 
 Production supervisors have the `maint_supervisor` role (S011 A1, 16-10-2026; it
@@ -106,7 +107,8 @@ with each module. First cut of the main keys:
 | `equipment:edit` | | | | ✓ | ✓ | ✓ |
 | `equipment:read_all_units` | | | | | | ✓ |
 | `equipment:purge_documents` | | | | | ✓ | ✓ |
-| `breakdown:raise` | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| `ticket:read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `ticket:raise` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `breakdown:work` | | | ✓ | ✓ | ✓ | |
 | `breakdown:close` | | | | ✓ | ✓ | |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
@@ -145,6 +147,11 @@ own sites.
 `failure_codes:edit` (S016, approved 20-10-2026) — engineers (and so the manager) and
 IT admin — maintains the failure modes, causes and maintenance actions. Global, not
 site-scoped: the lists are the same at every site.
+`ticket:read` and `ticket:raise` (S017, approved 20-10-2026) replace `breakdown:raise`:
+granted to the operator (so the whole ladder and the supervisor) and IT admin, not the
+storekeeper; site-scoped. Ticket photos are written with `ticket:raise`, removed ones
+restored or purged with `equipment:purge_documents`. S018 settles the keys that replace
+`breakdown:work` and `breakdown:close`.
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -206,7 +213,7 @@ CIL jobs at their units and nothing else.
   controls (PLC, pressure transducer, relay board), safety door (pneumatic cylinder, magnetic
   sensor). The **safety-door component-unit is graded A** on every press: criticality A covers
   safety risk, so its tickets outrank production tickets and escalate faster; no new flag.
-- **Fields:** code, name, **model** (required on every node; it gives the equipment class and type — decided 17-10-2026, S012), serial number, year, maintenance strategy (*Proposed*, above), criticality (A/B/C; required on equipment, default C; component-units and components inherit unless graded), status (in service / standby / out of use / scrapped — scrapped is final and read-only), unit. Only equipment has a unit; its parts follow it (decided 14-10-2026, S002). Which machine backs up which (a standby relationship) is not recorded. Notes: free text for reading, searchable, not in the history (S004).
+- **Fields:** code, name, **model** (required on every node; it gives the equipment class and type — decided 17-10-2026, S012), serial number, year, maintenance strategy (*Proposed*, above), criticality (A/B/C; required on equipment, default C; component-units and components inherit unless graded), status (in service / standby / out of use / scrapped — scrapped is final and read-only; equipment with open tickets cannot be scrapped, S017), unit. Only equipment has a unit; its parts follow it (decided 14-10-2026, S002). Which machine backs up which (a standby relationship) is not recorded. Notes: free text for reading, searchable, not in the history (S004).
 - **Equipment class:** what a piece of equipment *is* (hydraulic press, ball mill, kiln fan, …), a list maintained by engineers. Used to pick equipment when applying a PM template, to compare MTBF/downtime across equipment of a kind, and (if failure codes are adopted) to scope code lists. No class-specific custom fields in v1. A class is a **kind**, not a container like sites and units: the same class is used at any level of the tree — a blower is a component-unit in one machine and a stand-alone machine elsewhere — so "all compressors in the plant" is one class across every level (clarified by the user 16-10-2026). So a class has no level of its own; a level shown for a class is derived from where it is used.
 - **Equipment type** (decided 15-10-2026, S004): how equipment of a class is built, e.g. `RPP` → closed / open execution (ISO 14224 class → type). Types are defined per class, maintained by engineers; an equipment's type must belong to its class.
 - **Sites and units:** sites (SMTW, BRICKS, SSVT, the farms, …) are created in Yantra. Each site has units — its areas and shop floors — coded `SITE.UNIT` (e.g. `SMTW.KILN`, `SSVT.SHOP`). A unit can be mapped to a OneERP warehouse code. Until the sync exists, units are maintained by hand.
@@ -268,8 +275,10 @@ about 50 users, and the record of the event stays in one place (ISO 14224).
 - **Sources:** raised by hand (an operator, supervisor or technician), from a Not OK item on a
   CIL or PM job (phase 4), from an out-of-limits reading (phase 4), or by another system (the
   shared ticket API, later). Every source lands in the same ticket.
-- Table and permission-key names (`breakdowns` / `breakdown:*` today in this plan) are settled
-  in the phase 3 brief.
+- Table and permission-key names settled by S017 (approved 20-10-2026): tables `tickets`,
+  `ticket_events`; keys `ticket:*`. **The symptom (failure mode) is optional at raise** and
+  required at close (S018). **"Not fixed" after back in service is a new ticket**, linked to
+  the old one, not a reopen (built in S018). Raising may be back-dated up to 7 days.
 
 States and who moves them:
 
@@ -343,7 +352,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   workflow (ISO 14224 wants every maintenance event recorded, whoever asked for it).
 - **Photos and remarks** at any step.
 - **Notifications:** new breakdown → maintenance; escalation if not acknowledged within a set time (per criticality). A new defect shows in the open-tickets list; whether it notifies is settled with the notification step.
-- Serial: `BD-YYYY-MM-NNN` (one series for breakdowns and defects, since a defect can become a breakdown; the prefix is settled in the phase 3 brief).
+- Serial: `TK-YYYY-MM-NNN` (decided 20-10-2026, S017): one series for breakdowns and defects, since a defect can become a breakdown; numbered by the month the ticket is written.
 - **Shared ticket API (later)** — the intended way for other systems (plant-3i,
   VelKilnMaster, any later one) to raise tickets: one authenticated endpoint, not
   one integration per system. The caller sends the equipment's permanent code,
@@ -373,10 +382,31 @@ question 6. CIL plans can come from templates the same way.
 - Checklist items: OK / Not OK / NA, with remarks.
 - Reading items: a measured value with unit of measure and limits (min/max), e.g. temperature, vibration, roller clearance, wear in mm.
 - Photo required: yes/no per plan.
+- **Item types** (*Proposed*, 20-10-2026; supersedes the three lines above once built). One
+  **item shape** is shared by PM template items, PM plan items, procedure steps (§ 4.3a) and
+  steps attached to a ticket, with one result row per item. Types:
+  - **Task** — done / not done ("grease the bearing", "clean the filter"). EN 13306 separates a
+    *maintenance task* from an *inspection*; "Not OK" on a task is meaningless, and the split
+    makes reporting honest: Not-OK checks count defects found, undone tasks measure PM quality.
+  - **Check** — OK / Not OK / NA with remarks (today's checklist item; EN 13306 inspection).
+  - **Reading** — a value with unit of measure and limits (today's reading item). A reading
+    that names a **meter** (§ 4.1) also writes a meter reading with source `pm`, so one entry on
+    the job feeds the meter trigger and the die or press history; a plain measurement
+    (vibration, clearance) has limits but no meter.
+  - Every item carries optional **help text** and a **reference photo** — TPM's visual standard,
+    "what good looks like" (the grease nipple, the correct oil level, a worn scraper beside a new
+    one) — and a **photo setting**: none / optional / required. The per-plan "photo required"
+    flag goes; it was too coarse (evidence belongs to the step that produced it).
+  - **No signature step.** Every action records who and when, and the sign-offs are states —
+    technician *done*, engineer *verified*, supervisor *back in service* — which is the record
+    ISO 9001 § 7.5.3 asks for. A drawn signature on a phone adds friction and no evidence; the
+    one case without a login (a contractor or government inspector) is covered by the attached
+    certificate on certification plans. Rejected: a separate checkbox type beside task (same
+    thing); photo as a type of its own (a photo is evidence on a step, not a step).
 - **Triggers** — one or both:
   - **Calendar:** every N days / weeks / months. **The next job is due from the completion date of the last one.** If a plan needs a different rhythm, the engineer edits the plan.
   - **Meter:** every N units of a meter (run hours, production count), or when a reading crosses a limit. **Crossing creates a PM job automatically** and notifies, just like a calendar job falling due.
-- **Performer:** maintenance (team or technician, the default for generated jobs) or operator (CIL plans). An **AMC vendor** is a contractor record in Team and can be the plan's assignee (16-10-2026); the engineer verifies the job with the vendor's report attached. Calibration of instruments (e.g. the moisture analyser) is an ordinary calendar plan with the certificate attached (ISO 9001 § 7.1.5 wants calibration records with due dates).
+- **Performer:** maintenance (team or technician, the default for generated jobs) or operator (CIL plans). An **AMC vendor** is a contractor record in Team and can be the plan's assignee (16-10-2026); the engineer verifies the job with the vendor's report attached. Calibration of instruments: see **Calibration** below (20-10-2026; supersedes "an ordinary calendar plan with the certificate attached").
 - **Both triggers, whichever first** (16-10-2026): standby equipment gathers hours slowly, so its plans use calendar and meter together, as OEM schedules are written.
 - **Fitness-for-use inspection** (*Proposed*, 16-10-2026): a PM template applied to every
   class, performer the engineer, calendar (e.g. yearly), with a checklist and an outcome — fit /
@@ -397,6 +427,54 @@ question 6. CIL plans can come from templates the same way.
   fee — and conveyors, which may be an insurer's or internal requirement (to confirm). The
   performer is a contractor in Team or the inspector recorded the same way. The fee is a cost,
   not tracked in v1; its receipt is attached as a document.
+- **Calibration** (*Proposed*, 20-10-2026; ISO 9001 § 7.1.5, monitoring and measuring
+  resources — the clause an auditor or a BIS inspector will hold the plant to). The plant has
+  no calibration policy; ISO 9001 is a future goal, so this is built in its shape from the
+  start. **Instruments are equipment** of class *measuring instrument* (types: vernier, DMM,
+  pressure transducer, temperature indicator, thermocouple, weigh scale, weighbridge, moisture
+  analyser, energy meter, thermal camera, IR thermometer, flexural strength machine, …), owned
+  by the Quality lab, production or maintenance, with extra fields: range, **required
+  accuracy** (what the process needs, not the brochure figure — ISO 10012's *metrological
+  confirmation*: a vernier reading to 0.02 mm is ample for a roller gap held between 1.5 and
+  2.5 mm), **calibration class**, owning department and **custodian** (a vernier lives with a
+  technician, not a unit). Not every instrument needs a certificate; the class decides:
+  - *Critical, external*: the result goes on a product claim or a safety decision —
+    flexural strength machine (force verification per IS 1828 / ISO 7500-1), moisture
+    analyser, lab scales. Yearly, by a **NABL-accredited** lab (ISO/IEC 17025): accreditation
+    is how traceability to national standards is proven without auditing the lab oneself,
+    and the first thing BIS asks for.
+  - *Reference standard*: the plant's own reference DMM, slip set and reference pressure
+    gauge, used only to check other instruments. NABL, since every in-house check hangs off
+    them.
+  - *Working, verified in-house*: verniers, DMMs, IR thermometers, pressure transducers,
+    temperature indicators. Checked against a reference standard, or by a traceable
+    certificate from the current agencies — acceptable to ISO 9001 only if the certificate
+    names the reference used and its certificate number, the uncertainty, and as-found and
+    as-left values.
+  - *Legal metrology*: the weighbridge and trade scales, verified and stamped by the state
+    department under the Legal Metrology Act 2009 (weighbridge yearly; accuracy classes per
+    OIML R 76 / IS 9281). A stamp proves fitness for trade; a lab scale used on product tests
+    still needs a calibration certificate. Have the scale's vendor check it with test weights
+    before the inspector's visit: a failed verification seals the scale until re-verified.
+  - *Replace on schedule*: thermocouples (Type K drifts and costs little).
+  - *Indication only*: thermal camera, energy sub-meters, panel meters — labelled "no
+    calibration required", which ISO 9001 allows where traceability is not needed.
+
+  The schedule and evidence are a **certification plan** per instrument (above): valid-until
+  date, certificate attached, the certifying body a contractor in Team and the Legal
+  Metrology inspector recorded the same way; the compliance register is the calibration due
+  list. An **in-house verification** is a PM plan whose reading items hold the error at each
+  check point, limits set to the required accuracy, plus a checklist item naming the
+  reference used. An over-limit value raises a ticket (§ 4.5), which is the record of the
+  **out-of-tolerance review** § 7.1.5.2 c asks for and plants forget: what did the
+  instrument measure since its last check, and what follows. The QR label (S014) is the
+  calibration sticker: scanning shows status and due date. Intervals start from the maker's
+  figure and are adjusted on history (ILAC-G24). Lab staff are technicians and the lab head
+  an engineer at the Lab unit, so no new role. Not built: a separate calibration module. The
+  written policy (classes, intervals, who approves them, out-of-tolerance steps) is the
+  plant's document, drafted alongside the step. Verifying the presses' transducers and
+  proportional valves in-house against a reference gauge also addresses their known drift
+  (Plant-Facts § 4).
 - **Needs-verification flag per plan** (*Proposed*, 17-10-2026): default yes for maintenance
   work, no for routine checks (a quarterly extinguisher check) and CIL. Settles open question 10.
 - **Fire extinguishers** (17-10-2026): equipment with a code and QR label, class *fire
@@ -452,8 +530,9 @@ its class), on the PM template it explains, and on the ticket it is attached to.
 
 - **Fields:** title, kind (work instruction / diagnostic / one-point lesson / onboarding),
   optional equipment class, a Markdown body with attached photos, optional numbered **steps**
-  as checklist and reading items (the PM item shape), who changed it and when (ISO 9001 § 7.5
-  control of documented information). Edited by engineers.
+  in the shared **item shape** of § 4.3 (task / check / reading, each with help text, reference
+  photo and photo setting; 20-10-2026), who changed it and when (ISO 9001 § 7.5 control of
+  documented information). Edited by engineers.
 - **Onboarding** (16-10-2026): dos and don'ts of a machine or tool, shown one card at a time
   (picture + short text) on the phone or kiosk before first use, written in **Tamil** (the DB is
   utf8mb4, so content is Tamil today while the UI stays English). A **completion record** —
@@ -462,7 +541,13 @@ its class), on the PM template it explains, and on the ticket it is attached to.
   Blocking CIL for an untrained operator can come later, once records exist.
 - **Used from:** PM templates (the "how" behind a checklist), tickets (the diagnostic case —
   open question 15 is a procedure of kind *diagnostic* with steps), the equipment page.
-- Past jobs keep their own copy of the items, so editing a procedure never rewrites history.
+- **Any kind attaches to a ticket** (20-10-2026), not only diagnostic: "change pump elements"
+  on a repair ticket is the work-order case a CMMS job plan serves. Attaching copies the steps
+  onto the ticket as result rows, exactly as a PM job copies its plan items; the technician
+  fills them on the phone and they show on the ticket timeline. Lands with PM items (phase 4);
+  S017 and S018 stay as briefed.
+- Past jobs and tickets keep their own copy of the items, so editing a procedure never
+  rewrites history.
 - Rejected: a separate wiki (knowledge split from the equipment); per-equipment notes (not
   reusable across a class).
 
@@ -568,29 +653,29 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1) |
 | `person_trades` | Person → trades, none or more (S010 A1) |
-| `procedures` | *Proposed* (§ 4.3a): title, kind, optional class, Markdown body, steps as items, attachments |
+| `procedures`, `procedure_items` | *Proposed* (§ 4.3a): title, kind, optional class, Markdown body, attachments; steps in the shared item shape (§ 4.3) |
 | `procedure_completions` | *Proposed* (§ 4.3a): person, procedure, equipment or class, date, recorded by — onboarding done |
 | `verification_rounds`, `verification_items` | *Proposed* (§ 4.1): a walk per unit; per equipment confirmed / not found, who, when |
 | `pm_routes`, `pm_route_plans` | *Proposed* (§ 4.3): a named walk — performer, the plans it covers in order; jobs stay one per equipment |
-| `equipment_documents` | Files attached to equipment or to an equipment model (exactly one owner, S012): kind (document / photo; a pick-list of kinds is proposed, § 4.1), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
+| `equipment_documents` | Files attached to equipment, an equipment model (S012) or a ticket (photos, S017) — exactly one owner: kind (document / photo; a pick-list of kinds is proposed, § 4.1), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `failure_modes` | Symptoms (S016): code, label, description, class (NULL = General), active |
 | `failure_causes` | Causes (S016): code, label, description, ISO cause group, active |
 | `maintenance_actions` | Actions (S016): code, label, description, active |
-| `breakdowns` | Ticket (breakdown or defect, by intensity): equipment, component, state, intensity, codes, remarks, serial, source |
-| `breakdown_events` | One row per state change: who, when, remark — the timestamps come from here |
+| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017) |
+| `ticket_events` | One row per change: who, event time, entered at, intensity, remark — the timestamps come from here (S017) |
 | `breakdown_labour` | Person, trade worked and time spent per ticket |
 | `parts_used` | *Proposed* (§ 4.2): per ticket or PM job — part number, description, quantity, maker, component |
 | `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
-| `meter_readings` | Value, time, who, source (`manual`/`iiot`), PM job link if taken during one |
-| `pm_templates`, `pm_template_items` | Reusable PM work: items, triggers, photo required |
-| `pm_plans` | Equipment, title, kind (PM / CIL), performer (maintenance / operator), source template, triggers (calendar interval, meter + threshold, before use), default assignee, photo required |
-| `pm_plan_items` | Checklist and reading items of a plan; CIL items carry their group (C / I / L) |
+| `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
+| `pm_templates`, `pm_template_items` | Reusable PM work: items in the shared item shape (§ 4.3: type task / check / reading, unit and limits, optional meter, help text, reference photo, photo setting), triggers |
+| `pm_plans` | Equipment, title, kind (PM / CIL), performer (maintenance / operator), source template, triggers (calendar interval, meter + threshold, before use), default assignee |
+| `pm_plan_items` | Items of a plan, same shape as template items; CIL items carry their group (C / I / L) |
 | `pm_jobs` | Generated job: plan, due date or triggering reading, state, serial |
-| `pm_job_results` | One row per plan item: result or value, remark |
+| `pm_job_results` | One row per plan item: done / OK-NotOK-NA / value by type, remark, photo link |
+| `breakdown_procedure_items`, `breakdown_procedure_results` | *Proposed* (§ 4.3a): a procedure's steps copied onto a ticket and their results, same shape as `pm_job_results` |
 | `pm_job_events` | State changes, like `breakdown_events` |
-| `attachments` | Photos and files for tickets and jobs (system-generated names) |
 | `push_subscriptions` | Web push endpoints per user and device |
-| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix from phase 2 (S002), later `BD-` and `PM-` serials |
+| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix from phase 2 (S002), `TK-` ticket serials per month (S017), later `PM-` |
 | `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
 | `task_queue` | Base pattern: notifications, PM generation, sync; first task the daily access-log purge (S013) |
 | `app_settings` | Escalation times, upload limits, internal networks, etc. |
@@ -654,7 +739,7 @@ these rungs need a year of coded tickets and readings first.
 1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`). **Superseded 16-10-2026 (S011):** Keycloak keeps `maintenance_team` and `it_admin`; the maintenance roles are held in Yantra per site.
 2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
-4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). Whether the operator can mark "not fixed" to reopen the ticket is settled with the phase 3 brief.
+4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). "Not fixed" is a **new ticket** linked to the old one, not a reopen (decided 20-10-2026, S017/S018).
 5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class. *Scoped by class (one class or General) from S016, approved 20-10-2026.*
 6. **Template edits:** when a PM template changes, do plans created from it update, or keep their copy until re-applied?
 7. ~~**Unit access upkeep**~~ Decided 13-10-2026: IT admin maintains users' unit lists (and sites and units) — `masters:edit`.
@@ -664,7 +749,7 @@ these rungs need a year of coded tickets and readings first.
 12. **Closing discipline** (*Proposed*, 16-10-2026): the engineer codes cause and action from the technician's verbal report after the fact. TPM practice is to close within the shift; tickets back in service but not closed by end of shift should show on the engineer's dashboard. No extra approval step.
 13. **Deferred work** (*Proposed*, 16-10-2026, § 4.2): scheduled state, meter-value targets, planned downtime. To settle in the phase 3 brief.
 14. **PM rescheduling** (*Proposed*, 16-10-2026, § 4.3): engineer pushes a due job with a reason.
-15. **Diagnostic procedures on tickets** (*Proposed*, 16-10-2026, § 4.2): per class and symptom, steps as checklist and reading items. Which phase: with breakdowns (3) or with PM items (4)? Folded into the **Procedures** master (§ 4.3a) as kind *diagnostic*.
+15. **Diagnostic procedures on tickets** (*Proposed*, 16-10-2026, § 4.2): per class and symptom, steps as checklist and reading items. Which phase: with breakdowns (3) or with PM items (4)? Folded into the **Procedures** master (§ 4.3a) as kind *diagnostic*. 20-10-2026: any kind attaches to a ticket; item types settled in § 4.3; phase 4.
 17. **Document kinds and missing-drawings list** (*Proposed*, 16-10-2026, § 4.1): a small change to S006; which step carries it?
 18. **Maintenance strategy field, fitness-for-use inspection, verification rounds** (*Proposed*, 16-10-2026, § 4.1, § 4.3): the answer to forgotten machines.
 19. **Onboarding procedures and completion records** (*Proposed*, 16-10-2026, § 4.3a).
@@ -672,5 +757,6 @@ these rungs need a year of coded tickets and readings first.
 21. **Parts-used line on tickets and jobs** (*Proposed*, 17-10-2026, § 4.2): maker or generic part numbers, per component, ahead of spares.
 22. **PM routes** (*Proposed*, 18-10-2026, § 4.3): one screen for a walk over many equipment; verification rounds and the CIL-due list fold into it. Which step builds it?
 23. **Work done without a ticket** (*Proposed*, 18-10-2026, § 4.2): raise-and-close on one screen for work that arrived with no ticket.
+24. **Calibration** (*Proposed*, 20-10-2026, § 4.3): measuring-instrument class with required accuracy, calibration class and custodian; certification plans per instrument; in-house verification plans with error readings and the out-of-tolerance ticket. Phase 4, after certification plans (Q20). ISO 9001 § 7.1.5.
 16. **Die tracking** (*Proposed*, 16-10-2026, § 4.1): counter snapshot on fit / removal and a die-centred history, ahead of the rotables design.
 11. ~~**Kiosks.**~~ Decided 13-10-2026: not in v1; not tied to a unit; operators are Keycloak local users with passwords; logout manual or on inactivity; no supervisor role (superseded 16-10-2026 by S011 A1: `maint_supervisor`, production-side); resets by IT in Keycloak (Decisions table, § 3).

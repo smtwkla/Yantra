@@ -381,6 +381,111 @@ _MIGRATIONS = [
         """INSERT IGNORE INTO app_settings (setting_key, setting_value)
             VALUES ('internal_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')""",
     ]),
+    # Failure codes (S016), ISO 14224 § 9 and Annex B: failure modes (what is seen; one class,
+    # or General when class_id is NULL), failure causes (in Table B.3's five groups; the ENUM's
+    # order is the groups' order, so ORDER BY cause_group lists them design … misc) and
+    # maintenance actions (Table B.5).  Three tables, so a ticket's cause column can only hold
+    # a cause.  Mode labels are unique per picker (a class's modes plus the General ones):
+    # checked by the API, an index can't cross the NULL class (S016 § 5.1).
+    # The seed rows are ISO's, trimmed; created_by 'migration-v11' tells them apart.  INSERT
+    # IGNORE is keyed on the unique code, so a re-run keeps an engineer's edit of a seed row.
+    # Every statement is safe to run twice, as in v5.
+    (11, "Failure modes, causes, maintenance actions", [
+        """CREATE TABLE IF NOT EXISTS failure_modes (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(8) NOT NULL,
+            label       VARCHAR(60) NOT NULL,
+            description VARCHAR(255) NULL,
+            class_id    INT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_failure_modes_code UNIQUE (code),
+            KEY ix_failure_modes_class (class_id, active),
+            CONSTRAINT fk_failure_modes_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS failure_causes (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(8) NOT NULL,
+            label       VARCHAR(60) NOT NULL,
+            description VARCHAR(255) NULL,
+            cause_group ENUM('design','fabrication','operation','management','misc') NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_failure_causes_code UNIQUE (code),
+            CONSTRAINT uq_failure_causes_label UNIQUE (label)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS maintenance_actions (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            code        VARCHAR(8) NOT NULL,
+            label       VARCHAR(60) NOT NULL,
+            description VARCHAR(255) NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_maintenance_actions_code UNIQUE (code),
+            CONSTRAINT uq_maintenance_actions_label UNIQUE (label)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        # General failure modes: ISO's code, a plain label for the operator, the ISO name as help
+        """INSERT IGNORE INTO failure_modes (code, label, description, class_id, created_by) VALUES
+            ('BRD', 'Stopped, won''t run', 'Breakdown', NULL, 'migration-v11'),
+            ('FTS', 'Won''t start', 'Fail to start on demand', NULL, 'migration-v11'),
+            ('STP', 'Won''t stop', 'Fail to stop on demand', NULL, 'migration-v11'),
+            ('UST', 'Stops by itself', 'Spurious stop', NULL, 'migration-v11'),
+            ('ELU', 'Leaking (oil, water, air)',
+             'External leakage (ISO ELU utility medium / ELP process medium; one entry here)', NULL, 'migration-v11'),
+            ('NOI', 'Abnormal noise', 'Noise', NULL, 'migration-v11'),
+            ('VIB', 'Vibration', 'Vibration', NULL, 'migration-v11'),
+            ('OHE', 'Overheating', 'Overheating', NULL, 'migration-v11'),
+            ('LOO', 'Low output or slow', 'Low output', NULL, 'migration-v11'),
+            ('ERO', 'Erratic, behaves oddly', 'Erratic output', NULL, 'migration-v11'),
+            ('PDE', 'Reading out of range', 'Parameter deviation', NULL, 'migration-v11'),
+            ('STD', 'Broken, cracked or worn part', 'Structural deficiency', NULL, 'migration-v11'),
+            ('SER', 'Loose, dirty or minor problem', 'Minor in-service problems', NULL, 'migration-v11'),
+            ('OTH', 'Other', 'Other', NULL, 'migration-v11')""",
+        # Table B.3, trimmed: the "x.0 general" rows and 5.2 common cause are left out
+        """INSERT IGNORE INTO failure_causes (code, cause_group, label, created_by) VALUES
+            ('1.1', 'design', 'Improper capacity', 'migration-v11'),
+            ('1.2', 'design', 'Improper material', 'migration-v11'),
+            ('2.1', 'fabrication', 'Fabrication error', 'migration-v11'),
+            ('2.2', 'fabrication', 'Installation error', 'migration-v11'),
+            ('3.1', 'operation', 'Off-design service', 'migration-v11'),
+            ('3.2', 'operation', 'Operating error', 'migration-v11'),
+            ('3.3', 'operation', 'Maintenance error', 'migration-v11'),
+            ('3.4', 'operation', 'Expected wear and tear', 'migration-v11'),
+            ('4.1', 'management', 'Documentation error', 'migration-v11'),
+            ('4.2', 'management', 'Management error', 'migration-v11'),
+            ('5.1', 'misc', 'No cause found', 'migration-v11'),
+            ('5.3', 'misc', 'Combined causes', 'migration-v11'),
+            ('5.4', 'misc', 'Caused by another failure', 'migration-v11'),
+            ('5.5', 'misc', 'Other', 'migration-v11'),
+            ('5.6', 'misc', 'Unknown', 'migration-v11')""",
+        # Table B.5, all twelve
+        """INSERT IGNORE INTO maintenance_actions (code, label, description, created_by) VALUES
+            ('1', 'Replace', 'Replace with a new or reconditioned item of the same type and make', 'migration-v11'),
+            ('2', 'Repair', 'Manual repair work to restore the item', 'migration-v11'),
+            ('3', 'Modify', 'Replace, renew or change to a different design or material', 'migration-v11'),
+            ('4', 'Adjust', 'Bring a value back within limits (e.g. valve zero/span)', 'migration-v11'),
+            ('5', 'Refit', 'Small repair or tidy-up short of a full repair: re-tighten, touch up, clean a seat',
+             'migration-v11'),
+            ('6', 'Check',
+             'Looked for the cause; nothing repaired, or the fix was a restart or reset, or the work is deferred',
+             'migration-v11'),
+            ('7', 'Service', 'Periodic service: cleaning, lubrication, filter change', 'migration-v11'),
+            ('8', 'Test', 'Test the function or performance', 'migration-v11'),
+            ('9', 'Inspection', 'Careful look at the item, with or without opening it, by eye, ear and hand',
+             'migration-v11'),
+            ('10', 'Overhaul', 'Major overhaul', 'migration-v11'),
+            ('11', 'Combination', 'Several of the above', 'migration-v11'),
+            ('12', 'Other', 'Other action', 'migration-v11')""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

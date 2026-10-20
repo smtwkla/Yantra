@@ -49,12 +49,14 @@ The type is no longer locked here: it comes from the model, whose type never cha
 
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
+import asset_list_core
+from asset_list_core import build_asset_list
 from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
 from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
@@ -397,11 +399,10 @@ def _this_year():
 # List
 # ---------------------------------------------------------------------------
 
-@equipment_bp.route("/", strict_slashes=False)
-@require_perm("equipment:read")
-def list_equipment():
-    page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
-    per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
+def _list_filters():
+    """The conditions and parameters of the filters the list and the printed asset list share
+    (site, unit, class, type, status, criticality, scrapped), read from the request.  One
+    place decides what a filter means, so the print can never disagree with the list."""
     conditions, params = [], []
     for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
                          ("type_id", "e.type_id")):
@@ -417,6 +418,17 @@ def list_equipment():
     if criticality:
         conditions.append(f"COALESCE(e.criticality, {_ROOT_CRITICALITY}) = %s")
         params.append(criticality)
+    if request.args.get("include_scrapped") != "1":
+        conditions.append("e.status <> 'scrapped'")
+    return conditions, params
+
+
+@equipment_bp.route("/", strict_slashes=False)
+@require_perm("equipment:read")
+def list_equipment():
+    page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
+    per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
+    conditions, params = _list_filters()
     level = enum_arg("level", (*LEVELS, "all")) or "equipment"
     if level != "all":
         conditions.append("e.level = %s")
@@ -429,8 +441,6 @@ def list_equipment():
         conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s"
                           " OR CONCAT(mf.name, ' ', m.designation) LIKE %s)")
         params.extend([like_pattern(q)] * 5)
-    if request.args.get("include_scrapped") != "1":
-        conditions.append("e.status <> 'scrapped'")
 
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
     with get_db().cursor() as cur:
@@ -554,6 +564,61 @@ def equipment_labels():
         labels.append({"id": row["id"], "code": row["code"], "name": row["name"], "site_code": row["site_code"],
                        "url": url, "qr_svg": qr_svg(url)})
     return jsonify({"labels": labels})
+
+
+# ---------------------------------------------------------------------------
+# Printable asset list (S015) — read-only
+# ---------------------------------------------------------------------------
+
+
+
+def _asset_list_row(node):
+    """The printed row: the list's summary plus what the sheet needs to tell machines apart."""
+    return {**_summary(node), "parent_id": node["parent_id"], "serial_no": node["serial_no"], "year": node["year"]}
+
+
+@equipment_bp.route("/asset-list")
+@require_perm("equipment:read")
+def asset_list():
+    """The machines the filters choose, grouped by unit, with their parts when with_parts=1.
+    Filters choose machines; parts come only with their machine, whatever their own class
+    (S015 § 4).  Unit access is applied as in the list."""
+    conditions, params = _list_filters()
+    with_parts = request.args.get("with_parts") == "1"
+    conditions.append("e.level = 'equipment'")
+    printed = {"printed_at": datetime.now(IST).isoformat(timespec="seconds"),
+               "printed_by": g.user.get("name") or actor()}
+    with get_db().cursor() as cur:
+        unit_ids = accessible_unit_ids(cur)
+        if unit_ids is not None:
+            if not unit_ids:
+                return jsonify({"units": [], "total_rows": 0, **printed})   # an empty IN () is an SQL error
+            conditions.append(f"u.id IN ({', '.join(['%s'] * len(unit_ids))})")
+            params.extend(sorted(unit_ids))
+        # The cap is read through the module so a test that patches it reaches both checks
+        cap = asset_list_core.MAX_ASSET_LIST_ROWS
+        cur.execute(f"{_NODE_COLUMNS}, s.name AS site_name, u.name AS unit_name{_NODE_FROM}"
+                    f" WHERE {' AND '.join(conditions)} ORDER BY e.code LIMIT %s", [*params, cap + 1])
+        machine_nodes = cur.fetchall()
+        if len(machine_nodes) > cap:
+            raise ApiError(asset_list_core.TOO_MANY_ROWS, 400)
+        if not machine_nodes:
+            return jsonify({"units": [], "total_rows": 0, **printed})
+        machines = [{**_asset_list_row(n), "site_code": n["site_code"], "site_name": n["site_name"],
+                     "unit_code": n["unit_code"], "unit_name": n["unit_name"]} for n in machine_nodes]
+        parts = []
+        if with_parts:
+            in_ids = f"({', '.join(['%s'] * len(machines))})"
+            ids = [m["id"] for m in machines]
+            # The tree is at most three levels: component units (parent = machine) and
+            # components (grandparent = machine)
+            cur.execute(f"{_NODE_COLUMNS}{_NODE_FROM} WHERE e.parent_id IN {in_ids} OR p.parent_id IN {in_ids}",
+                        ids * 2)
+            parts = [_asset_list_row(n) for n in cur.fetchall()]
+    result, message = build_asset_list(machines, parts, request.args.get("include_scrapped") == "1")
+    if message:
+        raise ApiError(message, 400)
+    return jsonify({**result, **printed})
 
 
 @equipment_bp.route("/", methods=["POST"], strict_slashes=False)

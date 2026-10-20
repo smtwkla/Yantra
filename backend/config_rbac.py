@@ -101,6 +101,11 @@ PERMISSIONS = {
     # delegated to the maintenance side; every other role is IT admin's (masters:edit).
     "people:assign_technicians": ("maint_engineer", "it_admin"),
 
+    # Failure codes (S016): failure modes, causes and maintenance actions, the ISO 14224
+    # pick-lists of tickets.  Engineers keep them (managers inherit it); IT admin too, as
+    # masters housekeeping.  Global, not site-scoped: the lists are the same at every site.
+    "failure_codes:edit": ("maint_engineer", "it_admin"),
+
     # Settings — DB status, escalation times, notification channels
     "settings:read": ("maint_manager", "it_admin"),
     "settings:edit": ("it_admin",),

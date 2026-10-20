@@ -386,7 +386,13 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | CIL | Clean, Inspect, Lubricate — the operator's routine care of a piece of equipment |
 | Red tag | An abnormality needing maintenance — in Yantra, a breakdown ticket |
 | Intensity | How bad a ticket's problem is: critical / degraded / initial (ISO 14224 failure impact) |
-| Breakdown | An unplanned failure that needs repair (ticket `BD-YYYY-MM-NNN`) |
+| Breakdown | A ticket of *critical* intensity: the equipment has stopped (a failure, EN 13306); downtime runs |
+| Defect | A ticket of *degraded* or *initial* intensity: the equipment runs but something is abnormal (the TPM tag) |
+| Ticket | Yantra's record of one problem on equipment, breakdown or defect (`TK-YYYY-MM-NNN`): the work request, then the work order |
+| Work request | EN 13460: what is wrong, where, how urgent, who asks — a ticket when raised (Plan § 4.2 calls it the *maintenance request*) |
+| Work order | EN 13460: the same record once maintenance takes it up — who worked, what they did, when |
+| Failure / fault | EN 13306: a failure is the *event* (the item loses its ability to perform); a fault is the *state* after it |
+| Partial failure | EN 13306: the item still runs with reduced function — Yantra's *degraded* intensity |
 | Failure mode | How a failure is seen — the operator's "symptom" (ISO 14224), per equipment class or General |
 | Failure cause | Why it failed: the circumstances in design, manufacture or use that led to it (ISO 14224) |
 | Cause group | ISO 14224's five groups of causes: design, fabrication / installation, operation / maintenance, management, miscellaneous |

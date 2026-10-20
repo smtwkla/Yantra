@@ -802,6 +802,11 @@ are answered in A1's "rules added after review" and put to the user at gate A.
 
 ### Amendment A1 — user decisions at gate A, 16-10-2026
 
+> **Changed by S017 (user, 20-10-2026):** a person without a login may be a
+> Technician **or an Operator**; only IT admin sets an Operator row (engineers
+> still set Technician rows only). See `docs/steps/S017-raise-tickets/1-brief.md`
+> § 5.9.
+
 - **A person without a login can only be a Technician** at a site. `PUT
   /people/<id>/sites` on a person without a login → 400 field `role` "Without a
   login, a person can only be a technician" for any other role. A person's

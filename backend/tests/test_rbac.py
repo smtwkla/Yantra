@@ -85,6 +85,13 @@ class TestRoleSources:
         holders = {role for role in ROLES if "people:assign_technicians" in compute_permissions([role])}
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
 
+    def test_failure_codes_edit_holders(self):
+        """S016 § 5.5: engineers (and so managers) and IT admin keep the failure codes; a
+        global key, the lists are the same at every site."""
+        holders = {role for role in ROLES if "failure_codes:edit" in compute_permissions([role])}
+        assert holders == {"maint_engineer", "maint_manager", "it_admin"}
+        assert "failure_codes:edit" not in SITE_SCOPED
+
     def test_supervisor_is_off_the_maintenance_ladder(self):
         assert expand_roles(["maint_supervisor"]) == {"maint_supervisor", "maint_operator"}
         assert compute_permissions(["maint_supervisor"]) == compute_permissions(["maint_operator"])
@@ -129,15 +136,15 @@ class TestComputePermissions:
         ("maint_technician",  {"equipment:read", "masters:read"}),
         ("maint_supervisor",  {"equipment:read", "masters:read"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit", "people:edit",
-                               "people:assign_technicians"}),
+                               "people:assign_technicians", "failure_codes:edit"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
-                               "people:assign_technicians", "access_log:view"}),
+                               "people:assign_technicians", "access_log:view", "failure_codes:edit"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
-                               "access_log:view"}),
+                               "access_log:view", "failure_codes:edit"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):

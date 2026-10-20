@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-reviews r1 and r2, and for portability, U1)
 Track: full (switched from light after BR1-01, a major finding)
 Baseline: 167e178 (stale brief check s1, 18-10-2026: no findings)
-Status: In code review (approved 18-10-2026 by KLA)
+Status: Committed 76fccf7; manual checks pending (approved 18-10-2026 by KLA)
 ```
 
 # S022 — Software inventory and vulnerability check

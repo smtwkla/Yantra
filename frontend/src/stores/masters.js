@@ -1,6 +1,7 @@
 /**
  * Masters cache — sites, units, equipment classes and types, manufacturers and equipment
- * models (S012), trades, fetched once and shared.
+ * models (S012), trades, failure modes, causes and maintenance actions (S016), fetched once
+ * and shared.
  *
  * Lists include inactive records (consumers filter on `active`). Pickers (the equipment
  * form, the move dialog) take the cached copy: a list a few minutes old is harmless there.
@@ -20,6 +21,9 @@ export const equipmentTypes = ref(null);
 export const manufacturers = ref(null);
 export const equipmentModels = ref(null);
 export const trades = ref(null);
+export const failureModes = ref(null);
+export const failureCauses = ref(null);
+export const maintenanceActions = ref(null);
 
 async function fetchItems(path) {
   return (await apiGet(`/api/masters/${path}?include_inactive=1`)).items;
@@ -59,6 +63,18 @@ export function ensureTrades({ refresh = false } = {}) {
   return ensure(trades, "trades", refresh);
 }
 
+export function ensureFailureModes({ refresh = false } = {}) {
+  return ensure(failureModes, "failure-modes", refresh);
+}
+
+export function ensureFailureCauses({ refresh = false } = {}) {
+  return ensure(failureCauses, "failure-causes", refresh);
+}
+
+export function ensureMaintenanceActions({ refresh = false } = {}) {
+  return ensure(maintenanceActions, "maintenance-actions", refresh);
+}
+
 /** Id of the active default site, or null when none is set. Used to preselect pick-one site fields. */
 export function defaultSiteId() {
   return (sites.value ?? []).find((s) => s.is_default && s.active)?.id ?? null;
@@ -72,4 +88,7 @@ export function resetMasters() {
   manufacturers.value = null;
   equipmentModels.value = null;
   trades.value = null;
+  failureModes.value = null;
+  failureCauses.value = null;
+  maintenanceActions.value = null;
 }

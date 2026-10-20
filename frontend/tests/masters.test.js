@@ -8,7 +8,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const apiGet = vi.fn();
 vi.mock("../src/api", () => ({ apiGet: (...args) => apiGet(...args) }));
 
-import { ensureSites, ensureUnits, resetMasters, sites } from "../src/stores/masters";
+import {
+  ensureFailureCauses,
+  ensureFailureModes,
+  ensureMaintenanceActions,
+  ensureSites,
+  ensureUnits,
+  failureCauses,
+  failureModes,
+  maintenanceActions,
+  resetMasters,
+  sites,
+} from "../src/stores/masters";
 
 beforeEach(() => {
   resetMasters();
@@ -48,5 +59,28 @@ describe("ensureSites", () => {
     await ensureUnits();
     expect(apiGet).toHaveBeenCalledTimes(2);
     expect(apiGet).toHaveBeenLastCalledWith("/api/masters/units?include_inactive=1");
+  });
+});
+
+describe("failure codes (S016)", () => {
+  it("fetches each list from its own path, inactive included", async () => {
+    await ensureFailureModes();
+    await ensureFailureCauses();
+    await ensureMaintenanceActions();
+    expect(apiGet.mock.calls.map((c) => c[0])).toEqual([
+      "/api/masters/failure-modes?include_inactive=1",
+      "/api/masters/failure-causes?include_inactive=1",
+      "/api/masters/maintenance-actions?include_inactive=1",
+    ]);
+  });
+
+  it("caches them and clears them with resetMasters()", async () => {
+    await ensureFailureModes();
+    await ensureFailureModes();
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    await ensureFailureCauses();
+    await ensureMaintenanceActions();
+    resetMasters();
+    expect([failureModes.value, failureCauses.value, maintenanceActions.value]).toEqual([null, null, null]);
   });
 });

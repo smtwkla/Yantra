@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-review r1; gate A 20-10-2026)
 Track: light (full at review; set light by the user at gate A, 20-10-2026)
-Baseline: a2190f3 + uncommitted S022
-Status: Approved 20-10-2026 by KLA
+Baseline: 90284ec + uncommitted S016 (stale brief check s1, 20-10-2026)
+Status: In code review (approved 20-10-2026 by KLA)
 ```
 
 # S015 — Printable asset list
@@ -31,7 +31,8 @@ the full track because it adds a report endpoint beyond plain CRUD that applies
 unit access. The access check itself is reused, not new. No migration, no change
 to data, no RBAC change, no new dependency.
 
-**Depends on:** nothing uncommitted (S010–S014 are committed).
+**Depends on:** no other step's code. S016 is uncommitted in the working tree
+(it edits no file of this brief); the S015 diff is its impl report's file list (BS1-01).
 
 ## 1. What will be built
 
@@ -167,8 +168,9 @@ to data, no RBAC change, no new dependency.
        filtered, in the core; the other filters apply to the machine (§ 4);
     5. calls `build_asset_list`; its `TOO_MANY_ROWS` → 400;
     6. returns `{units, total_rows, printed_at, printed_by}`:
-       - `printed_at` is `datetime.now(IST)` in the API's usual datetime shape
-         (`YYYY-MM-DDTHH:MM:SS+05:30`). The page formats it with the existing
+       - `printed_at` is `datetime.now(IST).isoformat(timespec="seconds")`, the
+         API's usual datetime shape (`YYYY-MM-DDTHH:MM:SS+05:30`; `jsonify` alone
+         would give an RFC 822 date, BS1-02). The page formats it with the existing
          `formatDateTime`, so it uses the same helper as every other date
          (BR1-09);
        - `printed_by` is `g.user["name"]`, or `actor()` (the username) when the
@@ -235,7 +237,8 @@ to data, no RBAC change, no new dependency.
     with no SQL error; admin and `equipment:read_all_units` see all;
   - over the cap → 400, by patching `asset_list_core.MAX_ASSET_LIST_ROWS` down,
     once for the machines alone and once for the total after parts;
-  - `printed_by` and `printed_at` are present.
+  - `printed_by` and `printed_at` are present; `printed_at` matches
+    `YYYY-MM-DDTHH:MM:SS+05:30` (BS1-02).
 - The existing list tests (`TestListing`, `TestUnitAccess`) pass unchanged,
   which covers the `_list_filters` move (BR1-08).
 - Frontend (vitest, `assetList.test.js`):
@@ -355,3 +358,10 @@ light; page numbers not needed. Not to be built until the user asks.
 | BR1-10 "not logged" | nit | **Accepted**: "no equipment event"; the access log still records the request (§ 4) |
 | BR1-11 small § 3 corrections | nit | **Accepted**: only site and unit names are new columns; nulls stated; the orphan-part guard is core-only (§ 1, § 3) |
 | BR1-12 production check of *Printed by* | nit | **Accepted**: plain manual check added (§ 7) |
+
+### Stale brief check s1 — `2-brief-review-s1.md` (Fable), answered 20-10-2026
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 "Depends on" stale; S016 uncommitted in the tree | nit | **Accepted**: Depends on reworded; `Baseline:` 90284ec + uncommitted S016 |
+| BS1-02 `printed_at` shape comes from `isoformat`, not `jsonify` | nit | **Accepted**: `isoformat(timespec="seconds")` stated; API test asserts the shape (§ 3, tests) |

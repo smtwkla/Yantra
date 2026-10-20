@@ -3,8 +3,9 @@
 import pytest
 
 from masters_core import (
-    NO_LOGIN_ROLE_MESSAGE, model_label, no_login_role_error, normalise_username, technician_only,
-    validate_equipment_class, validate_equipment_model, validate_equipment_type, validate_manufacturer,
+    CAUSE_GROUPS, NO_LOGIN_ROLE_MESSAGE, model_label, no_login_role_error, normalise_username, technician_only,
+    validate_equipment_class, validate_equipment_model, validate_failure_cause, validate_failure_mode,
+    validate_maintenance_action, validate_equipment_type, validate_manufacturer,
     validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
     validate_unit_ids, validate_username,
 )
@@ -420,3 +421,120 @@ class TestEngineerLimits:
     ])
     def test_technician_only(self, stored, new, ok):
         assert technician_only(stored, new) is ok
+
+
+# ---------------------------------------------------------------------------
+# Failure codes (S016 § 5.1–5.3)
+# ---------------------------------------------------------------------------
+
+_FAILURE_VALIDATORS = [
+    (validate_failure_mode, {}),
+    (validate_failure_cause, {"cause_group": "operation"}),
+    (validate_maintenance_action, {}),
+]
+
+
+class TestFailureCode:
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    @pytest.mark.parametrize("code, expected", [
+        ("3.4", "3.4"), ("NOI", "NOI"), ("12", "12"), (" noi ", "NOI"), ("a.b.c", "A.B.C"),
+        ("ABCDEFGH", "ABCDEFGH"), ("1", "1"),
+    ])
+    def test_accepted_upper_cased_and_trimmed(self, validate, extra, code, expected):
+        clean, errors = validate({"code": code, "label": "Noise", **extra}, creating=True)
+        assert errors == []
+        assert clean["code"] == expected
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    @pytest.mark.parametrize("code", ["", "   ", "ABCDEFGHI", ".4", "3.", "1..2", "N OI", "N-OI", "1/2", None, 12])
+    def test_refused(self, validate, extra, code):
+        _, errors = validate({"code": code, "label": "Noise", **extra}, creating=True)
+        assert _fields(errors) == ["code"]
+
+
+class TestFailureLabelAndDescription:
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    def test_label_collapsed(self, validate, extra):
+        clean, errors = validate({"code": "X", "label": "  Not   building  pressure ", **extra}, creating=True)
+        assert errors == [] and clean["label"] == "Not building pressure"
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    @pytest.mark.parametrize("label, ok", [("a" * 60, True), ("a" * 61, False), ("", False), ("  ", False),
+                                           (None, False)])
+    def test_label_boundaries(self, validate, extra, label, ok):
+        _, errors = validate({"code": "X", "label": label, **extra}, creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert _fields(errors) == ["label"]
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    def test_code_and_label_required_on_create_only(self, validate, extra):
+        assert _fields(validate({**extra}, creating=True)[1]) == ["code", "label"]
+        assert validate({"active": False}, creating=False) == ({"active": 0}, [])
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    @pytest.mark.parametrize("raw, expected", [("  Noise ", "Noise"), ("", None), ("   ", None), (None, None),
+                                               ("a" * 255, "a" * 255)])
+    def test_description_optional(self, validate, extra, raw, expected):
+        clean, errors = validate({"code": "X", "label": "L", "description": raw, **extra}, creating=True)
+        assert errors == [] and clean["description"] == expected
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    @pytest.mark.parametrize("raw", ["a" * 256, 5])
+    def test_description_refused(self, validate, extra, raw):
+        _, errors = validate({"code": "X", "label": "L", "description": raw, **extra}, creating=True)
+        assert _fields(errors) == ["description"]
+
+    @pytest.mark.parametrize("validate, extra", _FAILURE_VALIDATORS)
+    def test_description_absent_is_left_out(self, validate, extra):
+        clean, errors = validate({"code": "X", "label": "L", **extra}, creating=True)
+        assert errors == [] and "description" not in clean
+
+
+class TestFailureMode:
+
+    def test_class_optional_or_null(self):
+        assert validate_failure_mode({"code": "NOI", "label": "Noise"}, creating=True) == (
+            {"code": "NOI", "label": "Noise"}, [])
+        clean, errors = validate_failure_mode({"code": "NOI", "label": "Noise", "class_id": None}, creating=True)
+        assert errors == [] and clean["class_id"] is None
+        clean, errors = validate_failure_mode({"code": "NOI", "label": "Noise", "class_id": 4}, creating=True)
+        assert errors == [] and clean["class_id"] == 4
+
+    @pytest.mark.parametrize("raw", [0, -1, "4", True, 1.5])
+    def test_class_must_be_an_id(self, raw):
+        _, errors = validate_failure_mode({"code": "NOI", "label": "Noise", "class_id": raw}, creating=True)
+        assert _fields(errors) == ["class_id"]
+
+
+class TestFailureCause:
+
+    def test_groups_are_isos_five(self):
+        assert CAUSE_GROUPS == ("design", "fabrication", "operation", "management", "misc")
+
+    @pytest.mark.parametrize("group", CAUSE_GROUPS)
+    def test_each_group_accepted(self, group):
+        clean, errors = validate_failure_cause({"code": "3.4", "label": "Wear", "cause_group": group}, creating=True)
+        assert errors == [] and clean["cause_group"] == group
+
+    def test_group_required_on_create(self):
+        _, errors = validate_failure_cause({"code": "3.4", "label": "Wear"}, creating=True)
+        assert _fields(errors) == ["cause_group"]
+
+    @pytest.mark.parametrize("raw", ["", "Design", "other", None, 1])
+    def test_unknown_group_refused(self, raw):
+        _, errors = validate_failure_cause({"code": "3.4", "label": "Wear", "cause_group": raw}, creating=True)
+        assert _fields(errors) == ["cause_group"]
+
+    def test_group_may_change_on_update(self):
+        assert validate_failure_cause({"cause_group": "misc"}, creating=False) == ({"cause_group": "misc"}, [])
+
+
+class TestMaintenanceAction:
+
+    def test_has_no_class_or_group(self):
+        clean, errors = validate_maintenance_action(
+            {"code": "1", "label": "Replace", "class_id": 3, "cause_group": "misc"}, creating=True)
+        assert errors == [] and clean == {"code": "1", "label": "Replace"}

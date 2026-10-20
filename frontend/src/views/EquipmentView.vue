@@ -19,6 +19,7 @@ import {
   ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses, equipmentTypes, sites, units,
 } from "../stores/masters";
 import { STATUS_LABELS } from "../utils/equipmentLabels";
+import { assetListPath } from "../utils/assetList";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 
@@ -233,6 +234,11 @@ function toggleAllOnPage(event) {
 function printLabels() {
   window.open(router.resolve(labelsPath([...selected.value])).href, "_blank");
 }
+
+// The list's filters (not the search or the level) on a printable page in a new tab (S015)
+function printAssetList() {
+  window.open(router.resolve(assetListPath(route.query)).href, "_blank");
+}
 </script>
 
 <template>
@@ -268,6 +274,9 @@ function printLabels() {
       <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, model, notes…" aria-label="Search" />
       <button class="btn btn-sm btn-outline-primary ms-auto" :disabled="selected.size === 0" @click="printLabels">
         <i class="fa-solid fa-qrcode me-1"></i>Print labels ({{ selected.size }})
+      </button>
+      <button class="btn btn-sm btn-outline-primary" @click="printAssetList">
+        <i class="fa-solid fa-list-check me-1"></i>Print asset list
       </button>
       <button v-if="canEdit" class="btn btn-sm btn-primary" @click="formModal.openCreateEquipment()">
         <i class="fa-solid fa-plus me-1"></i>Add equipment

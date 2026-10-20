@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import EquipmentByCodeView from "../views/EquipmentByCodeView.vue";
 import EquipmentDetailView from "../views/EquipmentDetailView.vue";
 import EquipmentView from "../views/EquipmentView.vue";
+import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
@@ -35,6 +36,12 @@ const routes = [
     name: "labels",
     component: LabelsPrintView,
     meta: { title: "QR labels" },
+  },
+  {
+    path: "/asset-list",
+    name: "asset-list",
+    component: AssetListPrintView,
+    meta: { title: "Asset list" },
   },
   {
     path: "/masters",

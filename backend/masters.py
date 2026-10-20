@@ -1,15 +1,17 @@
 """Masters module — sites, units, equipment classes and types, manufacturers and equipment
-models, trades, the Team register of people and their roles per site
+models, trades, the Team register of people and their roles per site, failure codes
 (docs/steps/S001-basic-masters/1-brief.md; equipment types: S004; trades and Team: S010 A1;
-site roles: S011 A1; manufacturers and models: S012).
+site roles: S011 A1; manufacturers and models: S012; failure modes, causes and maintenance
+actions: S016).
 
 Thin shell: masters_core validates input, this module fetches, checks the
 rules that need the database, and stores.  Pooled connections are autocommit,
 so anything that checks and then writes runs in transaction() with the parent
 row locked first.
 
-Equipment types lock class → type.  Manufacturers and models lock manufacturer → model →
-class → type (S012 § 5.5), the order equipment.py also follows (model (4), class (5)):
+Equipment types, and failure modes of a class, lock class → type (mode).  Manufacturers and
+models lock manufacturer → model → class → type (S012 § 5.5), the order equipment.py also
+follows (model (4), class (5)):
 - model create: manufacturer → class → type → insert;
 - model reactivate: manufacturer → model → class (the model's ids, which never change,
   read plainly first);
@@ -32,8 +34,9 @@ from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, trans
 from equipment_core import check_type_class
 from masters_core import (
     model_label, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
-    validate_equipment_model, validate_equipment_type, validate_manufacturer, validate_person, validate_site,
-    validate_site_row, validate_site_rows, validate_trade, validate_unit,
+    validate_equipment_model, validate_equipment_type, validate_failure_cause, validate_failure_mode,
+    validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
+    validate_site_rows, validate_trade, validate_unit,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +59,12 @@ UNIQUE_KEY_ERRORS.update({
     "uq_manufacturers_name": ("name", "A manufacturer with this name exists"),
     "uq_equipment_models_maker_designation": ("designation",
                                               "This manufacturer already has a model with this designation"),
+    # Migration v11 (S016)
+    "uq_failure_modes_code": ("code", "A failure mode with this code exists"),
+    "uq_failure_causes_code": ("code", "A failure cause with this code exists"),
+    "uq_failure_causes_label": ("label", "A failure cause with this label exists"),
+    "uq_maintenance_actions_code": ("code", "A maintenance action with this code exists"),
+    "uq_maintenance_actions_label": ("label", "A maintenance action with this label exists"),
 })
 
 # is_default is 1 / NULL in the table; the API shows it as a boolean (see _site_out)
@@ -77,6 +86,11 @@ _MODEL_SELECT = (
     "SELECT m.*, mf.name AS manufacturer_name, c.code AS class_code, c.name AS class_name, t.name AS type_name "
     "FROM equipment_models m JOIN manufacturers mf ON mf.id = m.manufacturer_id "
     "JOIN equipment_classes c ON c.id = m.class_id LEFT JOIN equipment_types t ON t.id = m.type_id"
+)
+
+# class_code is NULL for a General mode (every class)
+_FAILURE_MODE_SELECT = (
+    "SELECT f.*, c.code AS class_code FROM failure_modes f LEFT JOIN equipment_classes c ON c.id = f.class_id"
 )
 
 _PERSON_UNITS_SELECT = (
@@ -512,6 +526,161 @@ def update_equipment_model(model_id):
         update_row(cur, "equipment_models", model_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_model(cur, model_id))
+
+
+# ---------------------------------------------------------------------------
+# Failure codes (S016) — ISO 14224 § 9 and Annex B: failure modes (what is seen: the
+# operator's symptom), failure causes (in ISO's five groups) and maintenance actions.
+# Read by everyone, kept by failure_codes:edit.  Nothing references them yet: S017 and
+# S018 add "code frozen once in use" when tickets point at them (S016 § 5.4).
+# ---------------------------------------------------------------------------
+
+def _fetch_failure_mode(cur, mode_id):
+    return fetch_one(cur, f"{_FAILURE_MODE_SELECT} WHERE f.id = %s", (mode_id,))
+
+
+def _check_mode_label(cur, label, class_id, mode_id=None):
+    """A mode's label is unique within what one picker shows (S016 § 5.1): a class mode's
+    against its class and the General ones; a General mode's against every mode.  Inactive
+    rows count, so a reactivation can't bring a duplicate back.  Plain ``=``: the column's
+    case-insensitive collation applies.  Not an index (the scope crosses the NULL class), so
+    two saves at the same moment could both pass: accepted (§ 7 decision 8)."""
+    scope = "" if class_id is None else " AND (f.class_id = %s OR f.class_id IS NULL)"
+    params = [label, mode_id or 0] + ([] if class_id is None else [class_id])
+    cur.execute(f"{_FAILURE_MODE_SELECT} WHERE f.label = %s AND f.id <> %s{scope} LIMIT 1", params)
+    clash = cur.fetchone()
+    if clash is not None:
+        where = f"of class {clash['class_code']}" if clash["class_code"] else "General"
+        raise ApiError(f"A failure mode with this label exists ({clash['code']}, {where})", 409, "label")
+
+
+@masters_bp.route("/failure-modes")
+@require_perm("masters:read")
+def list_failure_modes():
+    """``class_id=N`` -> the modes of class N plus the General ones, by label: the list a
+    ticket on equipment of class N offers (S017).  Without it every mode: General first, then
+    by class code, then by label."""
+    conditions, params = [], []
+    if not _include_inactive():
+        conditions.append("f.active = 1")
+    class_id = _int_filter("class_id")
+    if class_id is not None:
+        conditions.append("(f.class_id = %s OR f.class_id IS NULL)")
+        params.append(class_id)
+        order = "f.label"
+    else:
+        order = "f.class_id IS NOT NULL, c.code, f.label"
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"{_FAILURE_MODE_SELECT}{where} ORDER BY {order}", params)
+
+
+@masters_bp.route("/failure-modes", methods=["POST"])
+@require_perm("failure_codes:edit")
+def create_failure_mode():
+    clean = clean_body(validate_failure_mode, creating=True)
+    class_id = clean.get("class_id")
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        if class_id is not None:
+            _lock_active_parent(cur, "equipment_classes", class_id, "class_id", "class")
+        _check_mode_label(cur, clean["label"], class_id)
+        mode_id = insert_row(cur, "failure_modes", clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_failure_mode(cur, mode_id)), 201
+
+
+@masters_bp.route("/failure-modes/<int:mode_id>", methods=["PUT"])
+@require_perm("failure_codes:edit")
+def update_failure_mode(mode_id):
+    """Edit code, label, description; deactivate or reactivate.  The class is fixed (S016
+    § 5.2): a mode made under the wrong class is deactivated and made again, so tickets that
+    use it are never re-labelled.  Deactivating needs no check."""
+    clean = clean_body(validate_failure_mode, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        # A plain read of the class is safe (it never changes) and lets the reactivation lock
+        # the class before the mode: the class → mode order, as for types
+        stored = fetch_one(cur, "SELECT class_id FROM failure_modes WHERE id = %s", (mode_id,))
+        if stored is None:
+            raise ApiError("Not found", 404)
+        if "class_id" in clean:
+            if clean["class_id"] != stored["class_id"]:
+                raise ApiError("Class cannot be changed", 400, "class_id")
+            del clean["class_id"]
+        if clean.get("active") == 1 and stored["class_id"] is not None:
+            _lock_active_parent(cur, "equipment_classes", stored["class_id"], "active", "class")
+        _lock_row(cur, "failure_modes", mode_id)
+        if "label" in clean:
+            _check_mode_label(cur, clean["label"], stored["class_id"], mode_id)
+        update_row(cur, "failure_modes", mode_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_failure_mode(cur, mode_id))
+
+
+def _create_plain_master(table, validator):
+    """POST of a master with no parent and no rule beyond its unique keys (a duplicate is the
+    database's 409).  ``table`` is a code constant, never client input."""
+    clean = clean_body(validator, creating=True)
+    with get_db().cursor() as cur:
+        record_id = insert_row(cur, table, clean, actor())
+        return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,))), 201
+
+
+def _update_plain_master(table, record_id, validator):
+    """PUT of such a master: absent fields stay as they are; an unknown id is a 404."""
+    clean = clean_body(validator, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_row(cur, table, record_id)
+        update_row(cur, table, record_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,)))
+
+
+@masters_bp.route("/failure-causes")
+@require_perm("masters:read")
+def list_failure_causes():
+    """By group, then code: the ENUM sorts in its declared order (design … misc), so a local
+    cause stays in its ISO group."""
+    where = "" if _include_inactive() else "WHERE active = 1 "
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"SELECT * FROM failure_causes {where}ORDER BY cause_group, code")
+
+
+@masters_bp.route("/failure-causes", methods=["POST"])
+@require_perm("failure_codes:edit")
+def create_failure_cause():
+    return _create_plain_master("failure_causes", validate_failure_cause)
+
+
+@masters_bp.route("/failure-causes/<int:cause_id>", methods=["PUT"])
+@require_perm("failure_codes:edit")
+def update_failure_cause(cause_id):
+    """The group may change, also once in use: a reclassification for all history, as the
+    ISO roll-up wants (S016 § 5.3)."""
+    return _update_plain_master("failure_causes", cause_id, validate_failure_cause)
+
+
+@masters_bp.route("/maintenance-actions")
+@require_perm("masters:read")
+def list_maintenance_actions():
+    """By code length, then code: ISO's 1 … 12 come in number order."""
+    where = "" if _include_inactive() else "WHERE active = 1 "
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"SELECT * FROM maintenance_actions {where}ORDER BY CHAR_LENGTH(code), code")
+
+
+@masters_bp.route("/maintenance-actions", methods=["POST"])
+@require_perm("failure_codes:edit")
+def create_maintenance_action():
+    return _create_plain_master("maintenance_actions", validate_maintenance_action)
+
+
+@masters_bp.route("/maintenance-actions/<int:action_id>", methods=["PUT"])
+@require_perm("failure_codes:edit")
+def update_maintenance_action(action_id):
+    return _update_plain_master("maintenance_actions", action_id, validate_maintenance_action)
 
 
 # ---------------------------------------------------------------------------

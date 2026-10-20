@@ -1,8 +1,8 @@
 <script setup>
 /**
- * Masters — sites, units, equipment classes and types, manufacturers and models, trades, Team
- * with each person's roles per site (docs/steps/S001-basic-masters, S004, S010, S011, S012;
- * S011 A1 moved unit access into Team).
+ * Masters — sites, units, equipment classes and types, manufacturers and models, failure
+ * codes, trades, Team with each person's roles per site (docs/steps/S001-basic-masters, S004,
+ * S010, S011, S012, S016; S011 A1 moved unit access into Team).
  * The level-2 toolbar switches sections as local state, not routes.
  */
 import { computed, ref } from "vue";
@@ -11,6 +11,7 @@ import { userPermissions } from "../stores/auth";
 import { canSeeNavItem } from "../stores/navigation";
 import EquipmentClassesPanel from "./masters/EquipmentClassesPanel.vue";
 import EquipmentTypesPanel from "./masters/EquipmentTypesPanel.vue";
+import FailureCodesPanel from "./masters/FailureCodesPanel.vue";
 import ManufacturersPanel from "./masters/ManufacturersPanel.vue";
 import ModelsPanel from "./masters/ModelsPanel.vue";
 import SitesPanel from "./masters/SitesPanel.vue";
@@ -25,6 +26,7 @@ const sections = [
   { key: "types", icon: "fa-solid fa-sitemap", label: "Equip Type", perm: "masters:read" },
   { key: "manufacturers", icon: "fa-solid fa-industry", label: "Manufacturers", perm: "masters:read" },
   { key: "models", icon: "fa-solid fa-tag", label: "Models", perm: "masters:read" },
+  { key: "failure_codes", icon: "fa-solid fa-triangle-exclamation", label: "Failure codes", perm: "masters:read" },
   { key: "trades", icon: "fa-solid fa-screwdriver-wrench", label: "Trades", perm: "masters:read" },
   { key: "people", icon: "fa-solid fa-people-group", label: "Team", perm: "masters:read" },
 ];
@@ -35,6 +37,7 @@ const panels = {
   types: EquipmentTypesPanel,
   manufacturers: ManufacturersPanel,
   models: ModelsPanel,
+  failure_codes: FailureCodesPanel,
   trades: TradesPanel,
   people: PeoplePanel,
 };
