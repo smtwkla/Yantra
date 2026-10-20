@@ -82,11 +82,6 @@ async function loadNode() {
   }
 }
 
-watch(nodeId, () => {
-  resetForm();
-  loadNode();
-}, { immediate: true });
-
 function chooseEquipment(id) {
   router.replace({ query: id ? { equipment: String(id) } : {} });
 }
@@ -142,6 +137,13 @@ function resetForm() {
   fieldErrors.value = {};
   formError.value = "";
 }
+
+// Below the form's refs: `immediate` runs it during setup, and resetForm() must not reach
+// them before their `const` lines have run
+watch(nodeId, () => {
+  resetForm();
+  loadNode();
+}, { immediate: true });
 
 const pickedMode = computed(() => modes.value.find((m) => String(m.id) === String(form.value.failureModeId)));
 const descriptionNeeded = computed(() => !pickedMode.value || pickedMode.value.code === OTHER_MODE);
