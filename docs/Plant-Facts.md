@@ -73,6 +73,7 @@ Codes follow `SITE.UNIT`. Recorded as they are fixed:
 | `SMTW.FWMILL` | SMTW's firewood processing mill | Vertical blade mill, breakers, electric saw, others | User, 13-10-2026 |
 | `SMTW.MCC1` | New extrusion and punching line — first part | One line, one operator: two box feeders, a coarse roller mill, a fine roller mill, a clay spreader on a conveyor, conveyors between them (as dictated 16-10-2026; names to confirm) | User, 16-10-2026 |
 | `SMTW.MCC2` | New extrusion and punching line — second part | New extruder (Haendle GmbH); puncher (Keller-HCW GmbH); Atlas Copco screw compressors (2); others | User, 13-10-2026 |
+| `SMTW.FLEET`, `SSVT.FLEET` (*Proposed*) | The vehicle fleet of each company | About 40 vehicles in all (trucks, tractors, cars, forklifts; list to come from Vaahan, § 7) | User, 20-10-2026 |
 
 The new extrusion line is known internally as **MCC** (origin of the name not known).
 
@@ -132,6 +133,9 @@ equipment used daily vs. rarely.
 | **No calibration policy or SOP.** Measuring instruments in use: vernier calipers, digital multimeters, pressure transducers, temperature indicators, thermocouples, weigh scales, moisture analysers, energy meters, thermal imaging cameras, IR thermometers, a flexural strength testing machine. Owned by the **Quality lab and by production**; the lab's machines are to be in Yantra too | User, 20-10-2026 |
 | A **weighbridge** and weigh scales are in use and need Legal Metrology stamping (verification by the state department) | User, 20-10-2026 |
 | Calibration certificates come from agencies that are not NABL-accredited but state traceability; the Sartorius moisture analyser is calibrated by its vendor | User, 20-10-2026 |
+| **Vehicle fleet**: SMTW and SSVT run about 40 vehicles between them. Repairs are done in house (the auto workshop, § 2) and at outside garages | User, 20-10-2026 |
+| Fleet inspection today: now and then someone is asked to inspect every vehicle and submit a report; about once in six months, haphazard, when an inspector is available. The inspector is the head engineer or a visiting faculty member of the polytechnic's mechanical or automobile department. **Target: once a month** | User, 20-10-2026 |
+| Each fleet inspection finds many small defects across many vehicles. Repairs are often deferred for a small reason (a part, a slot, the vehicle on the road) and then forgotten | User, 20-10-2026 |
 
 TBD — which equipment is under AMC, with which vendors, and the contract terms (visits per year, response time, what is covered); how breakdowns are reported and recorded today; existing PM routines;
 where the Mechanical and Electrical shops are and which sites they serve.
@@ -149,6 +153,7 @@ where the Mechanical and Electrical shops are and which sites they serve.
 | Sorting line: a sorting supervisor with a phone and 5–6 automatic packing machines (APK01–06 or so) whose operators have no phone; they report CIL and faults to the supervisor orally or on a paper form | User, 16-10-2026 |
 | Extrusion line: operators have a company mobile today and will get a shared kiosk or desktop, where they log in with their own account | User, 16-10-2026 |
 | The fitter on the genset round has no phone; a supervisor or engineer will be assigned to record for him | User, 18-10-2026 |
+| Drivers report to a drivers' supervisor; the head engineer is above him. Drivers have phones but get no Yantra access in this phase (a kiosk may come); the supervisor records for them | User, 20-10-2026 |
 
 TBD — headcount per role per site; shift pattern; on-call arrangement; phones
 company-issued or personal.
@@ -175,6 +180,7 @@ TBD — store names and locations; how issues are booked in OneERP today.
 | OneERP does not create users automatically on Keycloak login | User, 13-10-2026 |
 | **plant-3i** — sister repo handling IIoT. Will provide telemetry to Yantra: production counts per day, oil temperature, run hours, PLC malfunction flags, etc. | User, 13-10-2026 |
 | **VelKilnMaster** (vel-kiln) — sister app for the kiln. May flag kiln sensors as needing maintenance | User, 13-10-2026 |
+| **VELVaahanMaster** (Frappe app `vaahan`) — vehicle fleet management: vehicle masters, drivers, trips, refuelling (odometer), tyres, legal compliance (insurance, permits, fitness certificate, road tax, PUC) and a maintenance-report doctype (vendor activities, invoices, attachments, cost). **Live and used daily** | Repo; user, 20-10-2026 |
 
 ## 8. Production data
 
@@ -204,3 +210,4 @@ installations, major failures, rebuilds, layout changes). TBD.
 | 17-10-2026 | Parts: makers' part lists, service-engineer quotes, generic spares |
 | 20-10-2026 | ISO 9001 as a future goal; measuring instruments, their owners, weighbridge stamping, certificate sources |
 | 18-10-2026 | Daily-report use case: genset round, EB meter readings, the electrical head's daily report, fitter without a phone |
+| 20-10-2026 | Fleet use case: 40 vehicles, in-house and garage repairs, six-monthly inspection by the head engineer or polytechnic faculty with a monthly target, deferred-and-forgotten defects, drivers recorded for by their supervisor, the Vaahan app |

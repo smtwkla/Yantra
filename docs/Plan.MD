@@ -232,6 +232,17 @@ CIL jobs at their units and nothing else.
   cutting machine went unused and forgotten for years). ISO 55001 § 7.5: know what you have
   and what you decided for it. The dashboard lists the not-decided equipment until an engineer
   chooses. One enum, no logic.
+- **Vehicles are equipment** (*Proposed*, 20-10-2026, fleet use case). The 40 vehicles of SMTW
+  and SSVT are equipment of class *Vehicle* (types truck, tractor, car, forklift, …) at units
+  `SMTW.FLEET` and `SSVT.FLEET`, with component-units engine, brakes, steering and suspension,
+  electrical, tyres, body; the odometer is a counter meter in km (§ 4.5), run hours for tractors
+  and forklifts. ISO 14224's taxonomy is written for plant but fits as is. The boundary with
+  **Vaahan** (§ 7): Vaahan keeps what is vehicle-specific and legal (registration, insurance,
+  permits, fitness certificate, PUC, road tax, trips, refuelling, tyres) and the garage bills;
+  Yantra holds the work (defects, tickets, inspections, PM by km). No second register of
+  vehicle papers in Yantra; the Yantra ticket number goes in Vaahan's maintenance report. The
+  one duplication is the vehicle itself, which must be equipment here for tickets and plans to
+  hang off: identity fields only, loaded once by hand, synced from Vaahan later (§ 7).
 - **Verification rounds** (*Proposed*, 16-10-2026): a job per unit where someone walks the
   floor scanning QR labels; scanned equipment are confirmed, unscanned listed as not found,
   unregistered machines found on the walk are added. ISO 55002 recommends periodic physical
@@ -317,6 +328,15 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   - a waiting reason also on a **critical** ticket (parts, vendor, workshop, expert), so
     downtime splits into active repair and waiting (EN 13306: active maintenance time,
     logistic delay, administrative delay). A press cylinder three weeks at the maker is waiting.
+- **Fleet defects** (20-10-2026, fleet use case): each defect found on a vehicle is a ticket of
+  its own, mostly *initial* or *degraded*, so one inspection of 40 vehicles gives a backlog of
+  tickets instead of one paper report. The drivers' supervisor raises them on the driver's
+  behalf (*reported by* the driver, an Operator row without a login, S017). Repairs are done
+  in house (a Technician) or at a garage (a contractor in Team, the ticket's assignee, S018).
+  A vehicle at the garage is a **scheduled** ticket with the waiting reason *vendor* (deferred
+  work, above), so the days away count as logistic delay, not repair time, and the ticket
+  cannot be forgotten: it stays open and shows on the engineer's dashboard past its planned
+  date. SMRP measures this as backlog age.
 - **Diagnostic procedures** (*Proposed*, 16-10-2026, pressing-shop use case). Fault diagnosis
   on the hydraulic presses depends on one person, guided over the phone test by test. EN 13306
   names fault diagnosis as a step of corrective maintenance; TPM's training pillar writes expert
@@ -416,6 +436,23 @@ question 6. CIL plans can come from templates the same way.
   examination of pressure plant, hoists and lifting machines by a competent person — the
   compressors' air receivers are pressure plant; confirm with whoever handles safety) are the
   same plan with the certificate attached.
+- **Fleet inspection** (*Proposed*, 20-10-2026, fleet use case): the fitness-for-use inspection
+  applied to the *Vehicle* class, **monthly** (today about six-monthly, when an inspector is
+  free; a plan with an interval makes an overdue fleet visible instead of waiting to be
+  remembered). Checklist: brakes, steering, suspension, leaks, lights, battery, tyres with
+  tread depth as a reading, papers present; outcome fit / fit with conditions / not fit; every
+  Not OK raises a defect ticket. Performer: the head engineer (self-verification, as for every
+  fitness-for-use plan) or a visiting polytechnic faculty member, recorded as a contractor in
+  Team without a login; the engineer enters the round for them or attaches their report. A
+  round done early resets the next due date, as every calendar plan does. Run as a **PM
+  route** (below): forty vehicles with a full checklist each is a day's work, and forty
+  separate jobs a month is how a monthly target slips back to six-monthly. The fleet is
+  proposed as the **pilot for routes**, ahead of the genset round. Apart from this, a short
+  daily pre-trip check by the driver is a before-use CIL plan (§ 4.4), recorded by the
+  supervisor until drivers get a kiosk: TPM keeps the user's daily look and the specialist's
+  periodic inspection as two layers. In the US the driver's check is a legal form (the Driver
+  Vehicle Inspection Report, 49 CFR 396.11: a safety defect is repaired before the next trip);
+  India has no equivalent rule, so this is practice, not law.
 - **Certification plans** (*Proposed*, 17-10-2026, statutory use case): a plan flagged
   *certification* carries a **valid-until** date on each job, with the certificate attached.
   The dashboard lists certificates expiring within 30 days or expired; a **compliance register**
@@ -713,6 +750,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 | plant-3i (later) | Telemetry: production counts, run hours, gauge values, PLC malfunction flags; raises tickets via the shared ticket API (§ 4.2) | read / receive |
 | aibots (later) | Reasoning over Yantra's history and plant-3i's data: forecasts from reading trends and failure history (predictive maintenance), remote-monitoring alerts, and later ad-hoc questions over the records. Bots never talk to devices (the aibots boundary rule: plant-3i acquires, aibots reasons and communicates) | read / receive |
 | VelKilnMaster (later) | Kiln sensors flagged as needing maintenance, via the shared ticket API (§ 4.2) | receive |
+| VELVaahanMaster (later, *Proposed* 20-10-2026) | Vaahan is the **vehicle master**; Yantra holds each vehicle as equipment with only its maintenance identity (code, name, class and type, unit, registration number as serial, model), loaded once by hand (40 rows, little churn) and then kept in step by a scheduled read-only sync keyed on the registration number, like the OneERP warehouse sync (Vaahan is live and used daily, so the sync is worth building; Vaahan's own maintenance-report doctype is frozen, not grown, once Yantra holds the work). Odometer readings from trips and refuelling into the vehicle's km meter (reading source `vaahan`), so PM by km needs no retyping; until then the inspector types the odo. Vaahan's maintenance report carries the Yantra ticket number (Q25) | read |
 
 ## 8. Build phases
 
@@ -758,5 +796,6 @@ these rungs need a year of coded tickets and readings first.
 22. **PM routes** (*Proposed*, 18-10-2026, § 4.3): one screen for a walk over many equipment; verification rounds and the CIL-due list fold into it. Which step builds it?
 23. **Work done without a ticket** (*Proposed*, 18-10-2026, § 4.2): raise-and-close on one screen for work that arrived with no ticket.
 24. **Calibration** (*Proposed*, 20-10-2026, § 4.3): measuring-instrument class with required accuracy, calibration class and custodian; certification plans per instrument; in-house verification plans with error readings and the out-of-tolerance ticket. Phase 4, after certification plans (Q20). ISO 9001 § 7.1.5.
+25. **Fleet and Vaahan** (*Proposed*, 20-10-2026, § 4.1, § 4.3, § 7): no step of its own; vehicles ride on S017/S018 (tickets), S019 (deferred work) and the route step. Vaahan is live and used daily (20-10-2026), so its maintenance-report doctype is to be frozen, not grown, and the vehicle sync and odometer feed are worth building. To settle: the vehicle list and types to load by hand first; which phase builds the sync and the odometer feed (alongside the OneERP sync, phase 6, or earlier with PM by km in phase 4); whether the fleet is the route pilot.
 16. **Die tracking** (*Proposed*, 16-10-2026, § 4.1): counter snapshot on fit / removal and a die-centred history, ahead of the rotables design.
 11. ~~**Kiosks.**~~ Decided 13-10-2026: not in v1; not tied to a unit; operators are Keycloak local users with passwords; logout manual or on inactivity; no supervisor role (superseded 16-10-2026 by S011 A1: `maint_supervisor`, production-side); resets by IT in Keycloak (Decisions table, § 3).

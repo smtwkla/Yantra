@@ -256,6 +256,17 @@ is one walk, so Yantra groups the plans into a **route**, the standard CMMS answ
 (SMRP: inspection and lubrication routes). Verification rounds and the CIL-due
 list are routes too (Plan § 4.3).
 
+**The vehicle fleet** (**Proposed**, 20-10-2026). Forty vehicles are inspected
+about twice a year, when someone is free, and the small defects found are deferred
+and forgotten. Nothing here needs a vehicle-specific design: a vehicle is equipment,
+the driver is its operator (TPM autonomous maintenance: a short daily pre-trip check
+as a before-use CIL plan, recorded by the drivers' supervisor), the monthly round is
+the fitness-for-use inspection run as a route (EN 13306 inspection; SMRP route),
+every defect is a ticket, and a repair deferred for parts or a garage slot is
+deferred corrective maintenance in the *scheduled* state, measured by SMRP's backlog
+age so it cannot be forgotten. Vaahan keeps the legal papers and the bills
+(Plan § 4.1, § 7).
+
 **The daily report is generated, not written** (**Decided**, 18-10-2026). The
 electrical team head reports the day's work to the owner. In Yantra that report is
 a query over what was recorded, printed. Recording the work and writing the report
