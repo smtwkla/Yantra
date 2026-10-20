@@ -61,6 +61,18 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   - existing tests the change will break;
   - departures from the base patterns that are not stated;
   - over-engineering.
+- **Design and structure** (CLAUDE-COMMON principles). Check that:
+  - each rule lives in the right layer: business rules and calculations in a
+    pure core module, the route and DB code a thin shell, the frontend
+    presentational — a business rule placed in a route or a Vue file is
+    `major`;
+  - the brief reuses the existing helpers, queries, components and patterns
+    instead of planning parallel ones (search the code for them); a planned
+    duplicate is `minor`;
+  - module boundaries are clear: which module owns what, and which way the
+    imports go;
+  - no new abstraction (layer, base class, generic framework, config flag)
+    without a second real use — right-sized for ~50 users.
 - **Standards.** Check that the brief names the relevant maintenance and security
   standards (ISO 14224, EN 13306, ISO 55000/55001, SMRP, TPM, ISO 27001) and
   cites them correctly. The project owner is learning maintenance practice, so

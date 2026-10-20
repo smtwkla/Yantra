@@ -42,6 +42,16 @@ review file there.
   - every route is permission-gated with the right key;
   - no actor is taken from the client;
   - no SQL built from strings.
+- **Design and structure** (CLAUDE-COMMON principles):
+  - each rule in its layer: business rules and calculations in the pure core,
+    routes and DB code a thin shell, the frontend presentational. A business
+    rule in a route or a Vue file is `major`;
+  - reuse: search for existing helpers, queries and components that the new
+    code repeats. A near-copy of an existing block, or a new helper that
+    duplicates one already there, is `minor` (point to the existing one);
+  - clear module boundaries and import direction;
+  - right-sized: a new layer, interface or config flag with only one use is
+    over-engineering, `minor`.
 - **Rules from CLAUDE-COMMON:**
   - pure core / thin shell;
   - DRY;
