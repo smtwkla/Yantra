@@ -40,6 +40,29 @@ body {
   background-color: var(--content-bg);
 }
 
+/* -----------------------------------------------------------------------
+   Self-hosted icons (SVGs in assets/icons, fetched with tooling/material-icon.bat).
+   Used like Font Awesome: <i class="yi-icon yi-table-edit">. The SVG is a mask
+   over a currentColor background, so the icon follows the text colour and
+   font-size exactly as an fa-* glyph does. 1.25em matches Font Awesome's
+   fixed icon width; Material's built-in margin makes the drawing about 1em.
+   ----------------------------------------------------------------------- */
+
+.yi-icon {
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.25em;
+  background-color: currentColor;
+  mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+}
+
+.yi-table-edit {
+  mask-image: url("./icons/table_edit.svg");
+}
+
 /* ----- Mobile bottom nav (hidden on desktop) ----- */
 
 .app-bottom-nav {
