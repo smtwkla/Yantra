@@ -549,6 +549,53 @@ _MIGRATIONS = [
         """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
             CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL) = 1)""",
     ]),
+    # Ticket work (S018): the close's cause and action (S016 lists; NULL action on a ticket closed
+    # as not a fault), the not-a-fault flag, the repeat link (a new ticket on the same machine
+    # after a restoration that did not hold), the assignees and the labour rows (person, trade
+    # worked, date, minutes: ISO 14224 man-hours per discipline).  The figures (response,
+    # repair, downtime) are computed from ticket_events, never stored.
+    # Every statement is safe to run twice, as in v5.
+    (13, "Ticket work: cause, action, not a fault, repeat, assignees, labour", [
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS cause_id INT NULL AFTER failure_mode_id",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS action_id INT NULL AFTER cause_id",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS not_a_fault TINYINT(1) NOT NULL DEFAULT 0 AFTER action_id",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS repeat_of_id INT NULL AFTER not_a_fault",
+        "ALTER TABLE tickets ADD INDEX IF NOT EXISTS ix_tickets_repeat_of (repeat_of_id)",
+        """ALTER TABLE tickets ADD CONSTRAINT fk_tickets_cause FOREIGN KEY IF NOT EXISTS
+            (cause_id) REFERENCES failure_causes (id)""",
+        """ALTER TABLE tickets ADD CONSTRAINT fk_tickets_action FOREIGN KEY IF NOT EXISTS
+            (action_id) REFERENCES maintenance_actions (id)""",
+        """ALTER TABLE tickets ADD CONSTRAINT fk_tickets_repeat_of FOREIGN KEY IF NOT EXISTS
+            (repeat_of_id) REFERENCES tickets (id)""",
+        """CREATE TABLE IF NOT EXISTS ticket_assignees (
+            ticket_id   INT NOT NULL,
+            person_id   INT NOT NULL,
+            assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            assigned_by VARCHAR(100) NOT NULL,
+            PRIMARY KEY (ticket_id, person_id),
+            KEY ix_ticket_assignees_person (person_id),
+            CONSTRAINT fk_ticket_assignees_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id),
+            CONSTRAINT fk_ticket_assignees_person FOREIGN KEY (person_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS ticket_labour (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id   INT NOT NULL,
+            person_id   INT NOT NULL,
+            trade_id    INT NULL,
+            work_date   DATE NOT NULL,
+            minutes     SMALLINT NOT NULL,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            KEY ix_ticket_labour_ticket (ticket_id),
+            KEY ix_ticket_labour_person (person_id, work_date),
+            CONSTRAINT fk_ticket_labour_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id),
+            CONSTRAINT fk_ticket_labour_person FOREIGN KEY (person_id) REFERENCES people (id),
+            CONSTRAINT fk_ticket_labour_trade FOREIGN KEY (trade_id) REFERENCES trades (id),
+            CONSTRAINT chk_ticket_labour_minutes CHECK (minutes BETWEEN 1 AND 1440)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

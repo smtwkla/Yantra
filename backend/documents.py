@@ -1,6 +1,7 @@
 """Documents and photos on equipment (docs/steps/S006-equipment-documents/1-brief.md), on a
 node or, since S012, on an equipment model (docs/steps/S012-equipment-models; the owner
-design of the dropped S009), and since S017 photos on a ticket (docs/steps/S017-raise-tickets).
+design of the dropped S009), and since S017 photos on a ticket (docs/steps/S017-raise-tickets),
+since S018 its documents too (docs/steps/S018-work-tickets, user decision 5).
 
 Thin shell: documents_core holds the rules (file type from the first bytes, titles,
 names, thumbnails); file_store does the file I/O; this module checks access and the
@@ -9,15 +10,16 @@ scrapped rule, orders the writes and serves files.
 Owners (OWNERS below): a document belongs to exactly one node, model or ticket (the owner
 CHECK, v9 and v12).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
 are stacked route decorators whose ``defaults`` name the owner.  Each owner carries its keys
-and kinds as data (S017 § 5.5): the route checks the owner's key held at any site
+as data (S017 § 5.5); every owner takes every kind (S018 removed the ticket's photos-only rule): the route checks the owner's key held at any site
 (check_perm), then the owner's read or lock function checks it at the record's site.  Node documents follow the
 node's site and units (S011: unit access, and the write key checked at the node's site).
 Model documents are visible to every user with equipment:read, at every site, and are
 maintained by equipment:edit (restore and purge: equipment:purge_documents) held at any
 site (S012 § 2, ISO 27001 A.8.3: a model's documents are generic maker information).  A
 node's list also returns its model's documents as an ``inherited`` group, looked up live.
-Ticket photos follow the ticket's access predicate (tickets.py) and are added, retitled and
-removed by ticket:raise at the ticket's site, never on a closed ticket.
+Ticket photos and documents follow the ticket's access predicate (tickets.py) and are added,
+retitled and removed by ticket:raise at the ticket's site, never on a closed ticket (the ticket
+page offers *Add document* to ticket:work holders only, S018 § 3).
 
 Upload order (S006 § 5.6): every check and the thumbnail first, then the files are
 written with no transaction open, then a short transaction locks the owner and inserts.
@@ -156,20 +158,19 @@ class Owner:
     read_key: str                  # list, file, thumb
     write_key: str                 # upload, title, remove
     purge_key: str                 # the removed list's restore and purge
-    kinds: tuple                   # the kinds it takes (documents_core.KINDS or fewer)
 
 
 OWNERS = {
     "equipment": Owner("equipment_id", "/api/equipment/{}/documents", "node",
                        _read_node, _read_node_for_change, _lock_node_for_change, _lock_node_for_purge,
-                       "equipment:read", "equipment:edit", "equipment:purge_documents", KINDS),
+                       "equipment:read", "equipment:edit", "equipment:purge_documents"),
     "model": Owner("model_id", "/api/masters/equipment-models/{}/documents", "model",
                    _read_model, _read_model, _lock_model, _lock_model,
-                   "equipment:read", "equipment:edit", "equipment:purge_documents", KINDS),
-    # Photos only (S017 § 9.3); raisers add them without equipment:edit
+                   "equipment:read", "equipment:edit", "equipment:purge_documents"),
+    # Photos and documents (S018 user decision 5); raisers add them without equipment:edit
     "ticket": Owner("ticket_id", "/api/tickets/{}/documents", "ticket",
                     read_ticket, read_ticket_for_change, lock_ticket_for_change, lock_ticket_for_purge,
-                    "ticket:read", "ticket:raise", "equipment:purge_documents", ("photo",)),
+                    "ticket:read", "ticket:raise", "equipment:purge_documents"),
 }
 
 # The collection prefixes, one stacked route decorator each
@@ -241,10 +242,9 @@ def list_documents(owner, owner_id):
         return jsonify(result)
 
 
-def _read_upload(limit_mb, kinds):
+def _read_upload(limit_mb):
     """The checks of S006 § 5.6 step 2 -> (clean form fields, file bytes, file type,
-    thumbnail or None, original name).  ``kinds``: the owner's (a ticket takes photos only).
-    Raises ApiError."""
+    thumbnail or None, original name).  Raises ApiError."""
     limit = limit_mb * MB
     too_large = ApiError(f"The file is larger than {limit_mb} MB", 400, "file")
     # Before request.form / request.files: Werkzeug spools the whole body on first access.
@@ -254,8 +254,6 @@ def _read_upload(limit_mb, kinds):
     clean, errors = validate_document(request.form)
     if errors:
         raise ApiError(errors[0]["message"], 400, errors[0]["field"])
-    if clean["kind"] not in kinds:
-        raise ApiError("Only photos can be added here", 400, "kind")
     upload = request.files.get("file")
     if upload is None:
         raise ApiError("Choose a file", 400, "file")
@@ -307,7 +305,7 @@ def upload_document(owner, owner_id):
         OWNERS[owner].read_for_change(cur, owner_id, key)
         limit_mb = upload_max_mb(cur)
 
-    clean, data, file_type, thumb, original_name = _read_upload(limit_mb, OWNERS[owner].kinds)   # step 2
+    clean, data, file_type, thumb, original_name = _read_upload(limit_mb)   # step 2
     if clean["kind"] == "photo" and thumb is None:
         logger.warning("No thumbnail for a photo on %s %s (%s): Pillow could not read it",
                        OWNERS[owner].log_name, owner_id, original_name)

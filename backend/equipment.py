@@ -55,6 +55,9 @@ The type is no longer locked here: it comes from the model, whose type never cha
   then person).  InnoDB rolls one side back (1213).  The scrap path counts open tickets on
   the node and its parts while they are locked (_check_no_open_tickets), so a raise and a
   scrap of the same node serialise on (1).
+- tickets.py (S018) works a ticket — moves, re-grade, edit, labour, assignment — under (7)
+  only; nothing else locked.  Its inserts take shared FK locks (person, trade, cause, action,
+  mode, ticket), which wait for a master's FOR UPDATE but never hold an equipment lock.
 """
 
 from datetime import datetime, timedelta, timezone

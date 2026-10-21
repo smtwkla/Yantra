@@ -264,3 +264,31 @@ class TestModeCodeFrozenOnceUsed:
         code = uniq.failure_code()
         res = engineer.put(f"{MODES}/{mode['id']}", json={"code": code})
         assert (res.status_code, res.get_json()["code"]) == (200, code)
+
+
+class TestCauseAndActionCodeFrozenOnceUsed:
+    """S018 § 5.6: as modes — a cause or action used by a ticket keeps its code; label, group,
+    description and active stay editable; a re-save with the code unchanged is accepted."""
+
+    @pytest.mark.parametrize("path, column", [(CAUSES, "cause_id"), (ACTIONS, "action_id")])
+    def test_a_used_codes_code_is_409_and_the_rest_still_changes(self, engineer, make_equipment, make_ticket,
+                                                                  db_rows, uniq, path, column):
+        record = _created(engineer.post(path, json=_body(path, uniq)))
+        ticket = make_ticket(make_equipment())
+        db_rows(f"UPDATE tickets SET {column} = %s WHERE id = %s", (record["id"], ticket["id"]))
+        res = engineer.put(f"{path}/{record['id']}", json={"code": uniq.failure_code()})
+        _refused(res, 409, "code")
+        assert res.get_json()["error"] == "This code is used by tickets and can no longer change"
+        changes = {"code": record["code"], "label": uniq.failure_label()}
+        if path == CAUSES:
+            changes["cause_group"] = "management"
+        same = engineer.put(f"{path}/{record['id']}", json=changes)
+        assert same.status_code == 200, same.get_json()
+        assert engineer.put(f"{path}/{record['id']}", json={"active": False}).status_code == 200
+
+    @pytest.mark.parametrize("path", [CAUSES, ACTIONS])
+    def test_an_unused_codes_code_still_changes(self, engineer, uniq, path):
+        record = _created(engineer.post(path, json=_body(path, uniq)))
+        code = uniq.failure_code()
+        res = engineer.put(f"{path}/{record['id']}", json={"code": code})
+        assert (res.status_code, res.get_json()["code"]) == (200, code)

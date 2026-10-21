@@ -58,6 +58,11 @@ TECHNICIAN_ROLE = "maint_technician"
 # the pick-lists (a ticket's reported-by, S018's labour).  Only IT admin sets an Operator row.
 NO_LOGIN_ROLES = (TECHNICIAN_ROLE, "maint_operator")
 
+# The site roles a ticket may be assigned to, manually or automatically on acknowledge / start
+# (S018 § 5.8): assignment hands out maintenance work, so the maintenance ladder from the
+# technician up.  Contractor firms hold a technician row, so AMC vendors qualify.
+ASSIGNABLE_ROLES = (TECHNICIAN_ROLE, "maint_engineer", "maint_manager")
+
 # Roles that may use Yantra from the plant network only (S013 network gate): a deny list, a
 # deliberate departure from the base pattern's access:wan allow list, because a person can hold
 # IT admin and a site role at once.  Token roles only: the gate never reads memberships, so a
@@ -69,7 +74,7 @@ INTERNAL_ONLY_ROLES = ("it_admin",)
 # Role inheritance — a role automatically gains all permissions of included roles.
 # Maintenance is a ladder: manager ⊇ engineer ⊇ technician ⊇ maint_operator.
 # it_admin stands apart: housekeeping and settings, not maintenance work — with one
-# exception, tickets (S017 user decision 7: IT admin may read and raise them).
+# exception, tickets (S017 user decision 7: IT admin may read, raise and work them).
 # maint_storekeeper stands apart too: issuing stock is not part of the
 # maintenance ladder. No v1 permissions beyond '*' — spares come later.
 # maint_supervisor is production-side (TPM autonomous maintenance): above the operator,
@@ -99,6 +104,15 @@ PERMISSIONS = {
     # departure from "maintenance work is not IT admin's"; the storekeeper holds neither.
     "ticket:read": ("maint_operator", "it_admin"),
     "ticket:raise": ("maint_operator", "it_admin"),
+    # Working the ticket (S018 § 5.7).  Back in service by whoever has operator rights at the
+    # unit (Plan.MD § 4.2), so production confirms the restoration; the work itself and the
+    # labour by the maintenance ladder from the technician up; assignment, send back and close
+    # by the engineer (managers inherit).  The supervisor stays off the ladder.  IT admin holds
+    # all four (S017 user decision 7) but no site role, so it is never assigned.
+    "ticket:work": ("maint_technician", "it_admin"),
+    "ticket:restore": ("maint_operator", "it_admin"),
+    "ticket:assign": ("maint_engineer", "it_admin"),
+    "ticket:close": ("maint_engineer", "it_admin"),
 
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
@@ -136,4 +150,8 @@ SITE_SCOPED = frozenset({
     "people:assign_technicians",
     "ticket:read",
     "ticket:raise",
+    "ticket:work",
+    "ticket:restore",
+    "ticket:assign",
+    "ticket:close",
 })

@@ -23,7 +23,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
   const editingId = ref(null);
   const editingLabel = ref(""); // what a confirmation names, e.g. SMTW-KP
   const saving = ref(false);
-  const error = ref(null); // {field, message} from the last refused save
+  const error = ref(null); // {field, message, status} from the last refused save
 
   // The form as it was once the dialog was filled; null until then. `dirty` tells FormModal
   // whether closing would lose typed input.
@@ -77,7 +77,7 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
     try {
       result = await request();
     } catch (err) {
-      error.value = { field: err.field, message: err.message };
+      error.value = { field: err.field, message: err.message, status: err.status };
       return;
     } finally {
       saving.value = false;

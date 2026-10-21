@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 20-10-2026 (revised 20-10-2026 after brief-reviews r1–r4)
 Track: full
-Baseline: 90284ec + uncommitted S016, S015; built on the S017 brief (revised after r1 and r2, 20-10-2026)
-Status: In review
+Baseline: cfedc46 (s1)
+Status: In code review (approved 20-10-2026 by KLA; A1 approved 20-10-2026, coded)
 ```
 
 # S018 — Work the ticket
@@ -34,6 +34,23 @@ Decisions taken in S017's review that this step relies on (user, 20-10-2026):
   to be worked or closed on scrapped equipment; S018 needs no rule for it;
 - **IT admin gets full access to tickets** (S017 user decision 7): all four
   keys below; the storekeeper none for now.
+
+User decisions at gate A (20-10-2026):
+4. **Self-close allowed** (open question 1): the engineer, manager or IT admin
+   may close a ticket he worked himself — a recorded departure from ISO 27001
+   A.5.3 (segregation of duties).
+5. **Vendor documents on tickets** (open question 2): the ticket owner's
+   `kinds` gains `document`; the write key stays `ticket:raise`; *Add
+   document* shown to `ticket:work` holders. Files under
+   `DATA_DIR/tickets/<id>/` with the photos (one folder per record type, then
+   per record — the existing layout, accepted).
+6. **Repeat window 7 days** (open question 3): `REPEAT_WINDOW_DAYS = 7`.
+7. **Back-in-service person and labour: anyone at the site** (open question 4,
+   option (a)): any active person with a membership at the ticket's site,
+   operators included; assignees technician, engineer or manager.
+8. **No *Time spent* on the back-in-service dialog** (open question 6):
+   labour is added on its own; the labour defaults of § 1 are enough.
+9. **The `FormModal` scroll fix stays in S018** (§ 7 decision 12).
 
 **Track: full** — a migration, four permission keys, a state machine with
 locked transitions, a calculation core, more than 10 files.
@@ -233,7 +250,6 @@ and S016 (causes, actions). Coded after S017 is committed.
 - Reports over many tickets (MTBF, MTTR per unit, downtime by cause) —
   phase 5. This step shows each ticket's own figures.
 - Labour cost (Plan.MD § 2, not in v1).
-- Vendor PDF reports on a ticket — open question 2.
 - **An operator linking a repeat after the old ticket is closed** (BR3-01;
   user, 20-10-2026: not a priority). The *Not fixed — raise again* button is
   only on the old ticket's page; an operator who raises afresh from the
@@ -341,19 +357,40 @@ and S016 (causes, actions). Coded after S017 is committed.
   at the **ticket's site** (the site of `tickets.unit_id`), the people and their
   roles at that site. `equipment_id` stays for the raise screen; one helper
   `_people_at_site(cur, site_id)` behind both (BR2-02). The rows carry each
-  person's **role at the site**, so the page lists only who qualifies (§ 5.8).
+  person's **role at the site**, so the page lists only who qualifies (§ 5.8);
+  S017's `_people_at_site` already returns `role`, so only the anchor is new
+  (BS1-04). The route keeps `@require_perm("ticket:raise")`; with `ticket_id`
+  it reads the ticket by the access predicate (404), then
+  `require_perm_at("ticket:read", <ticket's site>)`. One of `equipment_id` /
+  `ticket_id` is required (400 otherwise). **`GET /api/tickets/modes`** gains
+  the same `?ticket_id=` anchor: the class from the ticket's machine,
+  `ticket:read` at the ticket's site, so the close and edit dialogs still get
+  their symptoms after the machine moved to a unit the user cannot see
+  (BS1-08).
+  The moves, edit, re-grade, labour and assignment routes **extend S017's
+  `_lock_ticket(cur, ticket_id, key)`** (lock `FOR UPDATE` → 404 by the access
+  predicate → 403 at the ticket's site): its locked SELECT gains `intensity`,
+  `failure_mode_id`, `equipment_id`, `occurred_at`, and every refusal is
+  decided from that row; no parallel helper. S017's `TICKET_CLOSED` 409 ("This
+  ticket is closed") answers a write on a closed ticket; "This ticket changed —
+  reload" a stale state (BS1-05).
   The detail gains `permissions` (the user's
   keys at the ticket's site, `permissions_at_site`, as S017's node detail)
   and `regrade_to` (BR3-04).
 - **`backend/masters.py`** — cause and action code frozen once a ticket uses
   them (§ 5.6); `_update_plain_master` gains a `used_by` parameter
   (`("tickets", "cause_id")`, `("tickets", "action_id")`), since causes and
-  actions share it (BR2-07).
+  actions share it (BR2-07); it keeps the row `_lock_row` returns and compares
+  the code to it, as `update_failure_mode` does (BS1-03).
 - **`backend/equipment.py`** and **`backend/tickets.py`** docstrings — the
   lock-order note gains the moves, edits, labour and assignment writes:
   "(7) only; nothing else locked" (BR1-15).
-- **`backend/documents.py`** — no change if open question 2 is answered no.
-  If yes, only the ticket owner's `kinds` gains `document`; the write key stays
+- **`backend/documents.py`** — tickets take documents as well as photos (user
+  decision 5). No owner restricts kinds any more, so S017's `Owner.kinds`
+  field and its photos-only refusal (400 "Only photos can be added here") are
+  removed rather than left as a one-use setting; the three photos-only
+  comments (`OWNERS["ticket"]`, the module docstring, `file_store.py`) are
+  updated (BS1-01). The write key stays
   `ticket:raise` (S017's `Owner` has one write key per owner, and a per-kind key
   would be a second change to its pattern). The ticket page offers *Add
   document* to `ticket:work` holders only (UI); the raise screen stays
@@ -372,11 +409,20 @@ and S016 (causes, actions). Coded after S017 is committed.
   *Machine stopped* or *Change severity*, *Not fixed — raise again*, then the
   significant moves after a gap; BR4-05); the disabled *Close* with its
   visible reason and *Add labour* (BR4-02); then times, assignees,
-  labour panel, repeat links, photos, timeline; controls other than moves
+  labour panel, repeat links, photos and documents (*Add document* for
+  `ticket:work` holders, user decision 5: the page drops `photos-only`, keeps
+  `large-add`, passes `:can-edit="ticket.can_add_photos"` and
+  `:can-edit-documents="ticket.can_add_documents"`, BS1-02), timeline; controls other than moves
   shown from the detail's `permissions` and `regrade_to`, so a user without
   the key sees no button, never a 403 (BR3-03, BR3-04). The timeline renders
   an intensity change ("Defect → Breakdown") from the events' `intensity`
   column, the remark stays the user's (BR1-12).
+- **`components/documents/DocumentsCards.vue`** — gains a `canEditDocuments`
+  prop (default: `canEdit`) for the Documents card's *Add document*, edit and
+  remove; equipment and model pages are unchanged (BS1-02).
+- **`components/documents/DocumentUploadModal.vue`** — the "Everyone who can
+  see this ticket can see it." line is keyed on the owner being a ticket, not
+  on `photosOnly`, so it shows for a document too (BS1-02).
 - **`views/tickets/MoveDialog.vue`** (new) — one dialog for every move: time
   as "Now · Change" (*Change* fills the phone's now; sent only when changed),
   the remark behind *Add remark* where optional and open where required
@@ -410,19 +456,33 @@ and S016 (causes, actions). Coded after S017 is committed.
 - **`views/TicketsView.vue`** — *Assigned to me* filter (shown when
   `userPersonId` is set); assignees' first names on each row; closed tickets
   show *Not a fault* when so.
-- **`views/RaiseTicketView.vue`** — `repeat_of=<id>` in the query pre-fills
-  and sends `repeat_of_id`.
+- **`views/RaiseTicketView.vue`** — opened as
+  `/tickets/new?equipment=<component or machine id>&repeat_of=<id>`. After the
+  node loads (and after `resetForm()`, which runs on every node change), the
+  screen reads `GET /api/tickets/<id>` and pre-fills the symptom
+  (`failure_mode.id`) and the intensity; Save sends `repeat_of_id`. S017's
+  `validate_raise` gains `repeat_of_id` through `_optional_id`, as
+  `reported_by_id` (BS1-07).
 - Causes and actions for the close dialog come from the masters store
   (`ensureFailureCauses()`, `ensureMaintenanceActions()`, S016); symptoms from
-  S017's `GET /api/tickets/modes?equipment_id=<machine>`; people from S017's
-  picker anchored on the ticket (`?ticket_id=`) (BR1-10, BR2-02, BR2-07).
+  S017's `GET /api/tickets/modes`, anchored on the ticket (`?ticket_id=`,
+  BS1-08); people from S017's picker anchored on the ticket (`?ticket_id=`)
+  (BR1-10, BR2-02, BR2-07).
 - **`utils/ticketLabels.js`** — move labels ("Fixed" for a defect's back in
   service), Save labels per move, the send-back question per intensity,
   intensity change text, minutes as "1 h 25 min".
 
 ### Tests
 - `backend/tests/test_tickets_core.py` — § 8.
-- `backend/tests/test_ticket_work_api.py` (new) — § 8.
+- `backend/tests/test_ticket_work_api.py` (new) — § 8. It imports S017's
+  helpers, or moves them to `conftest.py`, rather than copying them:
+  `TICKETS`, `make_mode`, `make_ticket`, `set_ticket_state` (its docstring
+  "S017 never changes a state" updated), and `test_tickets_api.py`'s
+  `_now_ist`, `_local`, `_api_time`, `_refusal`, `give_site_role`, `operator`,
+  `machine` (BS1-06).
+- `backend/tests/test_documents_api.py` — S017's
+  `test_a_document_kind_is_400_before_the_file_is_read` becomes: a `document`
+  on a ticket → 201, stored under `tickets/<id>/`, listed (BS1-01).
 - `backend/tests/test_migration_v13.py` (new).
 - `backend/tests/test_rbac.py` — `TestComputePermissions.test_role_matrix`
   rows and per-key holders tests (§ 8).
@@ -521,6 +581,10 @@ lie between the last event and the back-in-service time.
   technician acknowledged at 09:40 must enter 09:40 or later; downtime starts
   there.
 - Event times are immutable once written (Out of scope; correction queued).
+- **"The latest event" means the latest event that moves the state or the
+  intensity** (`tickets_core.ORDERED_EVENTS`); *assigned*, *unassigned* and *edited*
+  lines are bookkeeping, stamped with the server's clock, and hold no typed time
+  back. Decided by the user at gate B, 21-10-2026 ("Keep the typed-times rule").
 
 ### 5.2 Fields each move needs
 
@@ -599,12 +663,17 @@ query, not a stored list.
 
 ### 5.6 Cause and action codes frozen once in use
 
-As S017 § 5.7 for modes: a code change on a cause or action used by a ticket
-→ 409 on `code`; label, description, active and (for a cause) the group stay
-editable (S016 § 5.4: the group stays editable once in use).
-`_update_plain_master` already locks the row, so the count goes in before
-`update_row`; it is generic, so it takes the ticket column per table as a
-`used_by` parameter (BR2-07).
+As S017's code does for modes (`masters.update_failure_mode`; the code
+departed from the S017 brief's § 5.7): a code change on a cause or action used
+by a ticket → 409 on `code`, with the same message ("This code is used by
+tickets and can no longer change"); label, description, active and (for a
+cause) the group stay editable (S016 § 5.4: the group stays editable once in
+use). `_update_plain_master` keeps the row `_lock_row` returns, compares
+`clean["code"]` with **the locked row's** code, and counts `tickets WHERE
+<used_by column> = %s LOCK IN SHARE MODE` before `update_row`: a plain count
+against an earlier snapshot would miss a close that holds the cause's or
+action's FK lock and commits in between (BS1-03). It is generic, so it takes
+the ticket column per table as a `used_by` parameter (BR2-07).
 
 ### 5.7 Permissions
 
@@ -630,7 +699,7 @@ All pickers draw on S017's people picker anchored on the ticket
 (`?ticket_id=`, § 3): active people with a membership at the ticket's site,
 now including phone-less operators (user decision, 20-10-2026).
 
-**Proposed default — the user decides at gate A (open question 4, BR2-01):**
+**Decided at gate A (user decision 7, open question 4 option (a); BR2-01):**
 - **Assignee**: a person whose role at the ticket's site is **technician,
   engineer or manager** — assignment hands out maintenance work. Contractor
   firms hold a technician row (S011 A1), so AMC vendors qualify.
@@ -651,8 +720,7 @@ technicians, engineers and managers, then everyone else the field allows —
 with a type-to-filter box, so a site-wide list of a hundred names stays
 usable on a supervisor's phone, and an operator who fixed his own defect finds
 himself at the top. In the Assign dialog the people already assigned are left
-out and the ladder leads. Under answer (b) of open question 4 the last group
-is simply empty (BR3-07, BR4-03, BR4-08).
+out and the ladder leads (BR3-07, BR4-03, BR4-08).
 
 Auto-assign on acknowledge / start applies the **same role check as a manual
 assignment**: the user's person (`current_person_id(cur)`) is added only when
@@ -685,12 +753,15 @@ carries `default_person: {id, name} | null`, BR2-03, BR4-03; on
 this move will auto-assign, else null — for the dialog's line, BR3-09,
 BR4-04),
 `permissions` (the user's keys at the ticket's site) and `regrade_to` (the
-intensities this user may set now; empty → no re-grade control) (BR3-04); its
+intensities this user may set now; empty → no re-grade control) (BR3-04), and
+`can_add_documents` beside S017's `can_add_photos` (not closed and
+`ticket:work` at the ticket's site; sent by the server, since the keys are
+site-scoped and the page does not work out permissions, BS1-02); its
 events already carry `intensity` (S017). The list gains `assigned=me` and the
 assignees' first names per row. `/api/auth/me` gains `person_id` (BR3-04). People come from S017's
 `GET /api/tickets/people?ticket_id=<id>` — the anchor S018 adds, people and
 roles at the ticket's site (§ 3, BR2-02); symptoms from S017's
-`GET /api/tickets/modes`; causes and actions from the masters endpoints
+`GET /api/tickets/modes?ticket_id=<id>` (BS1-08); causes and actions from the masters endpoints
 (S016) — no ticket-specific copies (BR1-10).
 
 ## 7. Design decisions
@@ -704,7 +775,7 @@ roles at the ticket's site (§ 3, BR2-02); symptoms from S017's
 | 5 | **Times computed from events, not stored** | One source of truth; a later correction route fixes every figure at once | Columns `acknowledged_at`, … (two copies to keep in step) |
 | 6 | **Labour required at close, not at back in service** | Production may record back in service without knowing hours; the engineer completes the record before closing (Plan.MD Q12) | Required at back in service (blocks the supervisor) |
 | 7 | **Raise the grade by `ticket:raise`, lower it by `ticket:work` with a remark** | The operator sees the machine stop first; lowering ends downtime and is a maintenance judgement | Any direction by anyone (a breakdown's downtime could vanish unexplained); engineers only (delays the downtime start) |
-| 8 | **Assignees from the maintenance ladder; the back-in-service person and labour from anyone at the site** (proposed; the user decides, open question 4) | Assignment hands out maintenance work; an operator who fixed a defect is recorded truthfully, and his rows carry no trade, so Table 8 sums stay maintenance man-hours | Ladder only for all three (no honest record of an operator-fixed defect, BR2-01); anyone for all three (operators assigned maintenance work) |
+| 8 | **Assignees from the maintenance ladder; the back-in-service person and labour from anyone at the site** (user, gate A) | Assignment hands out maintenance work; an operator who fixed a defect is recorded truthfully, and his rows carry no trade, so Table 8 sums stay maintenance man-hours | Ladder only for all three (no honest record of an operator-fixed defect, BR2-01); anyone for all three (operators assigned maintenance work) |
 | 9 | **Default event time = the server's clock** | Phone clock skew cannot break the event order | Send the phone's time always (spurious "before the last event" refusals) |
 | 10 | **Trade worked required when the person has trades** | Man-hours per discipline (ISO 14224 Table 8) need it; any active trade, as people work outside their main trade | Always optional (loses Table 8); only the person's trades (wrong for multi-skilled work) |
 | 11 | **Significant moves labelled and set apart; row removals confirmed inline** (BR3-02) | Close, not a fault and send back are final or undo production's word; a gloved thumb must not hit them by mistake; the S003 scrap confirm is the pattern | An undo toast (no toast pattern in the app; labour removal is a hard delete) |
@@ -746,10 +817,14 @@ roles at the ticket's site (§ 3, BR2-02); symptoms from S017's
   supervisor and for a `ticket:work` user with no person; the `started` event
   carries the same person;
 - an operator or supervisor named as assignee 400; as the back-in-service
-  person and as labour, the test follows the user's answer to open question 4
-  (accepted under the proposed default) (§ 5.8);
+  person and as labour, an operator or supervisor at the site 200, a person
+  without a membership at the site 400 (user decision 7, § 5.8);
 - the people picker by `ticket_id` after a cross-site move of the machine:
-  people and roles of the ticket's site; 404 outside access (BR2-02);
+  people and roles of the ticket's site; 404 outside access (BR2-02); neither
+  `equipment_id` nor `ticket_id` 400 (BS1-04); the modes list by `ticket_id`
+  likewise after the move (BS1-08);
+- documents: `can_add_documents` true for a technician, false for an operator
+  and on a closed ticket (BS1-02);
 - close without labour 409; with it → closed, read-only (edit, labour,
   photo, move all 409);
 - not a fault from raised; from in progress 409; labour already booked stays;
@@ -804,14 +879,16 @@ roles at the ticket's site (§ 3, BR2-02); symptoms from S017's
   `ticket:work`, `ticket:restore`; engineer, manager and it_admin gain all
   four (on top of S017's `ticket:read` / `ticket:raise`, BR1-04); the
   storekeeper none;
-- a holders test per key on the `test_failure_codes_edit_holders` pattern, and
-  each `in SITE_SCOPED`;
+- `ticket:restore` joins S017's parametrized `test_ticket_keys` (every role
+  but the storekeeper, `in SITE_SCOPED`); `ticket:work`, `ticket:assign` and
+  `ticket:close` get their own holders test, each `in SITE_SCOPED` (BS1-06);
 - `test_supervisor_is_off_the_maintenance_ladder` still passes unchanged (the
   supervisor's set equals the operator's).
 
 ### Masters (`test_failure_codes_api.py`)
 - cause / action used by a ticket: code change 409; label and group change
-  accepted.
+  accepted; a re-save with the code unchanged accepted (compared with the
+  locked row, BS1-03).
 
 ### Manual checks
 Important:
@@ -844,49 +921,24 @@ Plain:
 
 ## 9. Open questions and assumptions
 
-1. **May an engineer close a ticket he worked himself?** Proposed: yes
-   (`ticket:close` for engineer, manager and IT admin, as Plan.MD § 3). This is a
-   deliberate departure from **segregation of duties** (ISO 27001 A.5.3: the
-   person who does the work should not be the one who signs it off; ISO 55001
-   § 9.2 has the plant audit itself): the plant has few engineers, and a
-   second sign-off would leave tickets open for days. Recorded so the choice is
-   visible later. Say if you want a rule instead (e.g. the manager closes an
-   engineer's own tickets).
-2. **Vendor reports and quotes** (PDF) on a ticket: S017 allows photos only.
-   Allow the `document` kind on tickets here too? Proposed: yes — the ticket
-   owner's `kinds` gains `document`, the write key stays `ticket:raise`, and the
-   page offers *Add document* to technicians and above (§ 3, BR2-04). If no,
-   vendor PDFs wait for S020 (parts and vendor quotes).
-3. **The repeat window** (`REPEAT_WINDOW_DAYS`): a fault back within **7 days**
-   of its back in service counts as a repeat; later it is a new failure linked
-   by nothing. Plant practice may want 30 (a month between repairs of the same
-   fault is still "not really fixed"). Which do you want?
-4. **Who may be named as the person who fixed it, and booked as labour**
-   (§ 5.8, BR2-01)? Assignees are technician or above either way. Choose:
-   - **(a) anyone with a membership at the ticket's site, operators included**
-     — *proposed*. An operator who fixes a defect himself (a loose guard, a
-     blocked nozzle) clears his own tag truthfully; TPM autonomous maintenance
-     counts the operator-fixed share as progress. His rows carry no trade, so
-     maintenance man-hours per trade (ISO 14224 Table 8) are unaffected;
-   - **(b) technician, engineer or manager only** (contractor firms included).
-     Then an operator-fixed defect has no true record: someone from maintenance
-     must be named, or it is closed as *not a fault*, which miscounts a real
-     fault.
-
-   Either way the picker groups and orders the names (assignees, then the
-   maintenance ladder, then the others) with a type-to-filter box, so (a)
-   stays usable on a phone; it is not a reason to choose (b) (BR3-07).
+1. ~~May an engineer close a ticket he worked himself?~~ **Decided (user,
+   gate A, 20-10-2026): yes** — engineer, manager and IT admin; a recorded
+   departure from segregation of duties (ISO 27001 A.5.3): the plant has few
+   engineers, and a second sign-off would leave tickets open for days.
+2. ~~Vendor reports and quotes (PDF) on a ticket?~~ **Decided: yes** — the
+   ticket owner's `kinds` gains `document`, write key `ticket:raise`, *Add
+   document* for `ticket:work` holders (§ 3, BR2-04).
+3. ~~The repeat window~~ **Decided: 7 days** (`REPEAT_WINDOW_DAYS = 7`).
+4. ~~Who may be named as the person who fixed it, and booked as labour?~~
+   **Decided: (a)** — anyone with a membership at the ticket's site, operators
+   included; assignees technician, engineer or manager (§ 5.8).
 5. ~~How does the operator link a repeat after the old ticket is closed?~~
    **Decided (user, 20-10-2026): left out of S018** — not a priority. The link
    stays the *Not fixed — raise again* button on the old ticket's page; no
    raise-screen list, no *Raised by me* view (Out of scope, BR3-01).
-6. **An optional *Time spent* on the technician's back-in-service dialog?**
-   (BR3-06 (b), deferred to you.) It would write the labour row for the
-   person named (his only trade, the restoration date), so the engineer finds
-   the labour already there at close: three dialogs instead of four for the
-   technician. Labour stays required at close, not at back in service
-   (decision 6). Proposed: yes, if you want the shorter flow; otherwise the
-   labour defaults of § 1 are enough.
+6. ~~An optional *Time spent* on the back-in-service dialog?~~ **Decided:
+   no** — labour is added on its own; the labour defaults of § 1 are enough
+   (BR3-06 (b) dropped).
 7. **Assumption:** response time is measured from the event time of the
    *raised* event (when it happened), not from when it was typed: for a
    breakdown, the clock starts when the machine stopped.
@@ -895,7 +947,177 @@ Plain:
 
 ## 10. Amendments
 
-(none)
+### A1 — Already fixed: raise and mark back in service in one go
+
+```
+Requested by: KLA, 20-10-2026 ("in raise ticket screen, can we have a fast track check box, that just skips acknowledge, start? just enter the details, mark back in service")
+Status: Approved 20-10-2026 by KLA ("execute A1 after the S018 is done"; open points 1 and 2 as proposed: the checkbox for every `ticket:restore` holder, no labour on the raise screen; coded after S018's code-review loop, before gate B)
+Baseline: 6c58b7a + uncommitted S018 (code-review r2) (s2)
+```
+
+HEAD is 6c58b7a, the committed S017 raise-screen watcher fix; S018's code is
+uncommitted on top of it (BS2-06).
+
+**Why.** Work that walks into the workshop (a portable vibrator needing carbon
+brushes), or a defect the operator cleared himself, is finished before anyone
+records it. With S018 alone that takes a raise and then a back-in-service
+dialog on the ticket page: two screens for a job that is already over, which
+is where after-the-fact records get skipped. ISO 14224 wants every
+maintenance event recorded, whoever asked for it (Plan.MD § 4.2, "the record
+matters more than the workflow"). A1 lets the raise screen record it in one
+save. It replaces the raise-and-close half of queued S020; S020 keeps *Parts
+used* only.
+
+**What changes.**
+
+1. **The raise screen gains a checkbox, "Already fixed — back in service"**,
+   below the description and time, for a user who holds `ticket:restore` at
+   the node's site (the back-in-service move's own key, § 5.7: operator and
+   up, IT admin; the node detail's `permissions` already carries the keys at
+   its site). Today `ticket:raise` and `ticket:restore` have the same
+   holders, so everyone who sees the form sees the checkbox; the condition
+   stays in case the keys diverge (BS2-05). Ticked, it shows the fields of
+   S018's **back in service after the fact** (§ 1, § 5.2), and nothing else:
+   - **Back in service at** (on a defect: **Fixed at**, the dialog's label by
+     intensity): "Now · Change", as every move dialog;
+   - **Who did the work**: `PersonPicker`, required. **Pre-filled** with the
+     user's own person (`userPersonId`, `stores/auth.js`) only when **both**
+     hold: `node.permissions` includes `ticket:work`, **and** that id is in
+     the `people` list the screen already loads
+     (`/api/tickets/people?equipment_id=`, the same `_people_at_site` rows
+     `PersonPicker` takes) — the page-side form of § 5.2's one rule that the
+     ticket page gets from `moves[restore].default_person`. Else empty. An
+     operator who fixed his own defect is not pre-filled but is first in the
+     picker (`ownPersonId`), one tap (BS2-04);
+   - **When work started** (optional): a date pre-filled with the
+     back-in-service date and an empty time, sent only when the time is
+     filled (§ 1).
+
+   Save reads **"Raise and mark back in service"** (on a defect: **"Raise and
+   mark fixed"**), built on `ticketLabels.moveSaveLabel("restore",
+   intensity)` or one new entry in `ticketLabels.js` with a line in
+   `ticketLabels.test.js` (BS2-07). Unticking hides the fields and keeps what
+   was typed until the screen is left. The checkbox and the three fields
+   belong in `blankForm()`, so a node change (`watch(nodeId)` →
+   `resetForm()`) unticks and clears them with the rest (BS2-08).
+
+   Accepted: the screen then has two styles of the same control — a
+   pre-filled `datetime-local` for *When did it happen?* beside "Now ·
+   Change", and a `<select>` for *Found by* beside `PersonPicker` — because
+   A1 reuses the move dialog's controls; putting the raise screen's own two
+   fields on the same controls is a later tidy-up, not A1 (BS2-10).
+2. **The server does it in one transaction.** `POST /api/tickets` gains an
+   optional `restore: {occurred_at?, person_id, started_at?}`. The route
+   raises the ticket as S017 does, then applies the **same back-in-service
+   code** the `restore` move uses on the new ticket — no copy (BS2-01):
+   - the body of `make_move` after the lock is extracted into
+     `_apply_move(cur, ticket, move, clean, now)` (from-state check →
+     `_last_ordered_event` → `_event_time` → the move's step, here
+     `_restore` → `_add_event` of the move's own event → `update_row` of the
+     state → auto-assign for acknowledge / start). `make_move` calls it after
+     `_lock_open_ticket`; `raise_ticket` calls it after its insert and
+     `raised` event, with `ticket = read_ticket(cur, ticket_id)` (the row
+     carries the `id`, `state` and `site_id` `_restore` reads);
+   - `raise_ticket` does the key check itself, `require_perm_at(RESTORE_KEY,
+     node["site_id"])`, **before** the insert, only when `restore` is given;
+     the fresh row is in its own transaction and needs no `_lock_ticket`;
+   - so the person rule of § 5.8, § 5.1's time rules (back in service at or
+     after the raise time; `started_at` between the raise time and the
+     back-in-service time), the `back_in_service` event and, with
+     `started_at`, the `started` event, both naming the person, are the
+     move's own code.
+
+   Any refusal rolls the whole raise back (row, events and serial counter,
+   all inside the one `transaction(conn)`), so there is never a raised ticket
+   left half-done. No `acknowledged` event is written: S018 already allows
+   back in service straight from raised.
+
+   **Refusals land beside the right field** (BS2-02): the block's own
+   `occurred_at` shares its name with the raise's, so every refusal on the
+   block is named with a `restore.` prefix — `restore.occurred_at`,
+   `restore.person_id`, `restore.started_at` — in the core (below) and in the
+   `ApiError`s the shared code raises (`_event_time(…, field)` already takes
+   the field name; `_restore`'s two `ApiError`s take it too). The raise
+   screen shows `restore.*` refusals beside the three new fields.
+3. **The ticket then stands at back in service**, like any other: the
+   engineer closes it with cause, action and labour (§ 5.2), or sends it
+   back. A1 never closes a ticket — the ISO 14224 coding stays with the
+   engineer.
+4. **The times come out honest without a mark on the ticket** (§ 5.4):
+   - no *started* time → no `started` event → response time and repair time
+     are null ("—"); downtime (a breakdown) runs from the failure time to back
+     in service, which is real;
+   - with a *started* time → response = started − failure time, repair =
+     back in service − started: real waits and real work, as typed.
+
+   So no fast-track flag and no migration: the after-the-fact path S018 already
+   has gives the right figures, and A1 only shortens how it is entered.
+5. **After Save** the screen goes on to the photo step as today (S017), then
+   *Done* opens the ticket page.
+6. Works with `repeat_of` (§ 5.5): the repeat rule is checked at the raise, as
+   without A1.
+
+**Where.**
+- `backend/tickets.py`: `raise_ticket` takes `restore`, checks
+  `ticket:restore` at the node's site before the insert, and calls
+  `_apply_move`, extracted from `make_move`'s post-lock body (BS2-01);
+  `_restore`'s `ApiError`s take the field-name prefix (BS2-02).
+- `backend/tickets_core.py`: `validate_raise` calls the existing
+  `validate_move("restore", body["restore"])` when `restore` is given (a
+  non-object → 400 on `restore`) — no second parser — and prefixes its
+  errors `restore.` (BS2-02); the ordering checks reuse
+  `validate_event_time`.
+- `frontend/src/views/tickets/EventFields.vue`: a prop that hides the remark
+  (e.g. `withRemark: false`; default shows it as today), so the raise screen
+  gets "Now · Change" alone (BS2-03).
+- `frontend/src/views/tickets/StartedAtFields.vue` (new): the *When work
+  started* pair extracted from `MoveDialog.vue` — props: the back-in-service
+  time; v-model date and time; the follow-the-date watcher inside — used by
+  `MoveDialog` and the raise screen, two real uses (BS2-03).
+- `frontend/src/views/tickets/MoveDialog.vue`: uses `StartedAtFields`
+  instead of its inline pair; no change in behaviour.
+- `frontend/src/views/RaiseTicketView.vue`: the checkbox and its three fields,
+  using `EventFields` (remark hidden), `StartedAtFields` and
+  `PersonPicker.vue` (no copies); `restore.*` refusals beside them.
+- `frontend/src/utils/ticketLabels.js` (+ test): the Save label, if not
+  built from `moveSaveLabel` (BS2-07).
+- Docs: **done at approval** — Plan.MD § 4.2 (*Work done without a ticket*)
+  and Q23, README Queued S020 retitled *Parts used* (BS2-09).
+
+**Tests** (in `test_ticket_work_api.py`, `test_tickets_core.py`):
+- raise with `restore` → 201, state back in service, events `raised`,
+  `back_in_service` (person named); with `started_at` also `started`;
+  `ticket_times` gives response and repair from the typed times, and null
+  without `started_at`;
+- refusals roll back (no ticket row, no event, no counter use beyond what
+  S017's serial already accepts): `person_id` missing (400), a person who may
+  not be named (400), back in service before the raise time (400),
+  `started_at` outside raise … back in service (400), each named
+  `restore.<field>`. No 403 test for a user without `ticket:restore`: today
+  it has the same holders as `ticket:raise`, so no such user can reach the
+  raise; the server check stays (BS2-05);
+- an operator (holds `ticket:restore`) can do it; the storekeeper cannot raise
+  at all (S017);
+- a ticket raised this way closes through the ordinary close (labour still
+  required).
+
+**Manual checks.**
+- **Important:** on a phone, raise a walk-in job with *Already fixed* ticked:
+  the extra fields fit, Save stays visible, and the ticket page shows it at
+  back in service with the right technician.
+- With and without a *started* time: the ticket page shows response and repair
+  as typed, or "—".
+
+**Open points.**
+1. **Who sees the checkbox** — proposed: every `ticket:restore` holder
+   (operator and up), so an operator who cleared his own defect records it
+   in one go (TPM autonomous maintenance). Alternative: `ticket:work` holders
+   only (technician and up).
+2. **Labour** — proposed: not asked here; the engineer adds it before
+   closing, as for any ticket (Close shows "Add the labour first").
+   Alternative: an optional *Time spent* field that writes one labour row.
+3. **Coding order** — A1 is coded after S018's code-review loop, before gate
+   B, so S018 and A1 come to the user together.
 
 ## Review log
 
@@ -964,3 +1186,46 @@ Plain:
 | BR4-06 "date pre-filled, time empty" impossible in one `datetime-local` | minor | **Accepted** (option a): a date input pre-filled with the back-in-service date and an empty time input, sent as `started_at` only when the time is filled; night shift by changing the date; API test across midnight (§ 1, § 3, § 8) |
 | BR4-07 send back's Yes / No; *Machine stopped* dialog | nit | **Accepted**: Yes / No a choice with a selected state, *Send back* the one submit; *Machine stopped* hides the grade buttons ("Breakdown from: Now · Change", Save *Machine stopped*); `regrade_options` allowing degraded for an operator on initial while the page offers critical only — accepted (§ 1, § 3) |
 | BR4-08 small gaps in files and checks | nit | **Accepted**: `stores/auth.js` `userPersonId` in § 3; `/auth/me` `person_id` null when the DB is down (§ 3, § 8); *Assigned to me* empty for an IT admin with a Team record, accepted (§ 1); Assign dialog leaves out the assigned, ladder first (§ 3, § 5.8); the scrollable-dialog check on an Android phone and an iPhone (§ 8); *Change* fills the phone's now (§ 1, § 3) |
+
+### Gate A (20-10-2026) — approved by KLA
+
+Answers: open question 1 self-close **yes**; 2 vendor documents on tickets
+**yes**; 3 repeat window **7 days**; 4 **(a)** anyone at the site for the
+back-in-service person and labour; 5 left out (decided earlier); 6 *Time spent*
+on back in service **no**; the `FormModal` scroll fix **stays in S018**
+(decision 12). Recorded as user decisions 4–9 in the header and in § 9.
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 20-10-2026
+
+Against S017's code as committed (cfedc46). No `blocker` or `major`, so the
+approval stands; `Baseline:` set to cfedc46.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 an S017 test breaks when tickets take documents | minor | **Accepted**: `test_documents_api.py` in § 3 Tests (a document on a ticket → 201, under `tickets/<id>/`, listed); `Owner.kinds` and the photos-only refusal removed, since no owner restricts kinds; the three photos-only comments updated (§ 3) |
+| BS1-02 one `canEdit` cannot split photos and documents | minor | **Accepted** (option a): `DocumentsCards` `canEditDocuments` prop; the detail sends `can_add_documents` (`ticket:work` at the ticket's site, not closed); the ticket page drops `photos-only`; the modal's visibility line keyed on a ticket owner (§ 3, § 6, § 8) |
+| BS1-03 the code-freeze pattern is the code's, not S017's brief | minor | **Accepted**: compare with the locked row, count `LOCK IN SHARE MODE`, same 409 message, citing `update_failure_mode` (§ 3, § 5.6, § 8) |
+| BS1-04 people picker already returns role; route key | nit | **Accepted**: route stays `ticket:raise`; `ticket_id` → 404, then `ticket:read` at the ticket's site; one anchor required, 400 otherwise (§ 3, § 8) |
+| BS1-05 reuse `_lock_ticket` | nit | **Accepted**: the writes extend its locked SELECT; `TICKET_CLOSED` for a closed ticket, "changed — reload" for a stale state (§ 3) |
+| BS1-06 test helpers that now exist | nit | **Accepted**: imported or moved to `conftest.py`, named; `set_ticket_state` docstring; `ticket:restore` in `test_ticket_keys`, own holders tests for the other three (§ 3, § 8) |
+| BS1-07 raise screen query and repeat pre-fill | nit | **Accepted**: `?equipment=…&repeat_of=…`; pre-fill from the old ticket's detail after the node loads and `resetForm()`; `repeat_of_id` via `_optional_id` (§ 3) |
+| BS1-08 symptom list anchored on the node's current site | nit | **Accepted** (add the anchor): `GET /api/tickets/modes?ticket_id=`, class via the ticket's machine, `ticket:read` at the ticket's site (§ 3, § 6, § 8) |
+
+### Staleness s2 (A1) — `2-brief-review-s2.md` (Fable), answered 20-10-2026
+
+A1 only, against S018's code as built (uncommitted on 6c58b7a). No `blocker`
+or `major`, so A1's approval stands; A1's `Baseline:` set to 6c58b7a +
+uncommitted S018 (code-review r2).
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS2-01 no single back-in-service function to call | minor | **Accepted** (option a): `make_move`'s post-lock body extracted into `_apply_move`, called by `make_move` and `raise_ticket`; `raise_ticket` checks `ticket:restore` at the node's site before the insert (A1 *What changes* 2, *Where*) |
+| BS2-02 `validate_move` exists; `occurred_at` collides with the raise's | minor | **Accepted** (option a): `validate_raise` reuses `validate_move("restore", …)`; the block's refusals prefixed `restore.` in core and in the shared code's `ApiError`s, shown beside the new fields (A1 *What changes* 2, *Where*, *Tests*) |
+| BS2-03 the time control is `EventFields` (time and remark); the started pair is inline | minor | **Accepted** (option a): `EventFields` gains a hide-remark prop; the started pair extracted into `StartedAtFields.vue`, used by `MoveDialog` and the raise screen (A1 *Where*) |
+| BS2-04 the default person: source and full rule | minor | **Accepted** (option a): page-side — `userPersonId` when `node.permissions` has `ticket:work` and the id is in the loaded `people` list; else empty (A1 *What changes* 1) |
+| BS2-05 the 403 test has no subject | minor | **Accepted** (option a): the test line dropped with the reason; the server check kept (A1 *What changes* 1, *Tests*) |
+| BS2-06 HEAD is 6c58b7a | nit | **Accepted**: noted under A1's header; `Baseline:` set to 6c58b7a + uncommitted S018 |
+| BS2-07 existing labels; "Fixed at" on a defect | nit | **Accepted**: time label by intensity as the dialog's; Save label built on `moveSaveLabel` or one new `ticketLabels.js` entry with a test (A1 *What changes* 1, *Where*) |
+| BS2-08 a node change resets the restore fields | nit | **Accepted**: the checkbox and three fields live in `blankForm()`, cleared on a node change (A1 *What changes* 1) |
+| BS2-09 A1's Docs already done | nit | **Accepted**: the Docs line marked done at approval (A1 *Where*) |
+| BS2-10 two control styles on one screen | nit | **Accepted** as is: stated in A1; aligning the raise screen's own fields is a later tidy-up (A1 *What changes* 1) |

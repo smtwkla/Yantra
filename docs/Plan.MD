@@ -109,8 +109,10 @@ with each module. First cut of the main keys:
 | `equipment:purge_documents` | | | | | ✓ | ✓ |
 | `ticket:read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `ticket:raise` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `breakdown:work` | | | ✓ | ✓ | ✓ | |
-| `breakdown:close` | | | | ✓ | ✓ | |
+| `ticket:work` | | | ✓ | ✓ | ✓ | ✓ |
+| `ticket:restore` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `ticket:assign` | | | | ✓ | ✓ | ✓ |
+| `ticket:close` | | | | ✓ | ✓ | ✓ |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
@@ -150,8 +152,18 @@ site-scoped: the lists are the same at every site.
 `ticket:read` and `ticket:raise` (S017, approved 20-10-2026) replace `breakdown:raise`:
 granted to the operator (so the whole ladder and the supervisor) and IT admin, not the
 storekeeper; site-scoped. Ticket photos are written with `ticket:raise`, removed ones
-restored or purged with `equipment:purge_documents`. S018 settles the keys that replace
-`breakdown:work` and `breakdown:close`.
+restored or purged with `equipment:purge_documents`.
+`ticket:work`, `ticket:restore`, `ticket:assign` and `ticket:close` (S018, approved
+20-10-2026) replace `breakdown:work` and `breakdown:close`, all site-scoped and all held by
+IT admin: `ticket:work` (acknowledge, start, edit, labour, lower the grade) from the
+technician up; `ticket:restore` (back in service) from the operator up, so production
+confirms restorations; `ticket:assign` and `ticket:close` (close, not a fault, send back)
+engineer and manager. **Self-close is allowed** (user, gate A): an engineer may close a
+ticket he worked himself — a recorded departure from segregation of duties (ISO 27001
+A.5.3), since the plant has few engineers. Assignees are technician, engineer or manager;
+the person named on back in service and on labour rows may be **anyone with a membership
+at the ticket's site, operators included** (an operator who fixes his own defect is
+recorded truthfully; his rows carry no trade, so man-hours per trade are unaffected).
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -233,16 +245,33 @@ CIL jobs at their units and nothing else.
   and what you decided for it. The dashboard lists the not-decided equipment until an engineer
   chooses. One enum, no logic.
 - **Vehicles are equipment** (*Proposed*, 20-10-2026, fleet use case). The 40 vehicles of SMTW
-  and SSVT are equipment of class *Vehicle* (types truck, tractor, car, forklift, …) at units
-  `SMTW.FLEET` and `SSVT.FLEET`, with component-units engine, brakes, steering and suspension,
-  electrical, tyres, body; the odometer is a counter meter in km (§ 4.5), run hours for tractors
-  and forklifts. ISO 14224's taxonomy is written for plant but fits as is. The boundary with
+  and SSVT are equipment at units `SMTW.FLEET` and `SSVT.FLEET` (master data below); the
+  odometer is a counter meter in km (§ 4.5), run hours for tractors, earth movers and
+  material handling. ISO 14224's taxonomy is written for plant but fits as is. The boundary with
   **Vaahan** (§ 7): Vaahan keeps what is vehicle-specific and legal (registration, insurance,
   permits, fitness certificate, PUC, road tax, trips, refuelling, tyres) and the garage bills;
   Yantra holds the work (defects, tickets, inspections, PM by km). No second register of
   vehicle papers in Yantra; the Yantra ticket number goes in Vaahan's maintenance report. The
   one duplication is the vehicle itself, which must be equipment here for tickets and plans to
   hang off: identity fields only, loaded once by hand, synced from Vaahan later (§ 7).
+- **Vehicle master data** (*Proposed*, 20-10-2026, fleet use case; all entered from the
+  Masters screens, no code change). **Two classes**, since the class is what failure-mode
+  lists, PM templates and the fitness inspection hang off, and ISO 14224 defines a class as
+  equipment whose failure data is comparable: **Vehicle** (`VEH`; road-registered, km meter)
+  and **Material handling** (`MHE`; forklifts, the Toyota electric pallet truck, the SSVT
+  stackers; hour meter, no road papers; listed in Vaahan too). **Types** are Vaahan's RTO
+  categories in the same words, so the sync is a plain mapping: motor cycle, light passenger
+  vehicle, heavy passenger vehicle, LGV three-wheeler, LGV four-wheeler, HGV, HGV tipper,
+  tractor, earth mover under Vehicle; forklift, electric pallet truck, stacker under Material
+  handling. Vaahan's `odometer_type` per model (distance, hours, both) says which meters each
+  equipment gets. **Makers and models** one to one with Vaahan's (Tata Motors, Ashok Leyland,
+  Mahindra, TAFE, Toyota Material Handling, …; designation = Vaahan's model name, the variant
+  appended only where it changes parts, e.g. *Bolero Pickup*); the model carries the owner's
+  manual and the maker's service schedule as model documents (S012), the source of PM-by-km
+  templates. **Equipment row**: code `VEH001` / `MHE001`, serial number = registration number,
+  name = registration plus the common name (*TN 72 AB 1234 Tata 407*). **No component-units**
+  at first: the symptom names the subsystem; a tree is added to a vehicle only when a ticket
+  needs to point lower, as the press tree was.
 - **Verification rounds** (*Proposed*, 16-10-2026): a job per unit where someone walks the
   floor scanning QR labels; scanned equipment are confirmed, unscanned listed as not found,
   unregistered machines found on the walk are added. ISO 55002 recommends periodic physical
@@ -302,6 +331,18 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 ```
 
 - **Timestamps** for each transition. From them: response time (raised → acknowledged), repair time (in progress → back in service), downtime (raised → back in service).
+- **As built by S018** (approved 20-10-2026): work may **start straight from raised**;
+  **back in service** may be recorded after the fact from raised or acknowledged, with an
+  optional *started* time (this settles "technician arrived" above); **not a fault** closes
+  with a cause and a required remark; **send back** asks "machine down again?" — yes makes
+  it a breakdown again, no lowers only a critical ticket; **"Not fixed — raise again"**
+  opens a new ticket linked as a repeat when the old one's back-in-service time is within
+  **7 days**. The times are computed from the events, never stored: **response time**
+  (raised → first acknowledged or started; the plant's own measure), **repair time** (EN
+  13306 *active corrective maintenance time*: time in progress), **downtime** (EN 13306
+  *down time*, the *time to restoration* of a breakdown; its mean is **MTTR**). Closing
+  needs cause, action, symptom and at least one labour row. Ticket attachments: photos
+  and vendor documents (PDF reports, quotes).
 - **Production marks "back in service" too** (decided 16-10-2026, sorting-line use case): the
   supervisor, or whoever has operator rights at the unit, can record "back in service" and
   name the technician who did the work from Team. Standard CMMS requester sign-off: production
@@ -350,6 +391,18 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   "not building pressure", "not holding pressure", "slow return", "door not sensed", "output
   stuck on", … Tickets point at the **component** (unloading valve, transducer, relay board,
   door sensor), so chronic problems are visible per component (§ 4.6).
+- **Vehicle failure codes** (*Proposed*, 20-10-2026, fleet use case; entered in Masters ›
+  Failure codes, no migration). The General modes apply to a vehicle as they are. ISO 14224
+  Annex B has no vehicle class, so a **Vehicle**-scoped list in the driver's words, codes
+  distinct since the code is unique across classes: `VBRK` brakes weak, pulling or noisy;
+  `VSTR` steering play or pulling; `VCLU` clutch slipping or hard; `VGBX` gear hard to shift
+  or jumping; `VSUS` suspension noise or sagging; `VELE` lights, horn, wipers or indicators
+  not working; `VTYR` tyre worn, damaged or puncture; `VSMK` smoke or high fuel use; `VWRN`
+  warning lamp on; `VAC` AC not cooling; `VBDY` body, cabin or glass damage. **Material
+  handling** gets the General list plus brakes, tyres and *mast or forks*. **Causes**: the
+  ISO list unchanged plus one addition managers will want to count, `3.5` *Accident or
+  external damage* in the operation group (today it would hide under operating error).
+  **Actions**: ISO's twelve unchanged (*Service* covers an oil change).
 - **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Scale (decided 15-10-2026), from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **initial** (still fine, early signs; ISO 14224 calls it *incipient*). Only critical time counts as downtime.
 - **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below). **S016 (approved 20-10-2026):** three masters, pre-filled from Annex B with ISO's codes and plain-word labels. A failure mode belongs to **one equipment class or is General**; the picker shows the class of the ticket's equipment (level 6, even when the ticket is on a component) plus General — checked in the API, since a General mode has no class. A cause carries one of ISO's five **cause groups** (design, fabrication / installation, operation / maintenance, management, miscellaneous), so the plant's own causes roll up the ISO way; the group stays editable once in use. A code is frozen once a ticket uses it (added by S017/S018). *Later:* failure mechanism as a fourth list, if technicians keep writing mechanisms ("worn", "contaminated") as causes.
 - **No approval step:** a raised ticket goes straight to maintenance. If it turns out frivolous, the engineer **closes it directly** from raised or acknowledged, with a required code (e.g. *no fault found*, *not a breakdown*) and remarks.
@@ -365,10 +418,10 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   maintenance-record fields. Ordering and the item master stay in **OneERP** (ISO 8000: one
   item master); a later link maps Yantra part numbers to OneERP item codes.
 - **Who worked:** one or more technicians per ticket, with time spent. Each labour row carries the **trade worked** (pre-filled when the technician has only one), so man-hours per discipline (ISO 14224 Table 8) can be summed (S010, 16-10-2026).
-- **Work done without a ticket** (*Proposed*, 18-10-2026, daily-report use case): work that
+- **Work done without a ticket** (*Decided* 20-10-2026 as S018 A1: an *Already fixed — back in service* checkbox on the raise screen, for every `ticket:restore` holder; raise and back in service in one save, the engineer still closes; first proposed 18-10-2026, daily-report use case): work that
   walks into the workshop (a portable vibrator needing new carbon brushes) gets its ticket after
-  the fact, on one screen where an engineer or supervisor raises and closes it in one go: event
-  times, the technician named, cause and action, parts used. The record matters more than the
+  the fact: raised and marked back in service in one save, with the times and the technician
+  named; the engineer then closes it with cause and action like any ticket. The record matters more than the
   workflow (ISO 14224 wants every maintenance event recorded, whoever asked for it).
 - **Photos and remarks** at any step.
 - **Notifications:** new breakdown → maintenance; escalation if not acknowledged within a set time (per criticality). A new defect shows in the open-tickets list; whether it notifies is settled with the notification step.
@@ -698,9 +751,10 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `failure_modes` | Symptoms (S016): code, label, description, class (NULL = General), active |
 | `failure_causes` | Causes (S016): code, label, description, ISO cause group, active |
 | `maintenance_actions` | Actions (S016): code, label, description, active |
-| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017) |
+| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017); cause, action, not-a-fault flag, repeat of (S018) |
 | `ticket_events` | One row per change: who, event time, entered at, intensity, remark — the timestamps come from here (S017) |
-| `breakdown_labour` | Person, trade worked and time spent per ticket |
+| `ticket_labour` | Person, trade worked, work date and minutes per ticket (S018) |
+| `ticket_assignees` | Ticket → people assigned, who and when (S018) |
 | `parts_used` | *Proposed* (§ 4.2): per ticket or PM job — part number, description, quantity, maker, component |
 | `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
 | `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
@@ -777,7 +831,7 @@ these rungs need a year of coded tickets and readings first.
 1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`). **Superseded 16-10-2026 (S011):** Keycloak keeps `maintenance_team` and `it_admin`; the maintenance roles are held in Yantra per site.
 2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
-4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). "Not fixed" is a **new ticket** linked to the old one, not a reopen (decided 20-10-2026, S017/S018).
+4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). "Not fixed" is a **new ticket** linked to the old one, not a reopen (decided 20-10-2026, S017/S018). S018 computes downtime from the events to back in service, and repair time as the time in progress (EN 13306 active corrective maintenance time).
 5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class. *Scoped by class (one class or General) from S016, approved 20-10-2026.*
 6. **Template edits:** when a PM template changes, do plans created from it update, or keep their copy until re-applied?
 7. ~~**Unit access upkeep**~~ Decided 13-10-2026: IT admin maintains users' unit lists (and sites and units) — `masters:edit`.
@@ -794,7 +848,7 @@ these rungs need a year of coded tickets and readings first.
 20. **Certification plans with valid-until and the compliance register** (*Proposed*, 17-10-2026, § 4.3): statutory examinations and extinguishers.
 21. **Parts-used line on tickets and jobs** (*Proposed*, 17-10-2026, § 4.2): maker or generic part numbers, per component, ahead of spares.
 22. **PM routes** (*Proposed*, 18-10-2026, § 4.3): one screen for a walk over many equipment; verification rounds and the CIL-due list fold into it. Which step builds it?
-23. **Work done without a ticket** (*Proposed*, 18-10-2026, § 4.2): raise-and-close on one screen for work that arrived with no ticket.
+23. **Work done without a ticket** (*Decided* 20-10-2026, S018 A1, § 4.2): *Already fixed* on the raise screen records raise and back in service in one save; closing stays the engineer's. No separate screen.
 24. **Calibration** (*Proposed*, 20-10-2026, § 4.3): measuring-instrument class with required accuracy, calibration class and custodian; certification plans per instrument; in-house verification plans with error readings and the out-of-tolerance ticket. Phase 4, after certification plans (Q20). ISO 9001 § 7.1.5.
 25. **Fleet and Vaahan** (*Proposed*, 20-10-2026, § 4.1, § 4.3, § 7): no step of its own; vehicles ride on S017/S018 (tickets), S019 (deferred work) and the route step. Vaahan is live and used daily (20-10-2026), so its maintenance-report doctype is to be frozen, not grown, and the vehicle sync and odometer feed are worth building. To settle: the vehicle list and types to load by hand first; which phase builds the sync and the odometer feed (alongside the OneERP sync, phase 6, or earlier with PM by km in phase 4); whether the fleet is the route pilot.
 16. **Die tracking** (*Proposed*, 16-10-2026, § 4.1): counter snapshot on fit / removal and a die-centred history, ahead of the rotables design.

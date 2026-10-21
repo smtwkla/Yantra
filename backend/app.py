@@ -10,13 +10,13 @@ from flask_cors import CORS
 from access_control import client_network, make_access_log_hook, require_network
 from api_common import register_error_handlers
 from access_core import display_role
-from auth_utils import current_memberships, global_permissions, membership_sites, require_auth
+from auth_utils import current_memberships, current_person_id, global_permissions, membership_sites, require_auth
 from config import (
     APP_VERSION, DB_CONFIG, DEV_AUTH_BYPASS, KEYCLOAK_CLIENT_ID,
     KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL, MB,
     SECRET_KEY, UPLOAD_MAX_MB_CEILING,
 )
-from db_helpers import close_db
+from db_helpers import close_db, get_db
 from local_db import DBUnavailable, ensure_schema, init_pool
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -129,7 +129,8 @@ def auth_me():
     Called once per page load, the de-facto login: it logs the stale Keycloak maintenance
     roles a token still carries (S011 § 5.1), and answers while the database is down with
     the token's permissions only, so IT admin can still reach Settings › Database.  ``network``
-    is the address the server saw and whether it counts as internal (S013 § 6)."""
+    is the address the server saw and whether it counts as internal (S013 § 6).  ``person_id``
+    is the user's own Team record, or null (S018 § 3: *Assigned to me*, the labour default)."""
     user = g.user
     if user["stale_roles"]:
         logger.warning("User %s still carries old Keycloak roles %s; they are ignored (S011 § 5.7)",
@@ -139,11 +140,13 @@ def auth_me():
             "network": {"ip": ip, "internal": internal}}
     try:
         memberships = current_memberships()
+        with get_db().cursor() as cur:
+            person_id = current_person_id(cur)
         body.update(role=display_role(user["roles"], memberships), permissions=global_permissions(),
-                    sites=membership_sites(memberships), db_unavailable=False)
+                    sites=membership_sites(memberships), person_id=person_id, db_unavailable=False)
     except DBUnavailable:
         body.update(role=display_role(user["roles"], []), permissions=user["permissions"], sites=None,
-                    db_unavailable=True)
+                    person_id=None, db_unavailable=True)
     return jsonify(body)
 
 

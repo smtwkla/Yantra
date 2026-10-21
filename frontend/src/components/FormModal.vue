@@ -105,7 +105,8 @@ defineExpose({
 
 <template>
   <div ref="el" class="modal fade" tabindex="-1">
-    <div class="modal-dialog">
+    <!-- Scrollable: the body scrolls, header and footer (Save) stay on a phone's screen (S018 BR3-03) -->
+    <div class="modal-dialog modal-dialog-scrollable">
       <form class="modal-content" novalidate @submit.prevent="onSubmit">
         <div class="modal-header">
           <h5 class="modal-title">{{ title }}</h5>

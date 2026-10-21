@@ -10,8 +10,8 @@
  * The file input has no `capture` attribute, so a phone offers the camera and the gallery.
  *
  * The parent passes the owner's documents collection URL (a node or a model: S012; a
- * ticket: S017). With `photosOnly` (a ticket, which takes photos only) the Kind choice is
- * hidden and the kind is photo, so a PDF is never picked only to be refused by the server.
+ * ticket: S017). With `photosOnly` (a user who may add photos but not documents: an operator
+ * on a ticket, S018) the Kind choice is hidden and the kind is photo.
  */
 import { computed, ref, watch } from "vue";
 import { apiUpload } from "../../api";
@@ -25,12 +25,14 @@ const props = defineProps({
   everySite: { type: Boolean, default: false },
   // From the list response; null until the list has loaded (the backend still checks)
   uploadMaxMb: { type: Number, default: null },
-  // A ticket's photos (S017): no Kind choice
+  // Photos only for this user (a ticket's operator, S018): no Kind choice
   photosOnly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["saved"]);
 
 const MB = 1024 * 1024;
+// A ticket's files are seen by everyone who sees the ticket (S017 § 5.5); the owner is known by its URL
+const ticketOwner = computed(() => props.basePath.startsWith("/api/tickets/"));
 const TITLE_MAX = 200;
 const KIND_LABELS = {
   document: "Document (PDF)",
@@ -140,7 +142,7 @@ defineExpose({ open });
       />
       <div class="invalid-feedback">{{ fieldError("title") }}</div>
       <div v-if="everySite" class="form-text">Visible at every site: no confidential documents (contracts, prices).</div>
-      <div v-else-if="photosOnly" class="form-text">Everyone who can see this ticket can see it.</div>
+      <div v-else-if="ticketOwner" class="form-text">Everyone who can see this ticket can see it.</div>
       <div v-else class="form-text">Everyone who can see this equipment can see it: no confidential documents (contracts, prices).</div>
     </div>
   </FormModal>

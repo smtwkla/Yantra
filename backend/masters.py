@@ -613,17 +613,23 @@ def update_failure_mode(mode_id):
         if clean.get("active") == 1 and stored["class_id"] is not None:
             _lock_active_parent(cur, "equipment_classes", stored["class_id"], "active", "class")
         locked = _lock_row(cur, "failure_modes", mode_id)
-        # A locking read: the plain snapshot was taken by the read above, before a raise that
-        # held the mode's FK lock had committed
-        if ("code" in clean and clean["code"] != locked["code"]
-                and count(cur, "SELECT COUNT(*) AS n FROM tickets WHERE failure_mode_id = %s LOCK IN SHARE MODE",
-                          (mode_id,))):
-            raise ApiError("This code is used by tickets and can no longer change", 409, "code")
+        _check_code_frozen(cur, clean, locked, "failure_mode_id")
         if "label" in clean:
             _check_mode_label(cur, clean["label"], stored["class_id"], mode_id)
         update_row(cur, "failure_modes", mode_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_failure_mode(cur, mode_id))
+
+
+def _check_code_frozen(cur, clean, locked, ticket_column):
+    """A code change on a failure code a ticket uses -> 409 (S017 § 5.7, S018 § 5.6).  Under the
+    record's lock (``locked``), and the count is a locking read: a plain snapshot taken before a
+    ticket write that held the record's FK lock had committed would miss it.  ``ticket_column``
+    is a code constant, never client input."""
+    if ("code" in clean and clean["code"] != locked["code"]
+            and count(cur, f"SELECT COUNT(*) AS n FROM tickets WHERE {ticket_column} = %s LOCK IN SHARE MODE",
+                      (locked["id"],))):
+        raise ApiError("This code is used by tickets and can no longer change", 409, "code")
 
 
 def _create_plain_master(table, validator):
@@ -635,12 +641,15 @@ def _create_plain_master(table, validator):
         return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,))), 201
 
 
-def _update_plain_master(table, record_id, validator):
-    """PUT of such a master: absent fields stay as they are; an unknown id is a 404."""
+def _update_plain_master(table, record_id, validator, used_by):
+    """PUT of such a master: absent fields stay as they are; an unknown id is a 404.  The code
+    is frozen once a ticket uses the record: ``used_by`` is the ticket column that points at it
+    (S018 § 5.6); every other field stays editable."""
     clean = clean_body(validator, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_row(cur, table, record_id)
+        locked = _lock_row(cur, table, record_id)
+        _check_code_frozen(cur, clean, locked, used_by)
         update_row(cur, table, record_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,)))
@@ -666,8 +675,8 @@ def create_failure_cause():
 @require_perm("failure_codes:edit")
 def update_failure_cause(cause_id):
     """The group may change, also once in use: a reclassification for all history, as the
-    ISO roll-up wants (S016 § 5.3)."""
-    return _update_plain_master("failure_causes", cause_id, validate_failure_cause)
+    ISO roll-up wants (S016 § 5.3).  The code is frozen once a ticket uses the cause (S018 § 5.6)."""
+    return _update_plain_master("failure_causes", cause_id, validate_failure_cause, "cause_id")
 
 
 @masters_bp.route("/maintenance-actions")
@@ -688,7 +697,7 @@ def create_maintenance_action():
 @masters_bp.route("/maintenance-actions/<int:action_id>", methods=["PUT"])
 @require_perm("failure_codes:edit")
 def update_maintenance_action(action_id):
-    return _update_plain_master("maintenance_actions", action_id, validate_maintenance_action)
+    return _update_plain_master("maintenance_actions", action_id, validate_maintenance_action, "action_id")
 
 
 # ---------------------------------------------------------------------------

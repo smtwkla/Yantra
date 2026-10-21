@@ -2,7 +2,8 @@
 /**
  * Documents and Photos cards of one owner — a node on the equipment page, an equipment
  * model in Masters (docs/steps/S006-equipment-documents/1-brief.md; owners: S012, the design
- * of the dropped S009), or a ticket, photos only (S017).
+ * of the dropped S009), or a ticket (S017 photos; S018 documents too, added by ticket:work
+ * holders only: `canEditDocuments`).
  *
  * `basePath` is the owner's documents collection URL. A node's list also has `inherited`
  * group (its model's documents), shown read-only under its heading;
@@ -28,19 +29,22 @@ const props = defineProps({
   basePath: { type: String, required: true },
   // Upload, edit title and remove of the owner's own items; the parent decides
   canEdit: { type: Boolean, default: false },
+  // The same for documents when it differs from photos (a ticket, S018 BS1-02); absent: canEdit.
+  // `undefined` default: an absent Boolean prop would otherwise be cast to false
+  canEditDocuments: { type: Boolean, default: undefined },
   // Show the "Managed in Masters" line on inherited groups: for users who may edit model
   // documents (equipment:edit held at any site), whatever the node's status; the parent decides
   showManagedIn: { type: Boolean, default: false },
   // "model" for a Masters owner, whose documents show at every site and on every
   // machine of it; "" for a node
   everySite: { type: String, default: "" },
-  // A ticket (S017): photos only — no Documents card and no "Add document"
-  photosOnly: { type: Boolean, default: false },
   // A floor screen (the ticket page): "Add photo" is a large full-width button
   largeAdd: { type: Boolean, default: false },
 });
 
 const MANAGED_IN = { model: "Models" };
+
+const canEditDocs = computed(() => props.canEditDocuments ?? props.canEdit);
 
 const items = ref([]);
 const inherited = ref([]);
@@ -242,11 +246,11 @@ defineExpose({ reload: load });
       <div class="alert alert-danger py-2 mb-0">{{ actionError }}</div>
     </div>
 
-    <div v-if="!photosOnly" class="col-lg-6">
+    <div class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span>Documents</span>
-          <button v-if="canEdit" class="btn btn-sm btn-outline-primary" @click="uploadModal.open('document')">
+          <button v-if="canEditDocs" class="btn btn-sm btn-outline-primary" @click="uploadModal.open('document')">
             <i class="fa-solid fa-plus me-1"></i>Add document
           </button>
         </div>
@@ -281,7 +285,7 @@ defineExpose({ reload: load });
                   <button class="btn btn-sm btn-outline-secondary" title="Download" @click="downloadPdf(doc)">
                     <i class="fa-solid fa-download"></i><span class="ms-1 d-none d-sm-inline">Download</span>
                   </button>
-                  <template v-if="canEdit && doc.own">
+                  <template v-if="canEditDocs && doc.own">
                     <button class="btn btn-sm btn-outline-primary" title="Edit title" @click="titleModal.open(doc)">
                       <i class="fa-solid fa-pen"></i>
                     </button>
@@ -296,7 +300,7 @@ defineExpose({ reload: load });
                   </template>
                 </div>
               </div>
-              <div v-if="canEdit && doc.own && confirmingRemoveId === doc.id" class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-2">
+              <div v-if="canEditDocs && doc.own && confirmingRemoveId === doc.id" class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-2">
                 <span>Remove this document?<template v-if="removeNote"> {{ removeNote }}</template></span>
                 <button class="btn btn-sm btn-danger" :disabled="removing" @click="remove(doc)">Yes</button>
                 <button class="btn btn-sm btn-outline-secondary" @click="confirmingRemoveId = null">No</button>
@@ -307,7 +311,7 @@ defineExpose({ reload: load });
       </div>
     </div>
 
-    <div :class="photosOnly ? 'col-12' : 'col-lg-6'">
+    <div class="col-lg-6">
       <div class="card h-100">
         <div
           class="card-header"
@@ -358,7 +362,7 @@ defineExpose({ reload: load });
       :base-path="basePath"
       :every-site="Boolean(everySite)"
       :upload-max-mb="uploadMaxMb"
-      :photos-only="photosOnly"
+      :photos-only="!canEditDocs"
       @saved="load"
     />
     <DocumentTitleModal ref="titleModal" :base-path="basePath" @saved="load" />

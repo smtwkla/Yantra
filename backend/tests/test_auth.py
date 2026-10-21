@@ -203,6 +203,8 @@ class TestDatabaseDown:
         assert body["db_unavailable"] is True and body["sites"] is None
         assert body["permissions"] == auth_utils.compute_permissions(["it_admin"])
         assert body["role"] == "it_admin"
+        # S018 BR4-08: no Team record can be read either
+        assert body["person_id"] is None
 
     def test_login_only_user_gets_nothing(self, client, db_down):
         res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"])))

@@ -7,6 +7,7 @@
 - has_perm(key)             — inline boolean check for field masking ("held somewhere")
 - has_perm_at(key, site_id) / require_perm_at(...) — a site-scoped key at one site (S011)
 - permissions_at_site(site_id) — every key the user holds at one site
+- current_person_id(cur)    — the user's own person (Team record), or None (S018)
 - user_unit_ids(key)        — the units where the user holds a site-scoped key
 - compute_permissions(roles) — returns list of permission keys for role(s) (access_core)
 
@@ -255,10 +256,11 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
 _NOT_LOADED = object()
 
 
-def _person_id(cur):
+def current_person_id(cur):
     """The active person whose login is the token's username, or None: no such person, or
     an inactive one, has no access (S011 A1 rule 3; a deactivated leaver loses it on the
-    next request)."""
+    next request).  Cached for the request.  Public since S018: the user's own person is the
+    default technician, the labour default, the auto-assignee and *Assigned to me*."""
     if g.get("_access_person_id", _NOT_LOADED) is _NOT_LOADED:
         cur.execute("SELECT id FROM people WHERE username = %s AND active = 1",
                     (normalise_username(g.user["username"]),))
@@ -277,7 +279,7 @@ def current_memberships():
     if "_access_memberships" not in g:
         memberships = []
         with _db().cursor() as cur:
-            person_id = _person_id(cur)
+            person_id = current_person_id(cur)
             if person_id is not None:
                 cur.execute("SELECT site_id, role, all_units FROM memberships WHERE person_id = %s",
                             (person_id,))
@@ -326,7 +328,7 @@ def _unit_pools(memberships):
                 if any(m.all_units for m in valid):
                     cur.execute("SELECT id, site_id FROM units WHERE active = 1")
                     units = [(r["id"], r["site_id"]) for r in cur.fetchall()]
-                person_id = _person_id(cur)
+                person_id = current_person_id(cur)
                 if person_id is not None:
                     cur.execute("SELECT pu.unit_id, u.site_id FROM person_units pu JOIN units u ON u.id = pu.unit_id "
                                 "WHERE pu.person_id = %s AND u.active = 1", (person_id,))

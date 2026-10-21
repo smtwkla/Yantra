@@ -95,12 +95,26 @@ class TestRoleSources:
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert "failure_codes:edit" not in SITE_SCOPED
 
-    @pytest.mark.parametrize("key", ["ticket:read", "ticket:raise"])
+    @pytest.mark.parametrize("key", ["ticket:read", "ticket:raise", "ticket:restore"])
     def test_ticket_keys(self, key):
-        """S017 § 5.6: every maintenance role, the supervisor and IT admin; not the storekeeper.
-        Site-scoped, so checked at the ticket's site."""
+        """S017 § 5.6, S018 § 5.7: every maintenance role, the supervisor and IT admin; not the
+        storekeeper.  Site-scoped, so checked at the ticket's site."""
         holders = {role for role in ROLES if key in compute_permissions([role])}
         assert holders == set(ROLES) - {"maint_storekeeper"}
+        assert key in SITE_SCOPED
+
+    def test_ticket_work_holders(self):
+        """S018 § 5.7: the maintenance ladder from the technician up, and IT admin; not the
+        supervisor (production side)."""
+        holders = {role for role in ROLES if "ticket:work" in compute_permissions([role])}
+        assert holders == {"maint_technician", "maint_engineer", "maint_manager", "it_admin"}
+        assert "ticket:work" in SITE_SCOPED
+
+    @pytest.mark.parametrize("key", ["ticket:assign", "ticket:close"])
+    def test_ticket_assign_and_close_holders(self, key):
+        """S018 § 5.7: the engineer (so the manager) and IT admin."""
+        holders = {role for role in ROLES if key in compute_permissions([role])}
+        assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert key in SITE_SCOPED
 
     def test_no_login_roles(self):
@@ -149,21 +163,26 @@ class TestComputePermissions:
 
     @pytest.mark.parametrize("role, expected", [
         # S017: ticket:read and ticket:raise to the operator, so to every maintenance role and
-        # the supervisor; IT admin too (user decision 7); never the storekeeper
-        ("maint_operator",    {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
-        ("maint_technician",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
-        ("maint_supervisor",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise"}),
+        # the supervisor; IT admin too (user decision 7); never the storekeeper.  S018: restore to
+        # the operator; work to the technician; assign and close to the engineer; all to IT admin
+        ("maint_operator",    {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore"}),
+        ("maint_technician",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore",
+                               "ticket:work"}),
+        ("maint_supervisor",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit", "people:edit",
-                               "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise"}),
+                               "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
+                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
-                               "ticket:read", "ticket:raise"}),
+                               "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
+                               "ticket:close"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
-                               "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise"}),
+                               "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise",
+                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close"}),
         ("maint_storekeeper", {"equipment:read", "masters:read"}),
     ])
     def test_role_matrix(self, role, expected):

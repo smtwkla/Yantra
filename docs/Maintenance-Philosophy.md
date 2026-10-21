@@ -350,10 +350,11 @@ Definitions below are **Proposed** — confirm before reports are built (phase 5
 
 | Measure | Definition |
 |---|---|
-| Downtime | Sum of critical (stopped) time per equipment / unit / cause, per period |
+| Downtime | EN 13306 *down time*: sum of critical (stopped) time per equipment / unit / cause, per period; for one breakdown, its *time to restoration* (failure → back in service, S018) |
 | MTBF (mean time between failures) | Available operating time ÷ number of breakdowns, per period |
-| MTTR (mean time to repair) | Total repair time (in progress → back in service) ÷ number of breakdowns |
-| Response time | Raised → acknowledged |
+| MTTR (mean time to restoration) | Total downtime ÷ number of breakdowns — EN 13306 / SMRP 3.5.5: failure to restoration (Plan.MD Q4) |
+| Mean active repair time | Total repair time (time in progress, EN 13306 *active corrective maintenance time*) ÷ number of breakdowns — what maintenance controls; MTTR minus it is waiting |
+| Response time | Raised → first acknowledged or started — the plant's own work-management measure, not an SMRP or EN 13306 term |
 | PM compliance | PM jobs done on time ÷ PM jobs due, per period |
 | Availability (OEE factor) | Run time ÷ planned production time — needs production data (later) |
 
@@ -404,6 +405,11 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Work order | EN 13460: the same record once maintenance takes it up — who worked, what they did, when |
 | Failure / fault | EN 13306: a failure is the *event* (the item loses its ability to perform); a fault is the *state* after it |
 | Partial failure | EN 13306: the item still runs with reduced function — Yantra's *degraded* intensity |
+| Response time | Raised → first acknowledged or started: how fast maintenance reacts (the plant's own measure) |
+| Repair time | EN 13306 *active corrective maintenance time*: the time a ticket is in progress, hands on the machine |
+| Downtime | EN 13306 *down time*: while a breakdown's machine cannot run, failure to restoration (*time to restoration*); its mean is MTTR |
+| Repeat failure | The same fault back within 7 days of its back in service: a new ticket linked as *repeat of* — the fix did not hold (TPM focused improvement; ISO 9001 § 10.2) |
+| Not a fault | A ticket closed with a cause and remark because nothing was wrong (or a mis-operation); left out of failure counts |
 | Failure mode | How a failure is seen — the operator's "symptom" (ISO 14224), per equipment class or General |
 | Failure cause | Why it failed: the circumstances in design, manufacture or use that led to it (ISO 14224) |
 | Cause group | ISO 14224's five groups of causes: design, fabrication / installation, operation / maintenance, management, miscellaneous |

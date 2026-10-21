@@ -499,7 +499,7 @@ class TestOwnerCheckConstraint:
 
 
 # ---------------------------------------------------------------------------
-# Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise, photos only
+# Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise; documents too since S018
 # ---------------------------------------------------------------------------
 
 def ticket_docs_url(ticket):
@@ -534,11 +534,16 @@ class TestTicketPhotos:
         assert operator.delete(f"{url}/{photo['id']}").status_code == 204
         assert listed_at(operator, url)["items"] == []
 
-    def test_a_document_kind_is_400_before_the_file_is_read(self, admin, node, make_ticket):
+    def test_a_document_on_a_ticket_is_stored_and_listed(self, admin, node, make_ticket, db_rows):
+        """S018 user decision 5: vendor reports and quotes on a ticket, under tickets/<id>/."""
         ticket = make_ticket(node)
-        res = upload_to(admin, ticket_docs_url(ticket))
-        assert refusal(res) == (400, "kind", "Only photos can be added here")
-        assert owner_files("ticket", ticket["id"]) == []
+        document = uploaded_to(admin, ticket_docs_url(ticket))
+        assert document["kind"] == "document"
+        stored = db_rows("SELECT stored_name, ticket_id FROM equipment_documents WHERE id = %s",
+                         (document["id"],))[0]
+        assert stored["ticket_id"] == ticket["id"]
+        assert owner_files("ticket", ticket["id"]) == [stored["stored_name"]]
+        assert [d["id"] for d in listed_at(admin, ticket_docs_url(ticket))["items"]] == [document["id"]]
 
     def test_a_closed_ticket_refuses_upload_title_and_remove(self, admin, node, make_ticket, set_ticket_state):
         ticket = make_ticket(node)

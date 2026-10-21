@@ -10,26 +10,11 @@ from datetime import datetime, timedelta
 import pytest
 
 import tickets
-from equipment import IST
 from tests.conftest import EQUIPMENT, MASTERS, TICKETS
-
-
-def _now_ist():
-    return datetime.now(IST).replace(tzinfo=None)
-
-
-def _local(dt):
-    """A naive datetime as the raise screen sends it (datetime-local, no offset)."""
-    return dt.strftime("%Y-%m-%dT%H:%M")
-
-
-def _api_time(dt):
-    return dt.strftime("%Y-%m-%dT%H:%M:%S+05:30")
-
-
-def _refusal(res):
-    body = res.get_json()
-    return res.status_code, body.get("field"), body["error"]
+from tests.ticket_helpers import api_time as _api_time
+from tests.ticket_helpers import local as _local
+from tests.ticket_helpers import now_ist as _now_ist
+from tests.ticket_helpers import refusal as _refusal
 
 
 def _list(client, **params):
@@ -44,26 +29,6 @@ def _serials(page):
 
 def _number(serial):
     return int(serial.rsplit("-", 1)[1])
-
-
-@pytest.fixture
-def machine(make_equipment, unit):
-    return make_equipment(unit=unit)
-
-
-@pytest.fixture
-def operator(at_unit):
-    return at_unit("maint_operator")
-
-
-@pytest.fixture
-def give_site_role(admin):
-    """give_site_role(person, site, role="maint_operator") -> a site row, all units, set by IT admin."""
-    def give(person, site, role="maint_operator"):
-        res = admin.put(f"{MASTERS}/people/{person['id']}/sites/{site['id']}",
-                        json={"role": role, "all_units": True, "unit_ids": []})
-        assert res.status_code == 200, res.get_json()
-    return give
 
 
 class TestRaise:
@@ -317,7 +282,13 @@ class TestDetailAndAccess:
         ticket = make_ticket(machine)
         res = operator.get(f"{TICKETS}/{ticket['id']}")
         assert res.status_code == 200
-        assert res.get_json() == {**ticket}
+        # What this user may do differs from the raiser's (S018: keys at the ticket's site); the
+        # ticket itself is the same
+        per_user = {"permissions", "moves", "regrade_to", "can_add_documents", "can_add_photos", "can_raise_repeat"}
+        shown = res.get_json()
+        assert {k: v for k, v in shown.items() if k not in per_user} == {
+            k: v for k, v in ticket.items() if k not in per_user}
+        assert shown["can_add_photos"] is True
 
     def test_another_units_ticket_is_404(self, user_with_units, make_unit, make_ticket, machine):
         ticket = make_ticket(machine)
@@ -384,4 +355,4 @@ class TestPickers:
         people = res.get_json()["items"]
         assert [p["id"] for p in people] == [here["id"]]
         assert people[0] == {"id": here["id"], "name": "Aa operator here", "role": "maint_operator",
-                             "trades": [{"id": trade["id"], "name": trade["name"]}]}
+                             "assignable": False, "trades": [{"id": trade["id"], "name": trade["name"]}]}

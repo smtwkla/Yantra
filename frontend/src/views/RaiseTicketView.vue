@@ -13,6 +13,19 @@
  * typed. After Save, photos are added on the same screen (camera or gallery: no `capture`),
  * each titled with its file name, then Done opens the ticket page.
  *
+ * S018: opened as ?equipment=<id>&repeat_of=<ticket id> from *Not fixed — raise again*, the
+ * screen pre-fills the earlier ticket's symptom and current intensity once the node has loaded
+ * (after resetForm(), which every node change runs), and Save sends repeat_of_id.
+ *
+ * S018 A1, *Already fixed*: a user holding ticket:restore at the node's site may tick "Already
+ * fixed — back in service" and give the back-in-service time ("Now · Change", EventFields
+ * without the remark), who did the work (PersonPicker; pre-filled with his own person only when
+ * he holds ticket:work there and is in the site's people list, BS2-04) and, optionally, when
+ * work started (StartedAtFields). Save then sends them as `restore`; the server raises and
+ * applies the back-in-service move in one transaction, and its refusals come back named
+ * restore.<field>. Unticking hides the fields (v-show: the time control keeps its state) and
+ * keeps what was typed; a node change clears them with the rest (blankForm).
+ *
  * The API decides every refusal; this screen only shows them beside the field they name.
  */
 import { computed, ref, watch } from "vue";
@@ -20,9 +33,15 @@ import { useRoute, useRouter } from "vue-router";
 import { apiGet, apiPost, apiUpload } from "../api";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import { useDebounced } from "../composables/useDebounced";
+import { userPersonId } from "../stores/auth";
 import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../utils/documentTypes";
 import { roleLabel } from "../utils/siteRoles";
-import { ageText, INTENSITY_CHOICES, problemText, toLocalInputValue } from "../utils/ticketLabels";
+import {
+  ageText, INTENSITY_CHOICES, problemText, moveSaveLabel, raiseSaveLabel, restoreTimeLabel, toLocalDateValue, toLocalInputValue,
+} from "../utils/ticketLabels";
+import EventFields from "./tickets/EventFields.vue";
+import PersonPicker from "./tickets/PersonPicker.vue";
+import StartedAtFields from "./tickets/StartedAtFields.vue";
 
 const OTHER_MODE = "OTH";
 const DESCRIPTION_MAX = 1000;
@@ -43,10 +62,14 @@ const nodeError = ref("");
 const modes = ref([]);
 const people = ref([]);
 const openTickets = ref([]);
+const repeatOf = ref(null); // the earlier ticket of a repeat (S018 § 5.5): {id, serial}
+const repeatError = ref("");
 let loadSeq = 0;
 
 const nodeId = computed(() => route.query.equipment ?? null);
+const repeatOfId = computed(() => route.query.repeat_of ?? null);
 const canRaiseHere = computed(() => (node.value?.permissions ?? []).includes("ticket:raise"));
+const canRestoreHere = computed(() => (node.value?.permissions ?? []).includes("ticket:restore"));
 const scrapped = computed(() => node.value?.status === "scrapped");
 
 async function loadNode() {
@@ -56,6 +79,8 @@ async function loadNode() {
   modes.value = [];
   people.value = [];
   openTickets.value = [];
+  repeatOf.value = null;
+  repeatError.value = "";
   if (!nodeId.value) return;
   nodeLoading.value = true;
   try {
@@ -74,12 +99,36 @@ async function loadNode() {
     modes.value = modeList.items;
     people.value = peopleList.items;
     openTickets.value = open.items;
+    form.value.restorePersonId = defaultRestorePerson(loaded.permissions, peopleList.items);
+    if (repeatOfId.value) await loadRepeatOf(seq);
   } catch (err) {
     if (seq !== loadSeq) return;
     nodeError.value = err.status === 404 ? "Equipment not found, or not at your units." : err.message;
   } finally {
     if (seq === loadSeq) nodeLoading.value = false;
   }
+}
+
+/** The earlier ticket's symptom and current intensity, into the form resetForm() just cleared. */
+async function loadRepeatOf(seq) {
+  try {
+    const earlier = await apiGet(`/api/tickets/${repeatOfId.value}`);
+    if (seq !== loadSeq) return;
+    repeatOf.value = { id: earlier.id, serial: earlier.serial };
+    form.value.intensity = earlier.intensity;
+    form.value.failureModeId = earlier.failure_mode?.id ?? "";
+  } catch (err) {
+    if (seq === loadSeq) repeatError.value = `The earlier ticket could not be read (${err.message}); this is saved as a new ticket.`;
+  }
+}
+
+/**
+ * Who did the work, pre-filled (A1): the user's own person when he holds ticket:work at the
+ * site and may be named there (the page-side form of the move's default_person), else nobody.
+ */
+function defaultRestorePerson(permissions, sitePeople) {
+  if (!permissions.includes("ticket:work") || userPersonId.value === null) return null;
+  return sitePeople.some((p) => p.id === userPersonId.value) ? userPersonId.value : null;
 }
 
 function chooseEquipment(id) {
@@ -128,6 +177,8 @@ const saving = ref(false);
 function blankForm() {
   return {
     intensity: "", failureModeId: "", description: "", occurredAt: toLocalInputValue(new Date()), reportedById: "",
+    // Already fixed (A1): restoreAt null = now, as every move dialog
+    alreadyFixed: false, restoreAt: null, restorePersonId: null, startedDate: toLocalDateValue(new Date()), startedTime: "",
   };
 }
 
@@ -160,15 +211,21 @@ async function save() {
     fieldErrors.value = { description: pickedMode.value ? "Describe the problem" : "Describe the problem, or pick a symptom" };
     return;
   }
+  if (form.value.alreadyFixed && !form.value.restorePersonId) {
+    fieldErrors.value = { "restore.person_id": "Who did the work? Pick a name" };
+    return;
+  }
   const body = {
     equipment_id: node.value.id,
     intensity: form.value.intensity,
     failure_mode_id: form.value.failureModeId ? Number(form.value.failureModeId) : null,
     description: description || null,
     reported_by_id: form.value.reportedById ? Number(form.value.reportedById) : null,
+    repeat_of_id: repeatOf.value?.id ?? null,
   };
   // A cleared picker means "now", like an untouched one: send nothing
   if (timeTouched.value && form.value.occurredAt) body.occurred_at = form.value.occurredAt;
+  if (form.value.alreadyFixed) body.restore = restoreBody();
   saving.value = true;
   try {
     ticket.value = await apiPost("/api/tickets", body);
@@ -179,6 +236,15 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+/** The back-in-service block, as the restore move's dialog sends it (times only when given). */
+function restoreBody() {
+  const f = form.value;
+  const restore = { person_id: f.restorePersonId };
+  if (f.restoreAt) restore.occurred_at = f.restoreAt;
+  if (f.startedTime && f.startedDate) restore.started_at = `${f.startedDate}T${f.startedTime}`;
+  return restore;
 }
 
 // ---- after Save: photos ----
@@ -235,7 +301,7 @@ function done() {
     <!-- Step 2: saved; add photos -->
     <template v-if="ticket">
       <div class="alert alert-success">
-        Ticket <strong>{{ ticket.serial }}</strong> saved.
+        Ticket <strong>{{ ticket.serial }}</strong> saved<template v-if="ticket.state === 'back_in_service'"> and marked {{ moveSaveLabel("restore", ticket.intensity).toLowerCase() }}</template>.
       </div>
       <p class="mb-2">Add photos of the problem, if you have them.</p>
       <label class="btn btn-outline-primary btn-lg w-100 mb-2" :class="{ disabled: uploading }">
@@ -314,6 +380,12 @@ function done() {
         <div v-if="scrapped" class="alert alert-secondary">Scrapped equipment takes no tickets.</div>
         <div v-else-if="!canRaiseHere" class="alert alert-secondary">You can't raise tickets at this site.</div>
         <form v-else novalidate @submit.prevent="save">
+          <div v-if="repeatOf" class="alert alert-info py-2">
+            Repeat of <router-link :to="`/tickets/${repeatOf.id}`" target="_blank">{{ repeatOf.serial }}</router-link>:
+            the same fault came back after the repair.
+          </div>
+          <div v-if="repeatError" class="alert alert-warning py-2">{{ repeatError }}</div>
+          <div v-if="fieldErrors.repeat_of_id" class="alert alert-danger py-2">{{ fieldErrors.repeat_of_id }}</div>
           <fieldset class="mb-3">
             <legend class="form-label fs-6 mb-2">How bad is it?</legend>
             <div class="d-grid gap-2">
@@ -389,6 +461,45 @@ function done() {
             <div class="invalid-feedback">{{ fieldErrors.reported_by_id }}</div>
           </div>
 
+          <div v-if="canRestoreHere" class="mb-3">
+            <input id="raise-already-fixed" v-model="form.alreadyFixed" class="btn-check" type="checkbox" autocomplete="off" />
+            <label
+              class="btn btn-lg w-100 text-start"
+              :class="form.alreadyFixed ? 'btn-success' : 'btn-outline-success'"
+              for="raise-already-fixed"
+            >
+              <i class="me-2" :class="form.alreadyFixed ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>Already fixed — back in service
+            </label>
+            <div v-show="form.alreadyFixed" class="border-start border-3 ps-3 mt-2">
+              <p class="form-text mb-2">Set <em>When did it happen?</em> above to when the machine stopped.</p>
+              <EventFields
+                v-model:time="form.restoreAt"
+                :with-remark="false"
+                :time-label="restoreTimeLabel(form.intensity)"
+                :time-error="fieldErrors['restore.occurred_at']"
+                id-prefix="raise-restore"
+              />
+              <div class="mb-3">
+                <label class="form-label" for="raise-restore-person-filter">Who did the work?</label>
+                <PersonPicker
+                  v-model="form.restorePersonId"
+                  :people="people"
+                  :own-person-id="userPersonId"
+                  :invalid="Boolean(fieldErrors['restore.person_id'])"
+                  id-prefix="raise-restore-person"
+                />
+                <div v-if="fieldErrors['restore.person_id']" class="invalid-feedback d-block">{{ fieldErrors["restore.person_id"] }}</div>
+              </div>
+              <StartedAtFields
+                v-model:date="form.startedDate"
+                v-model:time="form.startedTime"
+                :restored-at="form.restoreAt"
+                :error="fieldErrors['restore.started_at']"
+                id-prefix="raise-restore-started"
+              />
+            </div>
+          </div>
+
           <div v-if="openTickets.length" class="alert alert-warning">
             <div class="fw-semibold mb-1">Already reported on this machine:</div>
             <ul class="list-unstyled mb-1">
@@ -404,7 +515,7 @@ function done() {
 
           <div v-if="formError" class="alert alert-danger py-2">{{ formError }}</div>
           <button type="submit" class="btn btn-primary btn-lg w-100" :disabled="saving">
-            {{ saving ? "Saving…" : "Save ticket" }}
+            {{ saving ? "Saving…" : raiseSaveLabel(form.alreadyFixed, form.intensity) }}
           </button>
         </form>
       </template>

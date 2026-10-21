@@ -94,7 +94,8 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "people", "trades", "ticket_events", "equipment_documents", "tickets",
+_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_events",
+           "equipment_documents", "tickets",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
 
@@ -456,8 +457,8 @@ def make_ticket(admin):
 
 @pytest.fixture
 def set_ticket_state(db_rows):
-    """set_ticket_state(ticket, "closed"): S017 never changes a state, so tests that need a
-    closed ticket write it straight to the row."""
+    """set_ticket_state(ticket, "closed"): the state written straight to the row, for tests
+    about what a state allows rather than how a ticket gets there (S018's moves write events)."""
     def write(ticket, state):
         db_rows("UPDATE tickets SET state = %s WHERE id = %s", (state, ticket["id"]))
     return write
@@ -481,3 +482,27 @@ def node(make_equipment, unit):
 def at_unit(user_with_units, unit):
     """at_unit(role) -> a client for a fresh user of that role holding the node's unit."""
     return lambda role: user_with_units(role, [unit])
+
+
+# ---------------------------------------------------------------------------
+# Ticket tests (S017, S018): a machine in that unit, an operator there, a site role by IT admin
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def machine(make_equipment, unit):
+    return make_equipment(unit=unit)
+
+
+@pytest.fixture
+def operator(at_unit):
+    return at_unit("maint_operator")
+
+
+@pytest.fixture
+def give_site_role(admin):
+    """give_site_role(person, site, role="maint_operator") -> a site row, all units, set by IT admin."""
+    def give(person, site, role="maint_operator"):
+        res = admin.put(f"{MASTERS}/people/{person['id']}/sites/{site['id']}",
+                        json={"role": role, "all_units": True, "unit_ids": []})
+        assert res.status_code == 200, res.get_json()
+    return give

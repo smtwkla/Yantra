@@ -8,6 +8,9 @@
  * The filters live in the URL query, as on the equipment list, so Back returns to the same
  * list. Rows are a list, not a table, so they read on a phone. Age counts from the event
  * time, on this device's clock.
+ *
+ * S018: *Assigned to me* (shown to a user with a Team record), the assignees' first names on
+ * each row, and *Not a fault* on a ticket closed as such.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -15,10 +18,10 @@ import { apiGet } from "../api";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
 import { useDebounced } from "../composables/useDebounced";
-import { userPermissions } from "../stores/auth";
+import { userPermissions, userPersonId } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
 import { ensureSites, ensureUnits, sites, units } from "../stores/masters";
-import { ageText, INTENSITY_FILTERS, problemText, STATE_FILTERS, STATE_LABELS } from "../utils/ticketLabels";
+import { ageText, firstName, INTENSITY_FILTERS, problemText, STATE_FILTERS, STATE_LABELS } from "../utils/ticketLabels";
 
 const PAGE_SIZE = 50; // the API default
 const DEFAULT_STATE = "open";
@@ -71,6 +74,10 @@ const filterModel = (key, fallback = "", set = (value) => update({ [key]: value 
 const siteModel = filterModel("site_id", "", chooseSite);
 const unitModel = filterModel("unit_id");
 const intensityModel = filterModel("intensity");
+const assignedToMe = computed({
+  get: () => query.value.assigned === "me",
+  set: (value) => update({ assigned: value ? "me" : null }),
+});
 const stateModel = filterModel("state", DEFAULT_STATE);
 
 const searchText = ref(query.value.q ?? "");
@@ -93,7 +100,7 @@ const filteredEquipmentCode = computed(() => {
 
 function listUrl() {
   const params = new URLSearchParams({ state: state.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "intensity", "equipment_id", "q"]) {
+  for (const key of ["site_id", "unit_id", "intensity", "equipment_id", "assigned", "q"]) {
     if (query.value[key]) params.set(key, query.value[key]);
   }
   return `/api/tickets?${params}`;
@@ -138,6 +145,10 @@ watch(() => route.fullPath, load);
         <option v-for="u in unitChoices" :key="u.id" :value="u.id">{{ u.full_code }}</option>
       </select>
       <input v-model="searchText" class="form-control w-auto" type="search" placeholder="Search serial or text…" aria-label="Search" />
+      <div v-if="userPersonId" class="form-check mb-0">
+        <input id="tickets-assigned-me" v-model="assignedToMe" class="form-check-input" type="checkbox" />
+        <label class="form-check-label" for="tickets-assigned-me">Assigned to me</label>
+      </div>
       <router-link v-if="canRaise" to="/tickets/new" class="btn btn-primary ms-auto">
         <i class="fa-solid fa-plus me-1"></i>Raise ticket
       </router-link>
@@ -177,7 +188,10 @@ watch(() => route.fullPath, load);
           {{ t.machine.code }} — {{ t.machine.name }}<span v-if="t.component" class="text-secondary"> · {{ t.component.code }}</span>
         </div>
         <div class="ticket-text">{{ problemText(t) }}</div>
-        <div class="small text-secondary">{{ t.unit.site_code }}.{{ t.unit.code }} · {{ STATE_LABELS[t.state] }}</div>
+        <div class="small text-secondary">
+          {{ t.unit.site_code }}.{{ t.unit.code }} · {{ STATE_LABELS[t.state] }}<template v-if="t.not_a_fault"> · Not a fault</template>
+          <template v-if="t.assignees.length"> · <i class="fa-solid fa-user"></i> {{ t.assignees.map((a) => firstName(a.name)).join(", ") }}</template>
+        </div>
       </router-link>
     </div>
     <PagerBar

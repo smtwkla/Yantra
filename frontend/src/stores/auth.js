@@ -23,6 +23,8 @@ export const userRole = ref("");
 export const userRoles = ref([]);
 /** Every key the user holds somewhere (token roles and every site role, S011). */
 export const userPermissions = ref([]);
+/** The user's own Team record (S018: Assigned to me, the labour default), or null. */
+export const userPersonId = ref(null);
 /** True when /api/auth/me answered from the token alone because the database is down. */
 export const dbUnavailable = ref(false);
 export const devBypass = ref(false);
@@ -86,6 +88,7 @@ async function loadProfile() {
   userRole.value = me.role;
   userRoles.value = me.roles;
   userPermissions.value = me.permissions;
+  userPersonId.value = me.person_id ?? null;
   dbUnavailable.value = Boolean(me.db_unavailable);
 }
 
