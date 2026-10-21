@@ -73,7 +73,7 @@ Codes follow `SITE.UNIT`. Recorded as they are fixed:
 | `SMTW.FWMILL` | SMTW's firewood processing mill | Vertical blade mill, breakers, electric saw, others | User, 13-10-2026 |
 | `SMTW.MCC1` | New extrusion and punching line — first part | One line, one operator: two box feeders, a coarse roller mill, a fine roller mill, a clay spreader on a conveyor, conveyors between them (as dictated 16-10-2026; names to confirm) | User, 16-10-2026 |
 | `SMTW.MCC2` | New extrusion and punching line — second part | New extruder (Haendle GmbH); puncher (Keller-HCW GmbH); Atlas Copco screw compressors (2); others | User, 13-10-2026 |
-| `SMTW.FLEET`, `SSVT.FLEET` (*Proposed*) | The vehicle fleet of each company | About 40 vehicles in all (trucks, tractors, cars, forklifts; list to come from Vaahan, § 7) | User, 20-10-2026 |
+| `SMTW.FLEET`, `SSVT.FLEET` (*Proposed*) | The vehicle fleet of each company | About 40 vehicles in all (trucks, tractors, cars, forklifts; list to come from Vaahan, § 7). Forklifts and the pallet truck are in Vaahan too | User, 20-10-2026 |
 
 The new extrusion line is known internally as **MCC** (origin of the name not known).
 
@@ -210,4 +210,4 @@ installations, major failures, rebuilds, layout changes). TBD.
 | 17-10-2026 | Parts: makers' part lists, service-engineer quotes, generic spares |
 | 20-10-2026 | ISO 9001 as a future goal; measuring instruments, their owners, weighbridge stamping, certificate sources |
 | 18-10-2026 | Daily-report use case: genset round, EB meter readings, the electrical head's daily report, fitter without a phone |
-| 20-10-2026 | Fleet use case: 40 vehicles, in-house and garage repairs, six-monthly inspection by the head engineer or polytechnic faculty with a monthly target, deferred-and-forgotten defects, drivers recorded for by their supervisor, the Vaahan app |
+| 20-10-2026 | Fleet use case: 40 vehicles, in-house and garage repairs, six-monthly inspection by the head engineer or polytechnic faculty with a monthly target, deferred-and-forgotten defects, drivers recorded for by their supervisor, the Vaahan app (live, used daily; forklifts in it) |

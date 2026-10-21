@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 20-10-2026 (revised 20-10-2026 after brief-reviews r1–r4)
 Track: full
 Baseline: cfedc46 (s1)
-Status: In code review (approved 20-10-2026 by KLA; A1 approved 20-10-2026, coded)
+Status: Committed ae3841f; manual checks pending — to S024 browser tests and IT Admin (approved 20-10-2026 by KLA; A1 approved 20-10-2026)
 ```
 
 # S018 — Work the ticket

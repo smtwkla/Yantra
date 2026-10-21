@@ -294,3 +294,15 @@ Frontend and one backend line; no behaviour of the API changed.
 Tests: no new automated test (the changes are in views and a constant; the project tests pure
 utils only). The Manual checks list is unchanged; also worth a look: Add photo on the ticket
 page, the chip, and clearing the time picker on a phone.
+
+### After commit — raise screen blank (20-10-2026, orchestrator, at the user's request)
+
+Found by the user: *Raise ticket* opened a blank page, from the Tickets list and from an
+equipment page alike. In `RaiseTicketView.vue` the `watch(nodeId, …, { immediate: true })`
+ran during setup, before the form's `const` refs were declared, so `resetForm()` threw
+"Cannot access 'form' before initialization" and Vue rendered nothing. **Fixed:** the watcher
+moved below `resetForm()`, with a comment saying why; no logic changed. `TicketDetailView`
+and `EquipmentDetailView` were checked: their immediate watchers come after the refs they
+use. Frontend tests 80 passed; `vite build` clean. Not caught by the tests (no component
+mounts) nor by code review; the manual checks would have caught it. To commit separately
+(`S017: …`).

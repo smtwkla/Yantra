@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 20-10-2026 (revised 20-10-2026 after brief-reviews r1 and r2)
 Track: full
 Baseline: 6c771e1 (stale brief check s1, 20-10-2026)
-Status: Accepted at gate B by KLA 20-10-2026; commit pending (approved 20-10-2026 by KLA)
+Status: Committed cfedc46; manual checks pending (approved 20-10-2026 by KLA)
 ```
 
 # S017 — Raise and see tickets
