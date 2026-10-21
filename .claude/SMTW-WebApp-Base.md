@@ -276,6 +276,9 @@ needs `g.user`):
   internal network. Route code never sees this — it is a gate, like auth.
 - Internal ranges are a comma-separated CIDR list in the `app_settings` table (`internal_networks`), editable in
   Settings without a deploy, cached in-process for 5 min.
+- **The ranges mirror the front proxy's zone lists** (office, app zone, VPN pools, remote sites such as SSVT): a
+  range left out makes those users external, and an internal-only role on the VPN is refused. Check the list against
+  the devops repo's `zone-*.list` files when it is first set and whenever a zone is added.
 - Admin bypasses; public paths (`/api/auth/config`, `/api/version`) and the dev auth bypass skip the gate.
 - Refusal: 403 with a message saying an internal connection is required, plus a log warning naming user, role and IP.
 - Granting `access:wan` to a role is a business decision (who may work from outside) — record the date and reason in
@@ -292,15 +295,29 @@ Answers "who reached the API, from where, and were they let in?" — without a r
   fallback. Validation 4xx and 5xx on an authenticated request still count as `ok` — the user did reach the API.
 - **`after_request` hook**, registered before the other `after_request` hooks so Flask runs it last and sees the final
   status. Wrapped in try/except — a logging failure must never break the request.
-- **Dedupe in-process**: a small cache suppresses repeats of the same `(outcome, session, IP[, detail])` for 10 min,
-  pruned when it grows. Each Gunicorn worker has its own cache, so occasional duplicate rows across workers are
-  accepted — it's an audit trail, not a counter.
-- **Columns**: `ts`, `username`, `role`, `session_id`, `client_ip`, `is_internal`, `outcome`, `method`, `path`,
+- **One row per sighting per day, enforced by the database** (rule revised 18-10-2026 after 23 days of VelKilnMaster
+  production data). The sighting key is `(outcome, session or username, IP, detail)`; the row carries
+  `sighting_day` (the IST date) and `sighting_hash` (SHA-1 of the key), with a **unique index on
+  `(sighting_hash, sighting_day)`**. The hook inserts with `INSERT IGNORE` (MariaDB) or `ON CONFLICT DO NOTHING`
+  (PostgreSQL) and treats a rejected insert as "already seen". A small in-process cache in front of it only saves
+  the insert attempt for repeats within 10 min; it is not the rule.
+  - *Why the database and not the cache:* with three Gunicorn workers, each holding its own cache, three parallel
+    requests from one phone at page load gave three identical rows at the same second, and the 10-minute window
+    gave an active user a fresh row every 10 minutes — about 400 rows a day, 9,500 in 23 days, for twelve users.
+    The question the log answers, "which addresses did each session come from", was buried under repeats.
+  - The unique key is race-free across workers and survives restarts; a session seen again from the same address
+    the next day gets a new row, which is the intended record. The table stays append-only (no updates).
+  - **VelKilnMaster (Sept 2026) still has the cache-only dedupe** and is to be brought in line with this rule.
+- **Columns**: `ts`, `username`, `role`, `session_id`, `client_ip`, `is_internal`, `outcome`, `method`, `path`, `sighting_day`, `sighting_hash` (the unique pair above),
   `user_agent`, `detail`; indexes on `ts DESC` and `(username, ts DESC)`. `ts` follows the timezone policy
   (`TIMESTAMP`/`DATETIME`, IST).
 - **Retention**: a scheduled worker task deletes rows older than `ACCESS_LOG_RETENTION_DAYS` (`company_settings.py`).
 - **Viewer**: Settings › Access log, paginated, filters for user, date range, external-only and denials-only; permission
   `access_log:view` for the people who own the security question (manager, IT).
+- **Reading it** (what VelKilnMaster's log showed): "denials only" is mostly internet scanners probing `/api/.env`,
+  `/api/.git-credentials` and the like, each a 401 — the login gate holding, and worth a glance now and then. A
+  `denied_perm` that repeats for one role on one path every few minutes is a **frontend bug**: a page polls an
+  endpoint that role cannot see, and the UI swallows the 403. Fix the UI; don't widen the permission.
 - Classification and dedupe are pure (`classify_outcome`, `SightingCache` with an injectable clock) and unit-tested.
 
 ---
