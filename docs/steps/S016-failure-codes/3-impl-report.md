@@ -176,6 +176,15 @@ Also:
 - Try to add a press mode labelled "Abnormal noise": refused, it is already a
   general mode.
 
+### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] As an engineer, Masters › Failure codes: the 14 General modes, the causes and actions are there; a press mode is added under the press class and the press filter shows it — S024 e2e/masters.spec.js::engineer: the pre-filled lists are there; a press mode is added and the press filter shows it
+- [auto] As an operator the section is read-only (no Add, no Edit), and on a phone the lists do not scroll sideways (Pixel 7 and iPhone 14 set-ups) — S024 e2e/masters.spec.js::operator: the failure codes are read-only, and the lists fit a phone
+- [auto] Deactivate a seed mode; hidden unless *Show inactive*; reactivate — S024 e2e/masters.spec.js::engineer: a deactivated mode is hidden unless Show inactive, and comes back on reactivate
+- [auto] A press mode labelled "Abnormal noise" is refused (the message shows beside the field on all three set-ups) — S024 e2e/masters.spec.js::engineer: a press mode labelled like a General one is refused
+
 ## Test results
 
 - `tooling/run-tests.bat`:

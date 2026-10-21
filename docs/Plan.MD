@@ -26,6 +26,7 @@ module before each is built.
 | Hosting | customer7 (10.24.0.112), web container published on port **8990**. Front-proxy vhost is public (Keycloak is the gate); live since 11-10-2026. |
 | Access from outside | Shop-floor phones use **mobile data**, so every role works from anywhere (decided 11-10-2026), **except IT admin, which works only from the plant network** (S013, 18-10-2026; ISO 27001 A.8.2). Managers work from anywhere too. Admin (`mspv-apps-admin`) bypasses the gate, so a wrong network list can be fixed from anywhere; protect it with Keycloak two-factor login. The VPN pool counts as internal. Internal ranges are set in Settings › Network. The real client IP comes from `X-Real-IP`; every sighting is in the access log (365 days, purged by the worker). |
 | Standards | **ISO 9001 certification is a future goal; Yantra is built to be compliant and to nudge the plant towards it** (decided 20-10-2026). The clauses that touch maintenance and measurement, and where Yantra serves them: **§ 7.1.3** infrastructure is maintained (equipment register, PM); **§ 7.1.5** monitoring and measuring resources (calibration, § 4.3); **§ 7.5** documented information (who changed what and when; retention); **§ 8.5.1** production under controlled conditions (suitable equipment and instruments); **§ 9.1** monitoring and measurement (KPIs, § 4.6); **§ 10.2** nonconformity and corrective action (tickets with cause and action codes). Each brief names the clause it serves, as it already does for ISO 14224 and ISO 55001. |
+| Schema and releases | **One squashed migration v20** replaces v1–v13 (S025, decided 21-10-2026; production was on v0.1.3 with masters only and is the one instance); later migrations continue from v21. A release is verified by the deploy: `/api/health` must report `schema_ready` within 3 minutes, else the deploy fails with the rollback lines. A backup before every deploy and guards for migrations that touch existing data are queued (*Safe migrations*). |
 | Files | Photos and documents on disk under `data/`, which is an **App-FS** NFS export mounted into the container (like OneERP's files). No MinIO. |
 | Repos | App code and docs here. Deployment in `smtw_erp_devops/erp_server/yantra/`, run with `erp_spanner.py <org> yantra <instance>` (like `erp_server/delivery`), so another org or a `test` instance is just a host file + settings file. |
 
@@ -355,20 +356,27 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   downtime and MTTR.
 - **Reported by** (*Proposed*): the operator who found the fault, picked from Team, kept apart
   from who raised the ticket (the supervisor). Keeps operator ownership visible (TPM).
-- **Deferred work** (*Proposed*, 16-10-2026, extrusion-line use case). Much work is requested
+- **Deferred work** (*Decided* 21-10-2026 as S019, except meter targets; first proposed 16-10-2026, extrusion-line use case). Much work is requested
   while the machine runs and done later, once parts are bought or fabricated and a slot is
   found: a touchscreen to replace, worn scrapers, a liner "good for another 1,000 hours", a
   filter the AMC vendor asked for. EN 13306 calls this *deferred corrective maintenance*;
-  SMRP measures planned against reactive work. Design to settle in the phase 3 brief:
-  - a **scheduled** state between acknowledged and in progress, set by the engineer with a
-    planned date and a waiting reason (parts, shutdown slot, vendor);
-  - a target **by meter value** as well as by date ("at 1,000 run hours from now"), reusing
-    the meter-trigger machinery of PM plans, so the ticket falls due when the reading crosses it;
-  - the stop taken for a scheduled ticket is **planned downtime**, reported apart from
-    breakdown downtime (EN 13306, SMRP; OEE treats them differently);
-  - a waiting reason also on a **critical** ticket (parts, vendor, workshop, expert), so
-    downtime splits into active repair and waiting (EN 13306: active maintenance time,
-    logistic delay, administrative delay). A press cylinder three weeks at the maker is waiting.
+  SMRP measures planned against reactive work. Decided in S019 (21-10-2026):
+  - one **scheduled** state between acknowledged and in progress, shown as *Scheduled* on a
+    defect and *Waiting* on a critical ticket. It carries a **required planned date** (today
+    or later, within 365 days) and a **waiting reason**. The engineer (`ticket:assign`)
+    schedules from raised or acknowledged and changes the plan; a technician (`ticket:work`)
+    may schedule from in progress, when work stops for a part. Every slip is an event with a
+    remark; *Overdue* is a list filter and a badge;
+  - six waiting reasons, a fixed list in code, each mapped to an EN 13306 delay:
+    parts, vendor, expert → logistic delay; production slot, approval → administrative
+    delay; other → neither. No *workshop* reason: time in the workshop is active repair;
+  - a critical ticket's downtime splits into active repair (in progress) and waiting, per
+    reason. A press cylinder three weeks at the maker is waiting;
+  - the stop taken for a scheduled job is **planned downtime**, by the technician's answer
+    at *Start* ("Is the machine stopped for this work?"), reported apart from breakdown
+    downtime (EN 13306, SMRP; OEE treats them differently);
+  - *later*, with the PM engine (phase 4): a target **by meter value** as well as by date
+    ("at 1,000 run hours from now"), reusing the meter-trigger machinery of PM plans.
 - **Fleet defects** (20-10-2026, fleet use case): each defect found on a vehicle is a ticket of
   its own, mostly *initial* or *degraded*, so one inspection of 40 vehicles gives a backlog of
   tickets instead of one paper report. The drivers' supervisor raises them on the driver's
@@ -406,7 +414,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 - **Intensity** (the TPM red tag is this ticket): the operator grades the problem. Scale (decided 15-10-2026), from ISO 14224's failure impact: **critical** (equipment stopped), **degraded** (running with reduced function), **initial** (still fine, early signs; ISO 14224 calls it *incipient*). Only critical time counts as downtime.
 - **Codes** (ISO 14224 core, decided 15-10-2026): failure mode (the operator picks it as the symptom), failure cause and maintenance action (technician/engineer pick). Lists trimmed from ISO 14224 Annex B, maintained by engineers. Mechanism not in v1; detection method automatic (below). **S016 (approved 20-10-2026):** three masters, pre-filled from Annex B with ISO's codes and plain-word labels. A failure mode belongs to **one equipment class or is General**; the picker shows the class of the ticket's equipment (level 6, even when the ticket is on a component) plus General — checked in the API, since a General mode has no class. A cause carries one of ISO's five **cause groups** (design, fabrication / installation, operation / maintenance, management, miscellaneous), so the plant's own causes roll up the ISO way; the group stays editable once in use. A code is frozen once a ticket uses it (added by S017/S018). *Later:* failure mechanism as a fourth list, if technicians keep writing mechanisms ("worn", "contaminated") as causes.
 - **No approval step:** a raised ticket goes straight to maintenance. If it turns out frivolous, the engineer **closes it directly** from raised or acknowledged, with a required code (e.g. *no fault found*, *not a breakdown*) and remarks.
-- **Parts used** (*Proposed*, 17-10-2026, parts use case): a structured line on tickets and
+- **Parts used** (*Decided* 21-10-2026 as S020 for tickets; PM jobs decided with PM; first proposed 17-10-2026, parts use case): a structured line on tickets and
   PM jobs — part number, description, quantity, maker if any — replacing "action *replaced* plus
   nameplate details in the remarks". No stock, no cost. The number is either a **maker's part
   number** (from a Haendle drawing, or from the quote of a service engineer whose maker gives no
@@ -416,7 +424,14 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   attach to the ticket. Over time this builds the parts list the maker never gave, and seeds
   each model's bill of materials when spares come. ISO 14224 lists parts replaced among the
   maintenance-record fields. Ordering and the item master stay in **OneERP** (ISO 8000: one
-  item master); a later link maps Yantra part numbers to OneERP item codes.
+  item master); a later link maps Yantra part numbers to OneERP item codes. Decided in S020
+  (21-10-2026): no parts master; each line holds a description, an optional part number with
+  its kind (*maker's* or *standard*), a free-text maker (required for a maker's number), a
+  quantity with a unit (*nos, set, m, L, kg*) and the node it was fitted to (the machine or a
+  component, default the ticket's component). Recorded by `ticket:work` holders until the
+  ticket is closed. The *Add* dialog suggests the lines already recorded on the same machine.
+  A ticket with parts cannot be closed as *not a fault*. Closing with the action *Replace*,
+  *Modify* or *Overhaul* and no parts shows a hint, not a refusal.
 - **Who worked:** one or more technicians per ticket, with time spent. Each labour row carries the **trade worked** (pre-filled when the technician has only one), so man-hours per discipline (ISO 14224 Table 8) can be summed (S010, 16-10-2026).
 - **Work done without a ticket** (*Decided* 20-10-2026 as S018 A1: an *Already fixed — back in service* checkbox on the raise screen, for every `ticket:restore` holder; raise and back in service in one save, the engineer still closes; first proposed 18-10-2026, daily-report use case): work that
   walks into the workshop (a portable vibrator needing new carbon brushes) gets its ticket after
@@ -713,15 +728,16 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 
 | Event | Web push | Telegram | Email |
 |---|---|---|---|
-| New breakdown | maintenance on duty | maintenance group | |
-| Breakdown not acknowledged in time | engineers | maintenance group | |
+| New breakdown | engineers, the unit's supervisor, maintenance manager (S021) | maintenance group | |
+| New defect | engineers, quietly (S021) | | |
+| Breakdown not acknowledged in time | engineers and managers, once (S021) | maintenance group | |
 | Job assigned to you | the technician | | |
 | PM job due / overdue | assigned technician | maintenance group (overdue only) | |
 | Reading out of limits | engineers | | |
 | Daily summary (open tickets, overdue PMs, yesterday's downtime and work done) | | | engineers, manager |
 
 - **Web push:** Yantra is installable as a PWA; push uses the browser's Web Push (VAPID keys, no third party).
-- **Telegram:** the base pattern — group-routed, sent from the job queue.
+- **Telegram:** the base pattern — group-routed, sent from the job queue. **Parked 21-10-2026** (user: "for now, its PWA alone"): web push is the only channel until push has run on the real phones; the design is kept in `docs/steps/S023-alerts-telegram/1-brief.md`.
 - **Email:** the existing mail server, from the job queue.
 - All sends go through the DB-backed job queue, so a slow channel never blocks a request.
 
@@ -751,11 +767,11 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `failure_modes` | Symptoms (S016): code, label, description, class (NULL = General), active |
 | `failure_causes` | Causes (S016): code, label, description, ISO cause group, active |
 | `maintenance_actions` | Actions (S016): code, label, description, active |
-| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017); cause, action, not-a-fault flag, repeat of (S018) |
+| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017); cause, action, not-a-fault flag, repeat of (S018); state *scheduled*, planned date, waiting reason (S019) |
 | `ticket_events` | One row per change: who, event time, entered at, intensity, remark — the timestamps come from here (S017) |
 | `ticket_labour` | Person, trade worked, work date and minutes per ticket (S018) |
 | `ticket_assignees` | Ticket → people assigned, who and when (S018) |
-| `parts_used` | *Proposed* (§ 4.2): per ticket or PM job — part number, description, quantity, maker, component |
+| `ticket_parts` | Parts fitted per ticket (S020): description, part number and its kind, maker, quantity and unit, the node fitted to. PM jobs' parts decided with PM |
 | `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
 | `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
 | `pm_templates`, `pm_template_items` | Reusable PM work: items in the shared item shape (§ 4.3: type task / check / reading, unit and limits, optional meter, help text, reference photo, photo setting), triggers |
@@ -829,7 +845,7 @@ these rungs need a year of coded tickets and readings first.
 ## 9. Open questions
 
 1. ~~**Keycloak roles:** realm or client roles?~~ Decided 12-10-2026: client roles of `vel-yantra-master` (`maint_operator`, `maint_technician`, `maint_engineer`, `maint_manager`, `maint_storekeeper`, `it_admin`). **Superseded 16-10-2026 (S011):** Keycloak keeps `maintenance_team` and `it_admin`; the maintenance roles are held in Yantra per site.
-2. **Escalation times:** how long before an unacknowledged breakdown escalates, per criticality? *Deferred 15-10-2026: decided with the notification step (Telegram / web push); stored as settings, not code.*
+2. ~~**Escalation times:**~~ Decided 21-10-2026 (S021): an unacknowledged breakdown escalates after **A 10, B 30, C 60 minutes**, once, to the unit's engineers and managers; the times are settings (Settings › Notifications), not code.
 3. ~~**Equipment codes**~~ Decided 13-10-2026: class prefix of 2–4 letters + 3-digit number (`VBM001`), growing to 4 digits past 999; one counter per prefix across all sites, so a code survives a move.
 4. ~~**Downtime definition**~~ Decided 15-10-2026: downtime ends at the technician's **"back in service"** (SMRP: repair time runs to restoration). "Not fixed" is a **new ticket** linked to the old one, not a reopen (decided 20-10-2026, S017/S018). S018 computes downtime from the events to back in service, and repair time as the time in progress (EN 13306 active corrective maintenance time).
 5. ~~**Failure coding**~~ Decided 15-10-2026: the **ISO 14224 core** — failure **mode** (the operator picks it as the symptom), failure **cause** and maintenance **action** (technician/engineer), with lists trimmed from ISO 14224 Annex B and maintained by engineers. Mechanism is left out for now; detection method is filled automatically from the ticket's source (§ 4.2). Mode lists may later be scoped by equipment class. *Scoped by class (one class or General) from S016, approved 20-10-2026.*
@@ -839,14 +855,14 @@ these rungs need a year of coded tickets and readings first.
 9. ~~**Intensity scale**~~ Decided 15-10-2026: **critical / degraded / initial** — ISO 14224's failure impact, with the plain word *initial* for the standard's *incipient*.
 10. **CIL verification:** does an engineer verify CIL jobs, or are they done when the operator submits? *Proposed 17-10-2026:* a needs-verification flag per plan, default no for CIL and routine checks (§ 4.3).
 12. **Closing discipline** (*Proposed*, 16-10-2026): the engineer codes cause and action from the technician's verbal report after the fact. TPM practice is to close within the shift; tickets back in service but not closed by end of shift should show on the engineer's dashboard. No extra approval step.
-13. **Deferred work** (*Proposed*, 16-10-2026, § 4.2): scheduled state, meter-value targets, planned downtime. To settle in the phase 3 brief.
+13. ~~**Deferred work**~~ Decided 21-10-2026 (S019, § 4.2): scheduled state with planned date and waiting reason, the waiting split, planned downtime. Meter-value targets wait for phase 4.
 14. **PM rescheduling** (*Proposed*, 16-10-2026, § 4.3): engineer pushes a due job with a reason.
 15. **Diagnostic procedures on tickets** (*Proposed*, 16-10-2026, § 4.2): per class and symptom, steps as checklist and reading items. Which phase: with breakdowns (3) or with PM items (4)? Folded into the **Procedures** master (§ 4.3a) as kind *diagnostic*. 20-10-2026: any kind attaches to a ticket; item types settled in § 4.3; phase 4.
 17. **Document kinds and missing-drawings list** (*Proposed*, 16-10-2026, § 4.1): a small change to S006; which step carries it?
 18. **Maintenance strategy field, fitness-for-use inspection, verification rounds** (*Proposed*, 16-10-2026, § 4.1, § 4.3): the answer to forgotten machines.
 19. **Onboarding procedures and completion records** (*Proposed*, 16-10-2026, § 4.3a).
 20. **Certification plans with valid-until and the compliance register** (*Proposed*, 17-10-2026, § 4.3): statutory examinations and extinguishers.
-21. **Parts-used line on tickets and jobs** (*Proposed*, 17-10-2026, § 4.2): maker or generic part numbers, per component, ahead of spares.
+21. ~~**Parts-used line on tickets and jobs**~~ Decided 21-10-2026 for tickets (S020, § 4.2); PM jobs' parts decided with PM.
 22. **PM routes** (*Proposed*, 18-10-2026, § 4.3): one screen for a walk over many equipment; verification rounds and the CIL-due list fold into it. Which step builds it?
 23. **Work done without a ticket** (*Decided* 20-10-2026, S018 A1, § 4.2): *Already fixed* on the raise screen records raise and back in service in one save; closing stays the engineer's. No separate screen.
 24. **Calibration** (*Proposed*, 20-10-2026, § 4.3): measuring-instrument class with required accuracy, calibration class and custodian; certification plans per instrument; in-house verification plans with error readings and the out-of-tolerance ticket. Phase 4, after certification plans (Q20). ISO 9001 § 7.1.5.

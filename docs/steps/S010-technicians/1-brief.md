@@ -3,7 +3,7 @@ Step: S010 — Technicians and trades
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-review r1)
-Status: In code review — amendment A1 (A1 approved 16-10-2026 by KLA)
+Status: Committed c486a4a; manual checks pending (A1 approved 16-10-2026 by KLA)
 ```
 
 # S010 — Technicians and trades

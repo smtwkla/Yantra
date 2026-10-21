@@ -121,6 +121,13 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   - this is the only round: say so in the verdict.
 - **Manual checks.** Check that the checks a person must do (real phones,
   production steps) are marked **important**, and that the plain ones aren't.
+  Since S024 a brief splits its checks into **Automated** (an e2e browser test
+  the coder writes) and **On a real device** (`docs/steps/README.md` § Manual
+  checks):
+  - a check put on the device list that a browser could do (a screen opens, a
+    flow completes, a message shows, a dialog fits a phone) is `minor`;
+  - a device check without its account, network and where (dev server on
+    KLA's laptop, production on the TEST machine, or either) is `minor`.
 
 ## How to write findings
 
@@ -129,6 +136,17 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
 - Order findings by severity.
 - Start with a one-line verdict: whether any `blocker` or `major` finding is open.
 - End with a short "Checked and found consistent" list.
+
+## Writing style
+
+Follow CLAUDE-COMMON § Writing style:
+- Write your review in scope A. Put the point first, use one idea per
+  sentence, and keep one term for one thing.
+- Raise a finding where the brief's text breaks scope A. Use `nit`, or `minor`
+  when the wording can mislead the coder or the user.
+- Raise a finding where UI text the brief specifies breaks scope B: labels,
+  buttons, messages and confirmations.
+- Quoted text is exempt, such as the user's own words.
 
 ## Limits
 

@@ -321,6 +321,21 @@ Plain:
 - Send back and not a fault show the remark open; Save without it is refused
   on the field.
 
+### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] Technician: acknowledge → start → back in service on a breakdown; the page shows response, repair and downtime — S024 e2e/tickets-work.spec.js::technician: acknowledge, start, back in service; the times card shows response, repair and downtime
+- [auto] Supervisor: back in service on an acknowledged ticket, the technician found by typing, with the start time; the timeline shows both times — S024 e2e/tickets-work.spec.js::supervisor: back in service on an acknowledged ticket, the technician found by typing, with a start time
+- [auto] Engineer: *Close* disabled with "Add the labour first"; *Add labour* (own name and today); close with cause and action, Save *Close ticket*; read-only; the action buttons come first; remove labour asks first — S024 e2e/tickets-work.spec.js::engineer: Close waits for the labour; Add labour, then close with cause and action; the ticket is read-only
+- [auto] "Not fixed — raise again": the new ticket links to the old one and the old one lists it — S024 e2e/tickets-work.spec.js::Not fixed — raise again: the new ticket links to the old one, and the old one lists it
+- [auto] Send back with the machine down: the remark is required on the field; downtime grows again — S024 e2e/tickets-work.spec.js::send back with the machine down: the remark is required, and downtime runs again
+- [auto] *Machine stopped* on a defect as an operator: downtime starts at that time — S024 e2e/tickets-work.spec.js::operator: Machine stopped on a defect starts the downtime at that time
+- [auto] Not a fault: the remark open, Save without it refused on the field — S024 e2e/tickets-work.spec.js::not a fault: the remark is open and required; the ticket closes as not a fault
+- [auto] "Recording as <name>" and "Nobody will be assigned" (IT admin, no Team record); the assign, edit and change severity dialogs — S024 e2e/tickets-work.spec.js::engineer: assign, edit and change severity; IT admin with no Team record acknowledges as nobody
+- Every dialog opened above is checked to fit the screen (`expectDialogFits`).
+- On a real device: `docs/steps/device-checks.md` rows 6 and 7 (the close dialog with the keyboard up, Android and iPhone).
+
 ## Tests run
 
 - `tooling/run-tests.bat`, all green:
@@ -691,3 +706,10 @@ Important:
 Plain:
 - With and without a *started* time: the ticket page shows response and repair
   as typed, or "—".
+
+#### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] On a phone, *Already fixed* ticked: the extra fields fit (no sideways scroll), Save stays visible, and the ticket page shows it back in service with the right technician; with a start time, response and repair as typed — S024 e2e/tickets-raise.spec.js::S018 A1: Already fixed with a start time; the fields fit and the ticket is back in service
+- [auto] Without a start time, response and repair show "—" — S024 e2e/tickets-raise.spec.js::S018 A1: Already fixed without a start time shows response and repair as —

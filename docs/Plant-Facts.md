@@ -154,6 +154,7 @@ where the Mechanical and Electrical shops are and which sites they serve.
 | Extrusion line: operators have a company mobile today and will get a shared kiosk or desktop, where they log in with their own account | User, 16-10-2026 |
 | The fitter on the genset round has no phone; a supervisor or engineer will be assigned to record for him | User, 18-10-2026 |
 | Drivers report to a drivers' supervisor; the head engineer is above him. Drivers have phones but get no Yantra access in this phase (a kiosk may come); the supervisor records for them | User, 20-10-2026 |
+| Engineers and supervisors mostly carry **Samsung Galaxy** phones (Android); the project owner uses an **iPhone** | User, 21-10-2026 |
 
 TBD — headcount per role per site; shift pattern; on-call arrangement; phones
 company-issued or personal.
@@ -210,4 +211,5 @@ installations, major failures, rebuilds, layout changes). TBD.
 | 17-10-2026 | Parts: makers' part lists, service-engineer quotes, generic spares |
 | 20-10-2026 | ISO 9001 as a future goal; measuring instruments, their owners, weighbridge stamping, certificate sources |
 | 18-10-2026 | Daily-report use case: genset round, EB meter readings, the electrical head's daily report, fitter without a phone |
+| 21-10-2026 | Phones: mostly Samsung Galaxy; the project owner on iPhone |
 | 20-10-2026 | Fleet use case: 40 vehicles, in-house and garage repairs, six-monthly inspection by the head engineer or polytechnic faculty with a monthly target, deferred-and-forgotten defects, drivers recorded for by their supervisor, the Vaahan app (live, used daily; forklifts in it) |

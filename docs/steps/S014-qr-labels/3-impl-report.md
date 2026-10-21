@@ -240,6 +240,16 @@ Also:
 - As IT admin on mobile data, a scanned label shows the "plant network only" card (S013,
   expected).
 
+### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] Print preview of 16 labels shows exactly 2 pages (checked in the page: 15 labels per sheet, 16 make two sheets; print emulation does not paginate) — S024 e2e/labels.spec.js::15 labels fill one sheet; 16 make two sheets
+- [auto] The label's link `/e/<code>` opens that equipment's page (the scan itself is a device check) — S024 e2e/labels.spec.js::a label's link /e/<code> opens the equipment page
+- [auto] Equipment list: ticked equipment prints its labels — S024 e2e/labels.spec.js::labels printed from the equipment list's ticks
+- [auto] Equipment page: the *Print label* menu opens, and *This node and all its parts* opens the labels tab with the node and its parts — S024 e2e/labels.spec.js::the equipment page prints a node's label with its parts
+- On a real device: `docs/steps/device-checks.md` rows 1 (52 mm), 2 (greased label), D2 and D3 (Android and iPhone camera on mobile data, after deploy).
+
 ## Tests
 
 - `tooling/run-tests.bat`:

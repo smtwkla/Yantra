@@ -3,7 +3,7 @@ Step: S011 — Roles per site, held in Yantra
 Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-reviews r1, r2 and r3)
-Status: In code review (approved 16-10-2026 by KLA; A1 approved 16-10-2026)
+Status: Committed c486a4a; manual checks pending (approved 16-10-2026 by KLA; A1 approved 16-10-2026)
 ```
 
 # S011 — Roles per site, held in Yantra

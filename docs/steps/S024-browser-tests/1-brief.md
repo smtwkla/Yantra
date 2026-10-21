@@ -4,7 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: In review
+Baseline: 6c58b7a + uncommitted S018 (r3); stale check at coding: ae3841f and later, no file in § 3 changed
+Status: Gate B — code review r2 clean; awaiting the user's checks and commit (approved 21-10-2026 by KLA; A1, A2 approved 21-10-2026)
 ```
 
 # S024 — Browser tests (Playwright)
@@ -123,16 +124,24 @@ reverts with `git checkout` on committed files.
      switched off, BR3-02). Not the IT admin account where the check is about
      another role, and never the IT admin account on mobile data (it is
      refused off the plant network, S013);
-   - **Network**: plant Wi-Fi or mobile data. A mobile-data row is always a
-     production row: the dev PC is reachable on the plant network only;
+   - **Network**: company Wi-Fi, home network or mobile data. The dev server
+     runs on KLA's laptop and IT Admin can reach it only while the laptop is
+     on the company or home network; a mobile-data row is always a
+     production row;
    - **Done**: who and when (`IT Admin, DD-MM-YYYY`), written by the planner
      (BR2-06);
-   - **Where**: the dev server at `http://<dev PC>:5176`, or production on
-     the test machine (below) — so no check raises tickets on a
-     real machine and the KPIs stay clean (ISO 14224 records, SMRP
-     availability).
-   The checks that must run on production (a real login through Keycloak; the
-   QR label scanned on mobile data) use a **test machine named "TEST" in
+   - **Where**: either the **dev server** on KLA's laptop
+     (`http://<laptop>:5176`, when it is on the company or home network) or
+     **production on the test machine** (below); a row says which, or "either"
+     when both work, so IT Admin can do it whichever is at hand (user,
+     21-10-2026). No check raises tickets on a real machine, so the KPIs stay
+     clean (ISO 14224 records, SMRP availability).
+   Two checks can only run on production, because they test the deployment,
+   not a step's code: a real login through Keycloak (the dev server runs with
+   the login switched off) and a QR label scanned on mobile data (the label's
+   link is the production address). They form a short **after deploy** section
+   at the top of `device-checks.md`, done once per release. Production rows
+   use a **test machine named "TEST" in
    `SMTW.MCC2`** (real logins hold that unit), with its label marked TEST; its
    code, given at creation, is written into the rows once created; its
    tickets are closed as *Not a fault* after the check (BR2-05).
@@ -546,7 +555,91 @@ older steps' reports carry their `[auto]` lines; the device checklist exists.
 
 ## 10. Amendments
 
-(none)
+### A1 — A `SMTW-Review` section in CLAUDE.md
+
+```
+Requested by: KLA, 21-10-2026 ("add to S024 a: write to CLAUDE.md asking it to add a SMTW-Review section. it can make use of playwrite if needed")
+Status: Approved 21-10-2026 by KLA
+```
+
+**Why.** The user's change to smtw-common's `smtw-review` skill makes the
+audit read a section of each project's `CLAUDE.md` with that repo's own
+review points. Yantra's section names what the audit should check here, and
+lets it use the browser tests when they help.
+
+**What changes** (replaces the `## Additional review points (smtw-review)`
+section of § 3; the heading is the one the user's skill change looks for):
+
+1. `.claude/CLAUDE.md` gains a section **`## SMTW-Review`**, read by
+   `/smtw-review`, with Yantra's own points:
+   - **Browser tests:** the audit may run `tooling/run-e2e-tests.bat`
+     (Playwright) when it helps — to confirm a finding about a screen, a
+     permission shown or hidden, or a flow — or in full to report the suite's
+     state; in the background, as it takes minutes. Not required on every
+     audit.
+   - **Steps:** check each committed step's status against its impl report
+     (checks `[auto]`, ticked, skipped or pending) and list steps that are
+     committed but not `Done`.
+   - **Device checks:** list the open rows of `docs/steps/device-checks.md`.
+   - **Previous audit:** read the latest `docs/review/*-smtw-review.md` and
+     report the status of each of its findings.
+2. The section says how it grows: a step that adds something a later audit
+   should check (a new invariant, a check that only a full run shows) adds a
+   point to it; the planner proposes the point in the step's brief.
+
+**Where.** `.claude/CLAUDE.md` only; § 3's "Additional review points" bullet
+is replaced by this.
+
+**Tests.** None (a doc change); the next `/smtw-review` reads it.
+
+**Open points.** None.
+
+### A2 — Fix the three screen faults the browser tests found
+
+```
+Requested by: KLA, 21-10-2026 (the coder's questions 1–3 in 3-impl-report.md; "yes to all three")
+Status: Approved 21-10-2026 by KLA
+```
+
+**Why.** The suite's first runs found three faults in screens already
+committed (impl report, Questions 1–3). They are marked in the specs
+(`test.fail`, `test.fixme`) rather than hidden; this amendment fixes them and
+removes the marks, so the suite is fully green with no known fault.
+
+**What changes.**
+
+1. **Field messages drawn in WebKit** (S016, S017, S018 screens). A message
+   shown through Bootstrap's sibling rule (`.is-invalid ~ .invalid-feedback`)
+   is laid out at 0 × 0 by WebKit when the field turns red in the same update.
+   Every such message is rendered instead as `v-if="<error>"` with `class="invalid-feedback d-block"`,
+   the form several dialogs already use: the raise screen, the ticket move
+   dialogs, Masters › Failure codes, and any other screen that uses the sibling
+   rule (the coder lists them in the report). `expectFieldMessage` then checks
+   "visible" on every project; the WebKit branch and the `test.fail` go.
+2. **Add equipment's race** (S003). After Save the app navigates to the new
+   equipment page while the dialog is still closing, and `FormModal` disposes
+   Bootstrap's modal mid-animation ("Cannot read properties of null (reading
+   'style')"). `FormModal` disposes the modal only after Bootstrap's
+   `hidden.bs.modal` (or the navigation waits for it — the coder picks the one
+   that fixes every caller, and says which). The `test.fixme` goes.
+3. **Bootstrap loaded once** (S014). `main.js` loads `bootstrap.bundle.min.js`
+   and the components import `{ Modal } from "bootstrap"`, so two copies both
+   handle `data-bs-toggle="dropdown"` and the *Print label* menu opens and
+   closes on one click. Exactly one copy is loaded. **No new dependency**: if
+   the only way needs one (e.g. `@popperjs/core` for the ES build's
+   dropdowns), the coder stops and asks. The `test.fail` goes.
+
+**Where.** The screens of point 1, `FormModal.vue` (and the equipment list if
+the navigation changes), `main.js` and the components importing Bootstrap
+(`FormModal.vue`, `PhotoViewer.vue`); the specs and helpers that carry the
+marks.
+
+**Tests.** The full e2e run is green on all three projects with no
+`test.fail` or `test.fixme` left for these faults; vitest and the backend
+suite stay green. The device row for field messages on a real iPhone stays
+(Playwright's WebKit is not Safari).
+
+**Open points.** None.
 
 ## Review log
 
@@ -608,3 +701,18 @@ additional review points. that way, each repo could plug in into the
 smtw-review" → § 3: Yantra's `CLAUDE.md` gains `## Additional review points
 (smtw-review)` with the browser-test point; no paste-ready lines for
 smtw-common (the user writes that change).
+
+### User answer, 21-10-2026 (at gate A)
+
+"The IT admin might be able to access the dev instance that is running on my
+laptops to do some tests if required. that applies if my computer is plugged
+in to the company / home network. She can also be asked to use a TEST machine
+on PROD for the checks too." → § 1.6: each device row runs on the dev server
+on KLA's laptop (company or home network) or on production on the TEST
+machine, or either; the two deployment checks (Keycloak login, a label on
+mobile data) are an *after deploy* section done once per release; the TEST
+machine stays (Q6).
+
+### Gate A, 21-10-2026 — approved by KLA
+
+"brief approved", after the answers on the smtw-review plug-in point (user's skill change; Yantra's `## Additional review points (smtw-review)` section) and on where IT Admin does the device checks (dev on KLA's laptop or production on the TEST machine; after-deploy section).

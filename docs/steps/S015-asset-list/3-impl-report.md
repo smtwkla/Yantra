@@ -116,6 +116,16 @@ Also:
 - On production, *Printed by* shows the person's name (the token's `name` claim), not
   the username (BR1-12).
 
+### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] With **Include parts**, the part is indented under its machine and the count line reads "n equipment, m parts" (matching the rows) — S024 e2e/asset-list.spec.js::manager: a section per unit with its header; parts indented with the count line; checklist with signatures
+- [auto] The header shows the site, unit, printed on and printed by; switches and Print are left off paper; reload keeps the switches; the `@page` rule goes when leaving — same test
+- [auto] A user limited to one unit sees only that unit's section — S024 e2e/asset-list.spec.js::operator of one unit: only that unit's section
+- [auto] Filters that match nothing show "Nothing to list for these filters" — S024 e2e/asset-list.spec.js::filters that match nothing say so
+- On a real device: `docs/steps/device-checks.md` rows 3 (checklist on paper) and 4 (two pages). "Printed by" on production stays a plain check.
+
 ## Fix rounds
 
 ### Round 1

@@ -271,6 +271,18 @@ Plain:
 - Try to scrap a machine with an open ticket → "Close its tickets first".
 - Remove a ticket photo; Settings › Removed documents lists it under the ticket's serial.
 
+### Browser tests (S024), 21-10-2026
+
+From the passing e2e runs of 21-10-2026 (`tooling/run-e2e-tests.bat`, three set-ups: Pixel 7 Chromium, iPhone 14 WebKit, desktop Chromium; 135 passed, 0 skipped, 0 failed, 5.1 min, exit 0). The boxes above are left as they are: the user decides at gate B.
+
+- [auto] Equipment page → **Raise ticket** → critical, a symptom, a photo (from a file) → the ticket page shows it, with the thumbnail and the *raised* line — S024 e2e/tickets-raise.spec.js::S017: raise from the equipment page, with a symptom and a photo; the ticket page shows them
+- [auto] An operator of one unit sees only that unit's tickets; another unit's ticket URL gives "not found" — S024 e2e/tickets-raise.spec.js::S017: an operator sees only their unit's tickets; another unit's ticket is not found
+- [auto] IT admin gives a person without a login an Operator row (Masters › Team); a supervisor raises naming that person — S024 e2e/tickets-raise.spec.js::S017: IT admin gives a person with no login an Operator row; a supervisor names them on a ticket
+- [auto] A second ticket on the same machine: the open ticket is listed before Save (raised from the Tickets list) — S024 e2e/tickets-raise.spec.js::S017: raise from the Tickets list naming a person with no login; the open ticket is listed first
+- [auto] Back-dated by two days: the timeline shows that time — S024 e2e/tickets-raise.spec.js::S017: a back-dated ticket shows that time in the timeline
+- [auto] No symptom and no description: the description is asked for, beside the field, on all three set-ups — S024 e2e/tickets-raise.spec.js::S017: with no symptom and no description, the description is asked for
+- On a real device: `docs/steps/device-checks.md` row 5 (a photo from a real camera) and D2, D3 (scanning a label). "Scrap with an open ticket" and "remove a ticket photo" stay plain checks.
+
 ## Fix rounds
 
 ### Fix round 1 (4-code-review-r1.md)

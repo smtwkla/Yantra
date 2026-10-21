@@ -177,14 +177,17 @@ Maintenance types (EN 13306) and where they live:
 | Condition-based | Act when a measured value crosses a limit | Gauge meters with limits — v1, manual readings; IIoT later |
 | Predictive | Forecast failure from trends | A later rung (decided 18-10-2026): once Yantra holds a year of coded tickets and readings, **aibots** reasons over them and over **plant-3i**'s telemetry (Plan § 8, later rungs) |
 
-**Deferred corrective maintenance** (**Proposed**, 16-10-2026). EN 13306 splits
+**Deferred corrective maintenance** (**Decided** 21-10-2026, S019; proposed 16-10-2026). EN 13306 splits
 corrective work into *immediate* (the door sensor: fix now) and *deferred* (worn
 scrapers, a touchscreen, a liner good for another 1,000 hours: request now, plan
 parts and a slot, fix later). Most of the extrusion line's work is deferred. Yantra
-should hold it as a ticket in a *scheduled* state with a planned date or meter
-value and a waiting reason, and count the stop taken for it as **planned
-downtime**, apart from breakdown downtime. SMRP's planned-versus-reactive ratio
-is the measure of a plant moving from firefighting to TPM.
+holds it as a ticket in a *scheduled* state with a planned date and a waiting
+reason (a meter-value target comes with the PM engine), and counts the stop taken
+for it as **planned downtime**, apart from breakdown downtime. A stopped machine
+waiting for parts, a vendor or an expert is in the same state, so its downtime
+splits into active repair and waiting. SMRP's planned-versus-reactive ratio is the
+measure of a plant moving from firefighting to TPM; a ticket that went through
+*scheduled* stands in for SMRP's planned work until Yantra has job plans.
 
 **Contamination control for hydraulics** (16-10-2026, pressing shop). Most hydraulic
 failures trace to fluid contamination; the presses' sticking valves, worn pump elements,
@@ -218,7 +221,7 @@ the compliance register (Plan § 4.6) is that evidence. Routine checks such as t
 quarterly extinguisher check need no engineer verification (a flag per plan, which
 also answers whether CIL jobs are verified: no, by default).
 
-**Parts and part numbers** (**Proposed**, 17-10-2026). Some makers (Haendle) supply
+**Parts and part numbers** (**Decided** 21-10-2026, S020, for tickets; proposed 17-10-2026). Some makers (Haendle) supply
 drawings with part numbers; many do not, and their service engineer identifies the
 part and quotes. Many press spares (bearings, hydraulic valves, filters) are bought
 generic, by standard designation. The practice is to **build the parts list from
@@ -354,6 +357,8 @@ Definitions below are **Proposed** — confirm before reports are built (phase 5
 | MTBF (mean time between failures) | Available operating time ÷ number of breakdowns, per period |
 | MTTR (mean time to restoration) | Total downtime ÷ number of breakdowns — EN 13306 / SMRP 3.5.5: failure to restoration (Plan.MD Q4) |
 | Mean active repair time | Total repair time (time in progress, EN 13306 *active corrective maintenance time*) ÷ number of breakdowns — what maintenance controls; MTTR minus it is waiting |
+| Waiting time | Time a stopped machine spends in *scheduled* (S019), per waiting reason, summed into EN 13306's *logistic delay* (parts, vendor, expert) and *administrative delay* (production slot, approval); *other* stays apart. Shows what the plant waits for |
+| Planned downtime | Time from a start marked "machine stopped for this work" on a scheduled ticket to back in service (S019). Planned stops, kept out of breakdown downtime and MTTR; part of SMRP's scheduled downtime |
 | Response time | Raised → first acknowledged or started — the plant's own work-management measure, not an SMRP or EN 13306 term |
 | PM compliance | PM jobs done on time ÷ PM jobs due, per period |
 | Availability (OEE factor) | Run time ÷ planned production time — needs production data (later) |
