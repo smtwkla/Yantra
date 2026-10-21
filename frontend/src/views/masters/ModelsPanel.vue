@@ -175,7 +175,7 @@ onMounted(reload);
           <option value="" disabled>Select a manufacturer…</option>
           <option v-for="m in makerChoices" :key="m.id" :value="m.id">{{ m.name }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("manufacturer_id") }}</div>
+        <div v-if="fieldError('manufacturer_id')" class="invalid-feedback d-block">{{ fieldError("manufacturer_id") }}</div>
         <div class="form-text">"Generic" when the maker is unknown; "SMTW (in-house)" for our own designs (add them in Manufacturers).</div>
       </div>
       <div class="row g-3 mb-3">
@@ -192,7 +192,7 @@ onMounted(reload);
             <option value="" disabled>Select a class…</option>
             <option v-for="c in classChoices" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
           </select>
-          <div class="invalid-feedback">{{ fieldError("class_id") }}</div>
+          <div v-if="fieldError('class_id')" class="invalid-feedback d-block">{{ fieldError("class_id") }}</div>
         </div>
         <div class="col-sm-6">
           <label class="form-label" for="model-type">Type</label>
@@ -200,7 +200,7 @@ onMounted(reload);
             <option value="">— none —</option>
             <option v-for="t in typeChoices" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>
-          <div class="invalid-feedback">{{ fieldError("type_id") }}</div>
+          <div v-if="fieldError('type_id')" class="invalid-feedback d-block">{{ fieldError("type_id") }}</div>
         </div>
       </div>
       <div class="form-text mb-3">Manufacturer, class and type cannot be changed later. Equipment of this model takes its class and type.</div>
@@ -212,7 +212,7 @@ onMounted(reload);
     <div class="mb-0">
       <label class="form-label" for="model-designation">Designation</label>
       <input id="model-designation" v-model="form.designation" class="form-control" :class="{ 'is-invalid': fieldError('designation') }" maxlength="80" />
-      <div class="invalid-feedback">{{ fieldError("designation") }}</div>
+      <div v-if="fieldError('designation')" class="invalid-feedback d-block">{{ fieldError("designation") }}</div>
       <div class="form-text">The maker's name for the product, e.g. GA37; for a Generic model what it is, e.g. Generic gear pump. Unique per manufacturer.</div>
     </div>
   </FormModal>

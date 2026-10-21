@@ -140,7 +140,7 @@ onMounted(reload);
           <option :value="null">General — every class</option>
           <option v-for="c in classChoices" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("class_id") }}</div>
+        <div v-if="fieldError('class_id')" class="invalid-feedback d-block">{{ fieldError("class_id") }}</div>
         <div class="form-text">General symptoms (noise, leak) are offered for every class. Cannot be changed later.</div>
       </template>
       <div v-else id="mode-class" class="form-control-plaintext fw-semibold">{{ editingClass }}</div>
@@ -148,19 +148,19 @@ onMounted(reload);
     <div class="mb-3">
       <label class="form-label" for="mode-code">Code</label>
       <input id="mode-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="8" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">Up to 8 letters and digits, e.g. NOI or NBP (ISO 14224 codes where one fits).</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="mode-label">Symptom</label>
       <input id="mode-label" v-model="form.label" class="form-control" :class="{ 'is-invalid': fieldError('label') }" maxlength="60" />
-      <div class="invalid-feedback">{{ fieldError("label") }}</div>
+      <div v-if="fieldError('label')" class="invalid-feedback d-block">{{ fieldError("label") }}</div>
       <div class="form-text">What the operator sees, in plain words, e.g. Not building pressure.</div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="mode-description">Description <span class="text-secondary">(optional)</span></label>
       <input id="mode-description" v-model="form.description" class="form-control" :class="{ 'is-invalid': fieldError('description') }" maxlength="255" />
-      <div class="invalid-feedback">{{ fieldError("description") }}</div>
+      <div v-if="fieldError('description')" class="invalid-feedback d-block">{{ fieldError("description") }}</div>
       <div class="form-text">Help text: the ISO name, or what to look for.</div>
     </div>
   </FormModal>

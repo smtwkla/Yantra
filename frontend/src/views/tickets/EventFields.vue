@@ -90,7 +90,7 @@ function onInput(event) {
         @input="emit('update:remark', $event.target.value)"
       ></textarea>
       <div v-if="remarkHelp" class="form-text">{{ remarkHelp }}</div>
-      <div class="invalid-feedback">{{ remarkError }}</div>
+      <div v-if="remarkError" class="invalid-feedback d-block">{{ remarkError }}</div>
     </template>
     <button v-else type="button" class="btn btn-link p-0" @click="remarkShown = true">
       <i class="fa-solid fa-plus me-1"></i>Add remark

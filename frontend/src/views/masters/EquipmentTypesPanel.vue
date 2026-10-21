@@ -123,7 +123,7 @@ onMounted(reload);
           <option value="" disabled>Select a class…</option>
           <option v-for="c in classChoices" :key="c.id" :value="c.id">{{ c.code }} — {{ c.name }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("class_id") }}</div>
+        <div v-if="fieldError('class_id')" class="invalid-feedback d-block">{{ fieldError("class_id") }}</div>
         <div class="form-text">Cannot be changed later.</div>
       </template>
       <div v-else id="type-class" class="form-control-plaintext fw-semibold">{{ editingClass }}</div>
@@ -131,7 +131,7 @@ onMounted(reload);
     <div class="mb-0">
       <label class="form-label" for="type-name">Name</label>
       <input id="type-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
       <div class="form-text">How this kind is built, e.g. Closed execution. Unique within its class.</div>
     </div>
   </FormModal>

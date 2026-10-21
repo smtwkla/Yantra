@@ -416,7 +416,7 @@ function done() {
               <option value="">— Not sure —</option>
               <option v-for="m in modes" :key="m.id" :value="m.id">{{ m.label }}</option>
             </select>
-            <div class="invalid-feedback">{{ fieldErrors.failure_mode_id }}</div>
+            <div v-if="fieldErrors.failure_mode_id" class="invalid-feedback d-block">{{ fieldErrors.failure_mode_id }}</div>
           </div>
 
           <div class="mb-3">
@@ -431,7 +431,7 @@ function done() {
               rows="3"
               :maxlength="DESCRIPTION_MAX"
             ></textarea>
-            <div class="invalid-feedback">{{ fieldErrors.description }}</div>
+            <div v-if="fieldErrors.description" class="invalid-feedback d-block">{{ fieldErrors.description }}</div>
           </div>
 
           <div class="mb-3">
@@ -444,7 +444,7 @@ function done() {
               type="datetime-local"
               @input="timeTouched = true"
             />
-            <div class="invalid-feedback">{{ fieldErrors.occurred_at }}</div>
+            <div v-if="fieldErrors.occurred_at" class="invalid-feedback d-block">{{ fieldErrors.occurred_at }}</div>
           </div>
 
           <div class="mb-3">
@@ -458,7 +458,7 @@ function done() {
               <option value="">—</option>
               <option v-for="p in people" :key="p.id" :value="p.id">{{ p.name }} ({{ roleLabel(p.role) }})</option>
             </select>
-            <div class="invalid-feedback">{{ fieldErrors.reported_by_id }}</div>
+            <div v-if="fieldErrors.reported_by_id" class="invalid-feedback d-block">{{ fieldErrors.reported_by_id }}</div>
           </div>
 
           <div v-if="canRestoreHere" class="mb-3">

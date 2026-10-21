@@ -136,7 +136,7 @@ defineExpose({ open });
             <option v-for="u in g.units" :key="u.id" :value="u.id">{{ u.full_code }} — {{ u.name }}</option>
           </optgroup>
         </select>
-        <div class="invalid-feedback">{{ fieldError("unit_id") }}</div>
+        <div v-if="fieldError('unit_id')" class="invalid-feedback d-block">{{ fieldError("unit_id") }}</div>
         <div class="form-text">Its parts move with it.</div>
       </div>
     </template>
@@ -155,7 +155,7 @@ defineExpose({ open });
           placeholder="Search by code or name…"
           autocomplete="off"
         />
-        <div class="invalid-feedback">{{ fieldError("parent_id") }}</div>
+        <div v-if="fieldError('parent_id')" class="invalid-feedback d-block">{{ fieldError("parent_id") }}</div>
         <div v-if="chosen" class="mt-2 small">Chosen: <strong>{{ chosen.code }}</strong> — {{ chosen.name }}</div>
         <div v-if="searchError" class="text-danger small mt-2">{{ searchError }}</div>
         <div v-else-if="searching" class="text-secondary small mt-2">Searching…</div>

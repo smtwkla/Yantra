@@ -14,12 +14,13 @@ set DEV_STUB_ROLE (see backend/example_secrets_app.py).
 Usage: tooling/dev/dev-seed.bat [base URL, default http://localhost:5001]
 """
 
+import functools
 import json
 import sys
 import urllib.error
 import urllib.request
 
-BASE_URL = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5001").rstrip("/")
+DEFAULT_BASE_URL = "http://localhost:5001"
 
 SITES = [
     {"code": "SMTW", "name": "Main factory, Pavoorchatram", "address": "10/712, Surandai Road, Pavoorchatram",
@@ -94,69 +95,96 @@ EQUIPMENT = [
 ]
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, *, base_url, headers=None):
+    """One API call; the JSON answer, or exit with the refusal.  ``headers`` are added to
+    the JSON content type (the browser tests' seed sends its test identity, S024)."""
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(BASE_URL + path, data=data, method=method,
-                                 headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(base_url + path, data=data, method=method,
+                                 headers={"Content-Type": "application/json", **(headers or {})})
     try:
         with urllib.request.urlopen(req) as res:
             return json.loads(res.read() or b"null")
     except urllib.error.HTTPError as exc:
         sys.exit(f"{method} {path} failed: {exc.code} {exc.read().decode(errors='replace')}")
     except urllib.error.URLError as exc:
-        sys.exit(f"Cannot reach the dev backend at {BASE_URL} ({exc.reason}). Is PyCharm 'Backend' running?")
+        sys.exit(f"Cannot reach the backend at {base_url} ({exc.reason}). Is it running?")
 
 
-def main():
-    me = call("GET", "/api/auth/me")
-    if me.get("role") != "admin":
-        sys.exit(f"The dev stub user is {me.get('role')!r}; set DEV_STUB_ROLE to 'admin' (or leave it unset) to seed.")
-    if call("GET", "/api/masters/sites?include_inactive=1")["total"]:
-        sys.exit("The dev database already has sites. Run tooling/dev/dev-db-reset.bat first.")
-
-    site_ids = {s["code"]: call("POST", "/api/masters/sites", s)["id"] for s in SITES}
+def create_masters(api, sites, units):
+    """The sites and units given, and every class, type, manufacturer, model and trade above.
+    ``api`` is ``call`` with its base URL (and headers) bound.  Returns the new ids by key:
+    sites by code, units by "SITE.UNIT", classes by code, types by name, models by key,
+    trades by name."""
+    site_ids = {s["code"]: api("POST", "/api/masters/sites", s)["id"] for s in sites}
     unit_ids = {}
-    for site, code, name in UNITS:
-        unit_ids[f"{site}.{code}"] = call("POST", "/api/masters/units",
-                                          {"site_id": site_ids[site], "code": code, "name": name})["id"]
+    for site, code, name in units:
+        unit_ids[f"{site}.{code}"] = api("POST", "/api/masters/units",
+                                         {"site_id": site_ids[site], "code": code, "name": name})["id"]
 
     class_ids, type_ids = {}, {}
     for code, name, types in CLASSES:
-        class_ids[code] = call("POST", "/api/masters/equipment-classes", {"code": code, "name": name})["id"]
+        class_ids[code] = api("POST", "/api/masters/equipment-classes", {"code": code, "name": name})["id"]
         for type_name in types:
-            type_ids[type_name] = call("POST", "/api/masters/equipment-types",
-                                       {"class_id": class_ids[code], "name": type_name})["id"]
+            type_ids[type_name] = api("POST", "/api/masters/equipment-types",
+                                      {"class_id": class_ids[code], "name": type_name})["id"]
 
-    maker_ids = {name: call("POST", "/api/masters/manufacturers", {"name": name})["id"] for name in MANUFACTURERS}
+    maker_ids = {name: api("POST", "/api/masters/manufacturers", {"name": name})["id"] for name in MANUFACTURERS}
     model_ids = {}
     for key, maker, designation, cls, type_name in MODELS:
-        model_ids[key] = call("POST", "/api/masters/equipment-models", {
+        model_ids[key] = api("POST", "/api/masters/equipment-models", {
             "manufacturer_id": maker_ids[maker], "designation": designation, "class_id": class_ids[cls],
             "type_id": type_ids[type_name] if type_name else None})["id"]
 
-    trade_ids = {name: call("POST", "/api/masters/trades", {"name": name})["id"] for name in TRADES}
+    trade_ids = {name: api("POST", "/api/masters/trades", {"name": name})["id"] for name in TRADES}
+    return {"sites": site_ids, "units": unit_ids, "classes": class_ids, "types": type_ids,
+            "models": model_ids, "trades": trade_ids}
 
-    for name, employment, trades, login, roles in PEOPLE:
-        sites = [{"site_id": site_ids[site], "role": role, "all_units": units == "all",
-                  "unit_ids": [] if units == "all" else [unit_ids[f"{site}.{u}"] for u in units]}
+
+def create_people(api, people, ids):
+    """``people`` in the shape of PEOPLE; ``ids`` from create_masters."""
+    for name, employment, trades, login, roles in people:
+        sites = [{"site_id": ids["sites"][site], "role": role, "all_units": units == "all",
+                  "unit_ids": [] if units == "all" else [ids["units"][f"{site}.{u}"] for u in units]}
                  for site, role, units in roles]
-        body = {"name": name, "employment": employment, "trade_ids": [trade_ids[t] for t in trades]}
+        body = {"name": name, "employment": employment, "trade_ids": [ids["trades"][t] for t in trades]}
         if login:
             # A login is saved together with the person's whole set of sites (S011 A1)
-            call("POST", "/api/masters/people", {**body, "username": login, "sites": sites})
+            api("POST", "/api/masters/people", {**body, "username": login, "sites": sites})
             continue
-        person_id = call("POST", "/api/masters/people", body)["id"]
+        person_id = api("POST", "/api/masters/people", body)["id"]
         for row in sites:   # people without a login get their (Technician) sites one by one
             site_id = row.pop("site_id")
-            call("PUT", f"/api/masters/people/{person_id}/sites/{site_id}", row)
+            api("PUT", f"/api/masters/people/{person_id}/sites/{site_id}", row)
 
-    for unit, model, name, criticality, parts in EQUIPMENT:
-        node = call("POST", "/api/equipment/", {"level": "equipment", "unit_id": unit_ids[unit],
-                                                "model_id": model_ids[model], "name": name,
-                                                "criticality": criticality})
+
+def create_equipment(api, equipment, ids):
+    """``equipment`` in the shape of EQUIPMENT; returns the new nodes (machines and their
+    component units) by name."""
+    nodes = {}
+    for unit, model, name, criticality, parts in equipment:
+        nodes[name] = api("POST", "/api/equipment/", {"level": "equipment", "unit_id": ids["units"][unit],
+                                                      "model_id": ids["models"][model], "name": name,
+                                                      "criticality": criticality})
         for part_model, part_name in parts:
-            call("POST", "/api/equipment/", {"level": "component_unit", "parent_id": node["id"],
-                                             "model_id": model_ids[part_model], "name": part_name})
+            nodes[part_name] = api("POST", "/api/equipment/", {
+                "level": "component_unit", "parent_id": nodes[name]["id"],
+                "model_id": ids["models"][part_model], "name": part_name})
+    return nodes
+
+
+def main():
+    base_url = (sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BASE_URL).rstrip("/")
+    api = functools.partial(call, base_url=base_url)
+
+    me = api("GET", "/api/auth/me")
+    if me.get("role") != "admin":
+        sys.exit(f"The dev stub user is {me.get('role')!r}; set DEV_STUB_ROLE to 'admin' (or leave it unset) to seed.")
+    if api("GET", "/api/masters/sites?include_inactive=1")["total"]:
+        sys.exit("The dev database already has sites. Run tooling/dev/dev-db-reset.bat first.")
+
+    ids = create_masters(api, SITES, UNITS)
+    create_people(api, PEOPLE, ids)
+    create_equipment(api, EQUIPMENT, ids)
 
     print(f"Seeded {len(SITES)} sites, {len(UNITS)} units, {len(CLASSES)} classes, {len(MANUFACTURERS)} "
           f"manufacturers, {len(MODELS)} models, {len(TRADES)} trades, {len(PEOPLE)} people, "

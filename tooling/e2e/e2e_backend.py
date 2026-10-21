@@ -1,0 +1,107 @@
+"""The backend of the browser tests (S024): the Flask app on 127.0.0.1:5002 against a
+throw-away database, vel_yantra_e2e, rebuilt by the migrations at every start.
+
+Started by Playwright (frontend/playwright.config.js, webServer) in the backend's uv
+environment:  uv run --project ../backend python ../tooling/e2e/e2e_backend.py
+
+Who the user is comes from the test headers (X-Test-Role, X-Test-User), as in the pytest
+suite: TESTING on, with a TEST_USER_FACTORY.  A request without them falls to the dev stub
+user, which is set to "nobody" here, so a lost header gets no access, never admin
+(S024 § 5.1).  Dev only: FLASK_DEBUG=1 (config.py allows the auth bypass only then),
+bound to 127.0.0.1, and the guard below refuses any database but a local *_e2e one before
+anything is dropped.
+"""
+
+import os
+import shutil
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+BACKEND = os.path.join(REPO, "backend")
+
+E2E_DATABASE = "vel_yantra_e2e"
+HOST = "127.0.0.1"
+PORT = 5002
+DATA_DIR = os.path.join(REPO, "scratch", "e2e-data")
+LOCAL_HOSTS = ("localhost", "127.0.0.1")
+# A request without the test headers: no role, no membership (auth_utils._get_dev_stub_user)
+NO_ACCESS_ROLE = "nobody"
+
+
+def check_target(db_config):
+    """None when the database may be dropped and rebuilt: a local host and a name ending in
+    _e2e; else why not.  A mistyped setting can then never drop the dev or test database,
+    nor reach another server."""
+    host, name = db_config.get("host"), db_config.get("database") or ""
+    if host not in LOCAL_HOSTS:
+        return f"refusing database host {host!r}: the e2e database must be local ({', '.join(LOCAL_HOSTS)})"
+    if not name.endswith("_e2e"):
+        return f"refusing database {name!r}: the e2e database's name must end in _e2e"
+    return None
+
+
+def _recreate_database(db_config):
+    """DROP and CREATE the database on a plain connection with none selected, with the
+    charset and collation of tooling/dev/init-test-db.sql."""
+    import pymysql
+    conn = pymysql.connect(host=db_config["host"], port=db_config["port"], user=db_config["user"],
+                           password=db_config["password"], autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            name = db_config["database"]
+            cur.execute(f"DROP DATABASE IF EXISTS `{name}`")
+            cur.execute(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    finally:
+        conn.close()
+
+
+def _empty_data_dir():
+    shutil.rmtree(DATA_DIR, ignore_errors=True)
+    os.makedirs(DATA_DIR)
+
+
+def _user_factory(harness_user, names):
+    """X-Test-Role / X-Test-User -> g.user, as the pytest factory, with the seed person's
+    name for the top bar.  The username defaults to e2e_<role>: created_by is NOT NULL, so
+    a missing X-Test-User must not make a write fail (BR2-02)."""
+    def factory(role_name, username):
+        username = username or f"e2e_{role_name}"
+        return harness_user(role_name, username, names.get(username, username))
+    return factory
+
+
+def main():
+    # 1. Before config is imported: it reads these at import, and refuses the bypass
+    #    without FLASK_DEBUG
+    sys.path.insert(0, BACKEND)
+    sys.path.insert(0, HERE)
+    os.environ["FLASK_DEBUG"] = "1"
+    os.environ["DEV_AUTH_BYPASS"] = "1"   # the frontend skips Keycloak, as in dev
+    os.environ["DATA_DIR"] = DATA_DIR
+
+    # 2. The database and the stub user, then the guard on what is now set
+    import config
+    config.DB_CONFIG["database"] = E2E_DATABASE
+    config.DEV_STUB_ROLE = NO_ACCESS_ROLE
+    refusal = check_target(config.DB_CONFIG)
+    if refusal:
+        sys.exit(f"e2e backend: {refusal}")
+
+    # 3. A fresh database and data folder at every run
+    _recreate_database(config.DB_CONFIG)
+    _empty_data_dir()
+
+    # 4. Then the app: it opens the pool and runs the migrations at import
+    from app import app
+    from seed_e2e import display_names
+    from tests.harness import harness_user
+    app.config["TESTING"] = True
+    app.config["TEST_USER_FACTORY"] = _user_factory(harness_user, display_names())
+
+    # 5. No reloader: it would run this launcher (and the drop) again in a child process
+    app.run(host=HOST, port=PORT, use_reloader=False)
+
+
+if __name__ == "__main__":
+    main()

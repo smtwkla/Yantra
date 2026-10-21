@@ -106,24 +106,24 @@ onMounted(reload);
         <option value="" disabled>Select a site…</option>
         <option v-for="s in siteChoices" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("site_id") }}</div>
+      <div v-if="fieldError('site_id')" class="invalid-feedback d-block">{{ fieldError("site_id") }}</div>
       <div class="form-text">Cannot be changed once the unit is in use.</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="unit-code">Code</label>
       <input id="unit-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="20" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">The part after the dot (e.g. FWMILL in SMTW.FWMILL). Cannot be changed once in use.</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="unit-name">Name</label>
       <input id="unit-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="unit-warehouse">OneERP warehouse</label>
       <input id="unit-warehouse" v-model="form.oneerp_warehouse" class="form-control" :class="{ 'is-invalid': fieldError('oneerp_warehouse') }" maxlength="140" />
-      <div class="invalid-feedback">{{ fieldError("oneerp_warehouse") }}</div>
+      <div v-if="fieldError('oneerp_warehouse')" class="invalid-feedback d-block">{{ fieldError("oneerp_warehouse") }}</div>
       <div class="form-text">Optional. Exact OneERP warehouse name; one warehouse maps to one unit.</div>
     </div>
   </FormModal>

@@ -95,7 +95,7 @@ onMounted(reload);
     <div class="mb-0">
       <label class="form-label" for="trade-name">Name</label>
       <input id="trade-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="50" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
       <div class="form-text">The kind of work, e.g. Electrician, Fitter (trade, or craft). A deactivated trade stays on the people who hold it.</div>
     </div>
   </FormModal>

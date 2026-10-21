@@ -117,6 +117,13 @@ class TestGate:
         monkeypatch.delitem(app.config, "TEST_USER_FACTORY")
         assert app.test_client().get(SITES, headers={"X-Test-Role": "it_admin"}).status_code == 401
 
+    def test_test_headers_outside_testing_are_401(self, app, monkeypatch):
+        """S024 BR1-08: with TESTING off (production), X-Test-Role and X-Test-User are ignored
+        and the request takes the Keycloak path, where no token is a 401."""
+        monkeypatch.setitem(app.config, "TESTING", False)
+        res = app.test_client().get(SITES, headers={"X-Test-Role": "admin", "X-Test-User": "e2e_admin"})
+        assert res.status_code == 401
+
 
 class TestDatabaseDown:
     """S013 BR1-01: the gate decides without the database; the hook neither slows nor breaks."""

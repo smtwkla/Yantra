@@ -96,18 +96,47 @@ the index row are updated, and the user is told.
 
 ## Manual checks
 
-Some checks only a person can do: a real phone, a production step, how a screen
-feels. The ones that matter are marked **important** in the brief's tests
-section; the rest stay plain notes.
+A brief's tests section lists the checks a person would make on the screens.
+The ones that matter are marked **important**; the rest stay plain notes. Since
+S024 they come in two kinds:
 
-- **The coder** copies them into the impl report's `## Manual checks`: each
-  important one as a box, `- [ ] …`; the rest as a plain list.
-- **At gate B** the planner shows the important ones as that checklist.
-- **The user** ticks each one or skips it with a reason. The planner records
-  it in the report (`[x]`, or `[skipped] <reason>`), never ticking a box on the
-  user's behalf.
-- **Done** needs every important check ticked or explicitly skipped; the status
-  records it, e.g. `Done (committed abc123; checks: 3 done, 1 skipped — iPhone)`.
+- **Automated** — anything a browser engine can judge: a screen opens, a flow
+  completes, a refusal shows beside its field, a dialog's buttons fit a phone.
+  Each becomes a browser test (Playwright, `frontend/e2e/`) that the coder
+  writes with the step. A test asserts what the user would see — the badge, the
+  timeline line, the times card, the message — not only that a page opened.
+- **On a real device** — the few a browser engine cannot judge: a real camera
+  or QR scan, paper from a printer and a ruler, the iPhone keyboard over a
+  dialog, a real login through Keycloak, how a gloved thumb copes. Done by the
+  user **or the named person, today IT Admin**.
+
+The rules:
+
+- **The coder** writes an e2e test for each automated check and runs
+  `tooling/run-e2e-tests.bat`. Only a passing run may mark a check in the impl
+  report's `## Manual checks` as
+  `- [auto] <check> — <test file>::<test name>`. Real-device checks go there as
+  boxes, `- [ ] …` (important) or a plain list, and the coder appends them as
+  rows to [`device-checks.md`](device-checks.md).
+- **The coder and the code reviewer** run the e2e tests whenever the frontend
+  or an API the screens use changed, and report the real result.
+- **`device-checks.md`** is the master list of open real-device checks, one row
+  per check in plain words: what to do and see, account, network, where (the
+  dev server on KLA's laptop, production on the TEST machine, or either) and
+  done. A done row stays as the record (who, when).
+- **The round trip.** The user hands the named person the rows (printed or by
+  chat); the person reports back to the user; the user tells the planner; the
+  planner writes `- [x] <check> — by <name>, DD-MM-YYYY` into the step's impl
+  report and fills the row's *Done* column. The person never edits the file.
+- **At gate B** the planner shows the `[auto]` checks as passed tests and the
+  real-device ones as the checklist. The user decides which checks are which,
+  and can skip any.
+- **Nobody ticks for someone else.** The planner records the user's or the
+  named person's answer (`[x] … — by <name>, DD-MM-YYYY`, or `[skipped]
+  <reason>`), never ticking a box on their behalf.
+- **Done** needs every important check `[auto]`, ticked for the user or the
+  named person, or skipped by the user; the status records it, e.g.
+  `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped — iPhone)`.
 
 ## Findings
 
@@ -136,8 +165,9 @@ section; the rest stay plain notes.
 3. **Code review.** Status `In code review`. Rounds repeat until no `blocker`
    or `major` finding is open.
 4. **Done.** The user commits; no terminal commits. The status becomes `Done`
-   once the commit is confirmed and every important manual check is ticked or
-   explicitly skipped by the user (§ Manual checks).
+   once the commit is confirmed and every important check is `[auto]` (from a
+   passing e2e run), ticked for the user or the named person (today IT Admin),
+   or explicitly skipped by the user (§ Manual checks).
 
 Whoever changes a step's status also updates its row in the index below.
 
@@ -244,17 +274,22 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S007 | [Dialog close guard; Nginx and deploy fixes](S007-dialog-guard-deploy-fixes/1-brief.md) — no lost input in dialogs; backend re-resolved; recreate on a secrets change | 2 | Done — committed 11789d7 + 7b504f4 | 16-10-2026 |
 | S008 | [Removed documents](S008-removed-documents/1-brief.md) — list removed files on Settings, restore, delete for good | 2 | Done — committed 799851c | 16-10-2026 |
 | S009 | [Documents on classes and types](S009-class-type-documents/1-brief.md) — one manual for every `RPP` pump, shown on each node | 2 | Dropped 16-10-2026 — documents belong on a model master (queued); code kept as `s009-code.patch` | 16-10-2026 |
-| S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | In code review — amendment A1 (Team; A1 approved 16-10-2026) | 16-10-2026 |
-| S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | In code review (A1 approved 16-10-2026; built on uncommitted S010, baseline tree 15227de) | 16-10-2026 |
-| S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | In code review (approved 17-10-2026; on top of c486a4a) | 16-10-2026 |
-| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | In code review (approved 18-10-2026; on top of 3e338b4; A1 approved 18-10-2026 — one row per sighting per day) | 18-10-2026 |
-| S014 | [QR labels](S014-qr-labels/1-brief.md) — 52 mm labels on A4 paper, 15 per sheet; link `/e/<code>` opens the equipment page; link address in Settings | 2 | In code review (approved 18-10-2026; on top of uncommitted S013) | 18-10-2026 |
+| S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | Committed c486a4a; manual checks pending (Team; A1 approved 16-10-2026) | 16-10-2026 |
+| S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | Committed c486a4a (with S010); manual checks pending (A1 approved 16-10-2026) | 16-10-2026 |
+| S012 | [Equipment models](S012-equipment-models/1-brief.md) — manufacturers and models masters; equipment picks its model (class and type from it); documents on the model | 2 | Committed 3e338b4; manual checks pending (approved 17-10-2026) | 16-10-2026 |
+| S013 | [Network gate, access log, job queue](S013-network-gate-access-log/1-brief.md) — IT admin from the plant network only; access log; task_queue + daily scheduler | 1 | Committed ae0f183; manual checks pending (approved 18-10-2026; A1 approved 18-10-2026 — one row per sighting per day) | 18-10-2026 |
+| S014 | [QR labels](S014-qr-labels/1-brief.md) — 52 mm labels on A4 paper, 15 per sheet; link `/e/<code>` opens the equipment page; link address in Settings | 2 | Committed dde0d68; manual checks pending (approved 18-10-2026) | 18-10-2026 |
 | S015 | [Printable asset list](S015-asset-list/1-brief.md) — per site / unit, one page per unit; parts optional; checklist columns and signature footer optional | 2 | Committed 6c771e1; manual checks pending (approved 20-10-2026; light track) | 18-10-2026 |
 | S016 | [Failure codes](S016-failure-codes/1-brief.md) — failure modes (symptoms, per class or general), causes in ISO groups, maintenance actions; pre-filled from ISO 14224 Annex B | 3 | Committed 6c771e1; manual checks pending (approved 20-10-2026; full track) | 18-10-2026 |
 | S017 | [Raise and see tickets](S017-raise-tickets/1-brief.md) — breakdown or defect by intensity, on any node; symptom optional; photos; open-tickets list; ticket page with timeline; serial `TK-` | 3 | Committed cfedc46; manual checks pending (full track) | 20-10-2026 |
 | S018 | [Work the ticket](S018-work-tickets/1-brief.md) — acknowledge, start, back in service (production too), send back, close with cause/action, not a fault; labour, assignment, re-grade, repeat; response/repair/downtime | 3 | Committed ae3841f; manual checks pending (full track; A1 — Already fixed on the raise screen) | 20-10-2026 |
+| S019 | [Deferred work](S019-deferred-work/1-brief.md) — scheduled state, planned date, waiting reason; planned vs breakdown downtime; waiting split on critical tickets | 3 | Approved 21-10-2026 (full track; coded after S025) | 21-10-2026 |
+| S020 | [Parts used](S020-parts-used/1-brief.md) — a structured parts line on tickets (maker or generic part number, description, quantity), on the ticket's component | 3 | Approved 21-10-2026 (full track; coded after S025) | 21-10-2026 |
+| S021 | [Alerts: PWA and web push](S021-alerts-push/1-brief.md) — installable app, push per device; new breakdown → engineers, the unit's supervisor, maintenance manager; defects → engineers quietly; escalation times as settings | 3 | Approved 21-10-2026 (full track; coded after S025) | 21-10-2026 |
 | S022 | [Software inventory and vulnerability check](S022-dependency-inventory/1-brief.md) — CycloneDX SBOMs in `sbom/` from the lockfiles; OSV lookup for CVEs; stale direct dependencies | — | Committed 76fccf7; manual checks pending (approved 18-10-2026; full track) | 18-10-2026 |
-| S024 | [Browser tests (Playwright)](S024-browser-tests/1-brief.md) — every screen opens as each role, S014–S018 checks as browser tests on phone and desktop; automated vs real-device checks in the workflow; IT admin device checklist | — | In review (full track) | 21-10-2026 |
+| S023 | [Alerts: Telegram and end-of-shift list](S023-alerts-telegram/1-brief.md) — the existing bot to the maintenance group; tickets back in service but not closed by end of shift (split from S021, user 21-10-2026) | 3 | Parked 21-10-2026 by the user (PWA push alone for now; brief kept for later) | 21-10-2026 |
+| S024 | [Browser tests (Playwright)](S024-browser-tests/1-brief.md) — every screen opens as each role, S014–S018 checks as browser tests on phone and desktop; automated vs real-device checks in the workflow; IT admin device checklist | — | Gate B (approved 21-10-2026; full track; A1, A2 coded; CR r2 clean) | 21-10-2026 |
+| S025 | [Release safety and ticket integrity](S025-audit-fixes/1-brief.md) — audit 21-10-2026 [1]-[4], [6], [9], [10]: squashed schema v20 with a guard, schema-ready deploy check, build.bat checks, JSON errors; units frozen by tickets, no send-back after a repeat, locked component check, not a fault after Start | — | Approved 21-10-2026 (full track; coded after S024) | 21-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -263,9 +298,6 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 
 | Idea | From | Note |
 |---|---|---|
-| **S019** Deferred work — scheduled state, planned date, waiting reason; planned vs breakdown downtime; waiting split on critical tickets | phase 3 plan, user 18-10-2026 | Plan.MD Q13; meter-value targets wait for phase 4 |
-| **S020** Parts used — a structured parts line on tickets (maker or generic part number, description, quantity) | phase 3 plan, user 18-10-2026 | Plan.MD Q21. The raise-and-close half (Q23) is done by S018 A1 (*Already fixed* on the raise screen, 20-10-2026) |
-| **S021** Alerts — PWA shell, web push, Telegram via the job queue; new breakdown and escalation; escalation times as settings; not-closed-by-end-of-shift list | phase 3 plan, user 18-10-2026 | Plan.MD Q2, Q12; decide whether defects notify. Then phase 4 (PM engine) |
 | Image SBOM at build — an SBOM of each built image (base image, OS packages, venv), stored with the image in GHCR. Candidate: Docker's built-in `docker build --sbom=true` (SPDX; needs the containerd image store), no third-party scanner; `BUILDKIT_SBOM_SCAN_STAGE` to see the frontend's bundled libraries | S022 U1, user 18-10-2026 (keep both repo and image checks) | Each repo's build script changes; any shared part in `smtw-common` |
 | aibots scanner bot — reads every app's `sbom/` (CycloneDX) and the SBOM of the **deployed** image version (SPDX; not `latest`), looks them up in OSV, reports, with LLM advice on updates and migrations | S022 U1, user 18-10-2026 | In the aibots repo; needs S022's SBOM files. Separately, aibots's containers install from unpinned `requirements.txt`, so its lockfile isn't what runs |
 | Calibration — measuring-instrument class (range, required accuracy, calibration class, owning department, custodian); certification plan per instrument; in-house verification plans with error readings and the out-of-tolerance ticket; QR label as the calibration sticker | user, 20-10-2026 (ISO 9001 a future goal) | Plan.MD Q24, § 4.3; phase 4, after certification plans (Q20); ISO 9001 § 7.1.5 |

@@ -88,7 +88,7 @@ defineExpose({ open });
         <option value="">— The machine itself —</option>
         <option v-for="c in components" :key="c.id" :value="c.id">{{ c.label }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("component_id") }}</div>
+      <div v-if="fieldError('component_id')" class="invalid-feedback d-block">{{ fieldError("component_id") }}</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="edit-mode">Symptom</label>
@@ -96,7 +96,7 @@ defineExpose({ open });
         <option value="">— Not sure —</option>
         <option v-for="m in modes" :key="m.id" :value="m.id">{{ m.label }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("failure_mode_id") }}</div>
+      <div v-if="fieldError('failure_mode_id')" class="invalid-feedback d-block">{{ fieldError("failure_mode_id") }}</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="edit-description">Description</label>
@@ -108,7 +108,7 @@ defineExpose({ open });
         rows="3"
         :maxlength="DESCRIPTION_MAX"
       ></textarea>
-      <div class="invalid-feedback">{{ fieldError("description") }}</div>
+      <div v-if="fieldError('description')" class="invalid-feedback d-block">{{ fieldError("description") }}</div>
     </div>
   </FormModal>
 </template>

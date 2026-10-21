@@ -31,33 +31,19 @@ import config
 config.DB_CONFIG["database"] = "vel_yantra_test"
 
 import access_control
-from access_core import Membership
 from app import app as flask_app
-from auth_utils import make_user
-from config_rbac import LOGIN_ROLE, SITE_ROLES, TOKEN_ROLES
+from config_rbac import LOGIN_ROLE, SITE_ROLES
 from db_helpers import transaction
 from local_db import ensure_schema, get_local_db
 from tests.access_helpers import site_rows
+from tests.harness import harness_user
 
 
 # ---------------------------------------------------------------------------
 # The X-Test-Role harness: require_auth calls TEST_USER_FACTORY(role, X-Test-User) in
-# TESTING mode and sets g.user itself, so every later hook sees it (S013 BR1-02)
+# TESTING mode and sets g.user itself, so every later hook sees it (S013 BR1-02).
+# harness_user lives in tests/harness.py, shared with the browser tests' backend (S024).
 # ---------------------------------------------------------------------------
-
-def harness_user(role_name, username):
-    """The g.user for an X-Test-Role header (S011 § 5.8):
-    - a site role: that role at every site (a wildcard membership; DB memberships ignored),
-      all units only for the manager; the unit rows come from the DB, as in production;
-    - admin, it_admin, maintenance_team: token roles; memberships from the DB, as in production;
-    - anything else ("nobody"): no token role and no membership, never a wildcard."""
-    name = f"Test {role_name}"
-    if role_name in SITE_ROLES:
-        return make_user(username, name, [LOGIN_ROLE], [Membership(None, role_name, role_name == "maint_manager")])
-    if role_name in ("admin", LOGIN_ROLE, *TOKEN_ROLES):
-        return make_user(username, name, [role_name])
-    return make_user(username, name, [], [])
-
 
 def _test_user_factory(role_name, username):
     # X-Test-User gives a unit-access test its own fresh username (default test_<role>)

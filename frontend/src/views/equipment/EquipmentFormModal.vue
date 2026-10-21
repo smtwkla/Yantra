@@ -198,7 +198,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
           <option value="" disabled>Select a unit…</option>
           <option v-for="u in unitChoices" :key="u.id" :value="u.id">{{ u.code }} — {{ u.name }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("unit_id") }}</div>
+        <div v-if="fieldError('unit_id')" class="invalid-feedback d-block">{{ fieldError("unit_id") }}</div>
       </div>
     </div>
     <div v-else class="mb-3">
@@ -227,7 +227,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
         <option value="" disabled>Select a model…</option>
         <option v-for="m in modelOptions" :key="m.id" :value="m.id">{{ m.text }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("model_id") }}</div>
+      <div v-if="fieldError('model_id')" class="invalid-feedback d-block">{{ fieldError("model_id") }}</div>
       <div v-if="showNoModelHint" class="form-text">
         This class has no model yet. Add a model in Masters › Models (a Generic one if the maker is unknown).
       </div>
@@ -245,19 +245,19 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
     <div class="mb-3">
       <label class="form-label" for="eq-name">Name</label>
       <input id="eq-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
     </div>
 
     <div class="row g-3">
       <div class="col-sm-4">
         <label class="form-label" for="eq-serial">Serial no.</label>
         <input id="eq-serial" v-model="form.serial_no" class="form-control" :class="{ 'is-invalid': fieldError('serial_no') }" maxlength="100" />
-        <div class="invalid-feedback">{{ fieldError("serial_no") }}</div>
+        <div v-if="fieldError('serial_no')" class="invalid-feedback d-block">{{ fieldError("serial_no") }}</div>
       </div>
       <div class="col-sm-4">
         <label class="form-label" for="eq-year">Year</label>
         <input id="eq-year" v-model="form.year" type="number" class="form-control" :class="{ 'is-invalid': fieldError('year') }" />
-        <div class="invalid-feedback">{{ fieldError("year") }}</div>
+        <div v-if="fieldError('year')" class="invalid-feedback d-block">{{ fieldError("year") }}</div>
       </div>
       <div class="col-sm-4">
         <label class="form-label" for="eq-crit">Criticality</label>
@@ -267,21 +267,21 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
           <option value="B">B</option>
           <option value="C">C</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("criticality") }}</div>
+        <div v-if="fieldError('criticality')" class="invalid-feedback d-block">{{ fieldError("criticality") }}</div>
       </div>
       <div v-if="!isEdit" class="col-sm-4">
         <label class="form-label" for="eq-status">Status</label>
         <select id="eq-status" v-model="form.status" class="form-select" :class="{ 'is-invalid': fieldError('status') }">
           <option v-for="[value, text] in CREATE_STATUSES" :key="value" :value="value">{{ text }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("status") }}</div>
+        <div v-if="fieldError('status')" class="invalid-feedback d-block">{{ fieldError("status") }}</div>
       </div>
     </div>
 
     <div class="mt-3">
       <label class="form-label" for="eq-notes">Notes</label>
       <textarea id="eq-notes" v-model="form.notes" class="form-control" :class="{ 'is-invalid': fieldError('notes') }" rows="4" maxlength="2000"></textarea>
-      <div class="invalid-feedback">{{ fieldError("notes") }}</div>
+      <div v-if="fieldError('notes')" class="invalid-feedback d-block">{{ fieldError("notes") }}</div>
       <div class="form-text">Visible to everyone who can see this equipment — no passwords or prices.</div>
     </div>
   </FormModal>

@@ -218,7 +218,7 @@ defineExpose({ open });
           <option value="">—</option>
           <option v-for="m in modes" :key="m.id" :value="m.id">{{ m.label }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("failure_mode_id") }}</div>
+        <div v-if="fieldError('failure_mode_id')" class="invalid-feedback d-block">{{ fieldError("failure_mode_id") }}</div>
       </div>
     </template>
 
@@ -231,7 +231,7 @@ defineExpose({ open });
             <option v-for="c in g.causes" :key="c.id" :value="c.id">{{ c.code }} {{ c.label }}</option>
           </optgroup>
         </select>
-        <div class="invalid-feedback">{{ fieldError("cause_id") }}</div>
+        <div v-if="fieldError('cause_id')" class="invalid-feedback d-block">{{ fieldError("cause_id") }}</div>
       </div>
     </template>
 
@@ -242,7 +242,7 @@ defineExpose({ open });
           <option value="">—</option>
           <option v-for="a in activeActions" :key="a.id" :value="a.id">{{ a.code }} {{ a.label }}</option>
         </select>
-        <div class="invalid-feedback">{{ fieldError("action_id") }}</div>
+        <div v-if="fieldError('action_id')" class="invalid-feedback d-block">{{ fieldError("action_id") }}</div>
       </div>
     </template>
 

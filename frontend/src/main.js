@@ -1,6 +1,6 @@
 import { createApp } from "vue";
 import "bootstrap/dist/css/bootstrap.min.css";
-import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import "bootstrap"; // the ES build, once: components import { Modal } from the same copy; it needs @popperjs/core (bootstrap's peer, already installed)
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./assets/main.css";
 

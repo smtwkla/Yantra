@@ -33,6 +33,7 @@ const keepEditingButton = ref(null);
 const confirming = ref(false); // the "Discard your changes?" bar replaces the footer buttons
 let modal = null;
 let allowHide = false; // set only around our own hide() calls
+let visible = false; // from open() until Bootstrap's hidden event: the dialog is shown or still closing
 let focusBeforeConfirm = null;
 
 // Bootstrap's cancellable event; prevented, hide() stops there (no shake, no focus change)
@@ -88,15 +89,38 @@ onMounted(() => {
   modal = Modal.getOrCreateInstance(el.value, { backdrop: "static" });
   // addEventListener, not a template @hide.bs.modal: Vue would read that as the event "hide" with modifiers
   el.value.addEventListener("hide.bs.modal", onHide);
+  el.value.addEventListener("hidden.bs.modal", () => {
+    visible = false;
+  });
 });
+// A page that navigates away right after close() unmounts this component while the dialog is
+// still fading out; disposing then makes Bootstrap's pending callback fail on a null element
+// ("Cannot read properties of null (reading 'style')").  So a dialog that is still visible is
+// closed and disposed only once Bootstrap says it is hidden.
 onBeforeUnmount(() => {
-  el.value?.removeEventListener("hide.bs.modal", onHide);
-  modal?.dispose();
+  const element = el.value;
+  const instance = modal;
+  if (!instance) return;
+  if (!visible) {
+    element.removeEventListener("hide.bs.modal", onHide);
+    instance.dispose();
+    return;
+  }
+  element.addEventListener(
+    "hidden.bs.modal",
+    () => {
+      element.removeEventListener("hide.bs.modal", onHide);
+      instance.dispose();
+    },
+    { once: true },
+  );
+  hideNow();
 });
 
 defineExpose({
   open: () => {
     confirming.value = false;
+    visible = true;
     modal.show();
   },
   close: hideNow,

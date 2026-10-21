@@ -92,23 +92,23 @@ onMounted(reload);
     <div class="mb-3">
       <label class="form-label" for="site-code">Code</label>
       <input id="site-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="20" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">Cannot be changed once in use.</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="site-name">Name</label>
       <input id="site-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="site-address">Address</label>
       <input id="site-address" v-model="form.address" class="form-control" :class="{ 'is-invalid': fieldError('address') }" maxlength="255" />
-      <div class="invalid-feedback">{{ fieldError("address") }}</div>
+      <div v-if="fieldError('address')" class="invalid-feedback d-block">{{ fieldError("address") }}</div>
     </div>
     <div class="form-check mb-0">
       <input id="site-default" v-model="form.is_default" class="form-check-input" :class="{ 'is-invalid': fieldError('is_default') }" type="checkbox" />
       <label class="form-check-label" for="site-default">Default</label>
-      <div class="invalid-feedback">{{ fieldError("is_default") }}</div>
+      <div v-if="fieldError('is_default')" class="invalid-feedback d-block">{{ fieldError("is_default") }}</div>
       <div class="form-text">Preselected wherever a site is chosen. Only one site can be the default.</div>
     </div>
   </FormModal>

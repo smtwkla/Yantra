@@ -53,7 +53,7 @@ defineExpose({ open });
       <select id="status-choice" v-model="form.status" class="form-select" :class="{ 'is-invalid': fieldError('status') }">
         <option v-for="s in STATUS_ORDER" :key="s" :value="s">{{ STATUS_LABELS[s] }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("status") }}</div>
+      <div v-if="fieldError('status')" class="invalid-feedback d-block">{{ fieldError("status") }}</div>
       <div class="form-text">{{ STATUS_HELP[form.status] }}</div>
     </div>
     <div v-if="scrapping" class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mt-3 mb-0">

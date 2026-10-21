@@ -339,7 +339,7 @@ onMounted(reload);
     <div class="mb-3">
       <label class="form-label" for="person-name">Name</label>
       <input id="person-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
       <div class="form-text">A person, or a contractor firm.</div>
     </div>
     <div class="mb-3">
@@ -368,7 +368,7 @@ onMounted(reload);
       <template v-if="canEditLogin">
         <label class="form-label" for="person-login">Login (optional)</label>
         <input id="person-login" v-model="form.username" class="form-control" :class="{ 'is-invalid': fieldError('username') }" maxlength="100" />
-        <div class="invalid-feedback">{{ fieldError("username") }}</div>
+        <div v-if="fieldError('username')" class="invalid-feedback d-block">{{ fieldError("username") }}</div>
         <!-- The user's own login shows the format to type: logins are not checked against Keycloak -->
         <div class="form-text">
           Their Maintenance Team Login ID.<template v-if="userLogin"> Your own login, for ex: <code>{{ userLogin }}</code></template>

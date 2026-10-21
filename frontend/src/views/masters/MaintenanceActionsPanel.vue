@@ -99,19 +99,19 @@ onMounted(reload);
     <div class="mb-3">
       <label class="form-label" for="action-code">Code</label>
       <input id="action-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="8" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">Up to 8 letters and digits, parts joined by dots, e.g. 7 (ISO's numbers).</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="action-label">Action</label>
       <input id="action-label" v-model="form.label" class="form-control" :class="{ 'is-invalid': fieldError('label') }" maxlength="60" />
-      <div class="invalid-feedback">{{ fieldError("label") }}</div>
+      <div v-if="fieldError('label')" class="invalid-feedback d-block">{{ fieldError("label") }}</div>
       <div class="form-text">What was done, e.g. Replace, Adjust, Service.</div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="action-description">Description <span class="text-secondary">(optional)</span></label>
       <input id="action-description" v-model="form.description" class="form-control" :class="{ 'is-invalid': fieldError('description') }" maxlength="255" />
-      <div class="invalid-feedback">{{ fieldError("description") }}</div>
+      <div v-if="fieldError('description')" class="invalid-feedback d-block">{{ fieldError("description") }}</div>
     </div>
   </FormModal>
 </template>

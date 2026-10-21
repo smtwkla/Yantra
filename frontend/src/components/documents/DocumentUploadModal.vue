@@ -125,7 +125,7 @@ defineExpose({ open });
         :accept="ACCEPT[form.kind]"
         @change="onFileChosen"
       />
-      <div class="invalid-feedback">{{ fileError }}</div>
+      <div v-if="fileError" class="invalid-feedback d-block">{{ fileError }}</div>
       <div class="form-text">
         <template v-if="uploadMaxMb">At most {{ uploadMaxMb }} MB.</template>
         <template v-if="form.kind === 'photo'">{{ IPHONE_PHOTO_HINT }}</template>
@@ -140,7 +140,7 @@ defineExpose({ open });
         :class="{ 'is-invalid': fieldError('title') }"
         :maxlength="TITLE_MAX"
       />
-      <div class="invalid-feedback">{{ fieldError("title") }}</div>
+      <div v-if="fieldError('title')" class="invalid-feedback d-block">{{ fieldError("title") }}</div>
       <div v-if="everySite" class="form-text">Visible at every site: no confidential documents (contracts, prices).</div>
       <div v-else-if="ticketOwner" class="form-text">Everyone who can see this ticket can see it.</div>
       <div v-else class="form-text">Everyone who can see this equipment can see it: no confidential documents (contracts, prices).</div>

@@ -192,12 +192,12 @@ defineExpose({ openAdd });
             <option v-for="t in otherTrades" :key="t.id" :value="t.id">{{ t.name }}</option>
           </optgroup>
         </select>
-        <div class="invalid-feedback">{{ fieldError("trade_id") }}</div>
+        <div v-if="fieldError('trade_id')" class="invalid-feedback d-block">{{ fieldError("trade_id") }}</div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="labour-date">Date</label>
         <input id="labour-date" v-model="form.work_date" class="form-control" :class="{ 'is-invalid': fieldError('work_date') }" type="date" />
-        <div class="invalid-feedback">{{ fieldError("work_date") }}</div>
+        <div v-if="fieldError('work_date')" class="invalid-feedback d-block">{{ fieldError("work_date") }}</div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="labour-hours">Time spent</label>

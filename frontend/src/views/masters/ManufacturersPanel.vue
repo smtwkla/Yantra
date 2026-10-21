@@ -97,7 +97,7 @@ onMounted(reload);
     <div class="mb-0">
       <label class="form-label" for="maker-name">Name</label>
       <input id="maker-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
       <div class="form-text">
         The maker as it should always be spelled, e.g. Atlas Copco. A rename shows at once on its models and
         equipment. To deactivate it, deactivate its models first.

@@ -94,13 +94,13 @@ onMounted(reload);
     <div class="mb-3">
       <label class="form-label" for="class-code">Code</label>
       <input id="class-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="4" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">2–4 letters; becomes the prefix of equipment codes (e.g. VBM001). Cannot be changed once in use.</div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="class-name">Name</label>
       <input id="class-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
-      <div class="invalid-feedback">{{ fieldError("name") }}</div>
+      <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
     </div>
   </FormModal>
 </template>

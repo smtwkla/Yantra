@@ -124,25 +124,25 @@ onMounted(reload);
         <option value="" disabled>Select a group…</option>
         <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
       </select>
-      <div class="invalid-feedback">{{ fieldError("cause_group") }}</div>
+      <div v-if="fieldError('cause_group')" class="invalid-feedback d-block">{{ fieldError("cause_group") }}</div>
       <div class="form-text">ISO 14224's five groups: reports roll the plant's own causes up into them.</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="cause-code">Code</label>
       <input id="cause-code" v-model="form.code" class="form-control" :class="{ 'is-invalid': fieldError('code') }" maxlength="8" />
-      <div class="invalid-feedback">{{ fieldError("code") }}</div>
+      <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">Up to 8 letters and digits, parts joined by dots, e.g. 3.4 (ISO's numbers).</div>
     </div>
     <div class="mb-3">
       <label class="form-label" for="cause-label">Cause</label>
       <input id="cause-label" v-model="form.label" class="form-control" :class="{ 'is-invalid': fieldError('label') }" maxlength="60" />
-      <div class="invalid-feedback">{{ fieldError("label") }}</div>
+      <div v-if="fieldError('label')" class="invalid-feedback d-block">{{ fieldError("label") }}</div>
       <div class="form-text">Why it failed, e.g. Expected wear and tear, Oil contamination.</div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="cause-description">Description <span class="text-secondary">(optional)</span></label>
       <input id="cause-description" v-model="form.description" class="form-control" :class="{ 'is-invalid': fieldError('description') }" maxlength="255" />
-      <div class="invalid-feedback">{{ fieldError("description") }}</div>
+      <div v-if="fieldError('description')" class="invalid-feedback d-block">{{ fieldError("description") }}</div>
     </div>
   </FormModal>
 </template>

@@ -45,7 +45,7 @@ defineExpose({ open: openEdit });
         :class="{ 'is-invalid': fieldError('title') }"
         :maxlength="TITLE_MAX"
       />
-      <div class="invalid-feedback">{{ fieldError("title") }}</div>
+      <div v-if="fieldError('title')" class="invalid-feedback d-block">{{ fieldError("title") }}</div>
     </div>
   </FormModal>
 </template>

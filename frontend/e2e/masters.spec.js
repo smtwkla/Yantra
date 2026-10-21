@@ -1,0 +1,144 @@
+// Masters › Failure codes (S016) — in place of its manual checks: the pre-filled lists, a class's
+// own modes, the label rule, deactivate / reactivate, read-only for an operator, and the lists
+// on a phone.
+import { test, expect } from "./support/test.js";
+import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll } from "./support/dialogs.js";
+import { asPerson } from "./support/people.js";
+import { saveDialog } from "./support/tickets.js";
+
+const PRESS_CLASS = "HP"; // Hydraulic press, from the dev seed's classes
+const GENERAL_MODES = 14; // the General modes migration v11 fills in (S016 § 4.4)
+
+/** Masters › Failure codes, on the list `list` ("Modes", "Causes", "Actions"). */
+async function openFailureCodes(page, key, list = "Modes") {
+  await asPerson(page, key, "/masters");
+  await page.getByRole("button", { name: "Failure codes" }).click();
+  await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: list }).click();
+}
+
+const rows = (page) => page.locator("table tbody tr");
+
+test("engineer: the pre-filled lists are there; a press mode is added and the press filter shows it", async ({ page }, testInfo) => {
+  await openFailureCodes(page, "engineer");
+  const filter = page.getByLabel("Filter by class");
+  await filter.selectOption({ label: "General" });
+  await expect(rows(page)).toHaveCount(GENERAL_MODES);
+
+  // A code and label of this project's own: the three projects share one database
+  const suffix = testInfo.project.name.split("-").map((w) => w[0].toUpperCase()).join("");
+  const code = `RAM${suffix}`;
+  const label = `Ram does not return (${testInfo.project.name})`;
+  await filter.selectOption({ label: PRESS_CLASS });
+  await page.getByRole("button", { name: "Add mode" }).click();
+  await expectDialogFits(page);
+  const dialog = page.locator(".modal.show");
+  await expect(dialog.getByLabel("Class")).toHaveValue(/\d+/); // the filtered class is pre-picked
+  await dialog.getByLabel("Code").fill(code);
+  await dialog.getByLabel("Symptom").fill(label);
+  await saveDialog(page, "Save");
+  await expect(rows(page).filter({ hasText: label })).toContainText(PRESS_CLASS);
+  // The press filter shows the press's own modes only
+  await expect(rows(page).filter({ hasNotText: PRESS_CLASS })).toHaveCount(0);
+
+  await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: "Causes" }).click();
+  await expect(rows(page).filter({ hasText: "No cause found" })).toContainText("5.1");
+  await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: "Actions" }).click();
+  await expect(rows(page).first()).toBeVisible();
+});
+
+test("engineer: a press mode labelled like a General one is refused", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/api/masters/failure-modes", 409);
+  await openFailureCodes(page, "engineer");
+  await page.getByLabel("Filter by class").selectOption({ label: PRESS_CLASS });
+  await page.getByRole("button", { name: "Add mode" }).click();
+  const dialog = page.locator(".modal.show");
+  await dialog.getByLabel("Code").fill("XNOI");
+  await dialog.getByLabel("Symptom").fill("Abnormal noise");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, /A failure mode with this label exists \(NOI, General\)/);
+  await expect(dialog).toBeVisible();
+});
+
+test("engineer: a deactivated mode is hidden unless Show inactive, and comes back on reactivate", async ({ page }) => {
+  await openFailureCodes(page, "engineer");
+  const mode = rows(page).filter({ hasText: "Stops by itself" });
+  await mode.getByTitle("Edit").click();
+  await expectDialogFits(page);
+  await page.getByRole("button", { name: "Deactivate" }).click();
+  await page.locator(".modal.show").getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  await expect(mode).toHaveCount(0);
+
+  await page.getByLabel("Show inactive").check();
+  await expect(mode).toContainText("Inactive");
+  await mode.getByTitle("Edit").click();
+  await page.getByRole("button", { name: "Reactivate" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  await page.getByLabel("Show inactive").uncheck();
+  await expect(mode).toContainText("Active");
+});
+
+// Add and edit of a cause and of an action (brief § 1.4); the dialogs are checked to fit each time.
+for (const kind of [
+  { list: "Causes", noun: "a cause", add: "Add cause", prefix: "C", needsGroup: true, labelField: "#cause-label", codeField: "#cause-code" },
+  { list: "Actions", noun: "an action", add: "Add action", prefix: "A", labelField: "#action-label", codeField: "#action-code" },
+]) {
+  test(`engineer: ${kind.noun} is added and edited`, async ({ page }, testInfo) => {
+    await openFailureCodes(page, "engineer", kind.list);
+    // Code and label of this project's own: the three projects share one database
+    const suffix = testInfo.project.name.split("-").map((w) => w[0].toUpperCase()).join("");
+    const code = `${kind.prefix}${suffix}`;
+    const label = `S024 ${kind.list} ${testInfo.project.name}`;
+    const edited = `${label} edited`;
+
+    await page.getByRole("button", { name: kind.add }).click();
+    await expectDialogFits(page);
+    const dialog = page.locator(".modal.show");
+    if (kind.needsGroup) await dialog.locator("#cause-group").selectOption({ label: "Operation / maintenance" }); // the list is not filtered, so no group is pre-picked
+    await dialog.locator(kind.codeField).fill(code);
+    await dialog.locator(kind.labelField).fill(label);
+    await saveDialog(page, "Save");
+    const row = rows(page).filter({ hasText: label });
+    await expect(row).toContainText(code);
+
+    await row.getByTitle("Edit").click();
+    await expectDialogFits(page);
+    await page.locator(".modal.show").locator(kind.labelField).fill(edited);
+    await saveDialog(page, "Save");
+    await expect(rows(page).filter({ hasText: edited })).toHaveCount(1);
+  });
+}
+
+// The Masters sections no other test opens (S024 CR1-04): each one shows its table, and its Add
+// dialog fits the screen and shows the server's refusal beside the field when saved empty.
+for (const section of [
+  { button: "Units", add: "Add unit", api: "/api/masters/units", person: "it_admin" },
+  { button: "Equip Class", add: "Add class", api: "/api/masters/equipment-classes", person: "engineer" },
+  { button: "Equip Type", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
+  { button: "Trades", add: "Add trade", api: "/api/masters/trades", person: "engineer", message: "Name is required" },
+]) {
+  test(`${section.person}: the ${section.button} section opens, and an empty ${section.add.toLowerCase()} is refused beside its field`, async ({ page, consoleWatch }) => {
+    consoleWatch.allowFailedRequest(section.api, 400);
+    await asPerson(page, section.person, "/masters");
+    await page.getByRole("button", { name: section.button, exact: true }).click();
+    await expect(rows(page).first()).toBeVisible();
+    await page.getByRole("button", { name: section.add }).click();
+    await expectDialogFits(page);
+    const dialog = page.locator(".modal.show");
+    await dialog.locator(".modal-footer button[type=submit]").click();
+    if (section.message) await expectFieldMessage(dialog, section.message);
+    else await expect(dialog.locator(".invalid-feedback").first()).toBeVisible();
+    await expect(dialog).toBeVisible();
+  });
+}
+
+test("operator: the failure codes are read-only, and the lists fit a phone", async ({ page }) => {
+  await openFailureCodes(page, "operator");
+  for (const list of ["Modes", "Causes", "Actions"]) {
+    await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: list }).click();
+    await expect(rows(page).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Add / })).toHaveCount(0);
+    await expect(page.getByTitle("Edit")).toHaveCount(0);
+    await expectNoSidewaysScroll(page);
+  }
+});
