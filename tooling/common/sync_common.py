@@ -30,6 +30,7 @@ FILES = [
     ("tooling/common/release.py", "tooling/common/release.py"),
     ("tooling/common/ccssh.py", "tooling/common/ccssh.py"),
     ("tooling/common/ccloki.py", "tooling/common/ccloki.py"),
+    ("tooling/common/material_icon.py", "tooling/common/material_icon.py"),
 ]
 
 # Source directories in smtw-common repo to recursively sync into the project

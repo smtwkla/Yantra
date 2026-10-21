@@ -5,7 +5,7 @@
 """Download Google Material Symbols icons as self-hosted SVG files.
 
     uv run tooling/common/material_icon.py table_edit conveyor_belt --out frontend/src/assets/icons
-    uv run tooling/common/material_icon.py build --out icons --style rounded --weight 300 --no-fill --grade -25 --size 20
+    uv run tooling/common/material_icon.py conveyor_belt --out icons --style rounded --weight 300 --no-fill --grade -25 --size 20
 
 Each icon is fetched from Google's per-icon SVG endpoint (the one behind
 fonts.google.com/icons) and saved as <out>/<name>.svg. The fixed width/height
