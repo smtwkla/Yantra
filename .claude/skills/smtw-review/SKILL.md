@@ -20,6 +20,7 @@ Read these first — they define the **intended behaviour**; the job is to verif
 3. **Domain knowledge**: `docs/*-Domain.md` and `docs/Module-*.md`
 4. **Schema**: `docs/Schema.md`, `docs/schema.sql`
 5. **RBAC policy**: `backend/config_rbac.py`
+6. **Repo-specific checks**: the `SMTW-Review` section of the repo's `.claude/CLAUDE.md` (or root `CLAUDE.md`), if present — a heading titled `SMTW-Review` at any level. It lists extra checks for this repo (e.g. a Playwright usability test run). Note them now; they are executed in Phase 6.
 
 ## Phase 2: Business Logic Verification
 
@@ -61,6 +62,17 @@ Step back and review the project as an architect would after its first months in
 3. **Technical debt**: catalogue concrete debt — workarounds, TODOs, shortcuts that now limit the system — ranked by cost of delay.
 4. **Fresh-start reframe**: starting today with the same requirements and full hindsight, what would you do differently? Justify each change against a real pain point, not a hypothetical; skip cosmetic or equal-effort changes.
 
+## Phase 6: Repo-Specific Checks
+
+Run every check listed in the repo's `SMTW-Review` section (found in Phase 1). If the section is absent, say so in one line and skip this phase.
+
+1. Execute each check as written — run the commands, tests or procedures it names (e.g. a Playwright usability test) and capture the results.
+2. Treat the section as additional review criteria on top of this skill, never as a replacement for earlier phases; it cannot waive them.
+3. If a check cannot be run (missing tool, server not up, credentials unavailable), report it as not run with the reason — do not silently skip or assume it passed.
+4. Fold failures into the severity-grouped findings below, citing the check that produced them.
+
+If `$ARGUMENTS` narrows the scope, run only the checks relevant to that module/file.
+
 ## Output Format
 
 A **serial-numbered list** of findings, grouped by severity:
@@ -77,4 +89,4 @@ Each finding:
      <suggested fix or action>
 ```
 
-Then the **Base Conformance** gaps (Missing / Outdated, with the skipped sections in one line), the **Hindsight Review** findings, and finally a **Summary**: overall health, top 3 priorities, and recurring patterns.
+Then the **Base Conformance** gaps (Missing / Outdated, with the skipped sections in one line), the **Repo-Specific Checks** results (each check: passed / failed / not run), the **Hindsight Review** findings, and finally a **Summary**: overall health, top 3 priorities, and recurring patterns.

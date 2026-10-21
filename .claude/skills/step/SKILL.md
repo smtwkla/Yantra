@@ -73,8 +73,13 @@ brief's header (`Track: light | full`) and in the index row.
 1. **Write the brief.** The ID is the next free `S0NN` in the README index.
    - Write `1-brief.md` with status `Draft` and its `Track`, then add the index
      row. A light brief uses the short template.
-   - Mark the manual checks that matter as **important** (README § Manual
-     checks).
+   - Split the checks a person would make into **Automated** (an e2e browser
+     test the coder writes: a screen opens, a flow completes, a message shows,
+     a dialog fits a phone) and **On a real device** (camera, paper, the iPhone
+     keyboard, a real Keycloak login), each device check with its account,
+     network and where (dev server on KLA's laptop, production on the TEST
+     machine, or either). Mark the ones that matter as **important** (README
+     § Manual checks).
    - Follow CLAUDE-COMMON "Show the plan before building" and the Yantra rule on
      standards.
    - Ask the user first only about decisions that change the design. Other open
@@ -161,14 +166,22 @@ brief's header (`Track: light | full`) and in the index row.
    - what was built;
    - any departures from the brief, with your view on each;
    - the minor findings still open;
-   - the manual checks: the **important** ones as the checklist from the impl
-     report's `## Manual checks`, the rest as a plain list.
+   - the e2e result (`tooling/run-e2e-tests.bat`) and the `[auto]` checks as
+     passed tests, each with its test;
+   - the real-device checks: the **important** ones as the checklist from the
+     impl report's `## Manual checks`, the rest as a plain list, and that their
+     rows are in `docs/steps/device-checks.md` for the user or the named person
+     (today IT Admin). The user decides which checks are which and may skip
+     any.
 
    The user checks, then **commits** (with the `S00N:` prefix). Set the status to
    `Done` only when the user says it is committed **and** every important check
-   is ticked by the user or explicitly skipped by them. Record it in the
-   impl report's checklist (`[x]`, or `[skipped] <reason>` in the user's words)
-   and in the status, e.g. `Done (committed abc123; checks: 3 done, 1 skipped —
+   is `[auto]` (a passing e2e run), ticked by the user or for the named person,
+   or explicitly skipped by the user. A named person's result comes back through
+   the user: record it as `[x] <check> — by <name>, DD-MM-YYYY` in the impl
+   report and in the row's *Done* column of `device-checks.md`; a skip as
+   `[skipped] <reason>` in the user's words. Record the count in the status,
+   e.g. `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped —
    iPhone)`. Never tick a check yourself.
 
 ## Listing
@@ -223,6 +236,18 @@ report's file list), so the user can sort them before committing.
   green — starting code review r1".
 - **Reports at the gates.** Short, in plain terms, and naming the standards
   touched, because the user is learning maintenance practice.
+- **Writing style** (CLAUDE-COMMON § Writing style):
+  - **Scope A** applies to every step file you or a subagent writes (brief,
+    reviews, impl report, Review log answers) and to every message to the
+    user: gate reports, progress lines and questions. Put the point first and
+    use one term for each thing. In questions, state the question, then the
+    options with their consequences, and mark the recommended one.
+  - **Scope B** applies to the UI text a brief specifies: labels, buttons,
+    messages and confirmations. It applies again to the text the coder writes
+    into the screens.
+  - Tell each subagent to follow it. The brief reviewer and the code reviewer
+    raise a finding where the text breaks scope A or B. Quoted text is
+    exempt: brief sections shown verbatim at gate A, and the user's own words.
 - **IDE reformatting is expected** (README § IDE reformatting). Whitespace-only
   changes in a file the user has open are theirs: carry on, don't ask about
   them, and don't mention them at the gates. Before editing, re-read the file.

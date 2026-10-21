@@ -30,6 +30,17 @@ review file there.
 - **Run the tests yourself.** Run `tooling/run-tests.bat`, and `npx vite build`
   in `frontend/` if the frontend changed. Record the real result. A red suite is
   a `blocker`.
+- **Run the browser tests** (S024) when the frontend or an API the screens use
+  changed: `tooling/run-e2e-tests.bat`, **in the background** (a full run can
+  pass the Bash tool's 10-minute limit) or with the maximum timeout (600 000
+  ms), and record the real result; red is a `blocker`. Check that:
+  - each *Automated* check of the brief has a test that really asserts it —
+    what the user would see, not only that a page opened (a test that only
+    navigates is a `major` finding: the check is not automated);
+  - the flow tests call `expectDialogFits` on the dialogs they open;
+  - a check is marked `[auto]` in the report only with a passing run behind it,
+    and the brief's *On a real device* checks are rows in
+    `docs/steps/device-checks.md`.
 - **Correctness against the brief.** Check every rule in it: validation,
   activation, frozen codes, permissions, status codes, error fields.
 - **Edge cases:**
@@ -96,10 +107,22 @@ review file there.
 - End with "Checked and found consistent".
 - List what still needs the user's **manual browser check**.
 - **Manual checks.** Check that the impl report has a `## Manual checks`
-  section carrying every **important** check of the brief as an unticked box.
-  A missing one is a `minor` finding.
+  section carrying every **important** check of the brief, as `[auto]` with
+  its test (automated) or as an unticked box (real device). A missing one is a
+  `minor` finding.
 - **Track.** On a `Track: light` step, a change that meets a full-track
   criterion (README § Tracks) is at least a `major` finding.
+
+## Writing style
+
+Follow CLAUDE-COMMON § Writing style:
+- Write your review in scope A. Put the point first, use one idea per
+  sentence, and keep one term for one thing.
+- Raise a finding where the impl report breaks scope A.
+- Raise a finding where screen text in the code breaks scope B: labels,
+  buttons, messages and confirmations.
+- Developer text is exempt: logs, code comments, and exception messages a user
+  never sees.
 
 ## Limits
 

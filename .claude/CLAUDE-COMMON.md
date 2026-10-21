@@ -42,6 +42,33 @@ Shared development rules across all repos, in two kinds:
 - **Git commit messages**: One line, feature-focused — what changed, brief context after a dash or semicolon. No multi-line bodies or bullet lists.
   Example: `Auto-generated project index: Index.md - triggered on project save and daily materialisation run;`
 
+### Writing style (ASD-STE100, light)
+
+Write in the spirit of ASD-STE100 Simplified Technical English, without its full dictionary and verb-form limits. Two scopes:
+
+**A. Reports to me** — briefs, plans, bug reports, issue lists, questions, summaries. Not code, code comments, or quoted tool output.
+
+1. **Lead with the point.** First line: the result, the decision needed, or the main finding. Details after.
+2. **One idea per sentence.** Aim for 20 words or fewer. Split long sentences unless a split loses the logic.
+3. **Active voice, plain verbs.** "The job fails because X", not "Failure is caused by X". Use "use", "start", "check", "fix" — not "utilize", "initiate", "ascertain", "remediate".
+4. **One term for one thing.** Do not alternate synonyms (task / job / run) for the same object. Keep exact names for files, functions, flags, and errors.
+5. **Imperative for actions.** One action per step: "Run X.", "Set Y to Z." Number steps that must run in order.
+6. **No noun stacks or hedges.** Avoid 3+ nouns in a row ("user session token refresh failure"). Cut "might possibly", "it seems that", "in order to".
+7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label each item as fact, assumption, or recommendation.
+8. **Questions to me:** state the question first, then the options with the consequence of each. Mark the recommended option.
+
+Keep full sentences with articles — no telegraphic text. Keep technical depth: plain wording must not remove detail, reasons, or caveats.
+
+**B. Text inside the apps you build** — UI labels, buttons, headings, tooltips, help text, empty states, validation messages, error messages, toasts, confirmation dialogs, and CLI output for users. Rules 2–6 above apply, plus:
+
+- **Error messages answer three things:** what happened, why (if known), what the user can do next. Example: "The file was not saved. The name already exists. Use a different name." Never show stack traces, SQL, or internal codes to users; log those server-side.
+- **Buttons and menu items start with a verb** that names the result: "Save order", "Delete item". Not "OK" or "Submit".
+- **Same word for the same thing in the whole app** (and across SMTW apps). Do not switch between "Delete / Remove", "Customer / Client", "Save / Update" for one action.
+- **Say what the user sees,** not what the system does: "Enter a date in DD-MM-YYYY format", not "Invalid input".
+- **Short, direct, no blame:** "Enter a quantity", not "You forgot to enter a quantity". No jargon the shop-floor or office user would not know. No exclamation marks.
+- **Confirmations state the consequence:** "Delete order 123? You cannot undo this."
+- Developer-facing text (logs, code comments, exception messages not shown to users) stays technical and exact.
+
 ### Shell preference (Windows)
 
 Prefer the Bash tool over PowerShell — PowerShell mangles special characters, wasting turns. Use PowerShell only when the task genuinely requires it (Windows cmdlets, `Invoke-Command`, remote Windows VM management).

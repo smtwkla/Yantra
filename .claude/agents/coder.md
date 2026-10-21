@@ -51,6 +51,19 @@ The orchestrator gives you one of three tasks:
 - **Run the tests.** Run `tooling/run-tests.bat` (it needs the dev DB up). Run
   `npx vite build` in `frontend/` when the frontend changed. Report the real
   numbers. Never claim green without running.
+- **Browser tests** (S024; `docs/steps/README.md` § Manual checks):
+  - write an e2e test (`frontend/e2e/`, Playwright) for each *Automated* check
+    of the brief, asserting what the user would see; call `expectDialogFits`
+    on every dialog a flow test opens;
+  - run `tooling/run-e2e-tests.bat` whenever the frontend or an API the
+    screens use changed. A full run can pass the Bash tool's 10-minute
+    limit: run it **in the background** (or with the maximum timeout,
+    600 000 ms) and read the result when it finishes;
+  - mark a check `- [auto] <check> — <test file>::<test name>` in the report
+    only from a passing run;
+  - append the brief's *On a real device* checks as rows to
+    `docs/steps/device-checks.md` (what to do and see, account, network,
+    where; *Done* left empty).
 - **Migrations are append-only.** Never edit an applied migration; add a new
   version.
 - **Never commit, push, build images, deploy or release.** Commits are the
@@ -63,6 +76,16 @@ The orchestrator gives you one of three tasks:
   - `Implementing` while you work;
   - `In code review` when you hand over.
 
+## Writing style
+
+Follow CLAUDE-COMMON § Writing style:
+- Write the impl report and any questions for the user in scope A.
+- Write screen text in scope B: labels, buttons, messages and confirmations.
+  Where the brief gives a message's words, use them. If those words break
+  scope B, use them anyway and raise it in the report.
+- Developer text stays technical and exact: logs, code comments, and exception
+  messages a user never sees.
+
 ## The report
 
 The report follows CLAUDE-COMMON "Report after implementation":
@@ -72,10 +95,11 @@ The report follows CLAUDE-COMMON "Report after implementation":
 3. files touched;
 4. decisions taken, flagging any departure from the brief;
 5. not done, deferred or assumed;
-6. `## Manual checks`: every manual check from the brief. The ones marked
-   **important** as unticked boxes (`- [ ] …`), the rest as a plain list
-   (`docs/steps/README.md` § Manual checks). Never tick a box: only the user
-   does.
+6. `## Manual checks`: every manual check from the brief. Automated ones as
+   `- [auto] … — <test file>::<test name>` once the e2e run passed; real-device
+   ones marked **important** as unticked boxes (`- [ ] …`), the rest as a plain
+   list (`docs/steps/README.md` § Manual checks). Never tick a box: only the
+   user does, for himself or for the named person.
 
 **Track.** On a `Track: light` step, if you find it meets a full-track
 criterion (a migration, access checks, locking or concurrency, a new endpoint
