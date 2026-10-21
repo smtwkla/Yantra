@@ -23,8 +23,8 @@ Read it before starting.
   (below). `/step plan lite <topic>` or `/step plan full <topic>` forces it.
 - `/step amend S00N <request>`: write amendment `A<n>` in § 10 of the brief.
   Run the brief reviewer on it only if the user asks. Then stop at gate A.
-- `/step implement S00N`: the brief, or amendment, must be `Approved`. Run
-  **phase 2**.
+- `/step implement S00N` (alias `/step code S00N`): the brief, or amendment,
+  must be `Approved`. Run **phase 2**.
 - `/step review S00N`: run **phase 2** from its code-review loop, for code that
   already exists.
 - `/step status [S00N]`: report the step's files, status and open findings.
