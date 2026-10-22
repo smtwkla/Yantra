@@ -26,9 +26,9 @@ from db_helpers import transaction
 from local_db import get_local_db
 from task_handlers import NoRetry, RetryLater, push_send, ticket_alert, ticket_escalate
 from tests.conftest import TICKETS
-from worker import Worker
-
 from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
+from vapid_keys import make_key_pair
+from worker import Worker
 
 
 # ---------------------------------------------------------------------------
@@ -516,9 +516,12 @@ class TestSendOutcomes:
                 pass
         server = http.server.HTTPServer(("127.0.0.1", 0), Redirecting)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        # A valid device key and auth secret, so send() gets as far as the post
+        subscription = {"endpoint": f"http://127.0.0.1:{server.server_port}/x",
+                        "p256dh": make_key_pair()[0], "auth": "AAAAAAAAAAAAAAAAAAAAAA"}
         try:
             with pytest.raises(requests.exceptions.TooManyRedirects):
-                push_sender._session().post(f"http://127.0.0.1:{server.server_port}/x", timeout=5)
+                push_sender.send(subscription, {"title": "x"}, "normal", 60)
         finally:
             server.shutdown()
             server.server_close()

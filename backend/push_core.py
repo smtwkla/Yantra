@@ -14,6 +14,11 @@ import hashlib
 import re
 from urllib.parse import urlsplit
 
+# The parser requests (inside pywebpush) uses to find the host it connects to; urllib3 comes
+# with requests.  The address check asks it too, so the host checked is the host posted to (CR1-01).
+from urllib3.exceptions import LocationParseError
+from urllib3.util import parse_url
+
 # The push services Yantra posts to; a host matches itself or any sub-domain.  Samsung
 # Internet may use one of its own: its host is added only once a real subscription shows it
 # (§ 5.4, BR3-05 — the refusal is logged with the host).
@@ -42,6 +47,12 @@ SUBSCRIPTION_UNUSABLE = "This browser sent a subscription Yantra cannot use. Tur
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
 _BASE64URL_RE = re.compile(r"[A-Za-z0-9_-]+={0,2}")
 _DIGITS_RE = re.compile(r"[0-9]+")
+# Printable ASCII without space, and no backslash: urlsplit and urllib3 read a backslash, a
+# space or a control character differently, so an address holding one is refused (CR1-01)
+_ADDRESS_RE = re.compile(r"[\x21-\x5b\x5d-\x7e]+")
+# The authority as a bare DNS name: labels of a-z, 0-9 and "-", no trailing dot.  This rules
+# out user-info ("@"), any port (":"), IPv6 literals ("[") and percent-encoding ("%")
+_HOST_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+")
 
 # What the push_send task does with the push service's answer (§ 5.1)
 SENT = "sent"                # done; last_sent_at set
@@ -57,9 +68,12 @@ _TOO_MANY = 429
 
 
 def refused_host(endpoint):
-    """None when ``endpoint`` is an address Yantra may post to: ``https://``, no user-info, no
-    port, and a host that is one of ALLOWED_PUSH_HOSTS or a sub-domain of one.  Otherwise the
-    host to log ("" when there is none) — never the full address, which identifies a device."""
+    """None when ``endpoint`` is an address Yantra may post to: ``https://``, printable ASCII
+    with no backslash, an authority that is a bare DNS name (no user-info, no port, no IP
+    literal, no percent-encoding), the same host for urlsplit and for urllib3 (the parser
+    requests posts with), and a host that is one of ALLOWED_PUSH_HOSTS or a sub-domain of one.
+    Otherwise the host to log ("" when there is none) — never the full address, which
+    identifies a device."""
     if not isinstance(endpoint, str) or not endpoint or len(endpoint) > ENDPOINT_MAX or endpoint != endpoint.strip():
         return ""
     try:
@@ -67,8 +81,14 @@ def refused_host(endpoint):
     except ValueError:
         return ""
     host = (parts.hostname or "").lower()
-    # netloc equal to the bare host rules out user-info and any port, the default one included
-    if parts.scheme != "https" or not host or parts.netloc.lower() != host:
+    if (parts.scheme != "https" or not host or _ADDRESS_RE.fullmatch(endpoint) is None
+            or _HOST_RE.fullmatch(parts.netloc.lower()) is None):
+        return host
+    try:
+        posted = parse_url(endpoint)
+    except LocationParseError:
+        return host
+    if posted.scheme != "https" or posted.auth is not None or posted.port is not None or posted.host != host:
         return host
     if any(host == allowed or host.endswith(f".{allowed}") for allowed in ALLOWED_PUSH_HOSTS):
         return None

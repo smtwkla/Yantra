@@ -451,7 +451,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   found and tried, as a line on the timeline; the raise's *What is wrong?* is the first note.
   New findings are new notes; an engineer corrects a typo or wrong fact (`ticket:edit_notes`),
   and the earlier text is kept (EN 13306 fault diagnosis; ISO 9001 § 7.5.3).
-- **Notifications:** new breakdown → maintenance; escalation if not acknowledged within a set time (per criticality). A new defect shows in the open-tickets list; whether it notifies is settled with the notification step.
+- **Notifications** (S021, § 4.7): web push per device. A new breakdown → engineers, the unit's supervisor and the maintenance manager; a new defect → engineers, quietly; a breakdown not acknowledged in time (A 10, B 30, C 60 minutes) → engineers and managers, once; a job assigned by an engineer → that person.
 - Serial: `TK-YYYY-MM-NNN` (decided 20-10-2026, S017): one series for breakdowns and defects, since a defect can become a breakdown; numbered by the month the ticket is written.
 - **Shared ticket API (later)** — the intended way for other systems (plant-3i,
   VelKilnMaster, any later one) to raise tickets: one authenticated endpoint, not

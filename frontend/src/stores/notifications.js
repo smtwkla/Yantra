@@ -14,12 +14,14 @@
 
 import { computed, ref } from "vue";
 import { apiDelete, apiGet, apiPost } from "../api";
-import { userPersonId } from "./auth";
 import * as push from "../push";
 
 // Sign-out waits at most this long for this device's removal (best effort)
 const SIGN_OUT_WAIT_MS = 3_000;
 
+/** Who is signed in as a Team person, null when nobody (CR1-08: given by the caller, so this
+ * store does not import auth.js, which imports this one). */
+const personId = ref(null);
 /** {enabled, public_key, you_get: [...]} from the server, or null before the first load. */
 export const pushConfig = ref(null);
 /** My devices, as GET /api/push/subscriptions lists them. */
@@ -30,7 +32,7 @@ export const permissionState = ref("default");
 /** One of: loading, not_in_team, not_set_up, iphone_home, unsupported, blocked, on, off. */
 export const deviceState = computed(() => {
   if (!pushConfig.value) return "loading";
-  if (userPersonId.value === null) return "not_in_team";
+  if (personId.value === null) return "not_in_team";
   if (!pushConfig.value.enabled) return "not_set_up";
   if (push.isIphone() && !push.isStandalone()) return "iphone_home";
   if (!push.isPushSupported()) return "unsupported";
@@ -52,8 +54,10 @@ async function loadDevices() {
   thisDeviceOn.value = Boolean(held) && list.items.some((device) => device.this_device);
 }
 
-/** Read the server's config, this browser's state and my devices. Throws the API's error. */
-export async function loadNotifications() {
+/** Read the server's config, this browser's state and my devices. ``ownPersonId`` is the signed-in
+ * person's id (auth.js userPersonId) or null. Throws the API's error. */
+export async function loadNotifications(ownPersonId) {
+  personId.value = ownPersonId ?? null;
   pushConfig.value = await apiGet("/api/push/config");
   permissionState.value = push.permission();
   await loadDevices();

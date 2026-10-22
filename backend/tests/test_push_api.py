@@ -118,6 +118,20 @@ class TestSubscribe:
         logged = " ".join(r.getMessage() for r in caplog.records)
         assert "push.example.org" in logged and "secret-device-token" not in logged
 
+    @pytest.mark.parametrize("endpoint", [
+        "https://10.24.0.10\\.fcm.googleapis.com/",            # CR1-01: requests would post to 10.24.0.10
+        "https://evil.example%2f.fcm.googleapis.com/x",
+        "https://fcm.googleapis.com@evil.example/x",
+    ])
+    def test_an_address_the_parsers_read_differently_is_400_and_not_stored(self, engineer_in_team, endpoint,
+                                                                            db_rows):
+        client, _person = engineer_in_team
+        res = client.post(f"{PUSH}/subscriptions", json=subscription(endpoint))
+        assert res.status_code == 400
+        assert res.get_json()["error"].startswith("This browser cannot get notifications.")
+        assert db_rows("SELECT id FROM push_subscriptions WHERE endpoint_hash = %s",
+                       (endpoint_hash(endpoint),)) == ()
+
     def test_a_body_without_keys_is_400(self, engineer_in_team):
         client, _person = engineer_in_team
         res = client.post(f"{PUSH}/subscriptions", json={"endpoint": new_endpoint()})

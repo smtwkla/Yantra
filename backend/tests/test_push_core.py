@@ -37,6 +37,46 @@ class TestAddressCheck:
     def test_refused_addresses_name_their_host(self, endpoint, host):
         assert refused_host(endpoint) == host
 
+    # CR1-01: addresses where urlsplit and urllib3 (the parser requests posts with) could find
+    # different hosts, or where the host is not a bare DNS name
+    @pytest.mark.parametrize("endpoint, host", [
+        # urllib3 ends the host at a backslash: requests would post to evil.example / 10.24.0.10
+        ("https://evil.example\\.fcm.googleapis.com/x", "evil.example\\.fcm.googleapis.com"),
+        ("https://10.24.0.10\\.fcm.googleapis.com/", "10.24.0.10\\.fcm.googleapis.com"),
+        ("https:\\\\evil.example/.fcm.googleapis.com", ""),
+        # percent-encoding in the authority
+        ("https://evil.example%2f.fcm.googleapis.com/x", "evil.example%2f.fcm.googleapis.com"),
+        ("https://fcm%2egoogleapis.com/x", "fcm%2egoogleapis.com"),
+        # user-info, either side
+        ("https://evil.example@fcm.googleapis.com/x", "fcm.googleapis.com"),
+        ("https://fcm.googleapis.com@evil.example/x", "evil.example"),
+        # a trailing dot
+        ("https://fcm.googleapis.com./x", "fcm.googleapis.com."),
+        # upper case is read as lower case, so a look-alike stays a look-alike
+        ("https://FCM.GOOGLEAPIS.COM.EVIL.EXAMPLE/x", "fcm.googleapis.com.evil.example"),
+        # IP literals
+        ("https://127.0.0.1/x", "127.0.0.1"),
+        ("https://[::1]/x", "::1"),
+        ("https://[2001:db8::1]/fcm.googleapis.com", "2001:db8::1"),
+        # whitespace and control characters: urlsplit drops a tab or newline silently
+        ("https://fcm.googleapis.com /x", "fcm.googleapis.com "),
+        ("https://evil\n.fcm.googleapis.com/x", "evil.fcm.googleapis.com"),
+        ("https://fcm.googleapis.com/x\ty", "fcm.googleapis.com"),
+        # non-ASCII (an ideographic full stop)
+        ("https://fcm.googleapis.com。evil.example/x", "fcm.googleapis.com。evil.example"),
+        # an empty port
+        ("https://fcm.googleapis.com:/x", "fcm.googleapis.com"),
+    ])
+    def test_parser_tricks_are_refused(self, endpoint, host):
+        assert refused_host(endpoint) == host
+
+    @pytest.mark.parametrize("endpoint", [
+        "https://wns2-par02p.notify.windows.com/w/?token=BQYAAAD%2bw%3d",   # WNS tokens are URL-encoded
+        "https://fcm.googleapis.com/fcm/send/abc#@evil.example/",          # "@" after the authority
+    ])
+    def test_percent_encoding_and_at_outside_the_authority_pass(self, endpoint):
+        assert refused_host(endpoint) is None
+
     @pytest.mark.parametrize("endpoint", [None, 5, "", " https://fcm.googleapis.com/x", "not a url",
                                           "https://fcm.googleapis.com/" + "a" * 1000])
     def test_no_address_is_refused_with_an_empty_host(self, endpoint):

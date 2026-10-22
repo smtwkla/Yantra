@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: Gate B — code review r2 clean (CR1-01 blocker fixed; 0 blocker, 0 major; 5 minor, 4 nit open); most of the code committed in 03ed528 (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done)
+Status: Gate B — code review r3 clean; fix round 3 (CR3-01..05, asked by the user) done; no finding open; awaiting the user's commit and the device checks rows 14–25 (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done)
 Baseline: 79fc61d + uncommitted S026, S027 (staleness check s1, 22-10-2026)
 ```
 

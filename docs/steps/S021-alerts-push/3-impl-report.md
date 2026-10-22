@@ -455,3 +455,27 @@ Review: `4-code-review-r2.md`. The user asked to fix all open findings.
   tooling 82 passed. `npx vite build`: clean. Targeted e2e
   (`e2e/notifications.spec.js`, `e2e/screens.spec.js`; `auth.js` is unchanged, so not the full
   suite): 51 passed, 6 skipped (the skips were skipped before this round).
+
+
+### Round 3
+
+Review: `4-code-review-r3.md`. The user asked to fix CR3-01 to CR3-05.
+
+- **CR3-01 (minor) — Fixed.** `DEVICE_LATE` in `backend/task_handlers.py` is now "The push service did
+  not take the last alert. It may be late or lost. Check your tickets." It makes no promise of a
+  retry, so it is true on all 3 attempts and after the last one. It also fits a 429 or 5xx, where the
+  service did answer. The tests compare the row with the constant, so none changed.
+- **CR3-02 (nit) — Fixed.** `test_alerts.py::TestSendOutcomes::test_a_redirect_is_never_followed`
+  now calls `push_sender.send` with a real device key (from `make_key_pair`) against the local 307
+  server, so it fails if `send()` stops passing the no-redirect session.
+- **CR3-03 (nit) — Fixed.** `push_sender.send` runs inside `with _session() as session:`; the session
+  closes after each send.
+- **CR3-04 (nit) — Fixed.** `loadNotifications` stores `ownPersonId ?? null`.
+- **CR3-05 (nit) — Fixed.** `DEVICE_REFUSED` ends "on that device".
+- **Decisions taken.** The CR3-01 wording is mine. The review gave one example; I dropped "the push
+  service did not answer" because it is false for a 429 or 5xx.
+- **Files touched (round 3):** 5 plus this report: `backend/task_handlers.py`,
+  `backend/push_sender.py`, `backend/tests/test_alerts.py`, `frontend/src/stores/notifications.js`.
+- **Tests run (round 3).** `YANTRA_TEST_RUN=fixlast tooling/run-tests.bat`: backend 2281 passed,
+  frontend 114 passed, deps 42 passed, tooling 91 passed. `npx vite build`: clean. Targeted e2e
+  (`e2e/notifications.spec.js`, `e2e/screens.spec.js`): 51 passed, 6 skipped (the same skips as before).

@@ -159,8 +159,9 @@ _SUBSCRIPTION_ERROR_CHARS = 255
 
 # What My devices shows as *Last error* (CR1-03): one plain line per outcome, what happened and
 # what to do.  The technical text goes to task_queue.last_error and the log only.
-DEVICE_REFUSED = "The last alert did not reach this device. Turn notifications off and on again on it."
-DEVICE_LATE = "The last alert is late. Yantra tries again."
+DEVICE_REFUSED = "The last alert did not reach this device. Turn notifications off and on again on that device."
+# True on every attempt: after the last of the 3 attempts nothing tries again (CR3-01)
+DEVICE_LATE = "The push service did not take the last alert. It may be late or lost. Check your tickets."
 DEVICE_NOT_SET_UP = "Notifications are not set up on this server yet. Ask IT admin."
 DEVICE_FAULT = "The last alert could not be sent. Ask IT admin."
 
