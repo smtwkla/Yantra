@@ -1,9 +1,10 @@
 """Tickets — raise and see (docs/steps/S017-raise-tickets/1-brief.md) and work them to the end
-(docs/steps/S018-work-tickets/1-brief.md): moves, re-grade, edit, assignment, labour, repeat.
+(docs/steps/S018-work-tickets/1-brief.md): moves, re-grade, edit, assignment, labour, repeat;
+the parts used (docs/steps/S020-parts-used/1-brief.md).
 
 Thin shell: tickets_core holds the rules (intensity, the event-time window, the serial, the
 description rule, machine and component from the node, the moves table, the send-back and
-re-grade rules, labour and close validation, the times); this module checks access, locks,
+re-grade rules, labour, parts and close validation, the times); this module checks access, locks,
 reads the rows the rules need and stores the result.
 
 ACCESS — one predicate for the list, the detail and the ticket's photos (§ 5.3): a ticket is
@@ -21,18 +22,45 @@ LOCK ORDER (equipment.py's numbers): (1) the node raised on → (6) the serial c
 (7) the ticket row.  Ticket rows are locked only here and by documents.py (the ticket owner,
 through the functions below), always last; nothing that holds a ticket lock then takes an
 equipment, unit or counter lock.  Ancestors of the node are read plain, never locked.
-Working a ticket (S018 § 5.3) — a move, re-grade, edit, assignment or labour change — locks
-(7) only; nothing else locked.  Codes, people and the earlier ticket of a repeat are read plain.
+Working a ticket (S018 § 5.3) — a move (S019's schedule, change plan and the start from
+scheduled included), re-grade, edit, assignment, labour or parts change (S020) — locks (7)
+explicitly, and nothing else explicitly.  Codes and people are read plain.  A change of tickets.state also
+rewrites the entries of ix_tickets_unit_state, ix_tickets_equipment_state and
+ix_tickets_component_state, the indexes of the unit, machine and component foreign keys, so
+InnoDB re-checks those keys and takes shared locks on the unit, machine and (when set)
+component rows (S025 CR1-02; S019 § 5.6 adds no lock and no lock-order edge).  Three reads
+take a shared lock, each the one a foreign key of the same write takes anyway, so none
+adds a lock-order edge (S025 § 1.5, § 1.6; S020 § 5.2):
+- the edit reads the new component's row LOCK IN SHARE MODE (its parent plain) and decides
+  "not scrapped" from it: a scrap holds that row FOR UPDATE, so the two serialise;
+- a raise with repeat_of_id re-reads the earlier ticket LOCK IN SHARE MODE after its insert:
+  a send-back holds that row FOR UPDATE, so the two cannot both succeed: when the send-back
+  commits first, the raise is refused (and when the raise commits first, the send-back
+  refuses a ticket that has a repeat).  When they overlap, they can deadlock instead (below);
+- a parts add, and a parts edit whose node changes, read that node's row LOCK IN SHARE MODE
+  (the machine itself or a part below it; its parent plain) and decide "not scrapped" from it,
+  through the helper the edit uses: a scrap holds that row FOR UPDATE, so the two serialise.
+  An edit that keeps the node reads nothing more (the line is history, S020 BR1-03).
 A raise with *Already fixed* (A1) applies the restore move to its own new row inside the raise's
 transaction: no further lock, and a refusal rolls the whole raise back, serial included.
 
 The ticket insert takes shared locks through its foreign keys on the machine's equipment
-row, the unit, the person and the failure mode.  Two deadlocks follow, accepted (§ 5.4,
-§ 7 decision 12; InnoDB rolls one side back with 1213, a rare 500):
+row, the component's, the unit, the person, the failure mode and the earlier ticket of a
+repeat.  Four deadlocks follow, accepted (§ 5.4, § 7 decision 12, S025 CR1-02; InnoDB rolls
+one side back with 1213, a rare JSON 500, and a retry gives the right answer):
 - scrapping a machine (machine, then its parts FOR UPDATE) against a raise on one of its parts
   (the part, then the machine's shared FK lock);
 - a person's site-row edit (person, then units) against a raise naming that person (the FK
-  checks take unit, then person).
+  checks take unit, then person);
+- a raise of a repeat (the machine (1), then the earlier ticket's shared lock) against a
+  send-back of that earlier ticket (the ticket FOR UPDATE, then the machine's shared FK lock
+  at its state change).  A parts write on the earlier ticket has the same shape (S020 § 5.2):
+  the ticket FOR UPDATE, then the shared lock on the node the line is fitted to, which the
+  raise holds as (1) when the repeat is raised on that node;
+- a unit edit (the unit FOR UPDATE, then its tickets counted LOCK IN SHARE MODE, masters.py)
+  against any move of a ticket in that unit (the ticket, then the unit's shared FK lock at
+  its state change).  The moves include schedule and the start from scheduled (S019 § 5.6);
+  change plan keeps the state, so its index entries and foreign-key checks do not change.
 A failure code's code change (masters.py) locks the code row FOR UPDATE, then counts its
 tickets with a shared-lock read: a ticket write holding the code's FK lock commits first and is
 counted, a later one queues behind the code's lock, so "code frozen once used" is race-free
@@ -51,21 +79,23 @@ from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
-from auth_utils import check_perm, current_person_id, permissions_at_site, require_perm, require_perm_at
+from auth_utils import check_perm, current_person_id, has_perm, has_perm_at, permissions_at_site, require_perm, require_perm_at
 from config_rbac import ASSIGNABLE_ROLES
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment import IST, accessible_unit_ids, load_node_for_user
 from equipment_core import SCRAPPED
 from tickets_core import (
-    ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EVENT_LABELS,
+    ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EVENT_LABELS, MACHINE_STOPPED_MOVES,
+    MACHINE_STOPPED_NEEDED, NOTHING_TO_CHANGE, PART_NODE_NEEDED, PARTS_HINT_ACTION_CODES, PARTS_NOT_A_FAULT,
     CAUSE_NEEDED, CLOSED, EDITED_EVENT, IN_PROGRESS, INTENSITY_FILTERS, MACHINE_LEVEL, MOVES, OPEN_STATES,
-    ORDERED_EVENTS, RAISED, REGRADE_STATES, REGRADED_EVENT, REPEAT_WINDOW_DAYS,
-    RAISE_SCREEN_LABELS, RESTORE_FIELD_PREFIX, RESTORE_KEY,
+    ORDERED_EVENTS, PLAN_FILTERS, RAISED, REGRADE_STATES, REGRADED_EVENT, REPEAT_WINDOW_DAYS,
+    RAISE_SCREEN_LABELS, RESTORE_FIELD_PREFIX, RESTORE_KEY, SCHEDULED,
     STARTED_EVENT, STATE_FILTERS, UNASSIGNED_EVENT, WORK_KEY, allowed_moves, description_error, edit_lines,
-    format_ticket_serial, is_breakdown, is_repeat_candidate, latest_restoration, machine_and_component, regrade_options,
-    send_back_intensity, serial_scope, started_at_error, ticket_times, trade_error, validate_assignee,
+    format_ticket_serial, is_breakdown, is_overdue, is_repeat_candidate, latest_restoration, machine_and_component,
+    machine_stopped_needed, planned_date_error, regrade_options,
+    send_back_error, send_back_intensity, serial_scope, started_at_error, ticket_times, trade_error, validate_assignee,
     validate_close, validate_edit, validate_event_time, validate_labour, validate_move, validate_raise,
-    validate_regrade, validate_regrade_body,
+    validate_part, validate_regrade, validate_regrade_body,
 )
 
 tickets_bp = Blueprint("tickets", __name__)
@@ -113,13 +143,18 @@ _TICKET_COLUMNS = (
     " c.id AS c_id, c.code AS c_code, c.name AS c_name,"
     " f.id AS f_id, f.code AS f_code, f.label AS f_label, rp.id AS rp_id, rp.name AS rp_name,"
     " fc.id AS fc_id, fc.code AS fc_code, fc.label AS fc_label, ma.id AS ma_id, ma.code AS ma_code,"
-    " ma.label AS ma_label, rt.id AS rt_id, rt.serial AS rt_serial"
+    " ma.label AS ma_label, rt.id AS rt_id, rt.serial AS rt_serial, t.planned_date, t.waiting_reason"
 )
 
 
 def _now():
     """The IST wall clock, naive, as every DATETIME is stored (base § Timezone policy)."""
     return datetime.now(IST).replace(tzinfo=None)
+
+
+def _today():
+    """The IST date of now: the planned date's rules and *overdue* (S019 § 5.1, § 5.5)."""
+    return _now().date()
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +181,8 @@ def _code_ref(row, prefix):
     return {"id": row[f"{prefix}_id"], "code": row[f"{prefix}_code"], "label": row[f"{prefix}_label"]}
 
 
-def _ticket_out(row):
+def _ticket_out(row, today):
+    """The ticket as the list and the detail show it; ``today`` (IST) decides *overdue*."""
     plain = row_to_dict(row)
     return {
         "id": plain["id"],
@@ -169,6 +205,10 @@ def _ticket_out(row):
         "action": _code_ref(plain, "ma"),
         "not_a_fault": bool(plain["not_a_fault"]),
         "repeat_of": {"id": plain["rt_id"], "serial": plain["rt_serial"]} if plain["rt_id"] is not None else None,
+        # S019: the current plan, set only while scheduled
+        "planned_date": plain["planned_date"],
+        "waiting_reason": plain["waiting_reason"],
+        "overdue": is_overdue(row["state"], row["planned_date"], today),
     }
 
 
@@ -194,7 +234,8 @@ def read_ticket(cur, ticket_id, _key=None):
 def _event_rows(cur, ticket_id):
     """The ticket's events, oldest first, as stored (datetimes, for ticket_times)."""
     cur.execute("SELECT e.event, e.from_state, e.to_state, e.occurred_at, e.intensity, e.remark, e.created_at,"
-                " e.created_by, p.id AS person_id, p.name AS person_name FROM ticket_events e"
+                " e.created_by, e.planned_date, e.waiting_reason, e.machine_stopped,"
+                " p.id AS person_id, p.name AS person_name FROM ticket_events e"
                 " LEFT JOIN people p ON p.id = e.person_id WHERE e.ticket_id = %s"
                 " ORDER BY e.occurred_at, e.id", (ticket_id,))
     return cur.fetchall()
@@ -205,6 +246,8 @@ def _events_out(rows):
     for row in rows_to_list(rows):
         person_id, person_name = row.pop("person_id"), row.pop("person_name")
         row["person"] = {"id": person_id, "name": person_name} if person_id is not None else None
+        if row["machine_stopped"] is not None:
+            row["machine_stopped"] = bool(row["machine_stopped"])
         events.append(row)
     return events
 
@@ -237,6 +280,30 @@ def _labour(cur, ticket_id):
     return rows
 
 
+def _parts(cur, ticket_id):
+    """The parts lines (S020), in the order entered, each with the node it was fitted to.  The
+    quantity goes out as a string ("1.50"), so no float rounding on the way."""
+    cur.execute("SELECT p.id, p.description, p.part_number, p.number_kind, p.maker, p.quantity, p.qty_unit,"
+                " p.created_at, p.created_by, n.id AS node_id, n.code AS node_code, n.name AS node_name"
+                " FROM ticket_parts p JOIN equipment n ON n.id = p.node_id WHERE p.ticket_id = %s ORDER BY p.id",
+                (ticket_id,))
+    return [{
+        "id": row["id"], "description": row["description"], "part_number": row["part_number"],
+        "number_kind": row["number_kind"], "maker": row["maker"], "quantity": str(row["quantity"]),
+        "qty_unit": row["qty_unit"], "node": {"id": row["node_id"], "code": row["node_code"], "name": row["node_name"]},
+        "created_at": row["created_at"], "created_by": row["created_by"],
+    } for row in rows_to_list(cur.fetchall())]
+
+
+def _parts_hint_actions(cur):
+    """The ids of the actions whose close shows "No parts recorded" (S020 § 1.6), active or
+    not: a retired code keeps its hint while old tickets still carry it."""
+    placeholders = ", ".join(["%s"] * len(PARTS_HINT_ACTION_CODES))
+    cur.execute(f"SELECT id FROM maintenance_actions WHERE code IN ({placeholders}) ORDER BY id",
+                PARTS_HINT_ACTION_CODES)
+    return [row["id"] for row in cur.fetchall()]
+
+
 def _repeats(cur, ticket_id):
     """The later tickets raised as repeats of this one, the visible ones (§ 5.5: a query, not
     a stored list)."""
@@ -247,6 +314,15 @@ def _repeats(cur, ticket_id):
     cur.execute("SELECT t.id, t.serial, t.state, t.occurred_at FROM tickets t JOIN equipment m ON m.id = t.equipment_id"
                 f" WHERE t.repeat_of_id = %s AND {condition} ORDER BY t.occurred_at, t.id", [ticket_id, *params])
     return rows_to_list(cur.fetchall())
+
+
+def _latest_repeat_serial(cur, ticket_id):
+    """The serial of the latest ticket raised as a repeat of this one, or None — unfiltered:
+    a repeat the user cannot see still forbids the send-back (S025 § 5.2)."""
+    cur.execute("SELECT serial FROM tickets WHERE repeat_of_id = %s ORDER BY occurred_at DESC, id DESC LIMIT 1",
+                (ticket_id,))
+    row = cur.fetchone()
+    return row["serial"] if row else None
 
 
 def _person_at_site(cur, person_id, site_id):
@@ -272,8 +348,9 @@ def _moves(cur, row, keys):
     """allowed_moves for this user, with what each dialog shows: the restore move's
     ``default_person`` (the user's own person, when he holds ticket:work and may be named at the
     site, BR4-03) and acknowledge / start's ``recording_as`` (the person the move will
-    auto-assign, BR4-04)."""
-    names = allowed_moves(row["state"], keys)
+    auto-assign, BR4-04).  Start and restore carry ``asks_machine_stopped`` (S019 § 6): the
+    server will require the answer — on restore, once a start time is given."""
+    names = allowed_moves(row["state"], keys, has_repeat=_latest_repeat_serial(cur, row["id"]) is not None)
     own = _own_person_at_site(cur, row["site_id"]) if names else None
     moves = []
     for name in names:
@@ -282,6 +359,10 @@ def _moves(cur, row, keys):
             entry["default_person"] = _person_ref(own) if WORK_KEY in keys else None
         elif name in AUTO_ASSIGN_MOVES:
             entry["recording_as"] = _person_ref(own) if own and own["role"] in ASSIGNABLE_ROLES else None
+        if name in MACHINE_STOPPED_MOVES:
+            entry["asks_machine_stopped"] = machine_stopped_needed(row["state"], row["intensity"])
+        if name == "close":
+            entry["parts_hint_actions"] = _parts_hint_actions(cur)
         moves.append(entry)
     return moves
 
@@ -297,11 +378,12 @@ def _detail(cur, row):
     is_open = state != CLOSED
     can_regrade = state in REGRADE_STATES and RAISE_KEY in keys
     return {
-        **_ticket_out(row),
+        **_ticket_out(row, now.date()),
         "events": _events_out(events),
         "times": ticket_times(events, now),
         "assignees": _assignees(cur, [ticket_id])[ticket_id],
         "labour": _labour(cur, ticket_id),
+        "parts": _parts(cur, ticket_id),
         "repeats": _repeats(cur, ticket_id),
         "moves": _moves(cur, row, keys),
         "permissions": sorted(keys),
@@ -329,21 +411,30 @@ def read_ticket_for_change(cur, ticket_id, key):
     return row
 
 
+# The plan too (S019 BR2-04): Change plan's "Nothing to change" is decided from the locked row
 _LOCK_TICKET = ("SELECT id, state, intensity, failure_mode_id, equipment_id, component_id, description,"
-                " occurred_at, not_a_fault FROM tickets WHERE id = %s FOR UPDATE")
+                " occurred_at, not_a_fault, planned_date, waiting_reason FROM tickets WHERE id = %s FOR UPDATE")
 
 
 def _lock_ticket(cur, ticket_id, key):
-    """Lock the ticket row (7), then 404 (predicate) and 403 (``key`` at the ticket's site) ->
-    the ticket's row, its state, intensity, mode, machine, component and description from the
-    locked read (every refusal is decided from those, S018 § 5.3).  The unit never changes, so
-    the plain read for access is as good as the locked row."""
+    """Lock the ticket row (7), then 404 (predicate) and 403 (the key at the ticket's site) ->
+    the ticket's row, its state, intensity, mode, machine, component, description and plan
+    from the locked read (every refusal is decided from those, S018 § 5.3).  The unit never
+    changes, so the plain read for access is as good as the locked row.  ``key`` is a
+    permission key, or a function of the locked state that returns one (a move whose key
+    depends on where it starts from: Move.key_at, S019 U1) or a set of keys, any one of which
+    is enough (a stale move: the state is outside the move's from-states, so no per-state key
+    applies and _apply_move answers 409, S019 CR1-01)."""
     cur.execute(_LOCK_TICKET, (ticket_id,))
     locked = cur.fetchone()
     if locked is None:
         raise ApiError("Not found", 404)
     row = read_ticket(cur, ticket_id)
-    require_perm_at(key, row["site_id"])
+    needed = key(locked["state"]) if callable(key) else key
+    if isinstance(needed, str):
+        require_perm_at(needed, row["site_id"])
+    elif not any(has_perm_at(k, row["site_id"]) for k in needed):
+        require_perm_at(sorted(needed)[0], row["site_id"])
     return {**row, **locked}
 
 
@@ -396,6 +487,7 @@ def list_tickets():
     q = (request.args.get("q") or "").strip()
 
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
+    today = _today()
     with get_db().cursor() as cur:
         visible = _visible_condition(cur)
         if visible is None:
@@ -407,6 +499,13 @@ def list_tickets():
         elif state == "closed":
             conditions.append("t.state = %s")
             params.append(CLOSED)
+        elif state in PLAN_FILTERS:
+            conditions.append("t.state = %s")
+            params.append(SCHEDULED)
+            if state == "overdue":
+                # tickets_core.is_overdue in SQL (S019 § 5.5)
+                conditions.append("t.planned_date < %s")
+                params.append(today)
         if intensity:
             values = INTENSITY_FILTERS[intensity]
             conditions.append(f"t.intensity IN ({', '.join(['%s'] * len(values))})")
@@ -435,15 +534,22 @@ def list_tickets():
             conditions.append("(t.serial LIKE %s OR t.description LIKE %s)")
             params.extend([like_pattern(q)] * 2)
         # Open: what is down and waiting longest leads (the ENUM's order puts critical first);
-        # closed and all: newest first (§ 5.3).  In SQL, because the list is paginated.
-        order = ("t.intensity, t.occurred_at, t.id" if state == "open" else "t.occurred_at DESC, t.id DESC")
+        # within an intensity the scheduled rows come after the ones someone can act on now
+        # (S019 § 1.6, BR1-04).  Scheduled and overdue: what is due next, the most overdue
+        # first.  Closed and all: newest first (§ 5.3).  In SQL, because the list is paginated.
+        if state == "open":
+            order = f"t.intensity, t.state = '{SCHEDULED}', t.occurred_at, t.id"
+        elif state in PLAN_FILTERS:
+            order = "t.planned_date, t.id"
+        else:
+            order = "t.occurred_at DESC, t.id DESC"
         where = " AND ".join(conditions)
         total = count(cur, f"SELECT COUNT(*) AS n{_TICKET_FROM} WHERE {where}", params)
         cur.execute(f"{_TICKET_COLUMNS}{_TICKET_FROM} WHERE {where} ORDER BY {order} LIMIT %s OFFSET %s",
                     [*params, per_page, (page - 1) * per_page])
         rows = cur.fetchall()
         assignees = _assignees(cur, [row["id"] for row in rows])
-        items = [{**_ticket_out(row), "assignees": assignees[row["id"]]} for row in rows]
+        items = [{**_ticket_out(row, today), "assignees": assignees[row["id"]]} for row in rows]
     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
 
 
@@ -575,6 +681,16 @@ def _check_repeat(cur, repeat_of_id, machine_id, occurred_at):
         raise ApiError(REPEAT_NOT_RECENT, 400, "repeat_of_id")
 
 
+def _recheck_repeat(cur, repeat_of_id):
+    """After the insert: the earlier ticket's state read again under the shared lock its
+    foreign key already holds (S025 § 5.2).  A send-back committed since _check_repeat's
+    plain read is seen here, and the raise is refused and rolled back."""
+    cur.execute("SELECT state, not_a_fault FROM tickets WHERE id = %s LOCK IN SHARE MODE", (repeat_of_id,))
+    earlier = cur.fetchone()
+    if latest_restoration(earlier["state"], earlier["not_a_fault"], _event_rows(cur, repeat_of_id)) is None:
+        raise ApiError(REPEAT_NOT_RESTORED, 400, "repeat_of_id")
+
+
 # ---------------------------------------------------------------------------
 # Raise
 # ---------------------------------------------------------------------------
@@ -630,6 +746,8 @@ def raise_ticket():
             "occurred_at": clean["occurred_at"],
         }, actor())
         _add_event(cur, ticket_id, RAISED, clean["occurred_at"], to_state=RAISED, intensity=clean["intensity"])
+        if clean["repeat_of_id"] is not None:
+            _recheck_repeat(cur, clean["repeat_of_id"])
         if clean["restore"] is not None:
             # A1, *Already fixed*: the restore move's own code on the new row (no lock needed: the
             # row is this transaction's own); a refusal rolls the whole raise back
@@ -645,10 +763,11 @@ def raise_ticket():
 # ---------------------------------------------------------------------------
 
 def _add_event(cur, ticket_id, event, occurred_at, from_state=None, to_state=None, intensity=None, person_id=None,
-               remark=None):
+               remark=None, planned_date=None, waiting_reason=None, machine_stopped=None):
     insert_row(cur, "ticket_events", {
         "ticket_id": ticket_id, "event": event, "from_state": from_state, "to_state": to_state,
         "occurred_at": occurred_at, "intensity": intensity, "person_id": person_id, "remark": remark,
+        "planned_date": planned_date, "waiting_reason": waiting_reason, "machine_stopped": machine_stopped,
     }, actor())
 
 
@@ -700,10 +819,27 @@ def _auto_assign(cur, ticket, occurred_at):
         _assign(cur, ticket["id"], own["id"], occurred_at)
 
 
+def _machine_stopped(ticket, clean, prefix):
+    """S019 § 5.3: "was the machine stopped for this work?" for the *started* event -> the
+    answer, or None where it is not asked (a value sent is then ignored); 400 when asked and
+    not answered."""
+    if not machine_stopped_needed(ticket["state"], ticket["intensity"]):
+        return None
+    if clean["machine_stopped"] is None:
+        raise ApiError(MACHINE_STOPPED_NEEDED, 400, f"{prefix}machine_stopped")
+    return clean["machine_stopped"]
+
+
+def _start(_cur, ticket, clean, _occurred_at, _last, _now, prefix):
+    """Start: from scheduled on a ticket that is not critical, the stopped answer on the event."""
+    return {"machine_stopped": _machine_stopped(ticket, clean, prefix)}, {}
+
+
 def _restore(cur, ticket, clean, occurred_at, last, now, prefix):
     """Back in service: the named person (anyone at the site), and the start time after the
-    fact, written as a *started* event before it with the same person -> the event's fields.
-    ``prefix`` names the refusals (``restore.`` from the raise, A1)."""
+    fact, written as a *started* event before it with the same person (and, from scheduled on a
+    defect, the stopped answer, S019 § 5.3) -> the event's fields.  ``prefix`` names the
+    refusals (``restore.`` from the raise, A1)."""
     person = _check_person(cur, clean["person_id"], ticket["site_id"], f"{prefix}person_id")
     from_state = ticket["state"]
     if clean["started_at"] is not None:
@@ -711,13 +847,40 @@ def _restore(cur, ticket, clean, occurred_at, last, now, prefix):
         message = started_at_error(started_at, from_state, occurred_at)
         if message:
             raise ApiError(message, 400, f"{prefix}started_at")
-        _add_event(cur, ticket["id"], STARTED_EVENT, started_at, from_state, IN_PROGRESS, person_id=person["id"])
+        _add_event(cur, ticket["id"], STARTED_EVENT, started_at, from_state, IN_PROGRESS, person_id=person["id"],
+                   machine_stopped=_machine_stopped(ticket, clean, prefix))
         from_state = IN_PROGRESS
     return {"from_state": from_state, "person_id": person["id"]}, {}
 
 
-def _send_back(_cur, ticket, clean, *_args):
-    """Send back: the intensity follows "machine down again?" (decision 4), on the sent_back event."""
+def _schedule(_cur, _ticket, clean, _occurred_at, _last, now, _prefix):
+    """Schedule (S019 § 5.1): the planned date today or later, within a year (today is the IST
+    date of now, never the event's time, BR1-05) -> the plan, on the event and the ticket."""
+    message = planned_date_error(clean["planned_date"], now.date())
+    if message:
+        raise ApiError(message, 400, "planned_date")
+    plan = {"planned_date": clean["planned_date"], "waiting_reason": clean["waiting_reason"]}
+    return plan, dict(plan)
+
+
+def _reschedule(cur, ticket, clean, occurred_at, last, now, prefix):
+    """Change plan (S019 § 5.2): the date rule first — an overdue plan needs a new date, even
+    when only the reason changes (BR2-07) — then the date or the reason must differ from the
+    locked row's."""
+    event, plan = _schedule(cur, ticket, clean, occurred_at, last, now, prefix)
+    if (plan["planned_date"], plan["waiting_reason"]) == (ticket["planned_date"], ticket["waiting_reason"]):
+        raise ApiError(NOTHING_TO_CHANGE, 400)
+    return event, plan
+
+
+def _send_back(cur, ticket, clean, *_args):
+    """Send back: refused once the ticket came back as a repeat (S025 § 5.2, checked under the
+    ticket's lock, so a raise of a repeat and a send-back cannot both succeed); the intensity
+    follows "machine down again?" (decision 4), on the sent_back event."""
+    repeat_serial = _latest_repeat_serial(cur, ticket["id"])
+    message = send_back_error(repeat_serial is not None, repeat_serial)
+    if message:
+        raise ApiError(message, 409)
     new = send_back_intensity(ticket["intensity"], clean["machine_down"])
     if new is None:
         return {}, {}
@@ -749,15 +912,23 @@ def _close(cur, ticket, clean, occurred_at, *_args):
     return {}, changes
 
 
-def _not_a_fault(cur, _ticket, clean, *_args):
-    """Not a fault: the cause says why it was raised; the flag keeps it out of failure counts."""
+def _not_a_fault(cur, ticket, clean, *_args):
+    """Not a fault: the cause says why it was raised; the flag keeps it out of failure counts.
+    Refused while parts are recorded (S020 § 1.5): fitting a part is a maintenance action on a
+    failure.  Counted under the ticket lock, which a parts add holds or waits for, so the two
+    cannot both succeed."""
+    if count(cur, "SELECT COUNT(*) AS n FROM ticket_parts WHERE ticket_id = %s", (ticket["id"],)):
+        raise ApiError(PARTS_NOT_A_FAULT, 409)
     _check_active_code(cur, "failure_causes", clean["cause_id"], "cause_id", CAUSE_NEEDED)
     return {}, {"cause_id": clean["cause_id"], "not_a_fault": 1}
 
 
 # Per move: (cur, ticket, clean, occurred_at, last, now, prefix) -> (event fields, ticket changes)
 _MOVE_STEPS = {
+    "start": _start,
     "restore": _restore,
+    "schedule": _schedule,
+    "reschedule": _reschedule,
     "send-back": _send_back,
     "close": _close,
     "not-a-fault": _not_a_fault,
@@ -767,16 +938,19 @@ _MOVE_STEPS = {
 @tickets_bp.route("/<int:ticket_id>/moves/<move>", methods=["POST"])
 def make_move(ticket_id, move):
     """One route for every move (§ 7 decision 1): the key, the from-states and the required
-    fields come from tickets_core.MOVES; a stale page offering a move gets 409."""
+    fields come from tickets_core.MOVES; a stale page offering a move gets 409.  A move whose key
+    depends on its from-state (Schedule, S019 U1) is refused early only when the user holds
+    none of its keys anywhere; the key that counts is the one for the locked state."""
     spec = MOVES.get(move)
     if spec is None:
         raise ApiError("Not found", 404)
-    check_perm(spec.key)
+    if not any(has_perm(key) for key in spec.keys):
+        check_perm(spec.key)
     clean = clean_body(lambda body, _creating: validate_move(move, body), creating=False)
     now = _now()
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        ticket = _lock_open_ticket(cur, ticket_id, spec.key)
+        ticket = _lock_open_ticket(cur, ticket_id, lambda state: spec.key_at(state) if state in spec.from_states else spec.keys)
         _apply_move(cur, ticket, move, clean, now)
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
@@ -797,6 +971,10 @@ def _apply_move(cur, ticket, move, clean, now, prefix=""):
     if move in _MOVE_STEPS:
         extra_event, changes = _MOVE_STEPS[move](cur, ticket, clean, occurred_at, last, now, prefix)
         event.update(extra_event)
+    if ticket["state"] == SCHEDULED and spec.to_state != SCHEDULED:
+        # The one place the plan is cleared (S019 BR1-08): every move that leaves scheduled,
+        # now and later, so chk_tickets_plan stays a guard that never fires.  The events keep it.
+        changes = {**changes, "planned_date": None, "waiting_reason": None}
     _add_event(cur, ticket_id, spec.event, occurred_at, to_state=spec.to_state, remark=clean["remark"], **event)
     update_row(cur, "tickets", ticket_id, {"state": spec.to_state, **changes}, actor())
     if move in AUTO_ASSIGN_MOVES:
@@ -828,13 +1006,32 @@ def regrade(ticket_id):
     return jsonify(detail)
 
 
+def _locked_node_of_machine(cur, node_id, machine_id, machine_counts):
+    """The node, when it is below the ticket's machine (two levels) — or the machine itself,
+    when ``machine_counts`` — and not scrapped -> its row; None otherwise.  The node's row alone
+    is read LOCK IN SHARE MODE — the lock the write's foreign key takes anyway — and "not
+    scrapped" is decided from it, so a scrap of it at the same moment either commits first and
+    is seen, or waits for this write and counts its ticket (S025 § 1.6).  The parent is read
+    plain: a locking read through the join would lock it too.  Shared by the ticket edit's
+    component and the parts line's node (S020 § 5.2); each caller raises its own refusal."""
+    cur.execute("SELECT id, code, name, level, status, parent_id FROM equipment WHERE id = %s LOCK IN SHARE MODE",
+                (node_id,))
+    node = cur.fetchone()
+    if node is None or node["status"] == SCRAPPED:
+        return None
+    if node["level"] == MACHINE_LEVEL:
+        return node if machine_counts and node["id"] == machine_id else None
+    node["gp_id"] = None
+    if node["parent_id"] is not None:
+        cur.execute("SELECT parent_id FROM equipment WHERE id = %s", (node["parent_id"],))
+        node["gp_id"] = cur.fetchone()["parent_id"]
+    return node if machine_and_component(node)[0] == machine_id else None
+
+
 def _check_component(cur, component_id, machine_id):
     """A node below the ticket's machine (two levels), not scrapped -> its row; 400 otherwise."""
-    cur.execute("SELECT e.id, e.code, e.name, e.level, e.status, e.parent_id, p.parent_id AS gp_id"
-                " FROM equipment e LEFT JOIN equipment p ON p.id = e.parent_id WHERE e.id = %s", (component_id,))
-    node = cur.fetchone()
-    if (node is None or node["level"] == MACHINE_LEVEL or node["status"] == SCRAPPED
-            or machine_and_component(node)[0] != machine_id):
+    node = _locked_node_of_machine(cur, component_id, machine_id, machine_counts=False)
+    if node is None:
         raise ApiError(COMPONENT_OF_MACHINE, 400, "component_id")
     return node
 
@@ -970,3 +1167,92 @@ def remove_labour(ticket_id, row_id):
         cur.execute("DELETE FROM ticket_labour WHERE id = %s", (row_id,))
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
+
+
+# ---------------------------------------------------------------------------
+# Parts used (S020): lines of what was fitted, on the labour routes' pattern
+# ---------------------------------------------------------------------------
+
+# "Fitted here before" (§ 1.4, § 5.3): enough for the dialog's list, newest first
+PART_SUGGESTIONS_MAX = 20
+
+
+def _part_body(cur, ticket, current_node_id=None):
+    """The parts line's body (S020 § 5.1), checked against the ticket.  The node is checked on
+    an add, and on an edit only when it changes (§ 5.2 step 3, BR1-03): the machine itself or a
+    part below it, not scrapped, decided from its row read LOCK IN SHARE MODE.  An unchanged
+    node is history and may have been scrapped since."""
+    clean = clean_body(lambda body, _creating: validate_part(body), creating=True)
+    if (clean["node_id"] != current_node_id
+            and _locked_node_of_machine(cur, clean["node_id"], ticket["equipment_id"], machine_counts=True) is None):
+        raise ApiError(PART_NODE_NEEDED, 400, "node_id")
+    return clean
+
+
+def _part_row(cur, ticket_id, row_id):
+    """A parts line of this ticket -> its node's id; 404 for a line of another ticket."""
+    cur.execute("SELECT node_id FROM ticket_parts WHERE id = %s AND ticket_id = %s", (row_id, ticket_id))
+    row = cur.fetchone()
+    if row is None:
+        raise ApiError("Not found", 404)
+    return row["node_id"]
+
+
+@tickets_bp.route("/<int:ticket_id>/parts", methods=["POST"])
+@require_perm(WORK_KEY)
+def add_part(ticket_id):
+    """S020 § 5.2: the ticket (7) FOR UPDATE (404 → 403 → 409), the body (400), then the node
+    in share mode — the order of the ticket edit (S025 § 1.6)."""
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        ticket = _lock_open_ticket(cur, ticket_id, WORK_KEY)
+        insert_row(cur, "ticket_parts", {"ticket_id": ticket_id, **_part_body(cur, ticket)}, actor())
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail), 201
+
+
+@tickets_bp.route("/<int:ticket_id>/parts/<int:row_id>", methods=["PUT"])
+@require_perm(WORK_KEY)
+def update_part(ticket_id, row_id):
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        ticket = _lock_open_ticket(cur, ticket_id, WORK_KEY)
+        node_id = _part_row(cur, ticket_id, row_id)
+        update_row(cur, "ticket_parts", row_id, _part_body(cur, ticket, node_id), actor())
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+@tickets_bp.route("/<int:ticket_id>/parts/<int:row_id>", methods=["DELETE"])
+@require_perm(WORK_KEY)
+def remove_part(ticket_id, row_id):
+    """A hard delete with no timeline line, as labour (S020 § 5.2, § 7 decision 9): the ticket
+    is open and the line carries its own audit columns."""
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_open_ticket(cur, ticket_id, WORK_KEY)
+        _part_row(cur, ticket_id, row_id)
+        cur.execute("DELETE FROM ticket_parts WHERE id = %s", (row_id,))
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+@tickets_bp.route("/<int:ticket_id>/part-suggestions")
+@require_perm(WORK_KEY)
+def part_suggestions(ticket_id):
+    """"Fitted here before" (S020 § 1.4, § 5.3): the distinct lines already recorded on the
+    ticket's machine and its parts (two levels), on any ticket, newest first.  Read by machine,
+    not through the ticket access predicate (BR2-03, accepted): a suggestion carries no ticket
+    and no site.  ticket:work at the ticket's site, as the parts writes."""
+    with get_db().cursor() as cur:
+        row = read_ticket(cur, ticket_id)
+        require_perm_at(WORK_KEY, row["site_id"])
+        machine_id = row["m_id"]
+        cur.execute("SELECT p.part_number, p.number_kind, p.maker, p.description FROM ticket_parts p"
+                    " JOIN equipment n ON n.id = p.node_id LEFT JOIN equipment np ON np.id = n.parent_id"
+                    " WHERE n.id = %s OR n.parent_id = %s OR np.parent_id = %s"
+                    " GROUP BY p.part_number, p.number_kind, p.maker, p.description"
+                    " ORDER BY MAX(p.created_at) DESC, MAX(p.id) DESC LIMIT %s",
+                    (machine_id, machine_id, machine_id, PART_SUGGESTIONS_MAX))
+        items = cur.fetchall()
+    return jsonify({"items": items, "total": len(items)})

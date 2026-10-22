@@ -6,7 +6,9 @@
  * - open("change"): *Change severity* for ticket:work holders — the raise screen's large
  *   intensity buttons, only the grades the detail's `regrade_to` allows; the remark open and
  *   required when the chosen grade is lower (lowering ends downtime, BR4-01).
- * The API decides every refusal.
+ * The API decides every refusal.  One it cannot show beside a field — in "stopped" mode the
+ * intensity field is not shown, e.g. "Already a breakdown" when another operator was first —
+ * shows at the top, and the page reloads the ticket (S025 § 1.7).
  */
 import { computed, ref, watch } from "vue";
 import { apiPost } from "../../api";
@@ -22,6 +24,7 @@ const emit = defineEmits(["saved", "reload"]);
 
 const PICKED_CLASS = { critical: "btn-danger", degraded: "btn-warning", initial: "btn-secondary" };
 const SHOWN_FIELDS = ["intensity", "occurred_at", "remark"];
+const STOPPED_SHOWN_FIELDS = ["occurred_at", "remark"];
 
 const stopped = ref(false);
 
@@ -33,12 +36,15 @@ const { modal, form, saving, dirty, error, fieldError, openCreate, send } = useF
 
 const choices = computed(() => INTENSITY_CHOICES.filter((c) => props.ticket.regrade_to.includes(c.value)));
 const lowering = computed(() => Boolean(form.value.intensity) && isLowering(props.ticket.intensity, form.value.intensity));
-// A stale state (409, no field): the page behind is out of date, so ask the parent to reload it
+const shownFields = computed(() => (stopped.value ? STOPPED_SHOWN_FIELDS : SHOWN_FIELDS));
+const shownBesideField = (value) => shownFields.value.includes(value.field);
+// A server refusal no field shows (a stale state, or someone else changed the severity first):
+// the page behind is out of date, so ask the parent to reload it
 watch(error, (value) => {
-  if (value && !value.field && value.status === 409) emit("reload");
+  if (value && [400, 409].includes(value.status) && !shownBesideField(value)) emit("reload");
 });
 const opens = ref(0); // EventFields is keyed on it: every opening starts at "Now" (CR1-03)
-const topError = computed(() => (error.value && !SHOWN_FIELDS.includes(error.value.field) ? error.value.message : ""));
+const topError = computed(() => (error.value && !shownBesideField(error.value) ? error.value.message : ""));
 
 function open(mode) {
   stopped.value = mode === "stopped";

@@ -232,8 +232,11 @@ CIL jobs at their units and nothing else.
 - **Sites and units:** sites (SMTW, BRICKS, SSVT, the farms, …) are created in Yantra. Each site has units — its areas and shop floors — coded `SITE.UNIT` (e.g. `SMTW.KILN`, `SSVT.SHOP`). A unit can be mapped to a OneERP warehouse code. Until the sync exists, units are maintained by hand.
 - **Codes frozen once in use** (decided 13-10-2026, S001). A site, unit or equipment-class
   code — and a unit's site — can be corrected only while nothing references the record
-  (site: has units; unit: has users' unit access or, later, equipment; class: has
-  equipment). After that it is frozen. For class codes this protects equipment codes,
+  (site: has units; unit: has users' unit access, equipment, or any ticket — open or
+  closed, S025; class: has equipment). After that it is frozen. A unit also cannot be
+  deactivated while it has tickets not closed ("Close its tickets first (N open)", S025):
+  an inactive unit drops out of access, so its team could not close them. The freeze is on
+  the unit record, not the machine: a machine with open tickets can still move (U3). For class codes this protects equipment codes,
   which embed the prefix. For sites and units it is change control (ISO 55001): OneERP
   warehouse names, printed lists and history snapshots follow the codes. Master records
   are deactivated, never deleted.
@@ -335,10 +338,12 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 - **As built by S018** (approved 20-10-2026): work may **start straight from raised**;
   **back in service** may be recorded after the fact from raised or acknowledged, with an
   optional *started* time (this settles "technician arrived" above); **not a fault** closes
-  with a cause and a required remark; **send back** asks "machine down again?" — yes makes
+  with a cause and a required remark, also after *Start* (S025: started on arrival, nothing
+  found; its times stay blank, out of MTBF and MTTR); **send back** asks "machine down again?" — yes makes
   it a breakdown again, no lowers only a critical ticket; **"Not fixed — raise again"**
   opens a new ticket linked as a repeat when the old one's back-in-service time is within
-  **7 days**. The times are computed from the events, never stored: **response time**
+  **7 days**; once a ticket has come back as a repeat it can no longer be sent back (S025:
+  the failure that came back is on the repeat; it can still be closed). The times are computed from the events, never stored: **response time**
   (raised → first acknowledged or started; the plant's own measure), **repair time** (EN
   13306 *active corrective maintenance time*: time in progress), **downtime** (EN 13306
   *down time*, the *time to restoration* of a breakdown; its mean is **MTTR**). Closing
@@ -755,7 +760,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | `equipment_events` | Equipment history: one row per move or change of status, criticality or class — old → new, who, when (S002) |
 | `memberships` | Person → site: the person's one role at that site, and "all units" (S011 A1) |
 | `person_units` | Person → unit: the units within a site where the person has a membership without "all units" (S011 A1) |
-| `user_units` | Legacy (S001): username → unit. Copied to `person_units` by migration v8 and no longer used; kept for a rollback, dropped by a later step |
+| `user_units` | Legacy (S001): username → unit. No longer used; its rows are copied into Team (`people`, `person_units`) by migration v20 (was v8; squashed S025), kept for a rollback, dropped by a later step |
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1) |
 | `person_trades` | Person → trades, none or more (S010 A1) |

@@ -1,14 +1,13 @@
-"""Migration v12: tickets, ticket events, and ticket photos as a third owner of
-equipment_documents (S017 § 4).  On the test DB: db_version 12 is removed and init_db runs
-twice; every statement is a no-op on re-run.  Re-running v9 afterwards must leave the
-three-owner CHECK alone (BR2-01).  Needs the dev MariaDB container.
+"""Tickets, ticket events, and ticket photos as a third owner of equipment_documents (S017 § 4)
+— built by v12, now by v20 (S025: v1–v13 squashed; v20's re-run is test_migration_v20.py's).
+Tests of today's schema.  Needs the dev MariaDB container.
 """
 
 import pymysql
 import pytest
 
 import config
-from local_db import get_local_db, init_db
+from local_db import get_local_db
 
 
 def _run(sql, params=()):
@@ -43,11 +42,6 @@ def _owner_checks():
         "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'equipment_documents'")}
 
 
-def _shape():
-    return (_columns("tickets"), _columns("ticket_events"), _columns("equipment_documents"),
-            _indexes("tickets"), _indexes("ticket_events"), _indexes("equipment_documents"), _owner_checks())
-
-
 def _insert_document(owners, name):
     equipment_id, model_id, ticket_id = owners
     _run("INSERT INTO equipment_documents (equipment_id, model_id, ticket_id, kind, title, original_name,"
@@ -60,7 +54,9 @@ def test_tables_and_indexes():
     assert tickets["serial"] == ("varchar(16)", "NO")
     assert tickets["component_id"] == ("int(11)", "YES")
     assert tickets["intensity"] == ("enum('critical','degraded','initial')", "NO")
-    assert tickets["state"] == ("enum('raised','acknowledged','in_progress','back_in_service','closed')", "NO")
+    # 'scheduled' appended by v21 (S019 § 4.1)
+    assert tickets["state"] == (
+        "enum('raised','acknowledged','in_progress','back_in_service','closed','scheduled')", "NO")
     assert tickets["description"] == ("varchar(1000)", "YES")
     assert tickets["occurred_at"] == ("datetime", "NO")
     assert tickets["source"] == ("enum('manual')", "NO")
@@ -104,19 +100,3 @@ def test_none_or_two_owners_are_refused(make_equipment, make_model, make_ticket,
     with pytest.raises(pymysql.err.OperationalError) as caught:
         _insert_document(values, f"v12-{uniq.username()}.jpg")
     assert caught.value.args[0] == 4025
-
-
-def test_rerun_changes_nothing_and_v9_after_it_leaves_ticket_photos_working(make_equipment, make_ticket, uniq):
-    before = _shape()
-    for _ in range(2):
-        _run("DELETE FROM db_version WHERE version = 12")
-        init_db(config.DB_CONFIG)
-    assert _shape() == before
-    assert _run("SELECT version FROM db_version WHERE version = 12")
-
-    _run("DELETE FROM db_version WHERE version = 9")
-    init_db(config.DB_CONFIG)
-    assert _shape() == before
-    name = f"v12-{uniq.username()}.jpg"
-    _insert_document((None, None, make_ticket(make_equipment())["id"]), name)
-    _run("DELETE FROM equipment_documents WHERE stored_name = %s", (name,))

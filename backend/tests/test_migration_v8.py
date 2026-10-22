@@ -1,6 +1,7 @@
-"""Migration v8 moves legacy user_units rows to people and person_units (S011 A1 rules 3, 7).
+"""The move of legacy user_units rows to people and person_units (S011 A1 rules 3, 7) — v8's
+statements, now in v20 (S025: v1–v13 squashed; the created_by tag 'migration-v8' kept).
 
-On the test DB: legacy rows are inserted, db_version 8 is removed, and init_db runs twice.
+On the test DB: legacy rows are inserted, db_version 20 is removed, and init_db runs twice.
 Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
 """
 
@@ -28,9 +29,9 @@ def test_legacy_rows_move_once_and_user_units_stays(admin, make_unit, make_perso
              "VALUES (%s, %s, '2026-01-02 03:04:05', 'it_old')", (username, unit["id"]))
     people_before = _run("SELECT COUNT(*) AS n FROM people")[0]["n"]
     try:
-        _run("DELETE FROM db_version WHERE version = 8")
+        _run("DELETE FROM db_version WHERE version = 20")
         init_db(config.DB_CONFIG)
-        _run("DELETE FROM db_version WHERE version = 8")
+        _run("DELETE FROM db_version WHERE version = 20")
         init_db(config.DB_CONFIG)   # every statement is safe to re-run
 
         created = _run("SELECT id, name, employment, username, active, created_by FROM people WHERE username = %s",
@@ -54,6 +55,6 @@ def test_legacy_rows_move_once_and_user_units_stays(admin, make_unit, make_perso
         assert _run("SELECT COUNT(*) AS n FROM memberships WHERE person_id = %s", (created[0]["id"],))[0]["n"] == 0
         # Additive: user_units is kept for a rollback to the previous release
         assert _run("SELECT COUNT(*) AS n FROM user_units WHERE username IN (%s, %s)", (fresh, leaver))[0]["n"] == 3
-        assert _run("SELECT version FROM db_version WHERE version = 8")
+        assert _run("SELECT version FROM db_version WHERE version = 20")
     finally:
         _run("DELETE FROM user_units WHERE username IN (%s, %s)", (fresh, leaver))

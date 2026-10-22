@@ -1,6 +1,7 @@
-"""Migration v11: failure modes, causes and maintenance actions, with the ISO 14224 seed rows
-(S016 § 4).  On the test DB: db_version 11 is removed and init_db runs twice; every statement
-is a no-op on re-run, and an engineer's edit of a seed row is kept.  Seed rows are counted by
+"""Failure modes, causes and maintenance actions, with the ISO 14224 seed rows (S016 § 4) —
+built by v11, now by v20 (S025: v1–v13 squashed; the created_by tag 'migration-v11' kept).
+On the test DB: db_version 20 is removed and init_db runs twice; every statement is a no-op
+on re-run, and an engineer's edit of a seed row is kept.  Seed rows are counted by
 created_by, so rows other tests add never change the counts.
 """
 
@@ -89,10 +90,10 @@ def test_rerun_changes_nothing_and_keeps_an_edited_seed_row():
     try:
         before = {table: (_columns(table), _seed_rows(table)) for table in _TABLES}
         for _ in range(2):
-            _run("DELETE FROM db_version WHERE version = 11")
+            _run("DELETE FROM db_version WHERE version = 20")
             init_db(config.DB_CONFIG)
         assert {table: (_columns(table), _seed_rows(table)) for table in _TABLES} == before
-        assert _run("SELECT version FROM db_version WHERE version = 11")
+        assert _run("SELECT version FROM db_version WHERE version = 20")
         assert _run("SELECT label, active FROM failure_modes WHERE code = 'NOI'")[0] == {"label": "Noisy", "active": 0}
     finally:
         _run("UPDATE failure_modes SET label = 'Abnormal noise', active = 1 WHERE code = 'NOI'")

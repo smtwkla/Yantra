@@ -35,16 +35,51 @@ export async function raiseByApi(key, body) {
   }
 }
 
-/** A move or re-grade through the API as a seed person (setup only; the flows use the screens). */
-export async function moveByApi(key, ticketId, move, body = {}) {
+/** POST `path` with `body` as a seed person, expecting 200 -> the ticket. */
+async function postAs(key, path, body) {
   const api = await apiAs(key);
   try {
-    const res = await api.post(`/api/tickets/${ticketId}/moves/${move}`, { data: body });
+    const res = await api.post(path, { data: body });
     expect(res.status(), await res.text()).toBe(200);
     return await res.json();
   } finally {
     await api.dispose();
   }
+}
+
+/** A move through the API as a seed person (setup only; the flows use the screens). */
+export function moveByApi(key, ticketId, move, body = {}) {
+  return postAs(key, `/api/tickets/${ticketId}/moves/${move}`, body);
+}
+
+/** A re-grade through the API as a seed person (setup, or someone else acting meanwhile, S025). */
+export function regradeByApi(key, ticketId, body) {
+  return postAs(key, `/api/tickets/${ticketId}/regrade`, body);
+}
+
+/** The id of the row `code` in the failure-code list `list` ("failure-causes"), read as admin. */
+async function codeId(list, code) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.get(`/api/masters/${list}`);
+    expect(res.ok(), `${list} look-up failed: ${res.status()}`).toBe(true);
+    const body = await res.json();
+    const row = body.items.find((c) => c.code === code);
+    if (!row) throw new Error(`${list} ${code} not found`);
+    return row.id;
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** The id of the failure cause `code` ("5.1"), read through the API as admin. */
+export function causeId(code) {
+  return codeId("failure-causes", code);
+}
+
+/** The id of the maintenance action `code` ("1" Replace), read through the API as admin (S020). */
+export function actionId(code) {
+  return codeId("maintenance-actions", code);
 }
 
 /** The ticket page's action bar button `name` (exact), clicked; the dialog opens and must fit. */
@@ -69,9 +104,9 @@ export async function saveDialog(page, label) {
   await expect(page.locator(".modal.show")).toHaveCount(0);
 }
 
-/** The ticket page's state badge (beside the serial). */
+/** The ticket page's state badge (beside the serial; red when overdue, S019). */
 export function stateBadge(page) {
-  return page.locator(".badge.text-bg-light");
+  return page.locator(".badge.state-badge");
 }
 
 /** The ticket page's card whose header starts with `title` ("Times", "Assigned", "Labour", "Timeline"). */
@@ -92,6 +127,16 @@ export function timeline(page) {
 /** "21-10-2026 14:05"-style text of an IST "YYYY-MM-DDTHH:MM" value, as formatDateTime shows it. */
 export function shownTime(value) {
   const [date, time] = value.split("T");
-  const [y, m, d] = date.split("-");
-  return `${d}-${m}-${y} ${time}`;
+  return `${shownDay(date)} ${time}`;
+}
+
+/** The IST date `daysAhead` days from today, "YYYY-MM-DD" (a planned date, S019; negative is past). */
+export function istDay(daysAhead) {
+  return istLocal(-daysAhead * 24 * 60).slice(0, 10);
+}
+
+/** "25-10-2026" for "2026-10-25", as formatDateTime shows a date. */
+export function shownDay(isoDate) {
+  const [y, m, d] = isoDate.split("-");
+  return `${d}-${m}-${y}`;
 }

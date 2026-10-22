@@ -1,13 +1,13 @@
-"""Migration v9: manufacturers, equipment models, equipment.model_id NOT NULL, model documents
-(S012 § 4).  On the test DB: db_version 9 is removed and init_db runs twice; every statement
-is a no-op on re-run.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
+"""Manufacturers, equipment models, equipment.model_id NOT NULL, model documents (S012 § 4) —
+built by v9, now by v20 (S025: v1–v13 squashed; v20's re-run is test_migration_v20.py's).
+Tests of today's schema.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
 """
 
 import pymysql
 import pytest
 
 import config
-from local_db import get_local_db, init_db
+from local_db import get_local_db
 
 
 def _run(sql, params=()):
@@ -26,15 +26,7 @@ def _columns(table):
         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s", (table,))}
 
 
-def test_rerun_changes_nothing_and_the_shape_holds(make_equipment):
-    make_equipment()   # equipment rows exist, all with a model: the re-run is safe on them
-    before = (_columns("equipment"), _columns("equipment_documents"), _columns("equipment_events"))
-    for _ in range(2):
-        _run("DELETE FROM db_version WHERE version = 9")
-        init_db(config.DB_CONFIG)
-    assert (_columns("equipment"), _columns("equipment_documents"), _columns("equipment_events")) == before
-    assert _run("SELECT version FROM db_version WHERE version = 9")
-
+def test_the_shape_holds():
     equipment = _columns("equipment")
     assert "make" not in equipment and "model" not in equipment
     assert equipment["model_id"]["IS_NULLABLE"] == "NO"

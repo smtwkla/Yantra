@@ -6,14 +6,18 @@ Errors follow ``{error, field?}``.  Handlers are registered once at app level
 module adds the names of its UNIQUE keys to UNIQUE_KEY_ERRORS at import.
 """
 
+import logging
 import re
 from datetime import datetime
 
 import pymysql
 from flask import g, jsonify, request
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from config import UPLOAD_MAX_MB_CEILING
+from local_db import is_connection_lost
+
+logger = logging.getLogger(__name__)
 
 MYSQL_DUPLICATE_ENTRY = 1062
 
@@ -61,10 +65,48 @@ def _request_too_large(_exc):
     return _error_response(ApiError(f"The file is larger than {UPLOAD_MAX_MB_CEILING} MB", 413, "file"))
 
 
+# The texts the screens show for Werkzeug's own refusals (S025 § 1.3); any other status
+# shows Werkzeug's name for it
+_HTTP_ERROR_TEXT = {
+    404: "Not found",
+    405: "Not allowed",
+    500: "Something went wrong — try again",
+}
+DB_LOST_TEXT = "Database unavailable — try again shortly"
+
+
+def _http_error(exc):
+    """An unknown path, a wrong method or any other Werkzeug refusal: JSON, with its status."""
+    return jsonify({"error": _HTTP_ERROR_TEXT.get(exc.code, exc.name)}), exc.code
+
+
+def _unexpected_error(exc):
+    """Any exception nothing else handles: logged with its traceback here (Flask does not log
+    what a handler answers), and a plain 500 for the screen."""
+    logger.exception("Unhandled error on %s %s", request.method, request.path, exc_info=exc)
+    return jsonify({"error": _HTTP_ERROR_TEXT[500]}), 500
+
+
+def _operational_error(exc):
+    """A connection that died mid-request (the pool's ping passed, the first execute failed) is
+    a 503, as DBUnavailable; any other OperationalError (1213 deadlock, 1205 lock wait — the
+    accepted rare races) is the plain 500."""
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
+    if is_connection_lost(code):
+        logger.error("Database connection lost on %s %s: %s", request.method, request.path, exc)
+        return jsonify({"error": DB_LOST_TEXT}), 503
+    return _unexpected_error(exc)
+
+
 def register_error_handlers(app):
+    """Flask picks the most specific handler by class, so ApiError, IntegrityError and
+    RequestEntityTooLarge keep theirs ahead of HTTPException and Exception."""
     app.register_error_handler(ApiError, _error_response)
     app.register_error_handler(pymysql.err.IntegrityError, _integrity_error)
     app.register_error_handler(RequestEntityTooLarge, _request_too_large)
+    app.register_error_handler(pymysql.err.OperationalError, _operational_error)
+    app.register_error_handler(HTTPException, _http_error)
+    app.register_error_handler(Exception, _unexpected_error)
 
 
 def actor():

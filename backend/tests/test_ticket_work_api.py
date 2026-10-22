@@ -10,9 +10,11 @@ import threading
 import time
 from datetime import timedelta
 
+import pymysql
 import pytest
 
 import config
+import tickets
 from local_db import get_local_db
 from tests.conftest import EQUIPMENT, MASTERS, TICKETS
 from tests.documents_helpers import JPEG, PDF, upload_to
@@ -80,6 +82,10 @@ def booked(client, ticket, person, **body):
     res = labour(client, ticket, person, **body)
     assert res.status_code == 201, res.get_json()
     return res.get_json()
+
+
+# The S019 figures of a ticket never scheduled (its S018 figures are unchanged)
+NOT_SCHEDULED = {"waiting_minutes": None, "waiting_by_reason": None, "planned_downtime_minutes": None}
 
 
 def events(ticket_detail):
@@ -162,7 +168,7 @@ class TestMoves:
     @pytest.mark.parametrize("name, state", [
         ("acknowledge", "acknowledged"), ("acknowledge", "in_progress"), ("start", "in_progress"),
         ("start", "back_in_service"), ("restore", "back_in_service"), ("send-back", "in_progress"),
-        ("close", "in_progress"), ("not-a-fault", "in_progress"), ("not-a-fault", "back_in_service"),
+        ("close", "in_progress"), ("not-a-fault", "back_in_service"),
     ])
     def test_a_wrong_state_is_409(self, admin, eng, ticket, set_ticket_state, cause, action, name, state):
         set_ticket_state(ticket, state)
@@ -182,7 +188,7 @@ class TestMoves:
         operator_client, _ = at_site("maint_operator")
         assert move_names(detail(operator_client, ticket)) == ["restore"]
         assert move_names(detail(tech[0], ticket)) == ["acknowledge", "start", "restore"]
-        assert move_names(detail(eng[0], ticket)) == ["acknowledge", "start", "restore", "not-a-fault"]
+        assert move_names(detail(eng[0], ticket)) == ["acknowledge", "start", "restore", "schedule", "not-a-fault"]
 
 
 class TestEventTime:
@@ -368,12 +374,22 @@ class TestNotAFault:
             "closed", True, "5.1", None)
         assert len(done["labour"]) == 1
         assert done["events"][-1]["event"] == "closed_not_a_fault"
-        assert done["times"] == {"response_minutes": None, "repair_minutes": None, "downtime_minutes": None}
+        assert done["times"] == {"response_minutes": None, "repair_minutes": None, "downtime_minutes": None,
+                                 **NOT_SCHEDULED}
         assert done["can_raise_repeat"] is False
 
-    def test_from_in_progress_is_409(self, admin, ticket, no_cause):
+    def test_from_in_progress_closes_with_blank_times_and_keeps_the_labour(self, admin, eng, ticket, no_cause):
+        """S025 U4: Start pressed on arrival, nothing found — still not a fault; out of MTBF and
+        MTTR like any not-a-fault ticket; the labour already logged stays."""
+        _, person = eng
         moved(admin, ticket, "start")
-        assert refusal(move(admin, ticket, "not-a-fault", cause_id=no_cause, remark="x"))[0] == 409
+        assert "not-a-fault" in move_names(detail(admin, ticket))
+        booked(admin, ticket, person, minutes=20)
+        done = moved(admin, ticket, "not-a-fault", cause_id=no_cause, remark="Nothing wrong found")
+        assert (done["state"], done["not_a_fault"]) == ("closed", True)
+        assert done["times"] == {"response_minutes": None, "repair_minutes": None, "downtime_minutes": None,
+                                 **NOT_SCHEDULED}
+        assert len(done["labour"]) == 1
 
     def test_needs_a_remark(self, admin, ticket, no_cause):
         assert refusal(move(admin, ticket, "not-a-fault", cause_id=no_cause))[:2] == (400, "remark")
@@ -439,6 +455,25 @@ class TestEdit:
     def test_component_outside_the_machine_is_400(self, admin, make_equipment, ticket):
         other = make_equipment(parent=make_equipment())
         assert refusal(admin.put(url(ticket), json={"component_id": other["id"]}))[:2] == (400, "component_id")
+
+    def test_a_scrapped_component_is_400(self, admin, make_equipment, machine, ticket):
+        part = make_equipment(parent=machine)
+        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"status": "scrapped"}).status_code == 200
+        assert refusal(admin.put(url(ticket), json={"component_id": part["id"]}))[:2] == (400, "component_id")
+
+    def test_a_scrap_committed_during_the_edit_is_seen(self, admin, make_equipment, machine, ticket, db_rows,
+                                                       monkeypatch):
+        """S025 § 1.6: the component is read with a locking read, which sees the latest committed
+        row; a plain read would see the edit's snapshot, taken before the scrap committed."""
+        part = make_equipment(parent=machine)
+        real_lock = tickets._lock_open_ticket
+
+        def lock_then_scrap_elsewhere(cur, ticket_id, key):
+            locked = real_lock(cur, ticket_id, key)   # its plain read has taken the snapshot
+            db_rows("UPDATE equipment SET status = 'scrapped' WHERE id = %s", (part["id"],))
+            return locked
+        monkeypatch.setattr(tickets, "_lock_open_ticket", lock_then_scrap_elsewhere)
+        assert refusal(admin.put(url(ticket), json={"component_id": part["id"]}))[:2] == (400, "component_id")
 
     def test_mode_of_another_class_is_400(self, admin, make_mode, make_class, ticket):
         mode = make_mode(cls=make_class())
@@ -624,6 +659,54 @@ class TestRepeat:
                                         "description": "x", "repeat_of_id": restored["id"]})
         assert refusal(res) == (400, "repeat_of_id", "That ticket can't be repeated: it is not back in service")
 
+    def test_no_send_back_once_it_came_back_as_a_repeat(self, admin, eng, restored, machine):
+        """S025 § 5.2: the stop that came back is on the repeat; sending this one back too would
+        count it twice.  Not offered, refused if sent anyway, and closing stays possible."""
+        assert "send-back" in move_names(detail(eng[0], restored))
+        repeat = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
+                                           "description": "Again", "repeat_of_id": restored["id"]}).get_json()
+        assert move_names(detail(eng[0], restored)) == ["close"]
+        res = move(eng[0], restored, "send-back", machine_down=True, remark="Still leaking")
+        assert refusal(res) == (409, None, f"This ticket came back as {repeat['serial']}; work on that one")
+
+    def test_a_repeat_the_user_cannot_see_still_forbids_the_send_back(self, admin, eng, restored, machine,
+                                                                      make_unit):
+        """The machine moved to another site's unit before the repeat: the engineer at the old
+        unit sees the earlier ticket but not the repeat, and is not offered Send back either."""
+        assert admin.put(f"{EQUIPMENT}/{machine['id']}", json={"unit_id": make_unit()["id"]}).status_code == 200
+        res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
+                                        "description": "Again", "repeat_of_id": restored["id"]})
+        assert res.status_code == 201, res.get_json()
+        seen = detail(eng[0], restored)
+        assert seen["repeats"] == []
+        assert "send-back" not in move_names(seen)
+        assert refusal(move(eng[0], restored, "send-back", machine_down=False, remark="x"))[0] == 409
+
+    def test_a_send_back_committed_during_the_raise_refuses_the_repeat(self, admin, restored, machine, db_rows,
+                                                                       monkeypatch):
+        """S025 § 5.2: the raise re-reads the earlier ticket under the shared lock after its insert;
+        a send-back that committed after the raise's plain check is seen, and the raise rolls back."""
+        real_check = tickets._check_repeat
+
+        def check_then_send_back_elsewhere(cur, repeat_of_id, machine_id, occurred_at):
+            real_check(cur, repeat_of_id, machine_id, occurred_at)   # passes, and takes the snapshot
+            # The send-back's state change, committed on another connection.  Its foreign-key
+            # checks are off: state is in the index of fk_tickets_equipment, so the check would
+            # wait for the machine row this raise holds.  So this covers only the order where the
+            # send-back commits first; an overlap is an accepted deadlock (CR1-02).
+            conn = get_local_db(config.DB_CONFIG)
+            try:
+                with conn.cursor() as other:
+                    other.execute("SET FOREIGN_KEY_CHECKS = 0")
+                    other.execute("UPDATE tickets SET state = 'in_progress' WHERE id = %s", (repeat_of_id,))
+            finally:
+                conn.close()
+        monkeypatch.setattr(tickets, "_check_repeat", check_then_send_back_elsewhere)
+        res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
+                                        "description": "Again", "repeat_of_id": restored["id"]})
+        assert refusal(res) == (400, "repeat_of_id", "That ticket can't be repeated: it is not back in service")
+        assert db_rows("SELECT COUNT(*) AS n FROM tickets WHERE repeat_of_id = %s", (restored["id"],))[0]["n"] == 0
+
     def test_never_restored_is_400(self, admin, ticket, machine):
         res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
                                         "description": "x", "repeat_of_id": ticket["id"]})
@@ -643,7 +726,7 @@ class TestDetail:
         moved(admin, ticket, "acknowledge", occurred_at=local(start + timedelta(minutes=5)))
         moved(admin, ticket, "start", occurred_at=local(start + timedelta(minutes=10)))
         done = moved(admin, ticket, "restore", person_id=person["id"], occurred_at=local(start + timedelta(minutes=40)))
-        assert done["times"] == {"response_minutes": 5, "repair_minutes": 30, "downtime_minutes": 40}
+        assert done["times"] == {"response_minutes": 5, "repair_minutes": 30, "downtime_minutes": 40, **NOT_SCHEDULED}
         rows = db_rows("SELECT event, occurred_at, intensity FROM ticket_events WHERE ticket_id = %s"
                        " ORDER BY occurred_at, id", (ticket["id"],))
         assert ticket_times(rows, now_ist()) == done["times"]
@@ -777,7 +860,8 @@ class TestAlreadyFixed:
         back = done["events"][-1]
         assert (back["from_state"], back["occurred_at"], back["person"]["id"]) == (
             "raised", api_time(restored_at), person["id"])
-        assert done["times"] == {"response_minutes": None, "repair_minutes": None, "downtime_minutes": 45}
+        assert done["times"] == {"response_minutes": None, "repair_minutes": None, "downtime_minutes": 45,
+                                 **NOT_SCHEDULED}
 
     def test_with_a_start(self, admin, eng, machine):
         _, person = eng
@@ -790,7 +874,8 @@ class TestAlreadyFixed:
         assert done["state"] == "back_in_service"
         assert events(done) == ["raised", "started", "back_in_service"]
         assert [e["person"]["id"] for e in done["events"][1:]] == [person["id"], person["id"]]
-        assert done["times"] == {"response_minutes": 15, "repair_minutes": 30, "downtime_minutes": 45}
+        assert done["times"] == {"response_minutes": 15, "repair_minutes": 30, "downtime_minutes": 45,
+                                 **NOT_SCHEDULED}
 
     def test_no_time_given_is_now(self, admin, eng, machine):
         before = now_ist().replace(microsecond=0)
@@ -845,3 +930,259 @@ class TestAlreadyFixed:
         assert move(admin, ticket, "close", **close).status_code == 409
         booked(admin, ticket, person)
         assert moved(admin, ticket, "close", **close)["state"] == "closed"
+
+
+# ---------------------------------------------------------------------------
+# Deferred work (S019 § 8)
+# ---------------------------------------------------------------------------
+
+def plan_day(days=0):
+    """A planned date ``days`` after today (IST), as the dialog sends it."""
+    return (now_ist().date() + timedelta(days=days)).isoformat()
+
+
+def scheduled(client, ticket, days=3, reason="parts", **body):
+    return moved(client, ticket, "schedule", planned_date=plan_day(days), waiting_reason=reason, **body)
+
+
+@pytest.fixture
+def make_overdue(db_rows):
+    """make_overdue(ticket): a scheduled ticket's plan moved to yesterday on the ticket and on its
+    events, as the e2e seed does (the API refuses a past date by design)."""
+    def make(ticket):
+        yesterday = plan_day(-1)
+        db_rows("UPDATE tickets SET planned_date = %s WHERE id = %s", (yesterday, ticket["id"]))
+        db_rows("UPDATE ticket_events SET planned_date = %s WHERE ticket_id = %s AND planned_date IS NOT NULL",
+                (yesterday, ticket["id"]))
+        return yesterday
+    return make
+
+
+def last_event(shown, name):
+    return [e for e in shown["events"] if e["event"] == name][-1]
+
+
+def move_entry(shown, name):
+    return next(m for m in shown["moves"] if m["name"] == name)
+
+
+class TestSchedule:
+
+    @pytest.mark.parametrize("state", ["raised", "acknowledged", "in_progress"])
+    def test_an_engineer_schedules(self, eng, ticket, set_ticket_state, state):
+        set_ticket_state(ticket, state)
+        shown = scheduled(eng[0], ticket)
+        assert shown["state"] == "scheduled"
+        assert (shown["planned_date"], shown["waiting_reason"], shown["overdue"]) == (plan_day(3), "parts", False)
+        event = shown["events"][-1]
+        assert (event["event"], event["from_state"], event["to_state"], event["planned_date"],
+                event["waiting_reason"]) == ("scheduled", state, "scheduled", plan_day(3), "parts")
+        # Scheduling is planning, not taking the work: nobody is assigned
+        assert shown["assignees"] == []
+        assert move_names(shown) == ["start", "restore", "reschedule", "not-a-fault"]
+
+    def test_a_technician_schedules_from_in_progress_only(self, tech, ticket):
+        """U1: "work stops, waiting for parts" is the technician's; committing a slot is not."""
+        client, _ = tech
+        moved(client, ticket, "acknowledge")
+        assert "schedule" not in move_names(detail(client, ticket))
+        res = move(client, ticket, "schedule", planned_date=plan_day(1), waiting_reason="parts")
+        assert res.status_code == 403
+        moved(client, ticket, "start")
+        assert "schedule" in move_names(detail(client, ticket))
+        assert scheduled(client, ticket)["state"] == "scheduled"
+
+    def test_an_operator_cannot_schedule(self, operator, ticket):
+        assert move(operator, ticket, "schedule", planned_date=plan_day(1), waiting_reason="parts").status_code == 403
+
+    def test_from_back_in_service_is_409(self, eng, restored):
+        res = move(eng[0], restored, "schedule", planned_date=plan_day(1), waiting_reason="parts")
+        assert refusal(res) == (409, None, "This ticket changed — reload")
+
+    def test_a_stale_schedule_by_a_technician_is_409_not_403(self, tech, restored):
+        """S019 CR1-01: the page is stale (back in service); no per-state key applies, so the
+        refusal is the usual 409 "reload", not a 403 from the default key."""
+        client, _ = tech
+        res = move(client, restored, "schedule", planned_date=plan_day(1), waiting_reason="parts")
+        assert refusal(res) == (409, None, "This ticket changed — reload")
+
+    @pytest.mark.parametrize("reason", [["parts"], {"a": 1}])
+    def test_a_list_or_object_reason_is_400(self, admin, ticket, reason):
+        """S019 CR1-02: an unhashable waiting_reason is a field error, not a 500."""
+        res = move(admin, ticket, "schedule", planned_date=plan_day(1), waiting_reason=reason)
+        assert refusal(res) == (400, "waiting_reason", "Choose why it waits")
+
+    def test_the_body_rules(self, admin, make_ticket, machine):
+        """BR1-05: a back-dated schedule still plans from today, the IST date of now."""
+        start = now_ist().replace(second=0, microsecond=0) - timedelta(days=2)
+        ticket = make_ticket(machine, occurred_at=local(start))
+        assert refusal(move(admin, ticket, "schedule", waiting_reason="parts")) == (
+            400, "planned_date", "Choose the planned date")
+        res = move(admin, ticket, "schedule", occurred_at=local(start + timedelta(hours=1)),
+                   planned_date=start.date().isoformat(), waiting_reason="parts")
+        assert refusal(res) == (400, "planned_date", "The planned date cannot be before today")
+        res = move(admin, ticket, "schedule", planned_date=plan_day(366), waiting_reason="parts")
+        assert refusal(res) == (400, "planned_date", "Plan within a year")
+        res = move(admin, ticket, "schedule", planned_date=plan_day(1), waiting_reason="other")
+        assert refusal(res) == (400, "remark", "Add a remark")
+        res = move(admin, ticket, "schedule", planned_date=plan_day(1), waiting_reason="workshop")
+        assert refusal(res) == (400, "waiting_reason", "Choose why it waits")
+        assert detail(admin, ticket)["state"] == "raised"
+        assert scheduled(admin, ticket, days=0)["planned_date"] == plan_day(0)
+
+    def test_the_database_keeps_the_plan_on_scheduled_tickets_only(self, ticket, set_ticket_state, db_rows):
+        """chk_tickets_plan: the guard behind _apply_move's one clearing place."""
+        with pytest.raises(pymysql.err.MySQLError):
+            set_ticket_state(ticket, "scheduled")
+        with pytest.raises(pymysql.err.MySQLError):
+            db_rows("UPDATE tickets SET planned_date = CURDATE(), waiting_reason = 'parts' WHERE id = %s",
+                    (ticket["id"],))
+
+
+class TestChangePlan:
+
+    def test_the_date_or_the_reason(self, eng, ticket):
+        client, _ = eng
+        scheduled(client, ticket, days=3)
+        shown = moved(client, ticket, "reschedule", planned_date=plan_day(10), waiting_reason="parts",
+                      remark="Parts not arrived")
+        event = shown["events"][-1]
+        assert (event["event"], event["planned_date"], event["waiting_reason"], event["remark"]) == (
+            "rescheduled", plan_day(10), "parts", "Parts not arrived")
+        assert (shown["state"], shown["planned_date"]) == ("scheduled", plan_day(10))
+        shown = moved(client, ticket, "reschedule", planned_date=plan_day(10), waiting_reason="slot",
+                      remark="Parts in, production busy")
+        assert shown["waiting_reason"] == "slot"
+        # Nothing changed, and the remark required
+        res = move(client, ticket, "reschedule", planned_date=plan_day(10), waiting_reason="slot", remark="Again")
+        assert refusal(res) == (400, None, "Nothing to change")
+        res = move(client, ticket, "reschedule", planned_date=plan_day(11), waiting_reason="slot")
+        assert refusal(res) == (400, "remark", "Add a remark")
+
+    def test_a_technician_cannot_change_the_plan(self, tech, eng, ticket):
+        scheduled(eng[0], ticket)
+        assert "reschedule" not in move_names(detail(tech[0], ticket))
+        res = move(tech[0], ticket, "reschedule", planned_date=plan_day(5), waiting_reason="parts", remark="x")
+        assert res.status_code == 403
+
+    def test_from_in_progress_is_409(self, eng, ticket):
+        moved(eng[0], ticket, "start")
+        res = move(eng[0], ticket, "reschedule", planned_date=plan_day(5), waiting_reason="parts", remark="x")
+        assert refusal(res) == (409, None, "This ticket changed — reload")
+
+    def test_an_overdue_plan_needs_a_new_date(self, eng, ticket, make_overdue):
+        """BR2-07: the dialog opens with the past date; changing only the reason is refused on it."""
+        scheduled(eng[0], ticket)
+        yesterday = make_overdue(ticket)
+        assert detail(eng[0], ticket)["overdue"] is True
+        res = move(eng[0], ticket, "reschedule", planned_date=yesterday, waiting_reason="slot", remark="x")
+        assert refusal(res) == (400, "planned_date", "The planned date cannot be before today")
+        assert moved(eng[0], ticket, "reschedule", planned_date=plan_day(2), waiting_reason="parts",
+                     remark="Supplier slipped")["overdue"] is False
+
+
+class TestLeavingScheduled:
+
+    def test_start_on_a_defect_asks_whether_the_machine_stopped(self, eng, tech, make_ticket, machine, db_rows):
+        ticket = make_ticket(machine, intensity="degraded")
+        scheduled(eng[0], ticket)
+        assert move_entry(detail(tech[0], ticket), "start")["asks_machine_stopped"] is True
+        assert refusal(move(tech[0], ticket, "start")) == (400, "machine_stopped", "Choose Yes or No")
+        shown = moved(tech[0], ticket, "start", machine_stopped=True)
+        assert shown["state"] == "in_progress"
+        assert (shown["planned_date"], shown["waiting_reason"], shown["overdue"]) == (None, None, False)
+        assert db_rows("SELECT planned_date, waiting_reason FROM tickets WHERE id = %s", (ticket["id"],)) == [
+            {"planned_date": None, "waiting_reason": None}]
+        assert last_event(shown, "started")["machine_stopped"] is True
+        # The history stays on the event
+        assert last_event(shown, "scheduled")["planned_date"] == plan_day(3)
+        # Auto-assign as S018
+        assert [a["id"] for a in shown["assignees"]] == [tech[1]["id"]]
+
+    def test_start_on_a_breakdown_does_not_ask(self, eng, tech, ticket):
+        scheduled(eng[0], ticket)
+        assert move_entry(detail(tech[0], ticket), "start")["asks_machine_stopped"] is False
+        shown = moved(tech[0], ticket, "start", machine_stopped=True)
+        assert last_event(shown, "started")["machine_stopped"] is None
+
+    def test_start_from_acknowledged_does_not_ask(self, tech, make_ticket, machine):
+        ticket = make_ticket(machine, intensity="initial")
+        moved(tech[0], ticket, "acknowledge")
+        assert move_entry(detail(tech[0], ticket), "start")["asks_machine_stopped"] is False
+        assert last_event(moved(tech[0], ticket, "start"), "started")["machine_stopped"] is None
+
+    def test_back_in_service_with_a_start_on_a_defect(self, admin, eng, make_ticket, machine):
+        start = now_ist().replace(second=0, microsecond=0) - timedelta(hours=2)
+        ticket = make_ticket(machine, intensity="degraded", occurred_at=local(start))
+        scheduled(admin, ticket, occurred_at=local(start + timedelta(minutes=10)))
+        body = {"person_id": eng[1]["id"], "started_at": local(start + timedelta(minutes=30)),
+                "occurred_at": local(start + timedelta(minutes=90))}
+        assert refusal(move(admin, ticket, "restore", **body)) == (400, "machine_stopped", "Choose Yes or No")
+        shown = moved(admin, ticket, "restore", machine_stopped=True, **body)
+        assert shown["state"] == "back_in_service" and shown["planned_date"] is None
+        assert last_event(shown, "started")["machine_stopped"] is True
+        assert shown["times"]["planned_downtime_minutes"] == 60
+        assert shown["times"]["downtime_minutes"] == 0
+
+    def test_back_in_service_without_a_start_does_not_ask(self, admin, eng, make_ticket, machine):
+        ticket = make_ticket(machine, intensity="degraded")
+        scheduled(admin, ticket)
+        shown = moved(admin, ticket, "restore", person_id=eng[1]["id"])
+        assert shown["state"] == "back_in_service" and shown["planned_date"] is None
+        assert shown["times"]["repair_minutes"] is None and shown["times"]["planned_downtime_minutes"] is None
+
+    def test_a_waiting_breakdown_splits_its_downtime(self, admin, eng, make_ticket, machine):
+        start = now_ist().replace(second=0, microsecond=0) - timedelta(hours=3)
+        ticket = make_ticket(machine, occurred_at=local(start))
+        moved(admin, ticket, "start", occurred_at=local(start + timedelta(minutes=10)))
+        scheduled(admin, ticket, occurred_at=local(start + timedelta(minutes=40)))
+        moved(admin, ticket, "start", occurred_at=local(start + timedelta(minutes=100)))
+        shown = moved(admin, ticket, "restore", person_id=eng[1]["id"], occurred_at=local(start + timedelta(minutes=130)))
+        assert shown["times"] == {"response_minutes": 10, "repair_minutes": 60, "downtime_minutes": 130,
+                                  "waiting_minutes": 60, "waiting_by_reason": {"parts": 60},
+                                  "planned_downtime_minutes": None}
+
+    def test_not_a_fault_from_scheduled(self, admin, ticket, no_cause):
+        scheduled(admin, ticket)
+        shown = moved(admin, ticket, "not-a-fault", cause_id=no_cause, remark="Not ours")
+        assert (shown["state"], shown["not_a_fault"], shown["planned_date"]) == ("closed", True, None)
+
+    def test_raised_to_critical_stays_scheduled(self, admin, make_ticket, machine):
+        ticket = make_ticket(machine, intensity="degraded")
+        scheduled(admin, ticket)
+        res = admin.post(url(ticket, "regrade"), json={"intensity": "critical"})
+        assert res.status_code == 200, res.get_json()
+        assert (res.get_json()["state"], res.get_json()["intensity"]) == ("scheduled", "critical")
+
+
+class TestPlanList:
+
+    def listing(self, client, unit, state):
+        res = client.get(TICKETS, query_string={"state": state, "unit_id": unit["id"]})
+        assert res.status_code == 200, res.get_json()
+        return res.get_json()["items"]
+
+    def test_filters_order_and_items(self, admin, make_ticket, machine, unit, make_overdue):
+        later, today, overdue = (make_ticket(machine) for _ in range(3))
+        scheduled(admin, later, days=5)
+        scheduled(admin, today, days=0)
+        scheduled(admin, overdue, days=2)
+        make_overdue(overdue)
+        acted_on = make_ticket(machine)    # raised last, but someone can act on it now
+        moved(admin, acted_on, "acknowledge")
+
+        ids = lambda items: [t["id"] for t in items]
+        assert ids(self.listing(admin, unit, "scheduled")) == [overdue["id"], today["id"], later["id"]]
+        assert ids(self.listing(admin, unit, "overdue")) == [overdue["id"]]
+        # Open: within one intensity the scheduled rows come after the actionable ones
+        assert ids(self.listing(admin, unit, "open")) == [acted_on["id"], later["id"], today["id"], overdue["id"]]
+        item = next(t for t in self.listing(admin, unit, "scheduled") if t["id"] == overdue["id"])
+        assert (item["planned_date"], item["waiting_reason"], item["overdue"]) == (plan_day(-1), "parts", True)
+        assert next(t for t in self.listing(admin, unit, "open") if t["id"] == acted_on["id"])["planned_date"] is None
+
+    def test_outside_the_users_units_the_moves_are_404(self, user_with_units, make_unit, eng, ticket):
+        other = user_with_units("maint_engineer", [make_unit()])
+        assert move(other, ticket, "schedule", planned_date=plan_day(1), waiting_reason="parts").status_code == 404
+        scheduled(eng[0], ticket)
+        res = move(other, ticket, "reschedule", planned_date=plan_day(2), waiting_reason="parts", remark="x")
+        assert res.status_code == 404

@@ -32,6 +32,7 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import has_perm, has_perm_at, require_perm, require_perm_at
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from equipment_core import check_type_class
+from tickets_core import CLOSED, close_tickets_first
 from masters_core import (
     model_label, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
     validate_equipment_model, validate_equipment_type, validate_failure_cause, validate_failure_mode,
@@ -243,11 +244,15 @@ def list_units():
 
 
 def _unit_is_referenced(cur, unit_id):
-    """Access rows or any equipment — scrapped included, it still carries the unit in its
-    history — freeze the unit's code and site.  Only equipment rows hold a unit_id; parts
-    follow their equipment."""
+    """Access rows, any equipment — scrapped included, it still carries the unit in its
+    history — or any ticket, open or closed (S025 § 5.3), freeze the unit's code and site.  Of
+    the equipment only machine rows hold a unit_id; parts follow their machine.  A ticket's
+    unit_id is the place of the failure and the site its writes are checked at (S017 § 5.3).
+    The ticket count is a locking read under the unit's lock, as _check_code_frozen: a raise
+    holding the unit's FK lock commits first and is counted."""
     return (count(cur, "SELECT COUNT(*) AS n FROM person_units WHERE unit_id = %s", (unit_id,))
-            or count(cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s", (unit_id,)))
+            or count(cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s", (unit_id,))
+            or count(cur, "SELECT COUNT(*) AS n FROM tickets WHERE unit_id = %s LOCK IN SHARE MODE", (unit_id,)))
 
 
 @masters_bp.route("/units", methods=["POST"])
@@ -276,6 +281,13 @@ def update_unit(unit_id):
                 if code_changes:
                     raise ApiError("Code is in use and cannot be changed", 409, "code")
                 raise ApiError("Unit is in use and cannot be moved to another site", 409, "site_id")
+        # A ticket not closed keeps its unit active: inactive units drop out of access, so the
+        # team could no longer close it (S025 § 5.3).  First, so the count is what the user sees.
+        if clean.get("active") == 0:
+            open_tickets = count(cur, "SELECT COUNT(*) AS n FROM tickets WHERE unit_id = %s AND state <> %s"
+                                      " LOCK IN SHARE MODE", (unit_id, CLOSED))
+            if open_tickets:
+                raise ApiError(close_tickets_first(open_tickets), 409, "active")
         # Laid-up (out_of_use) equipment still stands in the unit, so it blocks too (S002 § 10.2)
         if clean.get("active") == 0 and count(
                 cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s AND status <> 'scrapped'",

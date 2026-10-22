@@ -4,6 +4,13 @@ import {
   intensityChanges, isBreakdown, isLowering, minutesText, moveConsequence, moveLabel, moveSaveLabel, problemText,
   raiseSaveLabel, restoreTimeLabel, sendBackChoices, sendBackQuestion, STATE_LABELS, toLocalDateValue, toLocalInputValue,
 } from "../src/utils/ticketLabels.js";
+import {
+  machineStoppedQuestion, overdueBadge, planChanges, planLine, stateLabel, STATE_FILTERS, WAITING_REASON_DELAYS,
+  WAITING_REASON_LABELS, waitingSplit, waitingText,
+} from "../src/utils/ticketLabels.js";
+import {
+  DEFAULT_PART_KIND, matchingParts, PART_KIND_CHOICES, PART_KIND_SHORT, PART_UNITS, partText, quantityText,
+} from "../src/utils/ticketLabels.js";
 
 describe("ticket labels (S017)", () => {
   it("names each intensity, breakdown or defect", () => {
@@ -13,7 +20,8 @@ describe("ticket labels (S017)", () => {
   });
 
   it("names every state", () => {
-    expect(Object.keys(STATE_LABELS)).toEqual(["raised", "acknowledged", "in_progress", "back_in_service", "closed"]);
+    expect(Object.keys(STATE_LABELS)).toEqual(["raised", "acknowledged", "scheduled", "in_progress", "back_in_service",
+      "closed"]);
     expect(STATE_LABELS.back_in_service).toBe("Back in service");
   });
 
@@ -123,6 +131,88 @@ describe("minutesText", () => {
     expect(minutesText(0)).toBe("0 min");
     expect(minutesText(null)).toBe("—");
   });
+
+  it("days from 24 h on, the minutes dropped (S019 BR2-03)", () => {
+    expect(minutesText(23 * 60 + 59)).toBe("23 h 59 min");
+    expect(minutesText(24 * 60)).toBe("1 d");
+    expect(minutesText(3 * 24 * 60)).toBe("3 d");
+    expect(minutesText(2 * 24 * 60 + 20 * 60 + 35)).toBe("2 d 20 h");
+  });
+
+  it("labour stays in hours", () => {
+    expect(minutesText(26 * 60 + 5, { days: false })).toBe("26 h 5 min");
+  });
+});
+
+describe("deferred work (S019)", () => {
+  it("the six waiting reasons, as tickets_core holds them, with their EN 13306 delay", () => {
+    expect(Object.keys(WAITING_REASON_LABELS)).toEqual(["parts", "vendor", "expert", "slot", "approval", "other"]);
+    expect(WAITING_REASON_DELAYS).toEqual({
+      parts: "logistic", vendor: "logistic", expert: "logistic", slot: "administrative", approval: "administrative",
+      other: null,
+    });
+    expect(waitingText("parts")).toBe("waiting for parts");
+    expect(waitingText("other")).toBe("other reason");
+  });
+
+  it("the badge: Scheduled on a defect, Waiting on a breakdown, Overdue past the date", () => {
+    expect(stateLabel({ state: "scheduled", intensity: "degraded", overdue: false })).toBe("Scheduled");
+    expect(stateLabel({ state: "scheduled", intensity: "critical", overdue: false })).toBe("Waiting");
+    expect(stateLabel({ state: "scheduled", intensity: "critical", overdue: true })).toBe("Overdue");
+    expect(stateLabel({ state: "in_progress", intensity: "critical", overdue: false })).toBe("In progress");
+  });
+
+  it("the line under the header and the list's badge", () => {
+    const ticket = { state: "scheduled", planned_date: "2026-10-25", waiting_reason: "parts", overdue: false };
+    expect(planLine(ticket)).toBe("for 25-10-2026 · waiting for parts");
+    expect(planLine({ ...ticket, overdue: true })).toBe("Overdue since 25-10-2026 · waiting for parts");
+    expect(planLine({ ...ticket, state: "in_progress" })).toBe("");
+    expect(overdueBadge("2026-10-25")).toBe("Overdue since 25-10");
+  });
+
+  it("the filters", () => {
+    expect(STATE_FILTERS.map(([value]) => value)).toEqual(["open", "scheduled", "overdue", "closed", "all"]);
+    expect(EVENT_LABELS.scheduled).toBe("Scheduled");
+    expect(EVENT_LABELS.rescheduled).toBe("Plan changed");
+  });
+
+  it("the timeline: each plan, a change with the old plan", () => {
+    const events = [
+      { event: "raised" },
+      { event: "scheduled", planned_date: "2026-10-25", waiting_reason: "parts" },
+      { event: "rescheduled", planned_date: "2026-11-02", waiting_reason: "slot" },
+      { event: "started" },
+    ];
+    expect(planChanges(events)).toEqual([
+      "",
+      "for 25-10-2026 · waiting for parts",
+      "for 02-11-2026 · waiting for a production slot or shutdown (was 25-10-2026 · waiting for parts)",
+      "",
+    ]);
+  });
+
+  it("the waiting split: per reason in order, then the two delays", () => {
+    expect(waitingSplit({ slot: 30, parts: 100, other: 60 })).toEqual({
+      reasons: [
+        { reason: "parts", label: "Waiting for parts", minutes: 100 },
+        { reason: "slot", label: "Waiting for a production slot or shutdown", minutes: 30 },
+        { reason: "other", label: "Other (remark required)", minutes: 60 },
+      ],
+      logistic: 100,
+      administrative: 30,
+    });
+    expect(waitingSplit(null)).toEqual({ reasons: [], logistic: null, administrative: null });
+  });
+
+  it("the stopped question by move (BR1-14)", () => {
+    expect(machineStoppedQuestion("start")).toBe("Is the machine stopped for this work?");
+    expect(machineStoppedQuestion("restore")).toBe("Was the machine stopped for this work?");
+  });
+
+  it("the plan moves' buttons", () => {
+    expect(moveLabel("schedule", "critical")).toBe("Schedule");
+    expect(moveSaveLabel("reschedule", "degraded")).toBe("Change plan");
+  });
 });
 
 describe("firstName and dates", () => {
@@ -159,5 +249,35 @@ describe("groupPeople", () => {
   it("filters by part of the name, any case", () => {
     expect(ids(groupPeople(people, { filter: "AL" }))).toEqual([["Maintenance", [2]]]);
     expect(groupPeople(people, { filter: "zz" })).toEqual([]);
+  });
+});
+
+describe("parts used (S020)", () => {
+  it("offers the five units and the two kinds, standard number first and the default", () => {
+    expect(PART_UNITS).toEqual(["nos", "set", "m", "L", "kg"]);
+    expect(PART_KIND_CHOICES.map((c) => c.value)).toEqual(["generic", "maker"]);
+    expect(DEFAULT_PART_KIND).toBe("generic");
+    expect(Object.keys(PART_KIND_SHORT).sort()).toEqual(["generic", "maker"]);
+  });
+
+  it("shows a quantity without trailing zeros", () => {
+    expect(quantityText("1.50")).toBe("1.5");
+    expect(quantityText("2.00")).toBe("2");
+    expect(quantityText("9999.99")).toBe("9999.99");
+  });
+
+  const SEAL = { description: "Seal kit", part_number: "SK-100", number_kind: "maker", maker: "Rexroth" };
+  const OIL = { description: "Servo 68", part_number: null, number_kind: null, maker: "Indian Oil" };
+
+  it("reads a line as description · number · maker, leaving out what is empty", () => {
+    expect(partText(SEAL)).toBe("Seal kit · SK-100 · Rexroth");
+    expect(partText(OIL)).toBe("Servo 68 · Indian Oil");
+  });
+
+  it("narrows the suggestions by what is typed, any case", () => {
+    expect(matchingParts([SEAL, OIL], "")).toEqual([SEAL, OIL]);
+    expect(matchingParts([SEAL, OIL], "  seal ")).toEqual([SEAL]);
+    expect(matchingParts([SEAL, OIL], "indian")).toEqual([OIL]);
+    expect(matchingParts([SEAL, OIL], "bearing")).toEqual([]);
   });
 });

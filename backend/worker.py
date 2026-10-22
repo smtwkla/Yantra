@@ -29,7 +29,7 @@ import pymysql
 from company_settings import WORKER_POLL_SECONDS
 from config import DB_CONFIG
 from db_helpers import transaction
-from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db
+from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db, is_connection_lost
 from scheduled_tasks import SCHEDULE, due_tasks
 from task_handlers import BadTask, run_task
 from task_queue import claim_next, enqueue, last_enqueued, mark_done, mark_failed, requeue_stale
@@ -43,10 +43,6 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # While another worker holds the lock, say so this often
 WAITING_LOG_SECONDS = 60
-
-# Server-side errors that mean the session is gone: 1053 server shutdown, 1927 connection killed
-CLIENT_ERROR_CODES = range(2000, 3000)   # libmysqlclient CR_*: gone away, lost, can't connect
-SERVER_DROPPED_CONNECTION_CODES = (1053, 1927)
 
 
 def now_ist():
@@ -153,8 +149,7 @@ class Worker:
         gone away, lost, can't connect) or the server shutting it down / killing the session.
         PyMySQL's OperationalError also covers deadlock (1213) and lock wait timeout (1205)."""
         code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
-        return (not self.conn.open or CLIENT_ERROR_CODES.start <= code < CLIENT_ERROR_CODES.stop
-                or code in SERVER_DROPPED_CONNECTION_CODES)
+        return not self.conn.open or is_connection_lost(code)
 
     @staticmethod
     def _log_lost(task, exc):

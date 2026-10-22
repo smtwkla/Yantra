@@ -5,13 +5,15 @@
  * fields that changed are sent; each change becomes a timeline line, old → new.
  *
  * The components come from the machine's equipment detail (`children`, two levels), the
- * scrapped ones left out (BR3-11); the symptoms from GET /api/tickets/modes?ticket_id=. The
+ * scrapped ones left out (BR3-11; utils/machineParts.js, shared with the parts line, S020); the
+ * symptoms from GET /api/tickets/modes?ticket_id=. The
  * description is needed with no symptom or with Other — the API's rule, shown beside the field.
  */
 import { computed, ref } from "vue";
-import { apiGet, apiPut } from "../../api";
+import { apiPut } from "../../api";
 import FormModal from "../../components/FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
+import { keepChoice, loadMachineParts } from "../../utils/machineParts";
 
 const props = defineProps({
   ticket: { type: Object, required: true },
@@ -33,13 +35,6 @@ const { modal, form, saving, dirty, error, fieldError, openCreate, send } = useF
 
 const topError = computed(() => (error.value && !SHOWN_FIELDS.includes(error.value.field) ? error.value.message : ""));
 
-function flatten(children, depth = 0) {
-  return children.flatMap((child) => (child.status === "scrapped" ? [] : [
-    { id: child.id, label: `${"— ".repeat(depth)}${child.code} ${child.name}` },
-    ...flatten(child.children ?? [], depth + 1),
-  ]));
-}
-
 async function open() {
   const t = props.ticket;
   loadError.value = "";
@@ -48,16 +43,12 @@ async function open() {
   });
   let parts = [];
   try {
-    parts = flatten((await apiGet(`/api/equipment/${t.machine.id}`)).children ?? []);
+    parts = await loadMachineParts(t.machine.id);
   } catch (err) {
     loadError.value = `The machine's parts could not be loaded: ${err.message}`;
   }
-  // The ticket's own part stays a choice even when it is not listed (scrapped since), so an
-  // untouched field never clears it
-  if (t.component && !parts.some((p) => p.id === t.component.id)) {
-    parts.unshift({ id: t.component.id, label: `${t.component.code} ${t.component.name}` });
-  }
-  components.value = parts;
+  // The ticket's own part stays a choice even when it is not listed (scrapped since)
+  components.value = keepChoice(parts, t.component);
 }
 
 function save() {

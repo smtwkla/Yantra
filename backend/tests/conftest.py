@@ -80,7 +80,7 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_events",
+_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
@@ -240,6 +240,13 @@ def uniq():
 # ---------------------------------------------------------------------------
 # Records made through the real API (shared by the masters and equipment tests)
 # ---------------------------------------------------------------------------
+
+# An unhandled error's answer (S025 § 1.3), as server_error() reads a response
+SERVER_ERROR = (500, {"error": "Something went wrong — try again"})
+
+
+def server_error(res):
+    return res.status_code, res.get_json()
 
 MASTERS = "/api/masters"
 EQUIPMENT = "/api/equipment"

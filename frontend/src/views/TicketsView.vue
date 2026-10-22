@@ -11,6 +11,10 @@
  *
  * S018: *Assigned to me* (shown to a user with a Team record), the assignees' first names on
  * each row, and *Not a fault* on a ticket closed as such.
+ *
+ * S019: the *Scheduled* and *Overdue* filters (ordered by planned date by the server); a
+ * scheduled row shows its plan, an overdue one a red "Overdue since 25-10" badge. In *Open*
+ * the server puts scheduled rows after the actionable ones of the same intensity.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -21,7 +25,9 @@ import { useDebounced } from "../composables/useDebounced";
 import { userPermissions, userPersonId } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
 import { ensureSites, ensureUnits, sites, units } from "../stores/masters";
-import { ageText, firstName, INTENSITY_FILTERS, problemText, STATE_FILTERS, STATE_LABELS } from "../utils/ticketLabels";
+import {
+  ageText, firstName, INTENSITY_FILTERS, overdueBadge, planText, problemText, STATE_FILTERS, stateLabel,
+} from "../utils/ticketLabels";
 
 const PAGE_SIZE = 50; // the API default
 const DEFAULT_STATE = "open";
@@ -180,6 +186,7 @@ watch(() => route.fullPath, load);
         <div class="d-flex flex-wrap align-items-center gap-2">
           <IntensityBadge :intensity="t.intensity" />
           <span class="fw-semibold">{{ t.serial }}</span>
+          <span v-if="t.overdue" class="badge text-bg-danger">{{ overdueBadge(t.planned_date) }}</span>
           <span class="ms-auto small text-secondary" :title="t.is_breakdown ? 'Stopped for' : 'Reported'">
             <i class="fa-regular fa-clock me-1"></i>{{ ageText(t.occurred_at, now) }}
           </span>
@@ -189,7 +196,7 @@ watch(() => route.fullPath, load);
         </div>
         <div class="ticket-text">{{ problemText(t) }}</div>
         <div class="small text-secondary">
-          {{ t.unit.site_code }}.{{ t.unit.code }} · {{ STATE_LABELS[t.state] }}<template v-if="t.not_a_fault"> · Not a fault</template>
+          {{ t.unit.site_code }}.{{ t.unit.code }} · {{ stateLabel(t) }}<template v-if="t.planned_date"> · {{ planText(t.planned_date, t.waiting_reason) }}</template><template v-if="t.not_a_fault"> · Not a fault</template>
           <template v-if="t.assignees.length"> · <i class="fa-solid fa-user"></i> {{ t.assignees.map((a) => firstName(a.name)).join(", ") }}</template>
         </div>
       </router-link>

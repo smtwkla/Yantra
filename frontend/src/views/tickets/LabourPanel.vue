@@ -126,7 +126,7 @@ defineExpose({ openAdd });
 <template>
   <div class="card h-100">
     <div class="card-header d-flex justify-content-between align-items-center">
-      <span>Labour<span v-if="ticket.labour.length" class="text-secondary"> · {{ minutesText(totalMinutesBooked) }}</span></span>
+      <span>Labour<span v-if="ticket.labour.length" class="text-secondary"> · {{ minutesText(totalMinutesBooked, { days: false }) }}</span></span>
       <button v-if="canEdit" class="btn btn-outline-primary" @click="openAdd">
         <i class="fa-solid fa-plus me-1"></i>Add labour
       </button>
@@ -139,7 +139,7 @@ defineExpose({ openAdd });
           <div class="flex-grow-1 text-break">
             <span class="fw-semibold">{{ row.person.name }}</span>
             <span v-if="row.trade" class="text-secondary"> · {{ row.trade.name }}</span>
-            <div class="small text-secondary">{{ formatDateTime(row.work_date) }} · {{ minutesText(row.minutes) }}</div>
+            <div class="small text-secondary">{{ formatDateTime(row.work_date) }} · {{ minutesText(row.minutes, { days: false }) }}</div>
           </div>
           <template v-if="canEdit && confirmingRemoveId !== row.id">
             <button class="btn btn-outline-primary" title="Change" @click="openChange(row)">

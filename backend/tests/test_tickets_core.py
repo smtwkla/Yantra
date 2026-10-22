@@ -1,6 +1,7 @@
 """Tickets — pure rules (S017 § 8, S018 § 8; no DB)."""
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -14,6 +15,14 @@ from tickets_core import (
     machine_and_component, parse_event_time, regrade_options, send_back_intensity, serial_scope, started_at_error,
     ticket_times, trade_error, validate_close, validate_edit, validate_event_time, validate_labour, validate_move,
     validate_raise, validate_regrade,
+)
+from tickets_core import (  # S019
+    MACHINE_STOPPED_NEEDED, PLANNED_DATE_MAX_DAYS, PLANNED_DATE_NEEDED, PLANNED_DATE_PAST, PLANNED_DATE_TOO_FAR,
+    REMARK_NEEDED, WAITING_REASON_NEEDED, WAITING_REASONS, is_overdue, machine_stopped_needed, planned_date_error,
+)
+from tickets_core import (  # S020
+    PART_DESCRIPTION_NEEDED, PART_KIND_NEEDED, PART_KINDS, PART_MAKER_NEEDED, PART_NODE_NEEDED, PART_QUANTITY_DECIMALS,
+    PART_QUANTITY_NEEDED, PART_QUANTITY_TOO_BIG, PART_UNIT_NEEDED, PART_UNITS, PARTS_HINT_ACTION_CODES, validate_part,
 )
 
 NOW = datetime(2026, 10, 20, 14, 30, 0)
@@ -42,7 +51,7 @@ class TestSerial:
 class TestStates:
 
     def test_open_states_are_every_state_but_closed(self):
-        assert OPEN_STATES == ("raised", "acknowledged", "in_progress", "back_in_service")
+        assert OPEN_STATES == ("raised", "acknowledged", "scheduled", "in_progress", "back_in_service")
         assert set(STATES) - set(OPEN_STATES) == {"closed"}
 
     def test_intensity_filters(self):
@@ -167,7 +176,7 @@ class TestValidateRaiseRestore:
         assert errors == []
         assert clean["restore"] == validate_move("restore", block)[0] == {
             "occurred_at": datetime(2026, 10, 20, 11, 0), "remark": None, "person_id": 4,
-            "started_at": datetime(2026, 10, 20, 10, 30)}
+            "started_at": datetime(2026, 10, 20, 10, 30), "machine_stopped": None}
 
     def test_only_the_person_is_required(self):
         clean, errors = validate_raise({**self.BODY, "restore": {"person_id": 4}}, NOW)
@@ -235,16 +244,21 @@ ENGINEER = WORKER | {"ticket:assign", "ticket:close"}
 class TestAllowedMoves:
 
     @pytest.mark.parametrize("state, keys, expected", [
-        ("raised", ENGINEER, ["acknowledge", "start", "restore", "not-a-fault"]),
-        ("acknowledged", ENGINEER, ["start", "restore", "not-a-fault"]),
-        ("in_progress", ENGINEER, ["restore"]),
+        ("raised", ENGINEER, ["acknowledge", "start", "restore", "schedule", "not-a-fault"]),
+        ("acknowledged", ENGINEER, ["start", "restore", "schedule", "not-a-fault"]),
+        ("scheduled", ENGINEER, ["start", "restore", "reschedule", "not-a-fault"]),
+        ("in_progress", ENGINEER, ["restore", "schedule", "not-a-fault"]),
         ("back_in_service", ENGINEER, ["send-back", "close"]),
         ("closed", ENGINEER, []),
         ("raised", WORKER, ["acknowledge", "start", "restore"]),
-        ("in_progress", WORKER, ["restore"]),
+        ("acknowledged", WORKER, ["start", "restore"]),
+        # S019 U1: a technician schedules from in progress only ("work stops, waiting")
+        ("scheduled", WORKER, ["start", "restore"]),
+        ("in_progress", WORKER, ["restore", "schedule"]),
         ("back_in_service", WORKER, []),
         ("raised", OPERATOR, ["restore"]),
         ("acknowledged", OPERATOR, ["restore"]),
+        ("scheduled", OPERATOR, ["restore"]),
         ("in_progress", OPERATOR, ["restore"]),
         ("back_in_service", OPERATOR, []),
         ("raised", set(), []),
@@ -253,15 +267,30 @@ class TestAllowedMoves:
     def test_state_by_keys(self, state, keys, expected):
         assert allowed_moves(state, keys) == expected
 
+    @pytest.mark.parametrize("keys, expected", [
+        (ENGINEER, ["close"]),
+        (WORKER, []),
+    ])
+    def test_no_send_back_once_a_repeat_exists(self, keys, expected):
+        """S025 § 5.2: the failure came back on the repeat ticket; close stays."""
+        assert allowed_moves("back_in_service", keys, has_repeat=True) == expected
+
     def test_the_table(self):
         assert {name: (m.from_states, m.to_state, m.key) for name, m in MOVES.items()} == {
             "acknowledge": (("raised",), "acknowledged", "ticket:work"),
-            "start": (("raised", "acknowledged"), "in_progress", "ticket:work"),
-            "restore": (("raised", "acknowledged", "in_progress"), "back_in_service", "ticket:restore"),
+            "start": (("raised", "acknowledged", "scheduled"), "in_progress", "ticket:work"),
+            "restore": (("raised", "acknowledged", "scheduled", "in_progress"), "back_in_service", "ticket:restore"),
+            "schedule": (("raised", "acknowledged", "in_progress"), "scheduled", "ticket:assign"),
+            "reschedule": (("scheduled",), "scheduled", "ticket:assign"),
             "send-back": (("back_in_service",), "in_progress", "ticket:close"),
             "close": (("back_in_service",), "closed", "ticket:close"),
-            "not-a-fault": (("raised", "acknowledged"), "closed", "ticket:close"),
+            "not-a-fault": (("raised", "acknowledged", "scheduled", "in_progress"), "closed", "ticket:close"),
         }
+        # S019 U1: one Schedule move, whose key depends on where it starts from
+        schedule = MOVES["schedule"]
+        assert [schedule.key_at(s) for s in schedule.from_states] == ["ticket:assign", "ticket:assign", "ticket:work"]
+        assert schedule.keys == {"ticket:assign", "ticket:work"}
+        assert MOVES["start"].keys == {"ticket:work"}
 
 
 class TestValidateMove:
@@ -271,7 +300,8 @@ class TestValidateMove:
 
     def test_time_and_remark(self):
         clean, errors = validate_move("start", {"occurred_at": "2026-10-20T10:05", "remark": "  on it "})
-        assert errors == [] and clean == {"occurred_at": datetime(2026, 10, 20, 10, 5), "remark": "on it"}
+        assert errors == [] and clean == {"occurred_at": datetime(2026, 10, 20, 10, 5), "remark": "on it",
+                                          "machine_stopped": None}
 
     def test_bad_time_and_long_remark(self):
         _, errors = validate_move("start", {"occurred_at": "10:05", "remark": "x" * (REMARK_MAX + 1)})
@@ -555,3 +585,303 @@ class TestRepeat:
         first, second = self.RESTORED, self.RESTORED + timedelta(days=7)
         new = self.RESTORED + timedelta(days=9)
         assert not is_repeat_candidate(first, new) and is_repeat_candidate(max(first, second), new)
+
+
+# ---------------------------------------------------------------------------
+# Deferred work (S019 § 8)
+# ---------------------------------------------------------------------------
+
+class TestWaitingReasons:
+
+    def test_the_six_codes_and_their_delay_kinds(self):
+        """The frontend's WAITING_REASON_LABELS asserts the same six codes (ticketLabels.test.js)."""
+        assert {code: kind for code, (_label, kind) in WAITING_REASONS.items()} == {
+            "parts": "logistic", "vendor": "logistic", "expert": "logistic",
+            "slot": "administrative", "approval": "administrative", "other": None,
+        }
+
+
+class TestValidatePlanMoves:
+
+    def test_schedule_needs_a_date_and_a_reason(self):
+        _, errors = validate_move("schedule", {})
+        assert errors == [{"field": "planned_date", "message": PLANNED_DATE_NEEDED},
+                          {"field": "waiting_reason", "message": WAITING_REASON_NEEDED}]
+
+    def test_schedule_parsed(self):
+        clean, errors = validate_move("schedule", {"planned_date": "2026-10-25", "waiting_reason": "parts"})
+        assert errors == []
+        assert (clean["planned_date"], clean["waiting_reason"], clean["remark"]) == (date(2026, 10, 25), "parts", None)
+
+    @pytest.mark.parametrize("planned_date", ["25-10-2026", "2026-13-01", 20261025, ""])
+    def test_a_bad_date(self, planned_date):
+        _, errors = validate_move("schedule", {"planned_date": planned_date, "waiting_reason": "parts"})
+        assert errors == [{"field": "planned_date", "message": LABOUR_DATE_FORMAT}]
+
+    def test_an_unknown_reason(self):
+        _, errors = validate_move("schedule", {"planned_date": "2026-10-25", "waiting_reason": "workshop"})
+        assert errors == [{"field": "waiting_reason", "message": WAITING_REASON_NEEDED}]
+
+    @pytest.mark.parametrize("reason", [["parts"], {"a": 1}])
+    def test_a_list_or_object_reason(self, reason):
+        _, errors = validate_move("schedule", {"planned_date": "2026-10-25", "waiting_reason": reason})
+        assert errors == [{"field": "waiting_reason", "message": WAITING_REASON_NEEDED}]
+
+    def test_other_needs_a_remark(self):
+        body = {"planned_date": "2026-10-25", "waiting_reason": "other"}
+        assert validate_move("schedule", body)[1] == [{"field": "remark", "message": REMARK_NEEDED}]
+        assert validate_move("schedule", {**body, "remark": "   "})[1] == [{"field": "remark", "message": REMARK_NEEDED}]
+        assert validate_move("schedule", {**body, "remark": "Crane booked by civil"})[1] == []
+
+    def test_change_plan_needs_a_remark_once(self):
+        body = {"planned_date": "2026-10-25", "waiting_reason": "other"}
+        assert validate_move("reschedule", body)[1] == [{"field": "remark", "message": REMARK_NEEDED}]
+        assert validate_move("reschedule", {**body, "waiting_reason": "slot", "remark": "Parts late"})[1] == []
+
+    @pytest.mark.parametrize("move", ["start", "restore"])
+    def test_machine_stopped_is_a_boolean(self, move):
+        body = {"person_id": 4} if move == "restore" else {}
+        assert validate_move(move, body)[0]["machine_stopped"] is None
+        assert validate_move(move, {**body, "machine_stopped": True})[0]["machine_stopped"] is True
+        assert validate_move(move, {**body, "machine_stopped": "yes"})[1] == [
+            {"field": "machine_stopped", "message": MACHINE_STOPPED_NEEDED}]
+
+
+class TestPlannedDate:
+    TODAY = date(2026, 10, 22)
+
+    def test_yesterday_is_refused(self):
+        assert planned_date_error(self.TODAY - timedelta(days=1), self.TODAY) == PLANNED_DATE_PAST
+
+    def test_today_is_accepted(self):
+        assert planned_date_error(self.TODAY, self.TODAY) is None
+
+    def test_365_days_accepted_366_refused(self):
+        assert PLANNED_DATE_MAX_DAYS == 365
+        assert planned_date_error(self.TODAY + timedelta(days=365), self.TODAY) is None
+        assert planned_date_error(self.TODAY + timedelta(days=366), self.TODAY) == PLANNED_DATE_TOO_FAR
+
+    def test_overdue_after_the_day_only(self):
+        planned = date(2026, 10, 25)
+        assert is_overdue("scheduled", planned, date(2026, 10, 24)) is False
+        assert is_overdue("scheduled", planned, date(2026, 10, 25)) is False
+        assert is_overdue("scheduled", planned, date(2026, 10, 26)) is True
+        assert is_overdue("in_progress", planned, date(2026, 10, 26)) is False
+        assert is_overdue("raised", None, date(2026, 10, 26)) is False
+
+
+class TestMachineStoppedNeeded:
+
+    @pytest.mark.parametrize("from_state, intensity, expected", [
+        ("scheduled", "degraded", True),
+        ("scheduled", "initial", True),
+        ("scheduled", "critical", False),
+        ("acknowledged", "degraded", False),
+        ("raised", "initial", False),
+    ])
+    def test_rule(self, from_state, intensity, expected):
+        assert machine_stopped_needed(from_state, intensity) is expected
+
+
+def _plan(event, minute, reason=None, intensity=None):
+    return {**_ev(event, minute, intensity), "waiting_reason": reason}
+
+
+def _start(minute, stopped=None):
+    return {**_ev("started", minute), "machine_stopped": stopped}
+
+
+def _all(events, now_minute):
+    return ticket_times(events, datetime(2026, 10, 20, 10, 0) + timedelta(minutes=now_minute))
+
+
+class TestTicketTimesS019:
+
+    def test_planned_stop_on_a_scheduled_defect(self):
+        events = [_ev("raised", 0, "degraded"), _plan("scheduled", 10, "slot"), _start(100, stopped=1),
+                  _ev("back_in_service", 290)]
+        times = _all(events, 400)
+        assert times["planned_downtime_minutes"] == 190
+        assert times["downtime_minutes"] == 0
+        assert times["waiting_minutes"] is None and times["waiting_by_reason"] is None
+        assert times["response_minutes"] == 10 and times["repair_minutes"] == 190
+
+    def test_not_stopped_has_no_planned_stop(self):
+        events = [_ev("raised", 0, "degraded"), _plan("scheduled", 10, "slot"), _start(100, stopped=0),
+                  _ev("back_in_service", 290)]
+        assert _all(events, 400)["planned_downtime_minutes"] is None
+
+    def test_breakdown_waiting_for_parts(self):
+        """Started, scheduled for parts, started again, back in service: the waiting is out of
+        repair, inside the downtime, and all logistic (parts)."""
+        events = [_ev("raised", 0, "critical"), _ev("started", 10), _plan("scheduled", 40, "parts"),
+                  _ev("started", 1000), _ev("back_in_service", 1060)]
+        times = _all(events, 2000)
+        assert times["repair_minutes"] == 30 + 60
+        assert times["downtime_minutes"] == 1060
+        assert times["waiting_minutes"] == 960
+        assert times["waiting_by_reason"] == {"parts": 960}
+        assert times["planned_downtime_minutes"] is None
+
+    def test_the_reason_in_force_splits_the_waiting(self):
+        events = [_ev("raised", 0, "critical"), _plan("scheduled", 10, "parts"), _plan("rescheduled", 110, "slot"),
+                  _plan("rescheduled", 140, "other"), _ev("started", 200), _ev("back_in_service", 260)]
+        times = _all(events, 300)
+        assert times["waiting_by_reason"] == {"parts": 100, "slot": 30, "other": 60}
+        assert times["waiting_minutes"] == 190
+        assert times["response_minutes"] == 10
+
+    def test_a_scheduled_defect_raised_to_critical_waits_from_the_regrade(self):
+        events = [_ev("raised", 0, "degraded"), _plan("scheduled", 10, "parts"), _ev("regraded", 70, "critical"),
+                  _ev("started", 100), _ev("back_in_service", 130)]
+        times = _all(events, 200)
+        assert times["waiting_minutes"] == 30 and times["waiting_by_reason"] == {"parts": 30}
+        assert times["downtime_minutes"] == 60
+
+    def test_a_planned_stop_ends_when_it_turns_critical(self):
+        events = [_ev("raised", 0, "degraded"), _plan("scheduled", 10, "slot"), _start(100, stopped=1),
+                  _ev("regraded", 150, "critical"), _ev("back_in_service", 200)]
+        times = _all(events, 300)
+        assert times["planned_downtime_minutes"] == 50
+        assert times["downtime_minutes"] == 50
+
+    def test_an_open_scheduled_breakdown_counts_to_now(self):
+        events = [_ev("raised", 0, "critical"), _plan("scheduled", 20, "vendor")]
+        times = _all(events, 500)
+        assert times["response_minutes"] == 20
+        assert times["downtime_minutes"] == 500
+        assert times["waiting_minutes"] == 480 and times["waiting_by_reason"] == {"vendor": 480}
+        assert times["repair_minutes"] is None
+
+    def test_back_in_service_from_scheduled_without_a_start_makes_repair_unknown(self):
+        """BR2-07: the last stretch of work is unknown, so the total is unknown."""
+        events = [_ev("raised", 0, "critical"), _ev("started", 10), _plan("scheduled", 130, "parts"),
+                  _ev("back_in_service", 300)]
+        assert _all(events, 400)["repair_minutes"] is None
+
+    def test_never_critical_while_scheduled_has_no_waiting(self):
+        events = [_ev("raised", 0, "critical"), _ev("regraded", 5, "degraded"), _plan("scheduled", 10, "parts"),
+                  _ev("started", 100), _ev("back_in_service", 130)]
+        times = _all(events, 200)
+        assert times["waiting_minutes"] is None and times["waiting_by_reason"] is None
+
+    def test_an_open_planned_stop_counts_to_now(self):
+        events = [_ev("raised", 0, "initial"), _plan("scheduled", 10, "slot"), _start(100, stopped=1)]
+        assert _all(events, 160)["planned_downtime_minutes"] == 60
+
+    def test_not_a_fault_from_scheduled_is_all_none(self):
+        events = [_ev("raised", 0, "critical"), _plan("scheduled", 10, "parts"), _ev("closed_not_a_fault", 50)]
+        assert set(_all(events, 100).values()) == {None}
+
+    def test_s018_tickets_keep_their_figures_and_gain_empty_new_ones(self):
+        events = [_ev("raised", 0, "critical"), _ev("acknowledged", 5), _ev("started", 15),
+                  _ev("back_in_service", 75), _ev("closed", 200)]
+        assert _all(events, 300) == {
+            "response_minutes": 5, "repair_minutes": 60, "downtime_minutes": 75,
+            "waiting_minutes": None, "waiting_by_reason": None, "planned_downtime_minutes": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# S020 — parts used
+# ---------------------------------------------------------------------------
+
+def _part(**overrides):
+    """The short way of § 8: a description, a number with the default kind, quantity 1."""
+    return {"description": "Deep-groove ball bearing", "part_number": "6205-2RS", "number_kind": "generic",
+            "quantity": "1", "node_id": 7, **overrides}
+
+
+def _part_errors(**overrides):
+    _, errors = validate_part(_part(**overrides))
+    return [(e["field"], e["message"]) for e in errors]
+
+
+class TestValidatePart:
+
+    def test_the_short_way(self):
+        clean, errors = validate_part(_part())
+        assert errors == []
+        assert clean == {"description": "Deep-groove ball bearing", "part_number": "6205-2RS", "maker": None,
+                         "number_kind": "generic", "quantity": Decimal("1.00"), "qty_unit": "nos", "node_id": 7}
+
+    def test_text_is_trimmed_and_empty_is_null(self):
+        clean, errors = validate_part(_part(description="  Seal kit  ", part_number="  ", maker=" SKF "))
+        assert errors == []
+        assert (clean["description"], clean["part_number"], clean["number_kind"], clean["maker"]) == (
+            "Seal kit", None, None, "SKF")
+
+    @pytest.mark.parametrize("description", [None, "", "   "])
+    def test_description_is_required(self, description):
+        assert _part_errors(description=description) == [("description", PART_DESCRIPTION_NEEDED)]
+
+    @pytest.mark.parametrize("field, maximum", [("description", 200), ("part_number", 60), ("maker", 100)])
+    def test_a_text_longer_than_its_column(self, field, maximum):
+        assert _part_errors(**{field: "x" * maximum}) == []
+        assert _part_errors(**{field: "x" * (maximum + 1)}) == [(field, f"Too long (max {maximum})")]
+
+    def test_a_kind_without_a_number_is_dropped(self):
+        clean, errors = validate_part(_part(part_number=None, number_kind="maker"))
+        assert errors == [] and clean["number_kind"] is None
+
+    @pytest.mark.parametrize("kind", [None, "", "brand"])
+    def test_a_number_needs_its_kind(self, kind):
+        assert _part_errors(number_kind=kind) == [("number_kind", PART_KIND_NEEDED)]
+
+    def test_a_makers_number_needs_the_maker(self):
+        assert _part_errors(number_kind="maker") == [("maker", PART_MAKER_NEEDED)]
+        assert _part_errors(number_kind="maker", maker="  ") == [("maker", PART_MAKER_NEEDED)]
+        assert _part_errors(number_kind="maker", maker="Rexroth") == []
+
+    def test_a_maker_with_no_number_is_allowed(self):
+        """"Servo 68" by Indian Oil: a description and a maker, no number."""
+        clean, errors = validate_part(_part(description="Servo 68", part_number=None, number_kind=None,
+                                            maker="Indian Oil", quantity="5", qty_unit="L"))
+        assert errors == []
+        assert (clean["maker"], clean["number_kind"], clean["qty_unit"]) == ("Indian Oil", None, "L")
+
+    @pytest.mark.parametrize("sent, stored", [
+        ("2", Decimal("2.00")), (" 1.5 ", Decimal("1.50")), ("0.01", Decimal("0.01")), ("9999.99", Decimal("9999.99")),
+        (3, Decimal("3.00")),
+        (1.1, Decimal("1.10")),          # a JSON number: through str, never Decimal(float)
+        ("1e2", Decimal("100.00")),      # judged on the value
+        ("1.500", Decimal("1.50")),
+    ])
+    def test_quantities_accepted(self, sent, stored):
+        clean, errors = validate_part(_part(quantity=sent))
+        assert errors == []
+        assert clean["quantity"] == stored and str(clean["quantity"]) == str(stored)
+
+    @pytest.mark.parametrize("sent", [None, "", "abc", "1,5", "0", "-1", 0, -2.5, True, False, "NaN", "Infinity",
+                                      "-inf", float("nan"), float("inf"), [1], {"q": 1}])
+    def test_quantities_refused(self, sent):
+        assert _part_errors(quantity=sent) == [("quantity", PART_QUANTITY_NEEDED)]
+
+    @pytest.mark.parametrize("sent", ["1.505", 1.505, "0.001"])
+    def test_more_than_two_decimals_is_refused_not_rounded(self, sent):
+        assert _part_errors(quantity=sent) == [("quantity", PART_QUANTITY_DECIMALS)]
+
+    @pytest.mark.parametrize("sent", ["10000", "9999.991", "1e100", 10000])
+    def test_above_the_maximum(self, sent):
+        assert _part_errors(quantity=sent) == [("quantity", PART_QUANTITY_TOO_BIG)]
+        assert PART_QUANTITY_TOO_BIG == "At most 9999.99"
+
+    def test_the_unit(self):
+        for unit in PART_UNITS:
+            assert validate_part(_part(qty_unit=unit))[0]["qty_unit"] == unit
+        assert validate_part(_part())[0]["qty_unit"] == "nos"
+        for unit in ("", "mtr", "NOS", 5):
+            assert _part_errors(qty_unit=unit) == [("qty_unit", PART_UNIT_NEEDED)]
+
+    @pytest.mark.parametrize("node_id", [None, 0, -1, "7", True, 1.0])
+    def test_the_node_is_an_id(self, node_id):
+        assert _part_errors(node_id=node_id) == [("node_id", PART_NODE_NEEDED)]
+
+    def test_errors_come_in_field_order(self):
+        _, errors = validate_part({})
+        assert _fields(errors) == ["description", "quantity", "node_id"]
+
+    def test_the_lists(self):
+        assert PART_UNITS == ("nos", "set", "m", "L", "kg")
+        assert PART_KINDS == ("maker", "generic")
+        assert PARTS_HINT_ACTION_CODES == ("1", "3", "10")

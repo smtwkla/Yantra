@@ -97,7 +97,11 @@ def _log_slow_request(response):
 
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok"})
+    """Public: always 200, and whether the schema is up to date (S025 § 1.1) — the deploy
+    waits for schema_ready.  ensure_schema retries the migrations itself (at most every 30 s),
+    so the answer is this worker's fresh view, not a flag set once at boot.  No version or
+    error text: the reason stays behind settings:read (Settings › Database)."""
+    return jsonify({"status": "ok", "schema_ready": ensure_schema(DB_CONFIG) is None})
 
 
 @app.route("/api/version")

@@ -3,11 +3,11 @@
 // on a phone.
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll } from "./support/dialogs.js";
-import { asPerson } from "./support/people.js";
-import { saveDialog } from "./support/tickets.js";
+import { apiAs, asPerson, seedIds } from "./support/people.js";
+import { causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const PRESS_CLASS = "HP"; // Hydraulic press, from the dev seed's classes
-const GENERAL_MODES = 14; // the General modes migration v11 fills in (S016 § 4.4)
+const GENERAL_MODES = 14; // the General modes v20 (S016's seed) fills in (S016 § 4.4)
 
 /** Masters › Failure codes, on the list `list` ("Modes", "Causes", "Actions"). */
 async function openFailureCodes(page, key, list = "Modes") {
@@ -140,5 +140,43 @@ test("operator: the failure codes are read-only, and the lists fit a phone", asy
     await expect(page.getByRole("button", { name: /^Add / })).toHaveCount(0);
     await expect(page.getByTitle("Edit")).toHaveCount(0);
     await expectNoSidewaysScroll(page);
+  }
+});
+
+/** The open tickets at the unit `fullCode` ("SMTW.MCC1"), read through the API as admin. */
+async function openTicketsAt(fullCode) {
+  const api = await apiAs("admin");
+  try {
+    const units = await (await api.get("/api/masters/units")).json();
+    const unit = units.items.find((u) => u.full_code === fullCode);
+    const res = await api.get(`/api/tickets?unit_id=${unit.id}&state=open&per_page=1`);
+    expect(res.ok(), `ticket list failed: ${res.status()}`).toBe(true);
+    return (await res.json()).total;
+  } finally {
+    await api.dispose();
+  }
+}
+
+test("S025: IT admin cannot deactivate a unit while it has open tickets; the refusal gives the count", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/api/masters/units/", 409);
+  const seed = await seedIds();
+  const ticket = await raiseByApi("supervisor", {
+    equipment_id: seed.mcc1Mill.id, intensity: "degraded", description: "S025 test: the unit stays active",
+  });
+  // Other tests leave tickets open at this unit (the three projects share one database): count them all
+  const open = await openTicketsAt("SMTW.MCC1");
+  try {
+    await asPerson(page, "it_admin", "/masters");
+    await page.getByRole("button", { name: "Units", exact: true }).click();
+    await rows(page).filter({ hasText: "SMTW.MCC1" }).getByTitle("Edit").click();
+    await expectDialogFits(page);
+    const dialog = page.locator(".modal.show");
+    await dialog.getByRole("button", { name: "Deactivate" }).click();
+    await dialog.getByRole("button", { name: "Yes", exact: true }).click();
+    await expectFieldMessage(dialog, `Close its tickets first (${open} open)`);
+    await expect(dialog).toBeVisible();
+  } finally {
+    // This test's own ticket is closed again, so the unit's count is as it was
+    await moveByApi("engineer", ticket.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: "S025 test done" });
   }
 });

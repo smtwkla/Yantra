@@ -56,8 +56,21 @@ The type is no longer locked here: it comes from the model, whose type never cha
   the node and its parts while they are locked (_check_no_open_tickets), so a raise and a
   scrap of the same node serialise on (1).
 - tickets.py (S018) works a ticket — moves, re-grade, edit, labour, assignment — under (7)
-  only; nothing else locked.  Its inserts take shared FK locks (person, trade, cause, action,
-  mode, ticket), which wait for a master's FOR UPDATE but never hold an equipment lock.
+  as its only explicit lock.  A change of tickets.state also rewrites the entries of the
+  indexes of the machine, unit and component foreign keys, so InnoDB takes shared locks on
+  those rows (S025 CR1-02), which gives two more accepted deadlocks: a raise of a repeat
+  against a send-back of the earlier ticket (the raise holds the machine (1) and waits for
+  the earlier ticket; the send-back holds the ticket and waits for the machine), and a unit
+  edit (unit FOR UPDATE, then its tickets counted LOCK IN SHARE MODE) against a ticket move
+  in that unit.  InnoDB rolls one side back (1213); a retry gives the right answer.  Its inserts take shared FK locks (person, trade, cause, action,
+  mode, ticket), which wait for a master's FOR UPDATE.  Three of its shared locks fall on rows
+  this module locks (S025 § 1.5, § 1.6; S020 § 5.2): the ticket edit's new component (its FK
+  lock, taken first by a LOCK IN SHARE MODE read), which a scrap of that component holds FOR
+  UPDATE as (1), so the two serialise; a repeat raise's earlier ticket (7), after the raise's
+  own (1) and (6), the order above; and a parts line's node (the machine or a part of it; its
+  FK lock, taken first the same way on an add or a change of node), which a scrap of that node
+  holds FOR UPDATE, so the two serialise.  The scrap path does not look at parts lines: a line
+  stays true as history when its node is scrapped later.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -79,7 +92,7 @@ from equipment_core import (
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters_core import model_label
 from settings import label_base_url
-from tickets_core import CLOSED
+from tickets_core import CLOSED, close_tickets_first
 
 equipment_bp = Blueprint("equipment", __name__)
 
@@ -390,8 +403,9 @@ def _check_no_open_tickets(cur, node_ids):
     placeholders = ", ".join(["%s"] * len(node_ids))
     sql = (f"SELECT COUNT(*) AS n FROM tickets WHERE state <> %s"
            f" AND (equipment_id IN ({placeholders}) OR component_id IN ({placeholders}))")
-    if count(cur, sql, [CLOSED, *node_ids, *node_ids]):
-        raise ApiError("Close its tickets first", 409, "status")
+    open_tickets = count(cur, sql, [CLOSED, *node_ids, *node_ids])
+    if open_tickets:
+        raise ApiError(close_tickets_first(open_tickets), 409, "status")
 
 
 def _tracked_state(node):

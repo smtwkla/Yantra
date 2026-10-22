@@ -1,5 +1,6 @@
-"""Migration v10: access_log, task_queue, the internal_networks default (S013 § 4).  On the
-test DB: db_version 10 is removed and init_db runs twice; every statement is a no-op on re-run.
+"""access_log, task_queue, the internal_networks default (S013 § 4) — built by v10, now by v20
+(S025: v1–v13 squashed).  The shape tests check today's schema; the re-run tests remove
+db_version 20 and run init_db again: the setting's INSERT IGNORE keeps a stored value.
 """
 
 import config
@@ -50,10 +51,10 @@ def test_rerun_changes_nothing_and_keeps_a_stored_value():
     try:
         before = (_columns("access_log"), _columns("task_queue"))
         for _ in range(2):
-            _run("DELETE FROM db_version WHERE version = 10")
+            _run("DELETE FROM db_version WHERE version = 20")
             init_db(config.DB_CONFIG)
         assert (_columns("access_log"), _columns("task_queue")) == before
-        assert _run("SELECT version FROM db_version WHERE version = 10")
+        assert _run("SELECT version FROM db_version WHERE version = 20")
         assert _setting() == "10.24.0.0/16"
     finally:
         _run("UPDATE app_settings SET setting_value = %s WHERE setting_key = 'internal_networks'",
@@ -62,6 +63,6 @@ def test_rerun_changes_nothing_and_keeps_a_stored_value():
 
 def test_a_missing_setting_is_written_on_rerun():
     _run("DELETE FROM app_settings WHERE setting_key = 'internal_networks'")
-    _run("DELETE FROM db_version WHERE version = 10")
+    _run("DELETE FROM db_version WHERE version = 20")
     init_db(config.DB_CONFIG)
     assert _setting() == DEFAULT_INTERNAL_NETWORKS

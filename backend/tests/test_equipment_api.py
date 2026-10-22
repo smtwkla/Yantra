@@ -12,6 +12,7 @@ import api_common
 import config
 import equipment
 from local_db import get_local_db
+from tests.conftest import SERVER_ERROR, server_error
 
 MASTERS = "/api/masters"
 EQUIPMENT = "/api/equipment"
@@ -98,9 +99,10 @@ class TestCodes:
         def fail(*args):
             raise RuntimeError("forced")
         monkeypatch.setattr(equipment, "_write_events", fail)
-        with pytest.raises(RuntimeError):
-            admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
-                                        "model_id": make_model(cls=cls)["id"], "name": "x"})
+        # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
+                                           "model_id": make_model(cls=cls)["id"], "name": "x"})
+        assert server_error(res) == SERVER_ERROR
         monkeypatch.undo()
         assert _number(make_equipment(cls=cls), cls) == _number(first, cls) + 1
 
@@ -422,7 +424,8 @@ class TestScrapWithOpenTickets:
     """S017 § 5.8, user decision 6: scrapping waits until the tickets on the node and its
     parts are closed."""
 
-    CLOSE_FIRST = {"error": "Close its tickets first", "field": "status"}
+    # With the count since S025 (BR1-15): the unit deactivation says the same
+    CLOSE_FIRST = {"error": "Close its tickets first (1 open)", "field": "status"}
 
     def test_an_open_ticket_on_the_node_refuses_until_closed(self, admin, make_equipment, make_ticket,
                                                              set_ticket_state):
@@ -499,8 +502,8 @@ class TestEvents:
             real(cur, equipment_id, changes)
             raise RuntimeError("forced after the events were written")
         monkeypatch.setattr(equipment, "_write_events", write_then_fail)
-        with pytest.raises(RuntimeError):
-            _put(admin, mill, status="standby")
+        # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
+        assert server_error(_put(admin, mill, status="standby")) == SERVER_ERROR
         monkeypatch.undo()
         assert _get(admin, mill)["status"] == "in_service"
         assert [e[0] for e in _events(admin, mill)] == ["created"]

@@ -13,6 +13,7 @@ from PIL import Image
 import documents
 import file_store
 from config import MB
+from tests.conftest import SERVER_ERROR, server_error
 from tests.documents_helpers import (
     EQUIPMENT, JPEG, PDF, docs_url, folder_files, jpeg_with_size, listed, listed_at, model_docs_url, owner_files,
     refusal, scrap, upload, upload_to, uploaded, uploaded_to,
@@ -285,8 +286,8 @@ class TestFailures:
         def fail(*args):
             raise RuntimeError("forced")
         monkeypatch.setattr(documents, "insert_row", fail)
-        with pytest.raises(RuntimeError):
-            upload(admin, node, kind="photo", data=JPEG, filename="a.jpg")
+        # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
+        assert server_error(upload(admin, node, kind="photo", data=JPEG, filename="a.jpg")) == SERVER_ERROR
         assert folder_files(node) == []
 
     def test_storage_error_is_503_and_leaves_nothing(self, admin, node, monkeypatch, db_rows, caplog):
@@ -463,8 +464,9 @@ class TestModelDocumentFailures:
         def fail(*args):
             raise RuntimeError("forced")
         monkeypatch.setattr(documents, "insert_row", fail)
-        with pytest.raises(RuntimeError):
-            upload_to(admin, model_docs_url(model), kind="photo", data=JPEG, filename="a.jpg")
+        # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
+        res = upload_to(admin, model_docs_url(model), kind="photo", data=JPEG, filename="a.jpg")
+        assert server_error(res) == SERVER_ERROR
         assert owner_files("model", model["id"]) == []
 
     def test_storage_error_is_503_and_leaves_nothing(self, admin, make_model, monkeypatch, db_rows):

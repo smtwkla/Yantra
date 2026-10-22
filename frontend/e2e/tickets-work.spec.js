@@ -5,8 +5,8 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage } from "./support/dialogs.js";
 import { asPerson, personId, seedIds } from "./support/people.js";
 import {
-  card, istLocal, moveByApi, openAction, raiseByApi, saveDialog, setEventTime, shownTime, stateBadge, thisMinute,
-  timeline, timeValue,
+  card, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
+  stateBadge, thisMinute, timeline, timeValue,
 } from "./support/tickets.js";
 
 let seed;
@@ -225,4 +225,184 @@ test("engineer: assign, edit and change severity; IT admin with no Team record a
   await asPerson(page, "it_admin", `/tickets/${ticket.id}`);
   const dialog = await openAction(page, "Acknowledge");
   await expect(dialog).toContainText("Nobody will be assigned.");
+});
+
+// S025 (audit fixes) ------------------------------------------------------------------------
+
+test("S025: Machine stopped, when someone else made it a breakdown first, shows why and reloads the ticket", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/regrade", 400);
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S025 test: running slow",
+  });
+  await asPerson(page, "operator", `/tickets/${ticket.id}`);
+  await page.getByRole("button", { name: "Machine stopped" }).click();
+  await expectDialogFits(page);
+  const dialog = page.locator(".modal.show");
+  // Meanwhile another operator taps Machine stopped first
+  await regradeByApi("operator", ticket.id, { intensity: "critical" });
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Already a breakdown");
+  await expect(dialog).toBeVisible();
+  // The page behind was reloaded: it shows the breakdown the other operator recorded
+  await expect(timeline(page).filter({ hasText: "Severity changed" })).toContainText("Defect → Breakdown");
+});
+
+test("S025: a ticket that came back as a repeat offers no Send back; Close stays", async ({ page }) => {
+  const base = thisMinute();
+  const ticket = await raiseBreakdown(base, 90, "S025 test: came back");
+  await moveByApi("technician", ticket.id, "restore", { person_id: kannan, occurred_at: istLocal(30, base) });
+  const repeat = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "critical", description: "S025 test: stopped again",
+    repeat_of_id: ticket.id,
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await expect(page.getByText("Came back as")).toContainText(repeat.serial);
+  await expect(page.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send back", exact: true })).toHaveCount(0);
+});
+
+test("S025: Start, then Not a fault: the ticket closes as not a fault and shows no times", async ({ page }) => {
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "initial", description: "S025 test: looked, nothing wrong",
+  });
+  await moveByApi("technician", ticket.id, "start");
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await expect(stateBadge(page)).toHaveText("In progress");
+  const dialog = await openAction(page, "Not a fault");
+  await dialog.locator("#move-not-a-fault-remark").fill("Nothing wrong found on arrival");
+  await saveDialog(page, "Close as not a fault");
+  await expect(stateBadge(page)).toHaveText("Closed");
+  await expect(page.getByText("Not a fault", { exact: true }).first()).toBeVisible();
+  // Out of MTBF and MTTR, as any not-a-fault ticket: no Times card
+  await expect(card(page, "Times")).toHaveCount(0);
+});
+
+// S019 (deferred work) --------------------------------------------------------------------
+
+const SLOT = "waiting for a production slot or shutdown";
+
+test("S019: engineer schedules a defect for a date and reason, then changes the plan with a remark", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/moves/reschedule", 400);
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S019 test: scraper worn",
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+
+  let dialog = await openAction(page, "Schedule");
+  // The planned date opens empty: the engineer must choose one
+  await expect(dialog.locator("#move-schedule-date")).toHaveValue("");
+  // Other opens the remark, required
+  await dialog.locator("#move-schedule-reason").selectOption("other");
+  await expect(dialog.getByLabel("What does it wait for?")).toBeVisible();
+  const planned = istDay(3);
+  await dialog.locator("#move-schedule-date").fill(planned);
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Add a remark");
+  await dialog.locator("#move-schedule-reason").selectOption("slot");
+  await saveDialog(page, "Schedule");
+
+  await expect(stateBadge(page)).toHaveText("Scheduled");
+  await expect(page.locator(".plan-line")).toHaveText(`for ${shownDay(planned)} · ${SLOT}`);
+  await expect(timeline(page).filter({ hasText: /^\s*Scheduled/ })).toContainText(`for ${shownDay(planned)} · ${SLOT}`);
+
+  dialog = await openAction(page, "Change plan");
+  // Opens with the current plan, the remark open and required
+  await expect(dialog.locator("#move-reschedule-date")).toHaveValue(planned);
+  await expect(dialog.locator("#move-reschedule-reason")).toHaveValue("slot");
+  await dialog.getByLabel("Why did the plan change?").fill("Asked again");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Nothing to change");
+  const later = istDay(10);
+  await dialog.locator("#move-reschedule-date").fill(later);
+  await dialog.getByLabel("Why did the plan change?").fill("Shutdown moved");
+  await saveDialog(page, "Change plan");
+
+  await expect(page.locator(".plan-line")).toHaveText(`for ${shownDay(later)} · ${SLOT}`);
+  const changed = timeline(page).filter({ hasText: "Plan changed" });
+  await expect(changed).toContainText(`for ${shownDay(later)} · ${SLOT} (was ${shownDay(planned)} · ${SLOT})`);
+  await expect(changed).toContainText("Shutdown moved");
+});
+
+test("S019: technician starts a scheduled defect with the machine stopped; the times card shows the planned stop", async ({ page }) => {
+  const base = thisMinute();
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S019 test: liner change",
+    occurred_at: istLocal(120, base),
+  });
+  await moveByApi("engineer", ticket.id, "schedule", {
+    planned_date: istDay(0), waiting_reason: "slot", occurred_at: istLocal(110, base),
+  });
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  await expect(stateBadge(page)).toHaveText("Scheduled");
+  // Change plan is the engineer's
+  await expect(page.getByRole("button", { name: "Change plan" })).toHaveCount(0);
+
+  let dialog = await openAction(page, "Start work");
+  await expect(dialog.getByText("Is the machine stopped for this work?")).toBeVisible();
+  await setEventTime(dialog, istLocal(90, base));
+  await dialog.getByRole("button", { name: "Yes, machine stopped" }).click();
+  await saveDialog(page, "Start work");
+  await expect(stateBadge(page)).toHaveText("In progress");
+  await expect(page.locator(".plan-line")).toHaveCount(0);
+  await expect(timeline(page).filter({ hasText: "Work started" })).toContainText("Machine stopped for this work");
+
+  dialog = await openAction(page, "Fixed");
+  await setEventTime(dialog, istLocal(30, base));
+  await saveDialog(page, "Fixed");
+  await expect(timeValue(page, "Planned stop")).toHaveText("1 h");
+  await expect(timeValue(page, "Downtime")).toHaveText("0 min");
+});
+
+test("S019: technician schedules a breakdown in progress for parts; the times card splits the waiting", async ({ page }) => {
+  const base = thisMinute();
+  const ticket = await raiseBreakdown(base, 180, "S019 test: cylinder at the maker");
+  await moveByApi("technician", ticket.id, "start", { occurred_at: istLocal(170, base) });
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+
+  // U1: work stops, waiting for parts — the technician records it from in progress
+  let dialog = await openAction(page, "Schedule");
+  const expected = istDay(2);
+  await dialog.locator("#move-schedule-date").fill(expected);
+  await dialog.locator("#move-schedule-reason").selectOption("parts");
+  await setEventTime(dialog, istLocal(150, base));
+  await saveDialog(page, "Schedule");
+  await expect(stateBadge(page)).toHaveText("Waiting");
+  await expect(page.locator(".plan-line")).toHaveText(`for ${shownDay(expected)} · waiting for parts`);
+
+  // On a breakdown the stopped question is not asked: the machine is already down
+  dialog = await openAction(page, "Start work");
+  await expect(dialog.getByText("Is the machine stopped for this work?")).toHaveCount(0);
+  await setEventTime(dialog, istLocal(90, base));
+  await saveDialog(page, "Start work");
+  dialog = await openAction(page, "Back in service");
+  await setEventTime(dialog, istLocal(60, base));
+  await saveDialog(page, "Back in service");
+
+  await expect(timeValue(page, "Downtime")).toHaveText("2 h");
+  await expect(timeValue(page, "Repair (hands on)")).toHaveText("50 min");
+  await expect(timeValue(page, "of which waiting")).toHaveText("1 h");
+  await expect(timeValue(page, "Waiting for parts")).toHaveText("1 h");
+  await expect(timeValue(page, "Logistic delay")).toHaveText("1 h");
+});
+
+test("S019: the Overdue filter shows a ticket planned in the past, with the red badge", async ({ page }) => {
+  await asPerson(page, "engineer", "/tickets");
+  await page.getByLabel("State").selectOption("overdue");
+  await expect(page).toHaveURL(/state=overdue/);
+  const row = page.locator(".list-group-item").filter({ hasText: "E2E seed: overdue for parts" });
+  await expect(row).toHaveCount(1);
+  const badge = row.locator(".badge.text-bg-danger");
+  await expect(badge).toHaveText(`Overdue since ${shownDay(istDay(-1)).slice(0, 5)}`);
+  await expect(row).toContainText(`Overdue · for ${shownDay(istDay(-1))} · waiting for parts`);
+});
+
+test("S019: a technician gets no Schedule button on an acknowledged ticket", async ({ page }) => {
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S019 test: not yet started",
+  });
+  await moveByApi("technician", ticket.id, "acknowledge");
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  await expect(stateBadge(page)).toHaveText("Acknowledged");
+  await expect(page.getByRole("button", { name: "Start work" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Schedule" })).toHaveCount(0);
 });

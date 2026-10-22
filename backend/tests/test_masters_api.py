@@ -270,6 +270,25 @@ class TestUnitCodeFreeze:
         assert admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"}).status_code == 200
         assert admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()}).status_code == 409
 
+    def test_a_unit_used_only_by_a_closed_ticket_stays_frozen(self, admin, make_unit, make_site, make_equipment,
+                                                              make_ticket, set_ticket_state, uniq):
+        """S025 § 5.3: the ticket keeps the unit it was raised in; the machine has moved on, and
+        no access row or equipment names the unit any more."""
+        unit = make_unit()
+        machine = make_equipment(unit=unit)
+        set_ticket_state(make_ticket(machine), "closed")
+        assert admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": make_unit()["id"]}).status_code == 200
+        by_code = admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()})
+        assert (by_code.status_code, by_code.get_json()["field"]) == (409, "code")
+        by_site = admin.put(f"{BASE}/units/{unit['id']}", json={"site_id": make_site()["id"]})
+        assert (by_site.status_code, by_site.get_json()["field"]) == (409, "site_id")
+
+    def test_a_machine_with_an_open_ticket_can_still_move(self, admin, make_unit, make_equipment, make_ticket):
+        """U3: the unit record is frozen, not the machine — moving it may be the fix."""
+        machine = make_equipment()
+        make_ticket(machine)
+        assert admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": make_unit()["id"]}).status_code == 200
+
 
 class TestActivationRules:
 
@@ -311,6 +330,29 @@ class TestActivationRules:
         res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
         assert res.status_code == 409
         assert res.get_json()["field"] == "active"
+
+    def test_unit_with_open_tickets_cannot_be_deactivated_until_they_are_closed(
+            self, admin, make_unit, make_equipment, make_ticket, set_ticket_state):
+        """S025 § 5.3: an inactive unit drops out of access, so the team could not close them."""
+        unit = make_unit()
+        machine = make_equipment(unit=unit)
+        first, second = make_ticket(machine), make_ticket(machine, intensity="degraded")
+        # The machine moves away: the unit holds no equipment, only the tickets
+        assert admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": make_unit()["id"]}).status_code == 200
+        res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
+        assert (res.status_code, res.get_json()) == (409, {"error": "Close its tickets first (2 open)", "field": "active"})
+        set_ticket_state(first, "closed")
+        assert admin.put(f"{BASE}/units/{unit['id']}", json={"active": False}).get_json()["error"] == (
+            "Close its tickets first (1 open)")
+        set_ticket_state(second, "closed")
+        assert admin.put(f"{BASE}/units/{unit['id']}", json={"active": False}).status_code == 200
+
+    def test_the_open_ticket_refusal_comes_before_the_equipment_one(self, admin, make_unit, make_equipment,
+                                                                    make_ticket):
+        unit = make_unit()
+        make_ticket(make_equipment(unit=unit))
+        res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
+        assert (res.status_code, res.get_json()["error"]) == (409, "Close its tickets first (1 open)")
 
     def test_unit_with_only_scrapped_equipment_can_be_deactivated(self, admin, make_unit, make_equipment):
         unit = make_unit()

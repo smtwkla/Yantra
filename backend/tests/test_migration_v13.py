@@ -1,13 +1,13 @@
-"""Migration v13: ticket work — cause, action, not a fault, repeat link on tickets; the
-ticket_assignees and ticket_labour tables (S018 § 4).  On the test DB: db_version 13 is removed
-and init_db runs twice; every statement is a no-op on re-run.  Needs the dev MariaDB container.
+"""Ticket work — cause, action, not a fault, repeat link on tickets; the ticket_assignees and
+ticket_labour tables (S018 § 4) — built by v13, now by v20 (S025: v1–v13 squashed; v20's
+re-run is test_migration_v20.py's).  Tests of today's schema.  Needs the dev MariaDB container.
 """
 
 import pymysql
 import pytest
 
 import config
-from local_db import get_local_db, init_db
+from local_db import get_local_db
 
 
 def _run(sql, params=()):
@@ -46,11 +46,6 @@ def _checks(table):
     return {r["CONSTRAINT_NAME"] for r in _run(
         "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS "
         "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = %s", (table,))}
-
-
-def _shape():
-    return tuple(f(table) for table in ("tickets", "ticket_assignees", "ticket_labour")
-                 for f in (_columns, _indexes, _foreign_keys, _checks))
 
 
 def test_ticket_columns_and_constraints():
@@ -97,12 +92,3 @@ def test_minutes_out_of_range_is_refused(make_equipment, make_ticket, make_perso
         _run("INSERT INTO ticket_labour (ticket_id, person_id, work_date, minutes, created_by)"
              " VALUES (%s, %s, CURDATE(), %s, 'test')", (ticket["id"], person["id"], minutes))
     assert caught.value.args[0] == 4025
-
-
-def test_rerun_changes_nothing():
-    before = _shape()
-    for _ in range(2):
-        _run("DELETE FROM db_version WHERE version = 13")
-        init_db(config.DB_CONFIG)
-    assert _shape() == before
-    assert _run("SELECT version FROM db_version WHERE version = 13")

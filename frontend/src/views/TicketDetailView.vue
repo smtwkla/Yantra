@@ -10,13 +10,22 @@
  *    gap and in outline, the significant moves Close / Not a fault / Send back. On a wider
  *    screen the same buttons sit in one row, the significant ones on the left. While there is
  *    no labour, Close is disabled with the reason written under it and Add labour beside it;
- * 2. the times, assignees and labour — shown to ticket:work holders, or when not empty;
- *    Edit and Assign sit with these panels;
+ * 2. the times, assignees, labour and parts used (S020) — shown to ticket:work holders, or when
+ *    not empty; Edit and Assign sit with these panels. Two by two on a tablet, four across on a
+ *    wide screen;
  * 3. repeats, details, description, photos and documents, timeline.
  *
  * Every control follows the detail's `moves`, `permissions` (the keys at the ticket's site)
  * and `regrade_to`, so a user never sees a button that ends in a 403. Each write answers with
  * the ticket's detail, which replaces the page's copy.
+ *
+ * S019 (deferred work): the state badge reads Scheduled, Waiting (a scheduled breakdown) or
+ * Overdue, with the plan on a line under the header; Schedule and Change plan sit in outline
+ * beside Change severity; the times card adds the waiting split and the planned stop; the
+ * timeline shows each plan, a change with "(was …)".
+ *
+ * S020 (parts used): the Parts used panel beside Labour; Not a fault is disabled with "Remove the
+ * parts first" while the ticket has part lines (the API refuses it too, 409).
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -26,12 +35,14 @@ import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import { userPersonId } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
 import {
-  ageText, EVENT_LABELS, intensityChanges, minutesText, moveLabel, SIGNIFICANT_MOVES, STATE_LABELS,
+  ageText, EVENT_LABELS, intensityChanges, minutesText, moveLabel, PLAN_MOVES, planChanges, planLine, SIGNIFICANT_MOVES,
+  stateLabel, waitingSplit,
 } from "../utils/ticketLabels";
 import AssignDialog from "./tickets/AssignDialog.vue";
 import EditTicketDialog from "./tickets/EditTicketDialog.vue";
 import LabourPanel from "./tickets/LabourPanel.vue";
 import MoveDialog from "./tickets/MoveDialog.vue";
+import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
 
 const route = useRoute();
@@ -59,9 +70,13 @@ const can = (key) => (ticket.value?.permissions ?? []).includes(key);
 const isOpen = computed(() => ticket.value && ticket.value.state !== "closed");
 const canWork = computed(() => isOpen.value && can("ticket:work"));
 const canAssign = computed(() => isOpen.value && can("ticket:assign"));
-const chainMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => !SIGNIFICANT_MOVES.includes(m.name)));
+const chainMoves = computed(() => (ticket.value?.moves ?? [])
+  .filter((m) => !SIGNIFICANT_MOVES.includes(m.name) && !PLAN_MOVES.includes(m.name)));
+const planMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => PLAN_MOVES.includes(m.name)));
 const significantMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => SIGNIFICANT_MOVES.includes(m.name)));
 const closeNeedsLabour = (m) => m.name === "close" && ticket.value.labour.length === 0;
+// A ticket with parts was a fault (S020 § 1.5): Not a fault waits until they are removed
+const notAFaultHasParts = (m) => m.name === "not-a-fault" && ticket.value.parts.length > 0;
 // ticket:work holders get Change severity only; others Machine stopped, on a defect (BR4-05)
 const showChangeSeverity = computed(() => can("ticket:work") && (ticket.value?.regrade_to ?? []).length > 0);
 const showMachineStopped = computed(() => !can("ticket:work") && !ticket.value?.is_breakdown
@@ -77,7 +92,10 @@ const timesEmpty = computed(() => times.value.response_minutes === null && times
 const showTimes = computed(() => !ticket.value?.not_a_fault && (can("ticket:work") || !timesEmpty.value));
 const showAssignees = computed(() => can("ticket:work") || ticket.value?.assignees.length > 0);
 const showLabour = computed(() => can("ticket:work") || ticket.value?.labour.length > 0);
+const showParts = computed(() => can("ticket:work") || ticket.value?.parts.length > 0);
 const intensityTexts = computed(() => intensityChanges(ticket.value?.events ?? []));
+const planTexts = computed(() => planChanges(ticket.value?.events ?? []));
+const waiting = computed(() => waitingSplit(times.value.waiting_by_reason));
 
 async function loadPickers(loaded, seq) {
   // People: back in service, labour and assign; symptoms: close and edit (S018 § 3)
@@ -167,9 +185,12 @@ watch(() => route.params.id, load, { immediate: true });
       <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <h4 class="mb-0 me-2">{{ ticket.serial }}</h4>
         <IntensityBadge :intensity="ticket.intensity" />
-        <span class="badge text-bg-light border">{{ STATE_LABELS[ticket.state] ?? ticket.state }}</span>
+        <span class="badge state-badge" :class="ticket.overdue ? 'text-bg-danger' : 'text-bg-light border'">{{ stateLabel(ticket) }}</span>
         <span v-if="ticket.not_a_fault" class="badge text-bg-info">Not a fault</span>
       </div>
+      <p v-if="planLine(ticket)" class="plan-line mb-3" :class="ticket.overdue ? 'text-danger fw-semibold' : 'text-secondary'">
+        <i class="fa-regular fa-calendar me-1"></i>{{ planLine(ticket) }}
+      </p>
 
       <!-- 1. The action bar: stacked on a phone; one row on a wider screen, the significant moves on the left -->
       <div class="action-bar d-grid gap-2 d-md-flex flex-md-wrap align-items-md-start mb-3">
@@ -188,6 +209,15 @@ watch(() => route.params.id, load, { immediate: true });
         <button v-if="showChangeSeverity" type="button" class="btn btn-outline-primary btn-lg" @click="regradeDialog.open('change')">
           Change severity
         </button>
+        <button
+          v-for="m in planMoves"
+          :key="m.name"
+          type="button"
+          class="btn btn-outline-primary btn-lg"
+          @click="moveDialog.open(m)"
+        >
+          <i class="fa-regular fa-calendar me-2"></i>{{ moveLabel(m.name, ticket.intensity) }}
+        </button>
         <router-link v-if="ticket.can_raise_repeat" :to="repeatLink" class="btn btn-outline-primary btn-lg">
           Not fixed — raise again
         </router-link>
@@ -202,6 +232,12 @@ watch(() => route.params.id, load, { immediate: true });
               </div>
               <span class="small text-secondary">Add the labour first</span>
             </div>
+            <div v-else-if="notAFaultHasParts(m)" class="d-grid gap-1">
+              <button type="button" class="btn btn-outline-secondary btn-lg" disabled>
+                {{ moveLabel(m.name, ticket.intensity) }}
+              </button>
+              <span class="small text-secondary">Remove the parts first</span>
+            </div>
             <button v-else type="button" class="btn btn-outline-dark btn-lg" @click="moveDialog.open(m)">
               {{ moveLabel(m.name, ticket.intensity) }}
             </button>
@@ -210,9 +246,9 @@ watch(() => route.params.id, load, { immediate: true });
       </div>
       <div v-if="pickersError" class="alert alert-warning py-2">{{ pickersError }}</div>
 
-      <!-- 2. Times, assignees, labour -->
+      <!-- 2. Times, assignees, labour, parts used -->
       <div class="row g-3 mb-3">
-        <div v-if="showTimes" class="col-md-4">
+        <div v-if="showTimes" class="col-md-6 col-xl-3">
           <div class="card h-100">
             <div class="card-header">Times</div>
             <div class="card-body">
@@ -220,11 +256,30 @@ watch(() => route.params.id, load, { immediate: true });
                 <dt class="col-7 fw-normal">Response</dt><dd class="col-5 mb-1">{{ minutesText(times.response_minutes) }}</dd>
                 <dt class="col-7 fw-normal">Repair (hands on)</dt><dd class="col-5 mb-1">{{ minutesText(times.repair_minutes) }}</dd>
                 <dt class="col-7 fw-normal">Downtime</dt><dd class="col-5 mb-0">{{ minutesText(times.downtime_minutes) }}</dd>
+                <!-- S019: the waiting inside the downtime, per reason, then EN 13306's two delays -->
+                <template v-if="times.waiting_minutes !== null && times.waiting_minutes !== undefined">
+                  <dt class="col-7 fw-normal ps-4">of which waiting</dt><dd class="col-5 mb-0">{{ minutesText(times.waiting_minutes) }}</dd>
+                  <template v-for="r in waiting.reasons" :key="r.reason">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">{{ r.label }}</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(r.minutes) }}</dd>
+                  </template>
+                  <template v-if="waiting.logistic !== null">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">Logistic delay</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.logistic) }}</dd>
+                  </template>
+                  <template v-if="waiting.administrative !== null">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">Administrative delay</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.administrative) }}</dd>
+                  </template>
+                </template>
+                <template v-if="times.planned_downtime_minutes !== null && times.planned_downtime_minutes !== undefined">
+                  <dt class="col-7 fw-normal mt-1">Planned stop</dt><dd class="col-5 mb-0 mt-1">{{ minutesText(times.planned_downtime_minutes) }}</dd>
+                </template>
               </dl>
             </div>
           </div>
         </div>
-        <div v-if="showAssignees" class="col-md-4">
+        <div v-if="showAssignees" class="col-md-6 col-xl-3">
           <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
               <span>Assigned</span>
@@ -256,7 +311,7 @@ watch(() => route.params.id, load, { immediate: true });
             </ul>
           </div>
         </div>
-        <div v-if="showLabour" class="col-md-4">
+        <div v-if="showLabour" class="col-md-6 col-xl-3">
           <LabourPanel
             ref="labourPanel"
             :ticket="ticket"
@@ -265,6 +320,9 @@ watch(() => route.params.id, load, { immediate: true });
             :can-edit="canWork"
             @saved="onSaved"
           />
+        </div>
+        <div v-if="showParts" class="col-md-6 col-xl-3">
+          <PartsPanel :ticket="ticket" :can-edit="canWork" @saved="onSaved" />
         </div>
       </div>
 
@@ -334,6 +392,10 @@ watch(() => route.params.id, load, { immediate: true });
                   <span class="fw-semibold">{{ EVENT_LABELS[e.event] ?? e.event }}</span>
                   <span v-if="intensityTexts[i]" class="text-secondary">· {{ intensityTexts[i] }}</span>
                   <span class="ms-auto small">{{ formatDateTime(e.occurred_at) }}</span>
+                </div>
+                <div v-if="planTexts[i]" class="small text-break">{{ planTexts[i] }}</div>
+                <div v-if="e.machine_stopped !== null && e.machine_stopped !== undefined" class="small">
+                  {{ e.machine_stopped ? "Machine stopped for this work" : "Machine kept running" }}
                 </div>
                 <div class="small text-secondary">
                   {{ e.created_by }}<template v-if="e.person"> · {{ e.person.name }}</template>

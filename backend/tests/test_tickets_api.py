@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import tickets
-from tests.conftest import EQUIPMENT, MASTERS, TICKETS
+from tests.conftest import EQUIPMENT, MASTERS, SERVER_ERROR, TICKETS, server_error
 from tests.ticket_helpers import api_time as _api_time
 from tests.ticket_helpers import local as _local
 from tests.ticket_helpers import now_ist as _now_ist
@@ -91,8 +91,9 @@ class TestRaise:
             return real_insert(cur, table, clean, actor)
 
         monkeypatch.setattr(tickets, "insert_row", failing_insert)
-        with pytest.raises(RuntimeError):
-            admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical", "description": "x"})
+        # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
+        res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical", "description": "x"})
+        assert server_error(res) == SERVER_ERROR
         monkeypatch.undo()
         assert _number(make_ticket(machine)["serial"]) == _number(first["serial"]) + 1
 

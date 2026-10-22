@@ -1,10 +1,11 @@
 /**
- * Ticket labels — pure display helpers for the ticket screens (S017, S018). The backend's
+ * Ticket labels — pure display helpers for the ticket screens (S017, S018, S019). The backend's
  * tickets_core holds the rules; these only name the values.
  *
  * Intensity is ISO 14224's failure impact: critical (stopped: a breakdown), degraded
  * (running, reduced: a defect) or initial (early signs: a defect).
  */
+import { formatDateTime } from "./datetime";
 
 export const BREAKDOWN_INTENSITY = "critical";
 
@@ -30,6 +31,7 @@ export const INTENSITY_CHOICES = [
 export const STATE_LABELS = {
   raised: "Raised",
   acknowledged: "Acknowledged",
+  scheduled: "Scheduled",
   in_progress: "In progress",
   back_in_service: "Back in service",
   closed: "Closed",
@@ -43,6 +45,8 @@ export const INTENSITY_FILTERS = [
 ];
 export const STATE_FILTERS = [
   ["open", "Open"],
+  ["scheduled", "Scheduled"],
+  ["overdue", "Overdue"],
   ["closed", "Closed"],
   ["all", "All"],
 ];
@@ -60,6 +64,8 @@ export const EVENT_LABELS = {
   edited: "Edited",
   assigned: "Assigned",
   unassigned: "Unassigned",
+  scheduled: "Scheduled",
+  rescheduled: "Plan changed",
 };
 
 export function isBreakdown(intensity) {
@@ -107,10 +113,15 @@ export function toLocalInputValue(date) {
 /** The moves set apart from the chain buttons, outline style (§ 1, BR3-02). */
 export const SIGNIFICANT_MOVES = ["close", "not-a-fault", "send-back"];
 
+/** The plan moves (S019): in outline beside Change severity, so the chain's next step stays the obvious tap (BR2-09). */
+export const PLAN_MOVES = ["schedule", "reschedule"];
+
 const MOVE_LABELS = {
   acknowledge: "Acknowledge",
   start: "Start work",
   restore: "Back in service",
+  schedule: "Schedule",
+  reschedule: "Change plan",
   "send-back": "Send back",
   close: "Close",
   "not-a-fault": "Not a fault",
@@ -121,6 +132,8 @@ const SAVE_LABELS = {
   acknowledge: "Acknowledge",
   start: "Start work",
   restore: "Back in service",
+  schedule: "Schedule",
+  reschedule: "Change plan",
   "send-back": "Send back",
   close: "Close ticket",
   "not-a-fault": "Close as not a fault",
@@ -194,9 +207,20 @@ export function intensityChanges(events) {
   });
 }
 
-/** Minutes as "1 h 25 min", "45 min", "2 h"; "—" when unknown (null). */
-export function minutesText(minutes) {
+const MINUTES_PER_DAY = 24 * 60;
+
+/**
+ * Minutes as "1 h 25 min", "45 min", "2 h"; from 24 h on in days, the minutes dropped as
+ * ageText does: "2 d 20 h", "3 d" (S019 BR2-03). "—" when unknown (null). `days: false` keeps
+ * hours ("26 h"): labour is man-hours, not time on the calendar.
+ */
+export function minutesText(minutes, { days = true } = {}) {
   if (minutes === null || minutes === undefined) return "—";
+  if (days && minutes >= MINUTES_PER_DAY) {
+    const wholeDays = Math.floor(minutes / MINUTES_PER_DAY);
+    const dayHours = Math.floor((minutes % MINUTES_PER_DAY) / 60);
+    return dayHours ? `${wholeDays} d ${dayHours} h` : `${wholeDays} d`;
+  }
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   if (!hours) return `${rest} min`;
@@ -231,4 +255,150 @@ export function groupPeople(people, { ownId = null, assigneeIds = [], excludeIds
 /** A local date for <input type="date">: "2026-10-20". */
 export function toLocalDateValue(date) {
   return toLocalInputValue(date).slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Deferred work (S019)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a scheduled ticket waits: the dialog's choices. A plain copy of tickets_core.WAITING_REASONS
+ * (the server checks the codes); both test suites assert the same six codes.
+ */
+export const WAITING_REASON_LABELS = {
+  parts: "Waiting for parts",
+  vendor: "At or waiting for a vendor, garage or maker",
+  expert: "Waiting for an expert",
+  slot: "Waiting for a production slot or shutdown",
+  approval: "Waiting for a decision or approval",
+  other: "Other (remark required)",
+};
+
+/**
+ * EN 13306's two delays: logistic (waiting for resources: parts, a vendor, an expert) and
+ * administrative (a slot, a decision); "other" is in neither.
+ */
+export const WAITING_REASON_DELAYS = {
+  parts: "logistic",
+  vendor: "logistic",
+  expert: "logistic",
+  slot: "administrative",
+  approval: "administrative",
+  other: null,
+};
+
+export const OTHER_REASON = "other";
+
+/** The planned date's limit after today (tickets_core.PLANNED_DATE_MAX_DAYS; the server checks it). */
+export const PLANNED_DATE_MAX_DAYS = 365;
+
+/** The reason inside a sentence: "waiting for parts"; Other reads "other reason". */
+export function waitingText(reason) {
+  if (reason === OTHER_REASON) return "other reason";
+  const label = WAITING_REASON_LABELS[reason] ?? reason ?? "";
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/**
+ * The state badge's one word (BR1-13): a scheduled ticket reads Waiting when its machine is
+ * down (critical), else Scheduled, and Overdue once past its planned date.
+ */
+export function stateLabel(ticket) {
+  if (ticket.state === "scheduled") {
+    if (ticket.overdue) return "Overdue";
+    return isBreakdown(ticket.intensity) ? "Waiting" : "Scheduled";
+  }
+  return STATE_LABELS[ticket.state] ?? ticket.state;
+}
+
+/** A plan as a line: "for 25-10-2026 · waiting for parts". */
+export function planText(plannedDate, reason) {
+  return `for ${formatDateTime(plannedDate)} · ${waitingText(reason)}`;
+}
+
+/** The line under the ticket's header (BR2-08): the plan, or "Overdue since …" once past it. */
+export function planLine(ticket) {
+  if (ticket.state !== "scheduled") return "";
+  if (ticket.overdue) return `Overdue since ${formatDateTime(ticket.planned_date)} · ${waitingText(ticket.waiting_reason)}`;
+  return planText(ticket.planned_date, ticket.waiting_reason);
+}
+
+/** The list's red badge on an overdue row: "Overdue since 25-10". */
+export function overdueBadge(plannedDate) {
+  return `Overdue since ${formatDateTime(plannedDate).slice(0, 5)}`;
+}
+
+/**
+ * The plan text of each timeline event (BR2-08), from the events' own plan columns:
+ * scheduled "for 25-10-2026 · waiting for parts"; rescheduled the same with "(was …)", the
+ * old plan read from the previous scheduled or rescheduled event; "" for any other event.
+ */
+export function planChanges(events) {
+  let previous = null;
+  return events.map((e) => {
+    if (e.event !== "scheduled" && e.event !== "rescheduled") return "";
+    const plan = `${formatDateTime(e.planned_date)} · ${waitingText(e.waiting_reason)}`;
+    const was = e.event === "rescheduled" && previous ? ` (was ${previous})` : "";
+    previous = plan;
+    return `for ${plan}${was}`;
+  });
+}
+
+/**
+ * The waiting split of the times card: per reason, in the reasons' own words, then EN 13306's
+ * logistic and administrative totals, summed from WAITING_REASON_DELAYS. -> {reasons:
+ * [{reason, label, minutes}], logistic, administrative}; a total is null when no reason of its
+ * kind was met.
+ */
+export function waitingSplit(byReason) {
+  const reasons = Object.keys(WAITING_REASON_LABELS)
+    .filter((code) => byReason?.[code] !== undefined)
+    .map((code) => ({ reason: code, label: WAITING_REASON_LABELS[code], minutes: byReason[code] }));
+  const total = (kind) => {
+    const met = reasons.filter((r) => WAITING_REASON_DELAYS[r.reason] === kind);
+    return met.length ? met.reduce((sum, r) => sum + r.minutes, 0) : null;
+  };
+  return { reasons, logistic: total("logistic"), administrative: total("administrative") };
+}
+
+/** Start and Back in service ask this when the move says so (S019 § 1.7, BR1-14). */
+export function machineStoppedQuestion(move) {
+  return move === "start" ? "Is the machine stopped for this work?" : "Was the machine stopped for this work?";
+}
+
+export const MACHINE_STOPPED_CHOICES = [
+  { value: true, label: "Yes, machine stopped" },
+  { value: false, label: "No, machine running" },
+];
+
+// --- S020: parts used ---------------------------------------------------------------------
+
+/** The units a parts line is counted in (tickets_core.PART_UNITS; the API checks them). */
+export const PART_UNITS = ["nos", "set", "m", "L", "kg"];
+
+/** Where a part number comes from, worded for the floor (§ 1.3); generic first, the default. */
+export const PART_KIND_CHOICES = [
+  { value: "generic", label: "A standard number (6205-2RS, a filter spec)" },
+  { value: "maker", label: "From the maker's drawing or quote" },
+];
+export const DEFAULT_PART_KIND = "generic";
+
+/** The kind as the parts list shows it, after the number. */
+export const PART_KIND_SHORT = { maker: "maker's number", generic: "standard number" };
+
+/** "1.50" (as the API sends a quantity) -> "1.5"; "2.00" -> "2". */
+export function quantityText(quantity) {
+  return String(Number(quantity));
+}
+
+/** A suggestion or line as one row: "description · number · maker", the empty parts left out. */
+export function partText(part) {
+  return [part.description, part.part_number, part.maker].filter(Boolean).join(" · ");
+}
+
+/** The suggestions whose description, number or maker contains `typed` (any case); all when empty. */
+export function matchingParts(parts, typed) {
+  const needle = (typed ?? "").trim().toLowerCase();
+  if (!needle) return parts;
+  return parts.filter((p) => partText(p).toLowerCase().includes(needle));
 }
