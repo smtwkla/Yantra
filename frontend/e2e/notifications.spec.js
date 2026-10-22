@@ -84,7 +84,7 @@ async function seedDevice(key) {
   }
 }
 
-test("S021: My notifications opens for every seed person in Team and offers Turn on for this phone", async ({ page }, testInfo) => {
+test("S021: My notifications opens for every seed person in Team and offers Turn on for this phone", async ({ page, consoleWatch }, testInfo) => {
   test.skip(testInfo.project.name === WEBKIT, "an iPhone shows the Home Screen step instead (next test)");
   await askablePermission(page);
   for (const key of IN_TEAM) {
@@ -94,7 +94,9 @@ test("S021: My notifications opens for every seed person in Team and offers Turn
     });
   }
   // With the permission granted the page reaches the browser's subscribe call. Headless Chromium
-  // usually has no push account, so either the device turns on or the page says it could not.
+  // usually has no push account, so either the device turns on or the page says it could not
+  // (and Chrome itself logs that a Playwright context, always incognito, has no Push API).
+  consoleWatch.allowBrowserError("does not support the Push API in incognito mode");
   await page.getByRole("button", { name: "Turn on for this phone" }).click();
   await expect(page.getByText(/Notifications are on for this phone|could not turn notifications on/)).toBeVisible();
 });

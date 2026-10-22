@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026: user answers U1; brief-review r1)
 Track: full
-Status: Gate B — code review r1 clean; fix round 1 (CR1-01, CR1-03, asked by the user) done; 2 nit open; awaiting the user's check and commit (approved 22-10-2026 by KLA; Q2b (b); staleness check s1 done)
+Status: Done (committed 03ed528; checks: 5 auto, 2 of them important; row 13, plain, voice typing, left for IT Admin) (approved 22-10-2026 by KLA; Q2b (b))
 Baseline: 79fc61d + uncommitted S026 (staleness check s1, 22-10-2026)
 ```
 

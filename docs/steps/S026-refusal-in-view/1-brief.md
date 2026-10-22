@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026 after brief-review r1)
 Track: light
 Baseline: b6b8dfb (stale brief check 22-10-2026: no file of this brief changed since review r1)
-Status: Gate B — code review r3 clean (0 blocker, 0 major; 2 minor, 2 nit open); awaiting the user (approved 22-10-2026 by KLA; Q1: (a); A1 by KLA 22-10-2026)
+Status: Committed 03ed528 (22-10-2026, with S027 and part of S021; its first e2e edits in c7e6396); checks: 4 auto; important check pending: row 12 — a real iPhone, the keyboard does not hide the Add labour message (approved 22-10-2026 by KLA; Q1: (a); A1 by KLA 22-10-2026)
 ```
 
 # S026 — A refusal is always in view

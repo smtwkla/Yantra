@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: Implementing (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done; coded after S027)
+Status: In code review (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done; coded after S027)
 Baseline: 79fc61d + uncommitted S026, S027 (staleness check s1, 22-10-2026)
 ```
 

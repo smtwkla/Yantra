@@ -17,6 +17,7 @@ const READY_TIMEOUT_MS = 10_000;
 
 export const NOT_STARTED = "This browser could not start notifications. Reload the page and try again.";
 export const NOT_TURNED_ON = "This browser could not turn notifications on. Try again, or use Chrome on Android.";
+export const NOT_ALLOWED = "Notifications were not turned on. Tap Turn on for this phone again, then choose Allow.";
 export const BLOCKED = "blocked";
 
 /** A failure the page shows as it is; `kind` is BLOCKED when the person refused permission. */
@@ -107,7 +108,9 @@ export async function subscribe(publicKey) {
     throw new PushError(NOT_TURNED_ON);
   }
   const answer = await asked;
-  if (answer !== "granted") throw new PushError(BLOCKED, BLOCKED);
+  // Refused: the page shows the Blocked state. Closed without an answer: say what to do.
+  if (answer === "denied") throw new PushError(BLOCKED, BLOCKED);
+  if (answer !== "granted") throw new PushError(NOT_ALLOWED);
   const ready = await readyRegistration();
   const key = base64UrlToBytes(publicKey);
   try {
