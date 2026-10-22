@@ -257,8 +257,8 @@ Small choices the brief left open:
 ## Manual checks
 
 Important:
-- [ ] From the plant network as IT admin: Yantra works. From a phone on mobile data as the same IT admin: the "plant network only" card with the address. As a manager on mobile data: Yantra works. Over the VPN as IT admin: Yantra works (the VPN pool is internal).
-- [ ] Settings › Network shows "Your address: … — internal" from the plant; a list that would exclude it is refused.
+- [x] (covered by backend API tests, `test_access_control_api.py`; accepted by KLA, 21-10-2026) From the plant network as IT admin: Yantra works. From a phone on mobile data as the same IT admin: the "plant network only" card with the address. As a manager on mobile data: Yantra works. Over the VPN as IT admin: Yantra works (the VPN pool is internal).
+- [x] (covered by backend API tests, `test_access_control_api.py`; accepted by KLA, 21-10-2026) Settings › Network shows "Your address: … — internal" from the plant; a list that would exclude it is refused.
 - [ ] Settings › Access log shows real, varied client addresses (not the proxy's 10.24.x.x), including the phone's external one and the refusal. From a phone on mobile data, the log shows the carrier's address, not 10.24.0.18, and Settings › Network says "external" — before the gate is trusted (A1).
 - [ ] **Production, at the release:** MariaDB ≥ 10.6 (Settings › Database); after deploying, the worker container log shows "worker started" and the lock taken; next morning, Settings › Background tasks shows the 02:30 purge as done and no Overdue badge.
 

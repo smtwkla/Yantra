@@ -79,8 +79,8 @@ None departs from the brief. Small, forced choices:
 ## Manual checks
 
 Important:
-- [ ] Run `tooling\run-deps-audit.bat`: `sbom/` holds three files (`backend`, `frontend`, `root`); the report lists the libraries checked and any findings with CVE numbers and fix versions; running it again leaves `git status` unchanged. (After committing `sbom/`; the coder ran it twice more and the files were not rewritten.)
-- [ ] Disconnect the network and run it again: it says which step failed and exits with 2 (`echo %ERRORLEVEL%`).
+- [x] (by KLA, 21-10-2026: 3 SBOMs, 9 Pillow 12.3.0 CVEs listed with fix version 13.0.0, exit 1; after the Pillow 13.0.0 bump a re-run gave 0 vulnerabilities, exit 0, and `sbom/` changed only by the bump) Run `tooling\run-deps-audit.bat`: `sbom/` holds three files (`backend`, `frontend`, `root`); the report lists the libraries checked and any findings with CVE numbers and fix versions; running it again leaves `git status` unchanged. (After committing `sbom/`; the coder ran it twice more and the files were not rewritten.)
+- [x] (covered by `tooling/deps/tests/test_audit_core.py::test_exit_codes`; accepted by KLA, 21-10-2026) Disconnect the network and run it again: it says which step failed and exits with 2 (`echo %ERRORLEVEL%`).
 
 ## Fix rounds
 

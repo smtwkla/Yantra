@@ -103,7 +103,7 @@ No S016 file was touched; `conftest.py` needed no new fixture.
   in, and the signature footer is on the sheet.
 - [ ] Print a unit long enough for two pages. The table header repeats on page 2, and
   the next unit starts on a new page.
-- [ ] With **Include parts**, a press shows its component-units and components indented
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) With **Include parts**, a press shows its component-units and components indented
   under it, and the count line reads "n equipment, m parts".
 
 Also:

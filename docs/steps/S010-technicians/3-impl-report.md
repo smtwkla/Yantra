@@ -297,13 +297,13 @@ From A1 rule 6 (replaces brief § 8's checks). The user ticks each important one
 or skips it with a reason.
 
 Important:
-- [ ] As engineer: add a person (Direct employee, two trades, no login). The
+- [skipped] backend api tests already check (KLA, 21-10-2026) — As engineer: add a person (Direct employee, two trades, no login). The
   Login field is read-only ("Has a Yantra login: no") with no help line.
   Rename them and change their trades: it saves (no 403).
-- [ ] As IT admin: set that person's login. Then as engineer: the dialog shows
+- [skipped] backend api tests already check (KLA, 21-10-2026) — As IT admin: set that person's login. Then as engineer: the dialog shows
   "Has a Yantra login: yes" read-only, and Deactivate / Reactivate isn't
   offered on that person.
-- [ ] As engineer: add a contractor named as a firm and one named as a person;
+- [skipped] backend api tests already check (KLA, 21-10-2026) — As engineer: add a contractor named as a firm and one named as a person;
   deactivate a person without a login: it works.
 
 Also:

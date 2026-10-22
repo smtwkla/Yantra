@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
 Baseline: 6c58b7a + uncommitted S018 (r3); stale check at coding: ae3841f and later, no file in § 3 changed
-Status: Gate B — code review r2 clean; awaiting the user's checks and commit (approved 21-10-2026 by KLA; A1, A2 approved 21-10-2026)
+Status: Done (committed 3df667c; checks: 1 done by KLA, 1 accepted by KLA — IT Admin's reading of device-checks.md) (approved 21-10-2026 by KLA; A1, A2 approved 21-10-2026)
 ```
 
 # S024 — Browser tests (Playwright)

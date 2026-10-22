@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 16-10-2026 (revised 16-10-2026 after brief-review r1; rewritten 17-10-2026 after the user's gate-A changes; revised 17-10-2026 after brief-review r3)
 Track: full
-Status: Committed 3e338b4; manual checks pending (approved 17-10-2026 by KLA)
+Status: Done (committed 3e338b4; checks: 3 skipped — backend api tests already check, 1 done by KLA at the release) (approved 17-10-2026 by KLA)
 ```
 
 # S012 — Equipment models

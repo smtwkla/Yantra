@@ -296,10 +296,10 @@ Findings of `4-code-review-r1.md`.
 
 ## Manual checks
 
-- [ ] As engineer: add manufacturer "Atlas Copco" and model "GA37" (class CMP, type Screw compressor); create a compressor by picking it: class and type are shown from the model; the page shows Manufacturer and Model.
-- [ ] Add "SMTW (in-house)" / `SMTW-HYP-01` (class press) and a Generic model; create a press and a component with them.
-- [ ] Upload a manual on the model in Masters › Models; it appears "From model" on every compressor of that model, read-only; remove it in Masters; restore it from Settings › Removed documents.
-- [ ] **Production, at the release:** before deploying, note the MariaDB version (Settings › Database; needs ≥ 10.5) and confirm that there is no equipment: as admin or IT admin (sees every unit), open the Equipment list with **Show scrapped** ticked and **Level = All levels**; the total must be 0. v9 adds `model_id` as `NOT NULL` and drops make/model. If the total is not 0, stop and tell the planner.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — As engineer: add manufacturer "Atlas Copco" and model "GA37" (class CMP, type Screw compressor); create a compressor by picking it: class and type are shown from the model; the page shows Manufacturer and Model.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — Add "SMTW (in-house)" / `SMTW-HYP-01` (class press) and a Generic model; create a press and a component with them.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — Upload a manual on the model in Masters › Models; it appears "From model" on every compressor of that model, read-only; remove it in Masters; restore it from Settings › Removed documents.
+- [x] **Production, at the release:** before deploying, note the MariaDB version (Settings › Database; needs ≥ 10.5) and confirm that there is no equipment: as admin or IT admin (sees every unit), open the Equipment list with **Show scrapped** ticked and **Level = All levels**; the total must be 0. v9 adds `model_id` as `NOT NULL` and drops make/model. If the total is not 0, stop and tell the planner. — by KLA, at the release (recorded 21-10-2026)
 
 Also:
 - On a phone (Android, iPhone), pick a model from the list (long labels).

@@ -297,16 +297,16 @@ Docs:
 ## Manual checks
 
 Important:
-- [ ] On a phone as a technician: acknowledge → start → back in service on a
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) On a phone as a technician: acknowledge → start → back in service on a
   breakdown; the page shows response, repair and downtime.
-- [ ] On a phone as a supervisor: record back in service on an acknowledged
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) On a phone as a supervisor: record back in service on an acknowledged
   ticket, finding the technician in the picker by typing, and entering the
   start time; the timeline shows both events with the entered times.
-- [ ] On a phone as an engineer: *Close* is disabled with the visible text
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) On a phone as an engineer: *Close* is disabled with the visible text
   "Add the labour first"; *Add labour* beside it opens the labour dialog
   (own name and today pre-filled); close with cause and action; the Save reads
   *Close ticket*; the ticket is read-only.
-- [ ] "Not fixed — raise again" on a ticket back in service: the new ticket
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) "Not fixed — raise again" on a ticket back in service: the new ticket
   links to the old one and the old one lists it.
 - [ ] On an **Android phone and an iPhone**: the close dialog with the
   keyboard up keeps *Close ticket* and *Cancel* on screen (iOS Safari lays the
@@ -699,7 +699,7 @@ check.
 ### Manual checks
 
 Important:
-- [ ] On a phone, raise a walk-in job with *Already fixed* ticked: the extra
+- [auto] (S024 browser test, `e2e/tickets-raise.spec.js::S018 A1: Already fixed …`; accepted by KLA, 21-10-2026) On a phone, raise a walk-in job with *Already fixed* ticked: the extra
   fields fit, Save stays visible, and the ticket page shows it at back in
   service with the right technician.
 

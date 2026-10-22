@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 18-10-2026 (revised 18-10-2026 after brief-reviews r1 and r2)
 Track: full
-Status: Committed dde0d68; manual checks pending (approved 18-10-2026 by KLA)
+Status: Committed dde0d68; checks left: 3 on a real device for IT Admin (device-checks rows 1, 2, D2, D3) (approved 18-10-2026 by KLA)
 ```
 
 # S014 — QR labels

@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1 and r2)
 Track: full
-Status: Approved 21-10-2026 (coded after S025)
-Baseline: 28d3be3 + uncommitted S024
+Status: Gate B — code review r2 clean (fix round 1: 2 minor fixed; 0 blocker, 0 major, 0 minor, 4 nit open); awaiting the user (approved 21-10-2026; staleness check s1 done)
+Baseline: 3df667c + uncommitted S025
 ```
 
 # S019 — Deferred work
@@ -31,7 +31,8 @@ reason**, and three figures that follow from it:
 It settles Plan.MD Q13 (except meter-value targets) and the *Deferred work*
 and *Fleet defects* notes of Plan.MD § 4.2.
 
-**Order.** S019 is coded **after S025** is committed:
+**Order.** S019 is coded **on top of S025's code**, which is not committed
+yet. The user commits S025, S019 and S020 together (22-10-2026, BS1-05):
 - S025 changes `tickets_core.MOVES`: *not a fault* is allowed from in progress,
   and there is no send-back after a repeat. S019 builds on that table;
 - S025 squashes the migrations into v20, so S019's migration is **the next
@@ -368,8 +369,19 @@ and *Fleet defects* notes of Plan.MD § 4.2.
   **one SQL `UPDATE`** that moves `planned_date` to yesterday on the ticket and
   on its *scheduled* event. The serial is then a real one from
   `serial_counters`, so no later raise collides on `uq_tickets_serial`, and
-  `chk_tickets_plan` holds. The connection is pymysql with `config.DB_CONFIG`
-  and the e2e database name `vel_yantra_e2e`, as `e2e_backend.py` sets it.
+  `chk_tickets_plan` holds. `seed_e2e.py` runs in its own process and does
+  not import `config` today (BS1-03). It puts `backend/` on the path, imports
+  `config`, sets the database name from `e2e_backend.E2E_DATABASE`, and runs
+  `e2e_backend.check_target` before any SQL. A mistyped setting then never
+  writes to the dev database. The ticket is raised on **`E2E MCC1 mill`**
+  (SMTW.MCC1) with the fixed description "E2E seed: overdue for parts", so
+  the test finds its row by text:
+  - the engineer sees every SMTW unit, so the *Overdue* test runs as the
+    engineer;
+  - S025's unit test in `masters.spec.js` reads the open count at MCC1
+    through the API first, so one more open ticket there is harmless;
+  - the raise spec's "Already reported on this machine" check uses the
+    extruder, so the mill keeps the seeded ticket out of it.
   The API refuses a past planned date by design; a test-only API hook that
   accepts one is rejected (a rule bypass in the product for one test).
 - **Existing assertions that change by design** (BR1-09); update them for the
@@ -383,13 +395,15 @@ and *Fleet defects* notes of Plan.MD § 4.2.
   - `test_ticket_work_api.py` `test_moves_listed_per_user` (the engineer's
     move names);
   - `ticketLabels.test.js`'s exact `STATE_LABELS` keys;
-  - `test_migration_v12.py:63`, the exact `state` ENUM type: it gains
-    `'scheduled'` at the end (BR2-01);
-  - S025's `test_migration_v20.py`: its equivalence and dev-path tests must
-    build and compare **v20 alone** (the v1–v13 fixture against v20 only, or
-    the version pinned). If S025 wrote them to run the whole `_MIGRATIONS`
-    list, S019 pins them to v20; it does not loosen their assertions. The
-    coder checks this in S025's impl report first (BR2-01).
+  - `test_migration_v12.py` `test_tables_and_indexes`, the exact `state`
+    ENUM type: it gains `'scheduled'` at the end (BR2-01, BS1-07);
+  - S025's `test_migration_v20.py` builds with `V20 =
+    list(local_db._MIGRATIONS)`, so once v21 exists its equivalence test
+    would compare v20 + v21 against the v1–v13 reference. S019 sets `V20 =
+    [m for m in local_db._MIGRATIONS if m[0] == 20]` and leaves every
+    assertion as it is (`_versions() == [20]`, 27 tables, `[*range(1, 14),
+    20]`). `test_modules.py` reads `LATEST_VERSION` from the module and does
+    not break (BR2-01, BS1-04).
 
 ### Docs (at approval, by the planner)
 
@@ -430,7 +444,7 @@ and *Fleet defects* notes of Plan.MD § 4.2.
 
 ### 4.3 The migration
 
-- Every statement is safe to run twice, as since v5: `ADD COLUMN IF NOT
+- Every statement is safe to run twice, as v20's header comment requires: `ADD COLUMN IF NOT
   EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, and a `MODIFY` of the ENUM that
   lists the same values when re-run. The `MODIFY` restates `NOT NULL DEFAULT
   'raised'`, or the column would lose them (BR1-16).
@@ -438,9 +452,20 @@ and *Fleet defects* notes of Plan.MD § 4.2.
   existing row (planned_date and waiting_reason are NULL, state is not
   scheduled). Production has no tickets yet (S025 U1: no equipment), dev and
   test have some; none is touched.
-- This is the kind of migration S025 § 1.9's warning is about. It adds
-  nullable columns and appends to an ENUM, and the previous image ignores the
-  new columns, so a rollback is safe.
+- **v21 has no `_PRECONDITIONS` entry** (BS1-02). S025's rule is for a
+  migration that can fail on existing data: a `NOT NULL` column or a foreign
+  key on a table with rows, a dropped column the old image reads, or data
+  that cannot be converted. v21 adds nullable columns, appends an ENUM value,
+  and adds a CHECK that every existing row satisfies. The comment above v21
+  in `local_db.py` says so, so the SMTW-Review audit of migrations after v20
+  sees the answer.
+- The previous image ignores the new columns, so a rollback is safe.
+- **The first release applies v20, v21 and v22 together** in one `init_db`
+  (BS1-06). The preconditions of every pending version are checked first
+  (only v20 has one), then each version runs in order. S025's device-check
+  row 9 and its impl report say "schema **20**"; the coder changes both to
+  "the latest schema version", and S019's impl report notes the joint
+  release.
 
 ## 5. Rules
 
@@ -556,10 +581,20 @@ filter puts the same rule in SQL: `t.state = 'scheduled' AND t.planned_date <
 ### 5.6 Transactions and locks
 
 As S018 § 5.3: each move is one transaction that locks the ticket row `FOR
-UPDATE`, decides from the locked row, and writes the ticket and its event. No
-new table is locked, and no new lock-order edge appears. A *Change plan* on a
-ticket another user just started sees the new state and gets 409 "This ticket
-changed — reload".
+UPDATE`, decides from the locked row, and writes the ticket and its event.
+
+- The state change also takes the shared foreign-key locks on the machine,
+  unit and component rows, as every move does (S025 CR1-02): `state` is in
+  those foreign keys' indexes.
+- S019 adds no explicit lock and no new lock-order edge. The two accepted
+  deadlocks CR1-02 lists (a repeat raised against a send-back; a unit edit
+  against a move in that unit) cover `schedule`, `reschedule` and the start
+  from scheduled too.
+- The coder adds the new moves to the lock-order note in `tickets.py`, in
+  CR1-02's words, not "nothing else is locked" (BS1-01).
+
+A *Change plan* on a ticket another user just started sees the new state and
+gets 409 "This ticket changed — reload".
 
 ### 5.7 Permissions
 
@@ -666,9 +701,18 @@ plan*, stay under `ticket:assign` (U1).
 
 ### Migration (`test_migration_v21.py`)
 
-- the columns, the ENUM with `scheduled` (still `NOT NULL DEFAULT 'raised'`),
-  `chk_tickets_plan`; a ticket row from before the migration unchanged;
-  re-run harmless.
+- In `vel_yantra_upgrade`, as S025's `test_migration_v20.py` does (BS1-02):
+  1. Recreate the database and run `_MIGRATIONS` pinned to v20 alone.
+  2. Insert the shortest chain a ticket needs: site, unit, equipment class,
+     equipment, ticket and its raised event.
+  3. Run v20 + v21.
+  4. Check the row is unchanged, the columns, the ENUM with `scheduled`
+     (still `NOT NULL DEFAULT 'raised'`) and `chk_tickets_plan`.
+  5. Delete `db_version` 21 and run again: the re-run is harmless.
+- Reuse `test_migration_v20.py`'s `_recreate`, `_migrate` and `_schema`:
+  import them, or move them into one small `tests/upgrade_db.py`. Do not copy
+  them. pytest runs the files one after another, so the two files share
+  `vel_yantra_upgrade` without colliding.
 
 ### Automated (e2e, `tickets-work.spec.js`)
 
@@ -683,17 +727,27 @@ Important:
   with "for parts"; after start and back in service the times card shows the
   waiting per reason;
 - the list's *Overdue* filter shows a ticket planned in the past (seeded by
-  SQL in `seed_e2e.py`), with the red badge;
+  SQL in `seed_e2e.py` on `E2E MCC1 mill`), with the red badge; the test runs
+  as the engineer;
 - the Schedule dialog, the *Change plan* dialog and the *Start* dialog with
   its Yes / No fit a phone (`expectDialogFits`) on the Pixel 7 and iPhone 14
   projects (BR1-15).
 
 Plain:
 - *Change plan* opens with the current date and reason; saving it unchanged
-  shows "Nothing to change";
+  shows "Nothing to change". This is a 400 from `/moves/reschedule`: the test
+  declares `consoleWatch.allowFailedRequest("/moves/reschedule", 400)` and
+  checks the message with `expectFieldMessage(dialog, "Nothing to change")`
+  (BS1-03);
 - choosing *Other* opens the remark as required;
 - a technician sees no *Schedule* button on an acknowledged ticket, and sees
   it on a ticket in progress (U1).
+
+Set-up for these tests goes through the API, not the screens (BS1-03):
+`moveByApi("engineer", id, "schedule", {planned_date, waiting_reason})`, and
+`moveByApi("technician", id, "acknowledge")` for the technician check. The
+three projects share one database, so a test that counts tickets reads the
+count first.
 
 ### On a real device
 
@@ -782,3 +836,18 @@ the user; Q2, Q3 and Q6 agreed, noted in § 9.
 ### U1 — user answers, 21-10-2026 (gate A)
 
 "deffered work brief ok", "decisions as per suggested", "i dont have clause numbers" → approved 21-10-2026. Q1 option (b), the planner's gate recommendation: technicians schedule from in progress only (§ 1.2, § 3, § 5.1, § 5.7, § 7 decision 4, § 8). Q2 *Waiting* / *Scheduled*; Q3 no workshop reason; Q4 365 days; Q7 numbers by name only. Baseline from r2's *Reviewed against:*.
+
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 22-10-2026
+
+Against 3df667c + uncommitted S025. Verdict: no blocker or major.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 every move takes three shared FK locks | minor | **Accepted** (option a): § 5.6 reworded in CR1-02's words; the coder adds the new moves to the lock-order note |
+| BS1-02 v21 and S025's migration rule; the "row from before" test | minor | **Accepted** (option a): v21 has no `_PRECONDITIONS` entry, said in § 4.3 and v21's comment; the test uses `vel_yantra_upgrade` with `test_migration_v20.py`'s helpers (§ 8); v20's header comment cited |
+| BS1-03 e2e conventions; the seed's node and database | minor | **Accepted**: `allowFailedRequest` and `expectFieldMessage` for "Nothing to change"; the seed sets its database from `E2E_DATABASE` and runs `check_target`; the overdue ticket on `E2E MCC1 mill`, "E2E seed: overdue for parts"; set-up by `moveByApi` (§ 3 Tests, § 8) |
+| BS1-04 the v20 pin is a fact | nit | **Accepted**: `V20 = [m for m in local_db._MIGRATIONS if m[0] == 20]`, assertions unchanged (§ 3 Tests) |
+| BS1-05 the Order and Status lines | nit | **Accepted**: coded on top of uncommitted S025; the three steps committed together; `Baseline: 3df667c + uncommitted S025` |
+| BS1-06 the first release applies v20–v22 | nit | **Accepted**: § 4.3; the coder changes S025's row 9 and impl-report check to "the latest schema version" |
+| BS1-07 `test_migration_v12.py:63` moved | nit | **Accepted**: cited as `test_tables_and_indexes` |
+

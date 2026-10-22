@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 17-10-2026 (revised 17-10-2026 after brief-reviews r1 and r2; 18-10-2026 at gate A)
 Track: full
-Status: Committed ae0f183; manual checks pending (approved 18-10-2026 by KLA)
+Status: Committed ae0f183; checks: 2 covered by API tests; left: real client addresses in the access log, the production release check (approved 18-10-2026 by KLA)
 ```
 
 # S013 — Network gate, access log and job queue

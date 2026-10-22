@@ -234,10 +234,11 @@ Docs and workflow:
 ## Manual checks
 
 Important:
-- [ ] The user runs `tooling/run-e2e-tests.bat` once on their own machine: it creates
+- [x] The user runs `tooling/run-e2e-tests.bat` once on their own machine: it creates
   the database, installs the browsers, goes green, and the report opens
-  (`scratch/e2e-report/html/index.html`).
-- [ ] IT Admin reads `docs/steps/device-checks.md` and says whether she could follow
+  (`scratch/e2e-report/html/index.html`) — by KLA, 21-10-2026 ("e2e tests ran
+  ok, report file written").
+- [x] (accepted by KLA, 21-10-2026: "the file is legible, simple to understand, she will do those things") IT Admin reads `docs/steps/device-checks.md` and says whether she could follow
   each row without help.
 
 ## Fix rounds

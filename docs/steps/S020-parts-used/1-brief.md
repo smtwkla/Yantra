@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1 and r2)
 Track: full
-Status: Approved 21-10-2026 (coded after S025)
-Baseline: 28d3be3 + uncommitted S024
+Status: Gate B — code review r2 clean (fix round 1: CR1-01 fixed; 0 blocker, 0 major, 1 minor — the S003 flake, outside S020 — 5 nit open); awaiting the user (approved 21-10-2026; staleness check s1 done)
+Baseline: 3df667c + uncommitted S025 and S019
 ```
 
 # S020 — Parts used
@@ -24,9 +24,9 @@ S018 A1 (*Already fixed* on the raise screen, 20-10-2026).
 **Track: full** — a new table (a migration), locks across the equipment and
 ticket rows, a new panel and dialog.
 **Depends on:** S018 (the ticket page, labour as the pattern), S025 (the
-squashed schema; this step's migration is **the next version after v20**,
-whichever S019 or S020 is coded first takes v21). Coded after S025 is
-committed.
+squashed schema v20) and S019 (v21). This step's migration is **v22**. It is
+coded on top of S025's and S019's code, which is not committed yet; the user
+commits S025, S019 and S020 together (BS1-05).
 
 ## 1. What will be built
 
@@ -40,7 +40,8 @@ committed.
    panel's pattern: a dialog through `FormModal`; remove asks first with the
    inline *Remove? Yes / No* bar of `LabourPanel.vue`, not a modal). A closed
    ticket's lines are read-only, like its labour; a not-a-fault ticket never
-   has lines (§ 1.5).
+   has lines (§ 1.5). Lines can be added, changed and removed in any open
+   state, scheduled (S019) included (BS1-03).
 3. **The line's fields:**
    - **Description** (required, up to 200 characters): "Deep-groove ball
      bearing", "Seal kit, main cylinder".
@@ -82,8 +83,9 @@ committed.
    number again — and *Description* stays a plain field, with no dropdown to
    keep clear of the phone keyboard.
 5. **Not a fault with parts is refused**: a ticket with part lines cannot be
-   closed as not a fault, from any of its from-states (raised, acknowledged,
-   and in progress since S025 § 1.10). On the page, *Not a fault* is disabled
+   closed as not a fault, from every from-state of `MOVES["not-a-fault"]`
+   (raised, acknowledged, scheduled since S019, in progress since S025 § 1.10;
+   BS1-03). On the page, *Not a fault* is disabled
    with "Remove the parts first" while `parts` is not empty — S018's
    pre-empting of the labour refusal (BR4-02); no extra button, the panel is
    on the page. A stale page gets **409, no field**: "Parts are recorded, so
@@ -157,7 +159,10 @@ committed.
 
 ### Backend
 
-- `backend/local_db.py`: the next migration, `ticket_parts` (§ 4).
+- `backend/local_db.py`: migration **v22**, `ticket_parts` (§ 4). It has
+  **no `_PRECONDITIONS` entry**: it creates one new table and touches no
+  existing row. The comment above v22 says so, as v21's does, so the
+  SMTW-Review migrations check passes on reading (BS1-01).
 - `backend/tickets_core.py` (pure): `PART_UNITS = ("nos", "set", "m", "L",
   "kg")`, `PART_KINDS = ("maker", "generic")`, `validate_part(body) ->
   (clean, errors)` (the field rules of § 1.3, trimmed text, the quantity
@@ -187,11 +192,16 @@ committed.
     `MACHINE_LEVEL` on `component_id`, the parts line "Choose the machine or
     one of its parts" on `node_id` (BR1-01, BR2-05). One helper, not a second
     copy;
-  - the lock-order note in the module docstring: the parts writes take (7),
-    then the node's shared lock — the same sentence as S025's edit.
-- `backend/equipment.py`: its lock-order note names the parts line among the
-  writes that take the node's shared lock after (7) (no code change; the scrap
-  path is unchanged and does not look at part lines, § 5.2).
+  - the lock-order note in the module docstring, in the note's own words
+    (BS1-02): the parts write joins the writes in "Working a ticket … locks
+    (7) explicitly"; the parts add, and the edit whose `node_id` changes, are
+    a **third bullet** in the list of reads that take a shared lock (the node
+    row, the lock `fk_ticket_parts_node` takes at the insert anyway; a scrap
+    holds it `FOR UPDATE`, so the two serialise); and the parts write is named
+    under the fourth accepted deadlock (§ 5.2).
+- `backend/equipment.py`: a third item in its sentence on the shared locks
+  that fall on rows this module locks: the parts line's node (no code change;
+  the scrap path is unchanged and does not look at part lines, § 5.2).
 
 ### Frontend
 
@@ -210,8 +220,10 @@ committed.
   extracted from `EditTicketDialog.vue` (BR1-09).
 - `frontend/src/views/tickets/EditTicketDialog.vue`: uses the util; no
   behaviour change.
-- `frontend/src/views/TicketDetailView.vue`: the panel beside labour,
-  `showParts = can("ticket:work") || parts.length > 0`; *Not a fault*
+- `frontend/src/views/TicketDetailView.vue`: the panel beside labour; the
+  second row's four cards (Times, Assigned, Labour, Parts used) become
+  `col-md-6 col-xl-3`: two by two on a tablet, four across on a wide screen
+  (BS1-06); `showParts = can("ticket:work") || parts.length > 0`; *Not a fault*
   disabled with "Remove the parts first" while `parts` is not empty.
 - `frontend/src/views/tickets/MoveDialog.vue`: the close hint (§ 1.6) from
   `parts_hint_actions`; the not-a-fault 409 shown at the top like the other
@@ -232,13 +244,22 @@ committed.
   *fitted to*
   outside the machine 400, scrapped 400; suggestions (same machine only,
   distinct, newest first, 20 at most, another site's machine not offered);
-  not-a-fault refused with lines (409, from in progress too), allowed after
-  removing them; the detail carries `parts` in entry order; the close entry
+  not-a-fault refused with lines (409, from scheduled and in progress too;
+  scheduled set up with `moves/schedule` as an engineer, BS1-03), allowed
+  after removing them; the detail carries `parts` in entry order; the close entry
   carries the ids of Replace and Modify, also when one is deactivated; a PUT
   that leaves *Fitted to* unchanged on a node scrapped since succeeds, one
   that changes it to a scrapped node is refused.
-- `backend/tests/test_migration_<next>.py` (new): the table, its CHECKs and
-  foreign keys; a re-run is a no-op.
+- `backend/tests/test_migration_v22.py` (new), on `test_migration_v21.py`'s
+  upgrade-database pattern (BS1-01), because the shared test database already
+  has v22 when the tests start: import the helpers from
+  `test_migration_v20.py`; in `vel_yantra_upgrade`, `_recreate()`, `_migrate`
+  with `_MIGRATIONS` pinned to `(20, 21)`, then `(20, 21, 22)`; check the
+  columns, `chk_ticket_parts_kind`, `chk_ticket_parts_quantity`, the two
+  foreign keys and the three indexes; delete `db_version` 22, run again, and
+  compare `_schema()`.
+- `frontend/e2e/support/tickets.js`: `actionId(code)` beside `causeId(code)`,
+  for the closed-ticket setup (BS1-04).
 - `frontend/e2e/tickets-parts.spec.js` (new), § 8.
 
 ### Docs (at approval, by the planner)
@@ -250,9 +271,11 @@ committed.
 
 ## 4. Data model (the next migration)
 
-S019 also claims v21: whichever is coded first takes it, and the planner fixes
-the number in both briefs at that moment, so `test_migration_<n>.py` gets its
-name (BR1-14).
+The migration is **v22** (S019 took v21; BS1-01), tested by
+`test_migration_v22.py`. No `_PRECONDITIONS` entry: `parts_used` was never a
+table, only the *Proposed* row in Plan.MD § 5, so no database holds it; v22
+creates `ticket_parts` with `CREATE TABLE IF NOT EXISTS` and touches no
+existing row.
 
 **`ticket_parts`**:
 
@@ -294,7 +317,7 @@ names:
 | Case | Result |
 |---|---|
 | `description` missing, empty or whitespace only | `description`: "Describe the part" |
-| a text longer than its column | that field: "At most N characters" |
+| a text longer than its column | that field: "Too long (max N)" — `_optional_text`'s words, reused (BS1-07) |
 | `number_kind` sent without a `part_number` | dropped (stored NULL), no error |
 | `part_number` given, `number_kind` missing or unknown | `number_kind`: "Choose where the number comes from" |
 | `number_kind` `maker`, no `maker` | `maker`: "Name the maker of this part number" |
@@ -334,6 +357,14 @@ columns).
 Not a fault (§ 1.5): the count of lines is read after the ticket lock; a
 concurrent add holds or waits for the same ticket lock, so the two cannot both
 succeed.
+
+A repeat raised on the node at the same moment as a part is recorded on the
+earlier ticket can deadlock: the raise holds the node (1) `FOR UPDATE` and then
+takes the earlier ticket's shared lock, while the parts write holds the ticket
+(7) and then takes the node's shared lock. This is the shape of the note's
+fourth accepted deadlock, which S025's edit shares (S025 CR1-02): one side
+gets the JSON 500 "Something went wrong — try again", a retry works, and
+integrity holds. The coder names the parts write there (BS1-02).
 
 **Scrap does not look at part lines** (BR1-03): its guard counts open tickets
 on the node and its parts (`equipment_id` / `component_id`), so a component
@@ -437,6 +468,22 @@ empty. Errors: the usual `{"error", "field"}` (field names as the body's).
 
 ### Automated (e2e, `tickets-parts.spec.js`, three projects)
 
+Conventions (S024's suite; BS1-04):
+- **Setup by API** on the seed's extruder (`seed.extruder`, SMTW.MCC2, the
+  operator's unit): `raiseByApi("operator", …)`, then
+  `moveByApi("technician", id, "start")` for the in-progress ticket. The
+  closed ticket: `restore`, a labour row (close refuses without one), the
+  part through the API, then `close` with `cause_id` and `action_id` from
+  `causeId` and the new `actionId`.
+- **Refusals the test provokes are declared**: the maker and quantity
+  messages are 400s from the API (the API decides, § 5.1), so the test calls
+  `consoleWatch.allowFailedRequest("/parts", 400)` and checks each message
+  with `expectFieldMessage`.
+- **Shared database**: the three projects run on one database, and earlier
+  lines stay. The *Fitted here before* test gives its line a description
+  unique to the run (with the ticket's serial in it), finds that row by text,
+  and never asserts the list's length or that a list is empty.
+
 - **Important:** a technician adds a part line on an in-progress ticket the
   short way — description, a number with the default kind (*standard
   number*), the default quantity 1 nos, fitted to a component; the panel
@@ -529,3 +576,18 @@ All settled by the user at gate A (U1, 21-10-2026), each as proposed:
 ### U1 — user answers, 21-10-2026 (gate A)
 
 "parts brief ok. suggestions ok." and "decisions as per suggested" → approved 21-10-2026; every § 9 proposal accepted (Q1 hint only; Q2 the five units; Q3 `ticket:work` only; Q4 same machine; Q5 no limit; Q6 Overhaul joins the hint, § 1.6, § 3, § 6). Baseline from r2's *Reviewed against:*.
+
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 22-10-2026
+
+Against 3df667c + uncommitted S025 and S019. Verdict: no blocker or major.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 the migration is v22; precondition; upgrade test | minor | **Accepted** (a): v22, no `_PRECONDITIONS` entry and why (a new table only), the comment above v22; `test_migration_v22.py` on v21's upgrade-database pattern (Depends on, § 3, § 4) |
+| BS1-02 the rewritten lock-order notes; the repeat-raise deadlock | minor | **Accepted** (a): a third bullet in the shared-read list, in the note's own words; `equipment.py`'s sentence; one paragraph in § 5.2 naming the accepted deadlock shape (§ 3, § 5.2) |
+| BS1-03 *Not a fault* also from scheduled | minor | **Accepted**: the refusal covers every from-state, scheduled included; parts allowed in any open state; tested from scheduled and in progress (§ 1.2, § 1.5, § 3 Tests) |
+| BS1-04 e2e conventions | minor | **Accepted**: setup by API on `seed.extruder`; an `actionId` helper; `allowFailedRequest("/parts", 400)` with `expectFieldMessage`; a unique description and presence-only asserts (§ 3, § 8) |
+| BS1-05 "coded after S025 is committed" | nit | **Accepted**: coded on top of uncommitted S025 and S019, committed together; `Baseline:` set |
+| BS1-06 where the parts card goes | nit | **Accepted**: the four cards as `col-md-6 col-xl-3` (§ 3 Frontend) |
+| BS1-07 the length message | nit | **Accepted**: reuse `_optional_text` and its words, "Too long (max N)" (§ 5.1) |
+

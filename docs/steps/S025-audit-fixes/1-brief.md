@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026: squashed schema U1, brief-reviews r1–r3, backup dropped U2)
 Track: full
-Status: Approved 21-10-2026 (coded after S024 is committed)
-Baseline: 28d3be3 + uncommitted S024
+Status: Gate B — code review r2 clean (fix round 1: 2 minor fixed; 0 blocker, 0 major, 0 minor, 4 nit open); awaiting the user (approved 21-10-2026 by KLA; staleness check s1 done)
+Baseline: 3df667c
 ```
 
 # S025 — Release safety and ticket integrity (audit fixes)
@@ -32,9 +32,8 @@ empty tables v9 would have changed, and v20 builds the rest.
 **Track: full** — the migration engine and every table's definition, locking
 rules on three write paths, the deploy script, RBAC-relevant unit rules.
 
-**Depends on:** S018 committed (ae3841f). S024 (browser tests) is being coded in
-parallel; S025 is coded after S024 is committed (§ 9 Q4), so its automated
-checks use S024's suite.
+**Depends on:** S018 committed (ae3841f) and S024 committed (3df667c); its
+automated checks use S024's suite.
 
 ## 1. What will be built
 
@@ -240,7 +239,9 @@ checks use S024's suite.
   the 500, `Exception` → `logger.exception` + 500.
 - `backend/masters.py`: `_unit_is_referenced` counts `tickets` (`LOCK IN SHARE
   MODE`, as `_check_code_frozen`); the unit deactivation guard refuses a unit
-  with tickets not closed; docstrings fixed.
+  with tickets not closed, and runs **before** the existing equipment guard,
+  so the open-ticket count is the message the user sees first (BS1-04);
+  docstrings fixed.
 - `backend/equipment.py`: the scrap refusal message gains the count; the
   lock-order docstring (the ticket edit's FK lock).
 - `backend/tickets.py`: `_send_back` refuses when a repeat exists; `_detail`
@@ -275,7 +276,12 @@ checks use S024's suite.
 - `.claude/CLAUDE.md`: the deploy bullet names `DEPLOY_HEALTH_URL`; the
   migrations note says v1–v13 are squashed into v20 and new
   ones start at v21, and that a migration that cannot run on existing data
-  gets a precondition, never an edit.
+  gets a precondition, never an edit. The `## SMTW-Review` section gains one
+  point (BS1-01): "**Migrations**: `_MIGRATIONS` starts at v20 (squashed
+  21-10-2026); v1–v13 live only in `backend/tests/fixtures/migrations_v13.py`
+  and are never edited; a migration that touches rows that exist in
+  production carries a `_PRECONDITIONS` entry and a test from the production
+  schema. Check both on every migration after v20."
 
 ### Tests
 - `backend/tests/fixtures/migrations_v13.py` (new): a frozen copy of v1–v13
@@ -336,6 +342,23 @@ checks use S024's suite.
   timeout, connection error), the required variable, the rollback lines.
 - e2e (S024's suite): *Machine stopped* refused shows its message; no *Send
   back* on a ticket with a repeat; the unit deactivation refusal shows.
+  Follow the suite's conventions (BS1-03):
+  - declare each expected refusal with `consoleWatch.allowFailedRequest`:
+    `("/regrade", 400)` for *Machine stopped* (a 400 on `intensity`) and
+    `("/api/masters/units/", 409)` for the unit;
+  - provoke the re-grade with a new `regradeByApi` beside `moveByApi` in
+    `support/tickets.js` (`moveByApi` builds `/moves/<move>` only; fix its
+    docstring);
+  - check messages with `expectFieldMessage`;
+  - build a repeat as the "Not fixed — raise again" test in
+    `tickets-work.spec.js` does (`raiseByApi`, restore, `raiseByApi` with
+    `repeat_of_id`);
+  - the unit test raises a ticket on `E2E MCC1 mill`, deactivates
+    `SMTW.MCC1` as `it_admin`, sees "Close its tickets first (1 open)", and
+    closes its ticket at the end, since the three projects share one
+    database.
+- `frontend/e2e/masters.spec.js:10`: the comment "migration v11" becomes "v20
+  (S016's seed)"; the constant stays 14 (BS1-05).
 
 ### Docs
 - `docs/steps/README.md`: the Queued rows (§ 1.8).
@@ -379,7 +402,11 @@ next retry (≤ 30 s) builds the schema — no redeploy needed.
 - Order: a send-back holds the earlier ticket's row `FOR UPDATE`; the raise
   takes the shared lock after its own inserts. Whichever commits first wins;
   the other sees the committed state and is refused. No new lock-order edge:
-  the raise already takes that shared lock through the foreign key.
+  the raise already takes that shared lock through the foreign key. (Corrected,
+  CR1-02: a state change also takes the machine's shared foreign-key lock, so
+  when the two overlap they can deadlock; InnoDB rolls one side back, 1213, a
+  retry gives the right answer. "Whichever commits first wins" holds only when
+  they do not overlap.)
 
 ### 5.3 Units and tickets
 
@@ -488,7 +515,7 @@ report.
 2. ~~*Not a fault* after *Start*~~ — settled (U4): allowed, § 1.10.
 3. ~~Production's state~~ — settled (U1): v0.1.3, no equipment, the only
    instance.
-4. **Order with S024**: S025 is coded after S024 is committed.
+4. ~~**Order with S024**~~: settled; S024 committed as 3df667c.
 5. **Assumption:** the registry check (`docker manifest inspect`) works with
    the credentials `build.bat` already uses for `docker push`.
 6. ~~The run-config value~~ — settled (U5): `DEPLOY_HEALTH_URL` is
@@ -605,3 +632,19 @@ Q2 "Allow Not a fault after Start? I propose yes" → allowed; folded into § 1.
 ### U5 — user answers, 21-10-2026 (gate A)
 
 Q6 "yes, use that URL" → `DEPLOY_HEALTH_URL=https://vel-yantra.mspv.app/api/health` in the Deploy and Release run configs. "brief approved" → Approved 21-10-2026; Baseline from r3's *Reviewed against:*.
+
+### Code review r1 — `4-code-review-r1.md`, CR1-02 answered 22-10-2026
+
+**Accepted**, wording only: § 5.2 "Order" now says that overlapping raise and send-back can deadlock (1213, accepted, retry works), because a ticket state change takes shared foreign-key locks on the machine, unit and component rows. The lock-order notes in `tickets.py` and `equipment.py` list the two new accepted deadlocks (repeat raise against send-back; unit edit against a ticket move).
+
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 21-10-2026
+
+Against 3df667c (S024 committed). Verdict: no blocker or major.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 the new `## SMTW-Review` rule in CLAUDE.md | minor | **Accepted** (option a): one *Migrations* point (§ 3 Tooling) |
+| BS1-02 S024 still described as in progress | nit | **Accepted**: intro, Status, § 9 Q4; `Baseline: 3df667c` |
+| BS1-03 the e2e suite's conventions | nit | **Accepted**: listed under § 3 Tests; a `regradeByApi` helper |
+| BS1-04 which deactivation guard runs first | nit | **Accepted** (option a): the ticket guard first; the e2e test closes its ticket |
+| BS1-05 "migration v11" in `masters.spec.js` | nit | **Accepted** (§ 3 Tests) |

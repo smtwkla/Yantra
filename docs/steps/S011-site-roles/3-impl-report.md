@@ -269,10 +269,10 @@ Docs:
 ## Manual checks
 
 Important (to be ticked or explicitly skipped by the user before Done):
-- [ ] Only `maintenance_team`, no site role → the "no access yet" page, with name and Sign out in the top bar.
-- [ ] As IT admin, in Team: give a test person with a login Manager at SMTW (all units) and Engineer at VEL (one unit); as them: SMTW all units, edit everywhere there; VEL one unit, edit there; other VEL units invisible.
-- [ ] Change the VEL role to Operator: edit buttons on VEL equipment gone after a page load; a direct edit refused (403).
-- [ ] The production switch-over of § 5.1 above, in that order.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — Only `maintenance_team`, no site role → the "no access yet" page, with name and Sign out in the top bar.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — As IT admin, in Team: give a test person with a login Manager at SMTW (all units) and Engineer at VEL (one unit); as them: SMTW all units, edit everywhere there; VEL one unit, edit there; other VEL units invisible.
+- [skipped] backend api tests already check (KLA, 21-10-2026) — Change the VEL role to Operator: edit buttons on VEL equipment gone after a page load; a direct edit refused (403).
+- [x] The production switch-over of § 5.1 above, in that order. — by KLA, at the release (recorded 21-10-2026)
 
 Also (plain):
 - The Team dialog asks before discarding changes (S007), including after a site-row change only.

@@ -164,12 +164,12 @@ There are no departures from the brief.
 ## Manual checks
 
 Important:
-- [ ] As an engineer, open Masters › Failure codes: the pre-filled modes,
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) As an engineer, open Masters › Failure codes: the pre-filled modes,
   causes and actions are there; enter the press modes of § 4.4 under the press
   class; filter by the press class shows them; *General* shows the 14 general
   ones.
-- [ ] As an operator, the section is read-only (no Add, no edit, no toggle).
-- [ ] On a phone, the switch and the lists are usable (no sideways scroll).
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) As an operator, the section is read-only (no Add, no edit, no toggle).
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) On a phone, the switch and the lists are usable (no sideways scroll).
 
 Also:
 - Deactivate a seed mode; it disappears unless *Show inactive*; reactivate it.

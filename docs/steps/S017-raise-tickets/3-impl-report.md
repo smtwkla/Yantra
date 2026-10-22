@@ -259,9 +259,9 @@ Important:
 - [ ] On a phone: scan a QR label → equipment page → **Raise ticket** → pick critical, a
   symptom, take a photo (camera or gallery offered) → the ticket page shows it, with the
   thumbnail and the *raised* line in the timeline.
-- [ ] As an operator of one unit, the Tickets list shows only that unit's tickets; a ticket
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) As an operator of one unit, the Tickets list shows only that unit's tickets; a ticket
   URL of another unit gives "not found".
-- [ ] As IT admin, give a person without a login an Operator row at a site; as a supervisor
+- [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) As IT admin, give a person without a login an Operator row at a site; as a supervisor
   there, raise a ticket naming that person as *reported by*.
 
 Plain:
