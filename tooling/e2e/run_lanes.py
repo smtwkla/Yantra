@@ -7,8 +7,15 @@ its checks; extra arguments go to every lane's Playwright (a spec file, --projec
 
 Each lane's output goes to scratch/e2e-lanes/lane<n>.log; the runner prints one line per lane,
 then merges the lanes' blob reports into scratch/e2e-report/html and prints the failures and
-totals once.  Exit 0 when every lane passed and the merge worked, else 1.  Stdlib only."""
+totals once.  Exit 0 when every lane passed and the merge worked, else 1.  Stdlib only.
 
+One run at a time on this machine: every run (lanes or the single stack) uses the same ports,
+databases and folders, and each backend drops its database at start, so two runs at once
+spoil each other (22-10-2026: two windows' runs, 12 failures).  A run holds an exclusive lock
+on scratch/e2e-run.lock; a second run waits for it.  The operating system releases the lock
+when the process ends, a crash included, so a stale lock cannot block."""
+
+import contextlib
 import os
 import re
 import shutil
@@ -29,6 +36,8 @@ DB_USER = "vel_yantra_master"
 DEFAULT_LANES = 6
 MAX_LANES = 20                            # ports 5011–5030 and 5181–5200
 PROJECT_COUNT = 3                         # playwright.config.js's projects
+LOCK_FILE = ROOT / "scratch" / "e2e-run.lock"
+LOCK_POLL_SECONDS = 10
 SUMMARY = re.compile(r"^\s*(\d+) (passed|failed|flaky|skipped|did not run)", re.MULTILINE)
 
 
@@ -96,7 +105,57 @@ def merge():
     return subprocess.run(subprocess.list2cmdline(command), cwd=FRONTEND, shell=True).returncode == 0
 
 
+@contextlib.contextmanager
+def one_run_at_a_time():
+    """Hold the machine's e2e lock for the run; wait while another run holds it."""
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK_FILE, "a+")
+    waited = False
+    while True:
+        try:
+            _lock(handle)
+            break
+        except OSError:
+            if not waited:
+                print("Another e2e run is in progress on this machine; waiting for it to finish.")
+                waited = True
+            time.sleep(LOCK_POLL_SECONDS)
+    try:
+        yield
+    finally:
+        _unlock(handle)
+        handle.close()
+
+
+def _lock(handle):
+    if os.name == "nt":
+        import msvcrt
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock(handle):
+    if os.name == "nt":
+        import msvcrt
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def main(args):
+    wanted = int(os.environ.get("E2E_LANES", DEFAULT_LANES))
+    if not 1 <= wanted <= MAX_LANES:
+        sys.exit(f"E2E_LANES must be 1 to {MAX_LANES}, not {wanted}")
+    with one_run_at_a_time():
+        return run(args, wanted)
+
+
+def run(args, wanted):
     wanted = int(os.environ.get("E2E_LANES", DEFAULT_LANES))
     if not 1 <= wanted <= MAX_LANES:
         sys.exit(f"E2E_LANES must be 1 to {MAX_LANES}, not {wanted}")

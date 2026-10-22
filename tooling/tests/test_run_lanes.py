@@ -36,3 +36,24 @@ def test_summary_of_a_lane_log():
     log = "[1/9] …\n  1 failed\n    [phone-webkit] › e2e/x.spec.js:3:1 › y\n  8 passed (1.2m)\n"
     assert run_lanes.summary_of(log) == "1 failed, 8 passed"
     assert run_lanes.summary_of("crashed") == "no summary (see the log)"
+
+
+def test_a_second_run_cannot_take_the_lock(tmp_path, monkeypatch):
+    """The lock is exclusive: while one handle holds it, a second gets an OSError (and the run
+    waits); once released, the second takes it."""
+    monkeypatch.setattr(run_lanes, "LOCK_FILE", tmp_path / "e2e-run.lock")
+    with run_lanes.one_run_at_a_time():
+        other = open(run_lanes.LOCK_FILE, "a+")
+        try:
+            try:
+                run_lanes._lock(other)
+                taken = True
+            except OSError:
+                taken = False
+            assert not taken
+        finally:
+            other.close()
+    other = open(run_lanes.LOCK_FILE, "a+")
+    run_lanes._lock(other)
+    run_lanes._unlock(other)
+    other.close()

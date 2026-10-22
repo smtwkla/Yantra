@@ -56,9 +56,18 @@ The orchestrator gives you one of three tasks:
     of the brief, asserting what the user would see; call `expectDialogFits`
     on every dialog a flow test opens;
   - run `tooling/run-e2e-tests.bat` whenever the frontend or an API the
-    screens use changed. A full run can pass the Bash tool's 10-minute
-    limit: run it **in the background** (or with the maximum timeout,
-    600 000 ms) and read the result when it finishes;
+    screens use changed: the **targeted** specs only, never the whole suite unasked
+    (22-10-2026, user): the spec files of the screens and APIs the step
+    changed (the spec-to-step map in `.claude/CLAUDE.md` § SMTW-Review) plus
+    `e2e/screens.spec.js`, e.g. `tooling/run-e2e-tests.bat
+    e2e/tickets-work.spec.js e2e/screens.spec.js`. The **full** suite only when
+    the step changes shared frontend code (`FormModal.vue`, `useFormModal.js`,
+    `api.js`, the router, the auth store, `e2e/support/`) — those faults can
+    show on any screen. The user runs the full suite once before a release.
+    Name the specs run and why in the report. It runs in parallel lanes and waits
+    if another run holds the machine's lock; run it **in the background** (or
+    with the maximum timeout, 600 000 ms) and read the result when it
+    finishes;
   - mark a check `- [auto] <check> — <test file>::<test name>` in the report
     only from a passing run;
   - append the brief's *On a real device* checks as rows to

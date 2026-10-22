@@ -31,9 +31,18 @@ review file there.
   in `frontend/` if the frontend changed. Record the real result. A red suite is
   a `blocker`.
 - **Run the browser tests** (S024) when the frontend or an API the screens use
-  changed: `tooling/run-e2e-tests.bat`, **in the background** (a full run can
-  pass the Bash tool's 10-minute limit) or with the maximum timeout (600 000
-  ms), and record the real result; red is a `blocker`. Check that:
+  changed: `tooling/run-e2e-tests.bat`, the **targeted** specs only, never the whole suite unasked
+  (22-10-2026, user): the spec files of the screens and APIs the step
+  changed (the spec-to-step map in `.claude/CLAUDE.md` § SMTW-Review) plus
+  `e2e/screens.spec.js`, e.g. `tooling/run-e2e-tests.bat
+  e2e/tickets-work.spec.js e2e/screens.spec.js`. The **full** suite only when
+  the step changes shared frontend code (`FormModal.vue`, `useFormModal.js`,
+  `api.js`, the router, the auth store, `e2e/support/`) — those faults can
+  show on any screen. The user runs the full suite once before a release.
+  Name the specs run and why in the report (a
+  spec the step should have run and did not is a `minor` finding). Run it **in
+  the background** or with the maximum timeout (600 000 ms), and record the
+  real result; red is a `blocker`. Check that:
   - each *Automated* check of the brief has a test that really asserts it —
     what the user would see, not only that a page opened (a test that only
     navigates is a `major` finding: the check is not automated);

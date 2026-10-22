@@ -168,7 +168,7 @@ brief's header (`Track: light | full`) and in the index row.
    - what was built;
    - any departures from the brief, with your view on each;
    - the minor findings still open;
-   - the e2e result (`tooling/run-e2e-tests.bat`) and the `[auto]` checks as
+   - the e2e result (`tooling/run-e2e-tests.bat`: which specs ran — targeted, or the full suite for shared code — and the result) and the `[auto]` checks as
      passed tests, each with its test;
    - the real-device checks: the **important** ones as the checklist from the
      impl report's `## Manual checks`, the rest as a plain list, and that their
