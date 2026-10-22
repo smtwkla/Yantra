@@ -10,6 +10,11 @@ user, which is set to "nobody" here, so a lost header gets no access, never admi
 (S024 § 5.1).  Dev only: FLASK_DEBUG=1 (config.py allows the auth bypass only then),
 bound to 127.0.0.1, and the guard below refuses any database but a local *_e2e one before
 anything is dropped.
+
+Lanes (tooling/e2e/run_lanes.py): with E2E_LANE=<n> set, the backend takes the lane's own
+database (vel_yantra_lane<n>_e2e: still *_e2e, so the guard is unchanged), port (5010 + n)
+and files folder, so several lanes run side by side and share nothing.  Unset, it is the
+single stack above.
 """
 
 import os
@@ -20,10 +25,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 BACKEND = os.path.join(REPO, "backend")
 
-E2E_DATABASE = "vel_yantra_e2e"
+# The lane, as frontend/e2e/support/stack.js reads it ("" = the single stack)
+LANE = os.environ.get("E2E_LANE", "")
+if LANE and not LANE.isdigit():
+    sys.exit(f"e2e backend: E2E_LANE must be a number, not {LANE!r}")
+LANE_PORT_BASE = 5010
+E2E_DATABASE = f"vel_yantra_lane{LANE}_e2e" if LANE else "vel_yantra_e2e"
 HOST = "127.0.0.1"
-PORT = 5002
-DATA_DIR = os.path.join(REPO, "scratch", "e2e-data")
+PORT = LANE_PORT_BASE + int(LANE) if LANE else 5002
+DATA_DIR = os.path.join(REPO, "scratch", "e2e-data", *([f"lane{LANE}"] if LANE else []))
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
 # A request without the test headers: no role, no membership (auth_utils._get_dev_stub_user)
 NO_ACCESS_ROLE = "nobody"
@@ -58,7 +68,7 @@ def _recreate_database(db_config):
 
 def _empty_data_dir():
     shutil.rmtree(DATA_DIR, ignore_errors=True)
-    os.makedirs(DATA_DIR)
+    os.makedirs(DATA_DIR)    # parents too: scratch/e2e-data/lane<n>
 
 
 def _user_factory(harness_user, names):

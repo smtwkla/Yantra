@@ -20,6 +20,11 @@ def test_a_local_e2e_database_is_accepted(host):
     assert check_target(_db(host=host)) is None
 
 
+def test_a_lane_database_is_accepted():
+    """tooling/e2e/run_lanes.py: each lane's database still ends in _e2e, so the guard holds."""
+    assert check_target(_db(database="vel_yantra_lane3_e2e")) is None
+
+
 @pytest.mark.parametrize("database", ["vel_yantra_test", "vel_yantra_master", "vel_yantra_e2e_old", "", None])
 def test_any_other_database_is_refused(database):
     assert "must end in _e2e" in check_target(_db(database=database))

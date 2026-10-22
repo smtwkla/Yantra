@@ -2,7 +2,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, expectNoSidewaysScroll } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll } from "./support/dialogs.js";
 import { asPerson, seedIds } from "./support/people.js";
 import {
   istLocal, raiseByApi, saveDialog, shownTime, stateBadge, thisMinute, timeline, timeValue,
@@ -82,6 +82,21 @@ test("S017: with no symptom and no description, the description is asked for", a
   await page.getByRole("button", { name: /Running, reduced/ }).click();
   await saveButton(page).click();
   await expect(page.getByText("Describe the problem, or pick a symptom")).toBeVisible({ timeout: 3_000 });
+});
+
+test("S026: Save with nothing chosen scrolls the raise form to the first message", async ({ page }) => {
+  await asPerson(page, "supervisor", "/tickets");
+  await page.getByRole("link", { name: "Raise ticket" }).click();
+  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
+  await expect(page.getByLabel(/What is wrong\?/)).toBeVisible();
+  await saveButton(page).click();
+  // "How bad is it?" is at the top of a long form; Save is at the bottom
+  await expectFieldMessage(page, "Choose how bad it is");
+  await page.getByRole("button", { name: /Running, reduced/ }).click();
+  await saveButton(page).click();
+  await expectFieldMessage(page, "Describe the problem, or pick a symptom");
+  await expect(page.getByLabel(/What is wrong\?/)).toBeFocused();
 });
 
 test("S017: an operator sees only their unit's tickets; another unit's ticket is not found", async ({ page, consoleWatch }) => {

@@ -4,7 +4,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, openDialog } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
 import { saveDialog } from "./support/tickets.js";
 
@@ -37,6 +37,24 @@ test("S003: the Add equipment dialog fits", async ({ page }) => {
   await expectDialogFits(page);
   await openDialog(page).getByLabel("Site").selectOption({ label: "SMTW" });
   await expectDialogFits(page);
+});
+
+test("S026: the server's refusal of a field at the bottom of the Add equipment dialog is on screen", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/api/equipment", 400);
+  await asPerson(page, "engineer", "/equipment");
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  // Waits out the open animation; a fill during it can lose its text to the focus trap
+  await expectDialogFits(page);
+  const dialog = openDialog(page);
+  await dialog.getByLabel("Site").selectOption({ label: "SMTW" });
+  await dialog.getByLabel("Unit").selectOption({ label: "MCC1 — New extrusion and punching line, part 1" });
+  await dialog.getByLabel("Model").selectOption({ label: "Atlas Copco GA37 — CMP / Screw compressor" });
+  await dialog.getByLabel("Name").fill("E2E bad year");
+  await dialog.getByLabel("Year").fill("1800");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expect(dialog.locator(".invalid-feedback.d-block")).toHaveCount(1);
+  await expectFieldMessage(dialog, /Year must be between/);
+  await expect(dialog.getByLabel("Year")).toBeFocused();
 });
 
 test("S003: engineer adds equipment from the list; its page opens", async ({ page }, testInfo) => {

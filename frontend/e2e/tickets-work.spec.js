@@ -2,7 +2,7 @@
 // through the API (setup), then works it on the screens; every dialog opened must fit
 // (openAction calls expectDialogFits).
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, expectFieldMessage } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { asPerson, personId, seedIds } from "./support/people.js";
 import {
   card, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
@@ -118,6 +118,37 @@ test("engineer: Close waits for the labour; Add labour, then close with cause an
   for (const name of ["Close", "Add labour", "Edit", "Assign", "Send back"]) {
     await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
+});
+
+test("S026: Add labour with no time spent scrolls the dialog to the message and puts the cursor in the hours field", async ({ page }, testInfo) => {
+  const base = thisMinute();
+  // Not on the extruder: the raise tests read its open-tickets list, which the API cuts at 50
+  const ticket = await raiseByApi("supervisor", {
+    equipment_id: seed.mcc1Mill.id, intensity: "critical", description: "Work test: labour refusal in view",
+    occurred_at: istLocal(120, base),
+  });
+  await moveByApi("technician", ticket.id, "restore", { person_id: kannan, occurred_at: istLocal(30, base) });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+
+  await page.locator(".action-bar").getByRole("button", { name: "Add labour" }).click();
+  await expectDialogFits(page);
+  const labour = openDialog(page);
+  // Click a name in the picker: Kannan has one trade, so Trade worked is filled and not refused first
+  await labour.getByRole("button", { name: /Kannan \(technician\)/ }).click();
+  await expect(labour.locator(".fw-semibold", { hasText: "Kannan (technician)" })).toBeVisible();
+  const hours = labour.getByLabel("Hours");
+  // The bug: on the iPhone 14 screen Time spent starts below the fold, so Save looked dead
+  if (testInfo.project.name === "phone-webkit") await expect(hours).not.toBeInViewport();
+
+  await labour.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(labour, "Time spent must be between 1 minute and 24 hours");
+  await expect(hours).toBeFocused();
+  await expect(hours).toBeInViewport();
+
+  await hours.fill("1");
+  await labour.getByLabel("Minutes").fill("15");
+  await saveDialog(page, "Save");
+  await expect(card(page, "Labour")).toContainText("Kannan (technician)");
 });
 
 test("Not fixed — raise again: the new ticket links to the old one, and the old one lists it", async ({ page }) => {

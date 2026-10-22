@@ -4,6 +4,9 @@
 :: Vite (5177). Needs the dev DB container (tooling\dev\dev-db-up.bat). Not part of
 :: run-tests.bat or the release. Extra arguments go to Playwright (e.g. a spec file, or
 :: --project=phone-chromium). Exit 0 green, 1 a failure (as Playwright).
+:: Lanes: the tests run in E2E_LANES parallel lanes (default 6), each on its own database,
+:: backend and Vite (tooling\e2e\run_lanes.py; lane logs in scratch\e2e-lanes\). E2E_LANES=1 runs
+:: the single stack above.
 :: Report: scratch\e2e-report\html\index.html (npx playwright show-report ..\scratch\e2e-report\html).
 setlocal
 set COMPOSE=docker compose -f "%~dp0dev\docker-compose.dev.yml"
@@ -28,9 +31,9 @@ cd /d "%~dp0..\frontend"
 call npx playwright install chromium webkit
 if errorlevel 1 exit /b 1
 
-:: 4. The tests
+:: 4. The tests, in lanes
 echo Started %date% %time%
-call npx playwright test %*
+call uv run --no-project python "%~dp0e2e\run_lanes.py" %*
 set RESULT=%ERRORLEVEL%
 echo Finished %date% %time%
 echo Report: %~dp0..\scratch\e2e-report\html\index.html  (backend log: scratch\e2e-backend.log)

@@ -14,7 +14,7 @@ by design, so the ticket is raised and scheduled through the API for today, and 
 then moves its plan to yesterday on the ticket and its scheduled event (BR2-02).  That one
 statement goes straight to the e2e database, after e2e_backend.check_target (BS1-03).
 
-Usage: seed_e2e.py [base URL, default http://127.0.0.1:5002]
+Usage: seed_e2e.py [base URL, default the backend's: http://127.0.0.1:5002, or the lane's port]
 """
 
 import functools
@@ -26,9 +26,9 @@ BACKEND = os.path.join(HERE, "..", "..", "backend")
 sys.path.insert(0, os.path.join(HERE, "..", "dev"))
 
 import seed_dev  # noqa: E402  (after the path above)
-from e2e_backend import E2E_DATABASE, check_target  # noqa: E402  (this folder)
+from e2e_backend import E2E_DATABASE, PORT, check_target  # noqa: E402  (this folder)
 
-DEFAULT_BASE_URL = "http://127.0.0.1:5002"
+DEFAULT_BASE_URL = f"http://127.0.0.1:{PORT}"
 ADMIN_HEADERS = {"X-Test-Role": "admin", "X-Test-User": "e2e_admin"}
 SITE_CODES = ("SMTW", "BRICKS")
 

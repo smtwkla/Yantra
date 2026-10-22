@@ -48,8 +48,12 @@ export async function expectNoSidewaysScroll(page) {
   expect(overflow.main, "the screen scrolls sideways").toBeLessThanOrEqual(TOLERANCE);
 }
 
-/** A refusal shown beside its field (`scope`: the page or the open dialog; `text` exact, or a RegExp). */
+/**
+ * A refusal shown beside its field and on screen, not only in the page (S026: "A refusal is always
+ * in view").  `scope`: the page or the open dialog; `text` exact, or a RegExp.  A dialog's body
+ * scrolls, so a message below the fold is visible to Playwright but not on screen.
+ */
 export async function expectFieldMessage(scope, text) {
   const message = scope.getByText(text, { exact: typeof text === "string" });
-  await expect(message).toBeVisible();
+  await expect(message).toBeInViewport();
 }
