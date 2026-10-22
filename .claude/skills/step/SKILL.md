@@ -34,7 +34,6 @@ Read it before starting.
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
-  Change nothing.
 
 When the user just says "go on" or "next", find where the step stands from its
 files and its Status, and continue from there.
