@@ -19,3 +19,10 @@ TASK_RETRY_BACKOFF_MINUTES = 5
 WORKER_POLL_SECONDS = 5
 # Rows deleted per transaction by the access-log purge
 PURGE_BATCH_ROWS = 10_000
+# A retry delay a task asks for (RetryLater: a push service's Retry-After, S021 § 5.1) is
+# capped here, so a send task cannot park itself for a day
+TASK_RETRY_DELAY_MAX_SECONDS = 3600
+
+# Web push (S021 § 3): requests has no timeout by default, so a hung push service would hold
+# the worker; a send that takes longer is retried with the back-off
+PUSH_TIMEOUT_SECONDS = 10

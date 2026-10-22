@@ -235,6 +235,7 @@ WORK_KEY = "ticket:work"
 RESTORE_KEY = "ticket:restore"
 ASSIGN_KEY = "ticket:assign"
 CLOSE_KEY = "ticket:close"
+EDIT_NOTES_KEY = "ticket:edit_notes"    # S027: correct a work note
 
 # Event names (S018 § 4.3); RAISED is also the state's name
 ACKNOWLEDGED_EVENT = "acknowledged"
@@ -249,6 +250,10 @@ ASSIGNED_EVENT = "assigned"
 UNASSIGNED_EVENT = "unassigned"
 SCHEDULED_EVENT = "scheduled"           # S019: the plan set
 RESCHEDULED_EVENT = "rescheduled"       # S019: Change plan
+# S027: a work note, what was found and tried.  Not in ORDERED_EVENTS: it moves neither the
+# state nor the intensity, so it sets no lower bound for a later move's time and ticket_times
+# skips it.
+NOTE_EVENT = "note"
 
 # The events that move the ticket's state or intensity: the times are computed from these, so
 # they must stay in order (§ 5.1).  Edits and assignments are stamped with the time they were
@@ -327,6 +332,7 @@ LABOUR_DATE_FUTURE = "That date is in the future"
 LABOUR_DATE_EARLY = "That date is before the ticket's event"
 TRADE_NEEDED = "Choose the trade worked"
 NOTHING_TO_CHANGE = "Nothing to change"
+NOTE_NEEDED = "Enter a note"
 # S019 § 5.1–5.3
 PLANNED_DATE_NEEDED = "Choose the planned date"
 PLANNED_DATE_PAST = "The planned date cannot be before today"
@@ -470,6 +476,17 @@ def _event_fields(body):
     clean, errors = {}, []
     _optional_time(body, "occurred_at", clean, errors)
     _optional_text(body, "remark", REMARK_MAX, clean, errors)
+    return clean, errors
+
+
+def validate_note(body):
+    """A work note's body (S027 § 3) -> ``(clean, errors)``: ``remark`` required, text, trimmed
+    (line breaks inside kept), at most REMARK_MAX characters.  The same checks and messages as a
+    move's remark, then the required check."""
+    clean, errors = {}, []
+    _optional_text(body, "remark", REMARK_MAX, clean, errors)
+    if not errors and clean["remark"] is None:
+        errors.append({"field": "remark", "message": NOTE_NEEDED})
     return clean, errors
 
 

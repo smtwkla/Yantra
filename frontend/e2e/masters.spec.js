@@ -2,7 +2,7 @@
 // own modes, the label rule, deactivate / reactivate, read-only for an operator, and the lists
 // on a phone.
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
 import { causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
 
@@ -31,7 +31,7 @@ test("engineer: the pre-filled lists are there; a press mode is added and the pr
   await filter.selectOption({ label: PRESS_CLASS });
   await page.getByRole("button", { name: "Add mode" }).click();
   await expectDialogFits(page);
-  const dialog = page.locator(".modal.show");
+  const dialog = await openDialog(page);
   await expect(dialog.getByLabel("Class")).toHaveValue(/\d+/); // the filtered class is pre-picked
   await dialog.getByLabel("Code").fill(code);
   await dialog.getByLabel("Symptom").fill(label);
@@ -51,7 +51,7 @@ test("engineer: a press mode labelled like a General one is refused", async ({ p
   await openFailureCodes(page, "engineer");
   await page.getByLabel("Filter by class").selectOption({ label: PRESS_CLASS });
   await page.getByRole("button", { name: "Add mode" }).click();
-  const dialog = page.locator(".modal.show");
+  const dialog = await openDialog(page);
   await dialog.getByLabel("Code").fill("XNOI");
   await dialog.getByLabel("Symptom").fill("Abnormal noise");
   await dialog.locator(".modal-footer button[type=submit]").click();
@@ -93,7 +93,7 @@ for (const kind of [
 
     await page.getByRole("button", { name: kind.add }).click();
     await expectDialogFits(page);
-    const dialog = page.locator(".modal.show");
+    const dialog = await openDialog(page);
     if (kind.needsGroup) await dialog.locator("#cause-group").selectOption({ label: "Operation / maintenance" }); // the list is not filtered, so no group is pre-picked
     await dialog.locator(kind.codeField).fill(code);
     await dialog.locator(kind.labelField).fill(label);
@@ -103,7 +103,7 @@ for (const kind of [
 
     await row.getByTitle("Edit").click();
     await expectDialogFits(page);
-    await page.locator(".modal.show").locator(kind.labelField).fill(edited);
+    await (await openDialog(page)).locator(kind.labelField).fill(edited);
     await saveDialog(page, "Save");
     await expect(rows(page).filter({ hasText: edited })).toHaveCount(1);
   });
@@ -124,7 +124,7 @@ for (const section of [
     await expect(rows(page).first()).toBeVisible();
     await page.getByRole("button", { name: section.add }).click();
     await expectDialogFits(page);
-    const dialog = page.locator(".modal.show");
+    const dialog = await openDialog(page);
     await dialog.locator(".modal-footer button[type=submit]").click();
     if (section.message) await expectFieldMessage(dialog, section.message);
     else await expect(dialog.locator(".invalid-feedback").first()).toBeVisible();
@@ -170,7 +170,7 @@ test("S025: IT admin cannot deactivate a unit while it has open tickets; the ref
     await page.getByRole("button", { name: "Units", exact: true }).click();
     await rows(page).filter({ hasText: "SMTW.MCC1" }).getByTitle("Edit").click();
     await expectDialogFits(page);
-    const dialog = page.locator(".modal.show");
+    const dialog = await openDialog(page);
     await dialog.getByRole("button", { name: "Deactivate" }).click();
     await dialog.getByRole("button", { name: "Yes", exact: true }).click();
     await expectFieldMessage(dialog, `Close its tickets first (${open} open)`);

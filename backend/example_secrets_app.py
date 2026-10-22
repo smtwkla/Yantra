@@ -28,3 +28,10 @@ KEYCLOAK_HOST_IP = ""
 # that role at every site, all units.  "maintenance_team": logged in with no access, to see
 # the "no access yet" page (S011 § 5.8).
 # DEV_STUB_ROLE = "admin"
+
+# Web push (S021): the VAPID key pair, from tooling/dev/make_vapid_keys.py (dev gets its own
+# pair; production's is made once and never rotated casually — a new pair silently ends every
+# phone's subscription).  Left empty, push is off.
+VAPID_PUBLIC_KEY = ""
+VAPID_PRIVATE_KEY = ""
+VAPID_SUBJECT = ""   # e.g. "mailto:it@smtw.in"

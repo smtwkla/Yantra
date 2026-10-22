@@ -145,8 +145,7 @@ restorations by when they happened). Operators without a login exist in Team so
 
 **Decided** (15-10-2026): downtime ends at the technician's "back in service".
 Whether the operator can mark "not fixed" to reopen is settled with the phase 3
-brief. Escalation times per criticality: **deferred** to the notification step
-(Telegram / web push).
+brief. Escalation times per criticality: **decided** 21-10-2026 (S021, § 9 below).
 
 ## 7. Planned maintenance
 
@@ -332,7 +331,11 @@ TBD — which meters matter per equipment class, and the limits for each.
 ## 9. Equipment criticality
 
 Equipment are graded **A / B / C** (**Decided**). Escalation time for an
-unacknowledged breakdown is set per criticality (**Decided**; values TBD).
+unacknowledged breakdown is set per criticality (**Decided**, 21-10-2026, S021):
+**A 10, B 30, C 60 minutes** after the breakdown is recorded in Yantra, once, to
+the unit's engineers and managers. The times are settings (Settings ›
+Notifications), not code. The grade is the ticket's item's: a component's own
+grade when it has one, else its equipment's.
 
 What each grade means at VEL (**Decided**, 14-10-2026, S002):
 

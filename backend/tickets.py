@@ -1,6 +1,7 @@
 """Tickets — raise and see (docs/steps/S017-raise-tickets/1-brief.md) and work them to the end
 (docs/steps/S018-work-tickets/1-brief.md): moves, re-grade, edit, assignment, labour, repeat;
-the parts used (docs/steps/S020-parts-used/1-brief.md).
+the parts used (docs/steps/S020-parts-used/1-brief.md); work notes
+(docs/steps/S027-work-notes/1-brief.md).
 
 Thin shell: tickets_core holds the rules (intensity, the event-time window, the serial, the
 description rule, machine and component from the node, the moves table, the send-back and
@@ -23,8 +24,11 @@ LOCK ORDER (equipment.py's numbers): (1) the node raised on → (6) the serial c
 through the functions below), always last; nothing that holds a ticket lock then takes an
 equipment, unit or counter lock.  Ancestors of the node are read plain, never locked.
 Working a ticket (S018 § 5.3) — a move (S019's schedule, change plan and the start from
-scheduled included), re-grade, edit, assignment, labour or parts change (S020) — locks (7)
-explicitly, and nothing else explicitly.  Codes and people are read plain.  A change of tickets.state also
+scheduled included), re-grade, edit, assignment, labour or parts change (S020), a new work
+note (S027) — locks (7) explicitly, and nothing else explicitly.  A note's correction (S027
+§ 5.2) locks (7), then the note's event row FOR UPDATE; only the correction locks an event row,
+and nothing locks one first, so this adds no lock-order edge.  Its ticket_note_edits insert
+takes the event row's FK lock, already held.  Codes and people are read plain.  A change of tickets.state also
 rewrites the entries of ix_tickets_unit_state, ix_tickets_equipment_state and
 ix_tickets_component_state, the indexes of the unit, machine and component foreign keys, so
 InnoDB re-checks those keys and takes shared locks on the unit, machine and (when set)
@@ -43,6 +47,9 @@ adds a lock-order edge (S025 § 1.5, § 1.6; S020 § 5.2):
   An edit that keeps the node reads nothing more (the line is history, S020 BR1-03).
 A raise with *Already fixed* (A1) applies the restore move to its own new row inside the raise's
 transaction: no further lock, and a refusal rolls the whole raise back, serial included.
+The alerts (S021 § 5.3) are task_queue rows written in the same transaction (alerts.py); the
+grade an escalation reads is a plain read.  The worker's ticket_escalate locks (7) too, alone
+and last, and takes nothing after it; its other reads are plain: no new lock-order edge.
 
 The ticket insert takes shared locks through its foreign keys on the machine's equipment
 row, the component's, the unit, the person, the failure mode and the earlier ticket of a
@@ -80,13 +87,15 @@ from api_common import (
     like_pattern,
 )
 from auth_utils import check_perm, current_person_id, has_perm, has_perm_at, permissions_at_site, require_perm, require_perm_at
+import alerts
+from alerts_core import ASSIGNED_ALERT, raise_alert, regrade_alert, send_back_alert
 from config_rbac import ASSIGNABLE_ROLES
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment import IST, accessible_unit_ids, load_node_for_user
 from equipment_core import SCRAPPED
 from tickets_core import (
-    ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EVENT_LABELS, MACHINE_STOPPED_MOVES,
-    MACHINE_STOPPED_NEEDED, NOTHING_TO_CHANGE, PART_NODE_NEEDED, PARTS_HINT_ACTION_CODES, PARTS_NOT_A_FAULT,
+    ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EDIT_NOTES_KEY, EVENT_LABELS, MACHINE_STOPPED_MOVES,
+    MACHINE_STOPPED_NEEDED, NOTE_EVENT, NOTHING_TO_CHANGE, PART_NODE_NEEDED, PARTS_HINT_ACTION_CODES, PARTS_NOT_A_FAULT,
     CAUSE_NEEDED, CLOSED, EDITED_EVENT, IN_PROGRESS, INTENSITY_FILTERS, MACHINE_LEVEL, MOVES, OPEN_STATES,
     ORDERED_EVENTS, PLAN_FILTERS, RAISED, REGRADE_STATES, REGRADED_EVENT, REPEAT_WINDOW_DAYS,
     RAISE_SCREEN_LABELS, RESTORE_FIELD_PREFIX, RESTORE_KEY, SCHEDULED,
@@ -95,7 +104,7 @@ from tickets_core import (
     machine_stopped_needed, planned_date_error, regrade_options,
     send_back_error, send_back_intensity, serial_scope, started_at_error, ticket_times, trade_error, validate_assignee,
     validate_close, validate_edit, validate_event_time, validate_labour, validate_move, validate_raise,
-    validate_part, validate_regrade, validate_regrade_body,
+    validate_note, validate_part, validate_regrade, validate_regrade_body,
 )
 
 tickets_bp = Blueprint("tickets", __name__)
@@ -232,22 +241,40 @@ def read_ticket(cur, ticket_id, _key=None):
 
 
 def _event_rows(cur, ticket_id):
-    """The ticket's events, oldest first, as stored (datetimes, for ticket_times)."""
-    cur.execute("SELECT e.event, e.from_state, e.to_state, e.occurred_at, e.intensity, e.remark, e.created_at,"
-                " e.created_by, e.planned_date, e.waiting_reason, e.machine_stopped,"
+    """The ticket's events, oldest first, as stored (datetimes, for ticket_times).  ``id`` names
+    a note for its correction; ``updated_*`` is set on a corrected note only (S027)."""
+    cur.execute("SELECT e.id, e.event, e.from_state, e.to_state, e.occurred_at, e.intensity, e.remark, e.created_at,"
+                " e.created_by, e.updated_at, e.updated_by, e.planned_date, e.waiting_reason, e.machine_stopped,"
                 " p.id AS person_id, p.name AS person_name FROM ticket_events e"
                 " LEFT JOIN people p ON p.id = e.person_id WHERE e.ticket_id = %s"
                 " ORDER BY e.occurred_at, e.id", (ticket_id,))
     return cur.fetchall()
 
 
-def _events_out(rows):
+def _note_edits(cur, ticket_id):
+    """The earlier texts of the ticket's notes, in one query (S027 § 3) -> ``{event_id: [{remark,
+    replaced_at, replaced_by}, …]}``, newest first.  The detail path only: the repeat checks read
+    _event_rows and need none of it (BR1-11)."""
+    cur.execute("SELECT ne.event_id, ne.remark, ne.replaced_at, ne.replaced_by FROM ticket_note_edits ne"
+                " JOIN ticket_events e ON e.id = ne.event_id WHERE e.ticket_id = %s ORDER BY ne.id DESC",
+                (ticket_id,))
+    edits = {}
+    for row in rows_to_list(cur.fetchall()):
+        edits.setdefault(row.pop("event_id"), []).append(row)
+    return edits
+
+
+def _events_out(rows, note_edits):
+    """The timeline as the page shows it; each note carries ``earlier`` (empty when never
+    corrected)."""
     events = []
     for row in rows_to_list(rows):
         person_id, person_name = row.pop("person_id"), row.pop("person_name")
         row["person"] = {"id": person_id, "name": person_name} if person_id is not None else None
         if row["machine_stopped"] is not None:
             row["machine_stopped"] = bool(row["machine_stopped"])
+        if row["event"] == NOTE_EVENT:
+            row["earlier"] = note_edits.get(row["id"], [])
         events.append(row)
     return events
 
@@ -379,7 +406,7 @@ def _detail(cur, row):
     can_regrade = state in REGRADE_STATES and RAISE_KEY in keys
     return {
         **_ticket_out(row, now.date()),
-        "events": _events_out(events),
+        "events": _events_out(events, _note_edits(cur, ticket_id)),
         "times": ticket_times(events, now),
         "assignees": _assignees(cur, [ticket_id])[ticket_id],
         "labour": _labour(cur, ticket_id),
@@ -745,13 +772,20 @@ def raise_ticket():
             "repeat_of_id": clean["repeat_of_id"],
             "occurred_at": clean["occurred_at"],
         }, actor())
-        _add_event(cur, ticket_id, RAISED, clean["occurred_at"], to_state=RAISED, intensity=clean["intensity"])
+        raised_event_id = _add_event(cur, ticket_id, RAISED, clean["occurred_at"], to_state=RAISED,
+                                     intensity=clean["intensity"])
         if clean["repeat_of_id"] is not None:
             _recheck_repeat(cur, clean["repeat_of_id"])
         if clean["restore"] is not None:
             # A1, *Already fixed*: the restore move's own code on the new row (no lock needed: the
             # row is this transaction's own); a refusal rolls the whole raise back
             _apply_move(cur, read_ticket(cur, ticket_id), "restore", clean["restore"], now, RESTORE_FIELD_PREFIX)
+        else:
+            # S021 § 5.3: a breakdown alerts and escalates, a defect alerts quietly; *Already fixed*
+            # sends nothing (nothing needs a response).  After the refusals above, so a refused
+            # raise rolls the task rows back with it (BS1-09).
+            alerts.enqueue_alert(cur, ticket_id, raise_alert(clean["intensity"]), raised_event_id,
+                                 current_person_id(cur), clean["reported_by_id"], now)
         # Read inside the transaction, as documents.py does: nothing after the commit can
         # turn this answer into an error
         detail = _detail(cur, read_ticket(cur, ticket_id))
@@ -764,7 +798,8 @@ def raise_ticket():
 
 def _add_event(cur, ticket_id, event, occurred_at, from_state=None, to_state=None, intensity=None, person_id=None,
                remark=None, planned_date=None, waiting_reason=None, machine_stopped=None):
-    insert_row(cur, "ticket_events", {
+    """Write one timeline line -> its id (an alert names the event that caused it, S021 BR1-12)."""
+    return insert_row(cur, "ticket_events", {
         "ticket_id": ticket_id, "event": event, "from_state": from_state, "to_state": to_state,
         "occurred_at": occurred_at, "intensity": intensity, "person_id": person_id, "remark": remark,
         "planned_date": planned_date, "waiting_reason": waiting_reason, "machine_stopped": machine_stopped,
@@ -801,14 +836,14 @@ def _ticket_response(cur, ticket_id):
 
 
 def _assign(cur, ticket_id, person_id, occurred_at):
-    """Add an assignee with its *assigned* line; already assigned -> no change (False)."""
+    """Add an assignee with its *assigned* line -> the line's id; already assigned -> no change
+    (None)."""
     cur.execute("SELECT 1 FROM ticket_assignees WHERE ticket_id = %s AND person_id = %s", (ticket_id, person_id))
     if cur.fetchone():
-        return False
+        return None
     cur.execute("INSERT INTO ticket_assignees (ticket_id, person_id, assigned_by) VALUES (%s, %s, %s)",
                 (ticket_id, person_id, actor()))
-    _add_event(cur, ticket_id, ASSIGNED_EVENT, occurred_at, person_id=person_id)
-    return True
+    return _add_event(cur, ticket_id, ASSIGNED_EVENT, occurred_at, person_id=person_id)
 
 
 def _auto_assign(cur, ticket, occurred_at):
@@ -975,10 +1010,16 @@ def _apply_move(cur, ticket, move, clean, now, prefix=""):
         # The one place the plan is cleared (S019 BR1-08): every move that leaves scheduled,
         # now and later, so chk_tickets_plan stays a guard that never fires.  The events keep it.
         changes = {**changes, "planned_date": None, "waiting_reason": None}
-    _add_event(cur, ticket_id, spec.event, occurred_at, to_state=spec.to_state, remark=clean["remark"], **event)
+    event_id = _add_event(cur, ticket_id, spec.event, occurred_at, to_state=spec.to_state, remark=clean["remark"],
+                          **event)
     update_row(cur, "tickets", ticket_id, {"state": spec.to_state, **changes}, actor())
     if move in AUTO_ASSIGN_MOVES:
         _auto_assign(cur, ticket, occurred_at)
+    if move == "send-back":
+        # S021 § 5.3, BR3-04: *Down again* — the move's answer decides, whatever the intensity
+        # was; after the event, so the alert names it
+        alerts.enqueue_alert(cur, ticket_id, send_back_alert(clean["machine_down"]), event_id,
+                             current_person_id(cur), ticket["rp_id"], now)
 
 
 @tickets_bp.route("/<int:ticket_id>/regrade", methods=["POST"])
@@ -1000,8 +1041,12 @@ def regrade(ticket_id):
             status, field, message = refusal
             raise ApiError(message, status, field)
         occurred_at = _event_time(clean["occurred_at"], _last_ordered_event(cur, ticket_id), now, "occurred_at")
-        _add_event(cur, ticket_id, REGRADED_EVENT, occurred_at, intensity=clean["intensity"], remark=clean["remark"])
+        event_id = _add_event(cur, ticket_id, REGRADED_EVENT, occurred_at, intensity=clean["intensity"],
+                              remark=clean["remark"])
         update_row(cur, "tickets", ticket_id, {"intensity": clean["intensity"]}, actor())
+        # S021 § 5.3: *Machine stopped* alerts; it escalates only while still raised
+        alerts.enqueue_alert(cur, ticket_id, regrade_alert(ticket["state"], clean["intensity"]), event_id,
+                             current_person_id(cur), ticket["rp_id"], now)
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
 
@@ -1079,7 +1124,9 @@ def edit_ticket(ticket_id):
 @require_perm(ASSIGN_KEY)
 def add_assignee(ticket_id):
     """Assign a technician, engineer or manager at the ticket's site, in any state before
-    closed; assigning him again changes nothing (two taps on a phone)."""
+    closed; assigning him again changes nothing (two taps on a phone) and alerts nobody.  A new
+    assignee gets *Assigned to you* (S021 A1); acknowledge and start, which assign the actor
+    himself (_auto_assign), alert nobody."""
     clean = clean_body(lambda body, _creating: validate_assignee(body), creating=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
@@ -1087,7 +1134,10 @@ def add_assignee(ticket_id):
         person = _person_at_site(cur, clean["person_id"], ticket["site_id"])
         if person is None or person["role"] not in ASSIGNABLE_ROLES:
             raise ApiError(ASSIGNEE_AT_SITE, 400, "person_id")
-        _assign(cur, ticket_id, person["id"], _now())
+        event_id = _assign(cur, ticket_id, person["id"], _now())
+        if event_id is not None:
+            alerts.enqueue_alert(cur, ticket_id, ASSIGNED_ALERT, event_id, current_person_id(cur), None, _now(),
+                                 person_id=person["id"])
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
 
@@ -1165,6 +1215,53 @@ def remove_labour(ticket_id, row_id):
         _lock_open_ticket(cur, ticket_id, WORK_KEY)
         _labour_row(cur, ticket_id, row_id)
         cur.execute("DELETE FROM ticket_labour WHERE id = %s", (row_id,))
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+# ---------------------------------------------------------------------------
+# Work notes (S027): what was found and tried, a line on the timeline
+# ---------------------------------------------------------------------------
+
+@tickets_bp.route("/<int:ticket_id>/notes", methods=["POST"])
+@require_perm(RESTORE_KEY)
+def add_note(ticket_id):
+    """S027 § 5.1: whoever may confirm the machine is back may write what they see, in any open
+    state.  Stamped with the server's clock; it moves nothing (not an ordered event), so no
+    order rule applies and the times stay as they were."""
+    clean = clean_body(lambda body, _creating: validate_note(body), creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_open_ticket(cur, ticket_id, RESTORE_KEY)
+        _add_event(cur, ticket_id, NOTE_EVENT, _now(), remark=clean["remark"])
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail), 201
+
+
+@tickets_bp.route("/<int:ticket_id>/notes/<int:event_id>", methods=["PUT"])
+@require_perm(EDIT_NOTES_KEY)
+def edit_note(ticket_id, event_id):
+    """Correct a note (S027 § 1.5, § 5.2): the ticket (7) FOR UPDATE (404 → 403 → 409), then
+    the note's event row FOR UPDATE (a move's event or another ticket's note: 404).  The text
+    it replaces goes to ticket_note_edits; the note keeps its time and place."""
+    clean = clean_body(lambda body, _creating: validate_note(body), creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_open_ticket(cur, ticket_id, EDIT_NOTES_KEY)
+        cur.execute("SELECT remark FROM ticket_events WHERE id = %s AND ticket_id = %s AND event = %s FOR UPDATE",
+                    (event_id, ticket_id, NOTE_EVENT))
+        note = cur.fetchone()
+        if note is None:
+            raise ApiError("Not found", 404)
+        if note["remark"] == clean["remark"]:
+            raise ApiError(NOTHING_TO_CHANGE, 400, "remark")
+        # One clock value for both rows, so "Edited by …, <time>" and the earlier text's
+        # "replaced at" show the same minute
+        now, user = _now(), actor()
+        cur.execute("INSERT INTO ticket_note_edits (event_id, remark, replaced_at, replaced_by) VALUES (%s, %s, %s, %s)",
+                    (event_id, note["remark"], now, user))
+        cur.execute("UPDATE ticket_events SET remark = %s, updated_at = %s, updated_by = %s WHERE id = %s",
+                    (clean["remark"], now, user, event_id))
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
 

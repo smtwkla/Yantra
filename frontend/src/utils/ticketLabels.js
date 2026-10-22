@@ -66,6 +66,7 @@ export const EVENT_LABELS = {
   unassigned: "Unassigned",
   scheduled: "Scheduled",
   rescheduled: "Plan changed",
+  note: "Note", // S027: a work note
 };
 
 export function isBreakdown(intensity) {

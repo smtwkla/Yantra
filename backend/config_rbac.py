@@ -113,6 +113,10 @@ PERMISSIONS = {
     "ticket:restore": ("maint_operator", "it_admin"),
     "ticket:assign": ("maint_engineer", "it_admin"),
     "ticket:close": ("maint_engineer", "it_admin"),
+    # Correcting a work note (S027): a typo or wrong fact, keeping the earlier text.  Adding a
+    # note is ticket:restore's; editing someone else's record is a narrower right (ISO 27001
+    # A.5.15).  The holders equal ticket:close's today, but the two can drift.
+    "ticket:edit_notes": ("maint_engineer", "it_admin"),
 
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
@@ -139,6 +143,11 @@ PERMISSIONS = {
     # Access log (S013): who reached the API, from where, and the refusals.  The people who
     # own the security question; global, not site-scoped.
     "access_log:view": ("maint_manager", "it_admin"),
+
+    # Notifications (S021): turn alerts on for one's own devices, list and remove them, send
+    # oneself a test.  Any logged-in role; the routes also need a Team record (alerts go to a
+    # person).  Global, not site-scoped: a device is not at a site.
+    "push:subscribe": ("*",),
 }
 
 # Keys checked at the record's site (has_perm_at, accessible_unit_ids).  Every later
@@ -154,4 +163,5 @@ SITE_SCOPED = frozenset({
     "ticket:restore",
     "ticket:assign",
     "ticket:close",
+    "ticket:edit_notes",
 })

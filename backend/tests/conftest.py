@@ -37,6 +37,31 @@ from db_helpers import transaction
 from local_db import ensure_schema, get_local_db
 from tests.access_helpers import site_rows
 from tests.harness import harness_user
+from vapid_keys import make_key_pair
+
+
+# ---------------------------------------------------------------------------
+# Web push (S021 BR1-06): one VAPID pair for the session, set in config after import (push.py
+# and push_sender read it at call time), so push is on whatever the local secrets_app.py
+# holds; push_off empties it for the "not set up" cases.
+# ---------------------------------------------------------------------------
+
+_VAPID_NAMES = ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def vapid_pair():
+    public, private = make_key_pair()
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in zip(_VAPID_NAMES, (public, private, "mailto:test@example.invalid")):
+            patch.setattr(config, name, value)
+        yield public, private
+
+
+@pytest.fixture
+def push_off(monkeypatch):
+    for name in _VAPID_NAMES:
+        monkeypatch.setattr(config, name, "")
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +105,7 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("access_log", "task_queue", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_events",
+_TABLES = ("access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")

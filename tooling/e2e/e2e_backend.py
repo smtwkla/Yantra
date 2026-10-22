@@ -94,6 +94,11 @@ def main():
     import config
     config.DB_CONFIG["database"] = E2E_DATABASE
     config.DEV_STUB_ROLE = NO_ACCESS_ROLE
+    # Push on (S021 BR1-06, BS1-03): a fresh VAPID pair per process, so each lane has its own.
+    # Nothing is ever sent: the e2e stack runs no worker.
+    from vapid_keys import make_key_pair
+    config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY = make_key_pair()
+    config.VAPID_SUBJECT = "mailto:e2e@example.invalid"
     refusal = check_target(config.DB_CONFIG)
     if refusal:
         sys.exit(f"e2e backend: {refusal}")

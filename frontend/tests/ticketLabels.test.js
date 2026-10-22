@@ -100,9 +100,9 @@ describe("move labels (S018)", () => {
     expect(raiseSaveLabel(true, "initial")).toBe("Raise and mark fixed");
   });
 
-  it("names every S018 event", () => {
+  it("names every S018 event, and S027's note", () => {
     for (const event of ["acknowledged", "started", "back_in_service", "sent_back", "closed", "closed_not_a_fault",
-      "regraded", "edited", "assigned", "unassigned"]) {
+      "regraded", "edited", "assigned", "unassigned", "note"]) {
       expect(EVENT_LABELS[event]).toBeTruthy();
     }
   });

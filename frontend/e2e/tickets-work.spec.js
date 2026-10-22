@@ -92,7 +92,7 @@ test("engineer: Close waits for the labour; Add labour, then close with cause an
   // Add labour beside the disabled Close (the first of the two Add labour buttons)
   await page.locator(".action-bar").getByRole("button", { name: "Add labour" }).click();
   await expectDialogFits(page);
-  const labour = page.locator(".modal.show");
+  const labour = await openDialog(page);
   await expect(labour.locator(".modal-title")).toHaveText("Add labour");
   await expect(labour.locator(".fw-semibold", { hasText: "Priya (engineer)" })).toBeVisible();
   await expect(labour.getByLabel("Date")).toHaveValue(istLocal(0).slice(0, 10));
@@ -132,7 +132,7 @@ test("S026: Add labour with no time spent scrolls the dialog to the message and 
 
   await page.locator(".action-bar").getByRole("button", { name: "Add labour" }).click();
   await expectDialogFits(page);
-  const labour = openDialog(page);
+  const labour = await openDialog(page);
   // Click a name in the picker: Kannan has one trade, so Trade worked is filled and not refused first
   await labour.getByRole("button", { name: /Kannan \(technician\)/ }).click();
   await expect(labour.locator(".fw-semibold", { hasText: "Kannan (technician)" })).toBeVisible();
@@ -205,7 +205,7 @@ test("operator: Machine stopped on a defect starts the downtime at that time", a
   await asPerson(page, "operator", `/tickets/${ticket.id}`);
   await page.getByRole("button", { name: "Machine stopped" }).click();
   await expectDialogFits(page);
-  await setEventTime(page.locator(".modal.show"), istLocal(30, base));
+  await setEventTime(await openDialog(page), istLocal(30, base));
   await saveDialog(page, "Machine stopped");
 
   await expect(page.getByText("Breakdown", { exact: true }).first()).toBeVisible();
@@ -237,7 +237,7 @@ test("engineer: assign, edit and change severity; IT admin with no Team record a
 
   await page.getByRole("button", { name: "Assign" }).click();
   await expectDialogFits(page);
-  await page.locator(".modal.show").getByRole("button", { name: /Ravi \(technician\)/ }).click();
+  await (await openDialog(page)).getByRole("button", { name: /Ravi \(technician\)/ }).click();
   await saveDialog(page, "Assign");
   await expect(card(page, "Assigned")).toContainText("Ravi (technician)");
 
@@ -245,7 +245,8 @@ test("engineer: assign, edit and change severity; IT admin with no Team record a
   await expectDialogFits(page);
   await page.locator("#edit-description").fill("Work test: to assign, gearbox side");
   await saveDialog(page, "Save");
-  await expect(card(page, "Description")).toContainText("Work test: to assign, gearbox side");
+  // S027: the description is the first note, on the timeline's Raised line
+  await expect(timeline(page).last()).toContainText("Work test: to assign, gearbox side");
 
   const regrade = await openAction(page, "Change severity");
   await regrade.getByRole("button", { name: /Early signs/ }).click();
@@ -268,7 +269,7 @@ test("S025: Machine stopped, when someone else made it a breakdown first, shows 
   await asPerson(page, "operator", `/tickets/${ticket.id}`);
   await page.getByRole("button", { name: "Machine stopped" }).click();
   await expectDialogFits(page);
-  const dialog = page.locator(".modal.show");
+  const dialog = await openDialog(page);
   // Meanwhile another operator taps Machine stopped first
   await regradeByApi("operator", ticket.id, { intensity: "critical" });
   await dialog.locator(".modal-footer button[type=submit]").click();

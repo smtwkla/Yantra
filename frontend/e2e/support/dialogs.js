@@ -11,14 +11,24 @@ function inside(box, viewport) {
     && box.x + box.width <= viewport.width + TOLERANCE && box.y + box.height <= viewport.height + TOLERANCE;
 }
 
-/** The open dialog (Bootstrap's .modal.show). */
-export function openDialog(page) {
-  return page.locator(".modal.show .modal-dialog");
+/**
+ * The open dialog (Bootstrap's .modal.show .modal-dialog), once it is fully open (S026 A1).
+ * Bootstrap adds `show` when the fade starts; at its end (shown.bs.modal) the focus trap moves
+ * focus into the modal, and text typed before that is lost (seen on WebKit under load).  So wait
+ * until the focus is inside the modal.  A dialog opened by a click may be typed into only after this.
+ */
+export async function openDialog(page) {
+  const dialog = page.locator(".modal.show .modal-dialog");
+  await expect(dialog).toBeVisible();
+  await page.waitForFunction(() => {
+    const modal = document.querySelector(".modal.show");
+    return modal !== null && modal.contains(document.activeElement);
+  }, undefined, { timeout: 5_000 });
+  return dialog;
 }
 
 export async function expectDialogFits(page) {
-  const dialog = openDialog(page);
-  await expect(dialog).toBeVisible();
+  const dialog = await openDialog(page);
   const viewport = page.viewportSize();
   const save = dialog.locator(".modal-footer button[type=submit]");
   const cancel = dialog.locator(".modal-footer").getByRole("button", { name: "Cancel" });

@@ -55,6 +55,11 @@ const screens = () => [
   { path: "/asset-list", title: "Asset list", shows: (page) => page.getByRole("heading", { name: "SMTW.MCC2", exact: false }), who: EVERYONE },
   { path: "/masters", title: "Masters", shows: (page) => page.getByRole("button", { name: "Sites" }), who: EVERYONE },
   { path: "/settings", title: "Settings", shows: (page) => page.getByText("Database", { exact: true }).first(), who: SETTINGS_ROLES },
+  // S021: push:subscribe is every role's ('*'); the card shows for every state of the device
+  {
+    path: "/notifications", title: "My notifications",
+    shows: (page) => page.getByText("This device", { exact: true }).first(), who: EVERYONE,
+  },
   { path: "/no-such-page", title: "Page not found", shows: (page) => page.getByRole("heading", { name: "Page not found" }), who: EVERYONE },
 ];
 

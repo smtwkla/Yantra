@@ -6,6 +6,7 @@ import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
+import NotificationsView from "../views/NotificationsView.vue";
 import RaiseTicketView from "../views/RaiseTicketView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import TicketDetailView from "../views/TicketDetailView.vue";
@@ -71,6 +72,14 @@ const routes = [
     name: "masters",
     component: MastersView,
     meta: { title: "Masters" },
+  },
+  // My notifications (S021): from the bell in the top bar, not a nav item; push:subscribe is
+  // every logged-in role's, and the "no access yet" screen has no top bar route to it
+  {
+    path: "/notifications",
+    name: "notifications",
+    component: NotificationsView,
+    meta: { title: "My notifications" },
   },
   {
     path: "/settings",

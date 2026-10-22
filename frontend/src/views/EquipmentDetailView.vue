@@ -216,7 +216,7 @@ function onSaved({ result, created }) {
       </div>
 
       <div class="row g-3">
-        <div class="col-lg-4">
+        <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header">Details</div>
             <div class="card-body">
@@ -239,16 +239,10 @@ function onSaved({ result, created }) {
             </div>
           </div>
         </div>
-        <div class="col-lg-4">
+        <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header">Parts</div>
             <div class="card-body"><PartsTree :children="node.children" /></div>
-          </div>
-        </div>
-        <div class="col-lg-4">
-          <div class="card h-100">
-            <div class="card-header">History</div>
-            <div class="card-body"><EquipmentHistory :events="node.events" /></div>
           </div>
         </div>
       </div>
@@ -257,6 +251,11 @@ function onSaved({ result, created }) {
         <div class="card-header">Notes</div>
         <!-- pre-wrap: shown as entered, line breaks and aligned spacing kept -->
         <div class="card-body notes-text">{{ node.notes }}</div>
+      </div>
+
+      <div class="card mt-3">
+        <div class="card-header">History</div>
+        <div class="card-body history-text"><EquipmentHistory :events="node.events" /></div>
       </div>
 
       <DocumentsCards
@@ -278,7 +277,8 @@ function onSaved({ result, created }) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ticket-text {
+.ticket-text,
+.history-text {
   overflow-wrap: anywhere;
 }
 </style>

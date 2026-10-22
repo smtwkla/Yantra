@@ -36,6 +36,8 @@ const props = defineProps({
 const emit = defineEmits(["saved"]);
 
 const SHOWN_FIELDS = ["description", "part_number", "number_kind", "maker", "quantity", "qty_unit", "node_id"];
+// From this many lines the list flows into columns, so an overhaul's 100+ parts stay scannable
+const COLUMNS_FROM = 6;
 const SUGGESTIONS_SHOWN = 5; // the newest; the rest behind More (§ 1.4)
 const DESCRIPTION_MAX = 200;
 const NUMBER_MAX = 60;
@@ -165,7 +167,7 @@ defineExpose({ openAdd });
     </div>
     <div v-if="removeError" class="alert alert-danger py-2 m-2">{{ removeError }}</div>
     <div v-if="!ticket.parts.length" class="card-body text-secondary">No parts recorded</div>
-    <ul v-else class="list-group list-group-flush">
+    <ul v-else class="list-group list-group-flush" :class="{ 'part-columns': ticket.parts.length >= COLUMNS_FROM }">
       <li v-for="p in ticket.parts" :key="p.id" class="list-group-item part-line">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <div class="flex-grow-1 text-break">
@@ -312,6 +314,15 @@ defineExpose({ openAdd });
 </template>
 
 <style scoped>
+/* Columns read top to bottom, then the next column; a line never splits across two */
+.part-columns {
+  display: block;
+  column-width: 22rem;
+  column-gap: 0;
+}
+.part-columns .part-line {
+  break-inside: avoid;
+}
 .unit-select {
   width: auto;
   flex: 0 0 6rem;

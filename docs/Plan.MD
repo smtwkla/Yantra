@@ -742,8 +742,9 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 |---|---|---|---|
 | New breakdown | engineers, the unit's supervisor, maintenance manager (S021) | maintenance group | |
 | New defect | engineers, quietly (S021) | | |
+| Machine down again (sent back with the machine down) | as a new breakdown, no escalation (S021) | | |
 | Breakdown not acknowledged in time | engineers and managers, once (S021) | maintenance group | |
-| Job assigned to you | the technician | | |
+| Job assigned to you | the person assigned by an engineer, not on taking a ticket oneself (S021 A1) | | |
 | PM job due / overdue | assigned technician | maintenance group (overdue only) | |
 | Reading out of limits | engineers | | |
 | Daily summary (open tickets, overdue PMs, yesterday's downtime and work done) | | | engineers, manager |

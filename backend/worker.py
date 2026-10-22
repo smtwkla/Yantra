@@ -31,7 +31,7 @@ from config import DB_CONFIG
 from db_helpers import transaction
 from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db, is_connection_lost
 from scheduled_tasks import SCHEDULE, due_tasks
-from task_handlers import BadTask, run_task
+from task_handlers import BadTask, NoRetry, RetryLater, run_task
 from task_queue import claim_next, enqueue, last_enqueued, mark_done, mark_failed, requeue_stale
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -159,8 +159,12 @@ class Worker:
                      task["task_type"], exc_info=exc)
 
     def _task_failed(self, task, exc):
+        """How a task reports its outcome (S021 § 5.1): BadTask (malformed) and NoRetry (the other
+        side refused it as given) fail at once; RetryLater retries after its own delay; any other
+        exception retries with the back-off."""
         status = mark_failed(self.conn, task["id"], f"{type(exc).__name__}: {exc}",
-                             retry=not isinstance(exc, BadTask))
+                             retry=not isinstance(exc, (BadTask, NoRetry)),
+                             delay_seconds=exc.after_seconds if isinstance(exc, RetryLater) else None)
         logger.error("Task %s (%s) attempt %d failed, now %s: %s", task["id"], task["task_type"],
                      task["attempts"], status, exc)
 

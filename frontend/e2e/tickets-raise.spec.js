@@ -45,8 +45,8 @@ test("S017: raise from the equipment page, with a symptom and a photo; the ticke
   await expect(stateBadge(page)).toHaveText("Raised");
   await expect(page.locator("dd", { hasText: symptomLabel })).toBeVisible();
   await expect(page.getByRole("img", { name: "test-photo" })).toBeVisible();
-  await expect(timeline(page).first()).toContainText("Raised");
-  await expect(timeline(page).first()).toContainText("e2e_operator");
+  await expect(timeline(page).last()).toContainText("Raised");
+  await expect(timeline(page).last()).toContainText("e2e_operator");
 });
 
 test("S017: raise from the Tickets list naming a person with no login; the open ticket is listed first", async ({ page }) => {
@@ -123,7 +123,7 @@ test("S017: a back-dated ticket shows that time in the timeline", async ({ page 
   await page.getByLabel("When did it happen?").fill(twoDaysAgo);
   await saveButton(page).click();
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(timeline(page).first()).toContainText(shownTime(twoDaysAgo));
+  await expect(timeline(page).last()).toContainText(shownTime(twoDaysAgo));
 });
 
 test("S018 A1: Already fixed with a start time; the fields fit and the ticket is back in service", async ({ page }) => {

@@ -13,6 +13,7 @@
 import { ref } from "vue";
 import Keycloak from "keycloak-js";
 import { apiGet } from "../api";
+import { forgetThisDevice } from "./notifications";
 
 // Reactive state — imported directly by components
 export const authenticated = ref(false);
@@ -61,8 +62,11 @@ export async function getToken() {
 /**
  * Log out — redirect to Keycloak logout endpoint.
  * In dev bypass mode, just reloads the page.
+ * First this device's push subscription is removed (S021 § 1.2), best effort and bounded,
+ * so a phone that changes hands stops getting the previous person's alerts.
  */
-export function logout() {
+export async function logout() {
+  await forgetThisDevice();
   if (keycloak) {
     keycloak.logout();
   } else {

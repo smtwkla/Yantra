@@ -20,6 +20,7 @@ from tickets_core import (  # S019
     MACHINE_STOPPED_NEEDED, PLANNED_DATE_MAX_DAYS, PLANNED_DATE_NEEDED, PLANNED_DATE_PAST, PLANNED_DATE_TOO_FAR,
     REMARK_NEEDED, WAITING_REASON_NEEDED, WAITING_REASONS, is_overdue, machine_stopped_needed, planned_date_error,
 )
+from tickets_core import NOTE_EVENT, NOTE_NEEDED, ORDERED_EVENTS, validate_note  # S027
 from tickets_core import (  # S020
     PART_DESCRIPTION_NEEDED, PART_KIND_NEEDED, PART_KINDS, PART_MAKER_NEEDED, PART_NODE_NEEDED, PART_QUANTITY_DECIMALS,
     PART_QUANTITY_NEEDED, PART_QUANTITY_TOO_BIG, PART_UNIT_NEEDED, PART_UNITS, PARTS_HINT_ACTION_CODES, validate_part,
@@ -885,3 +886,58 @@ class TestValidatePart:
         assert PART_UNITS == ("nos", "set", "m", "L", "kg")
         assert PART_KINDS == ("maker", "generic")
         assert PARTS_HINT_ACTION_CODES == ("1", "3", "10")
+
+
+# ---------------------------------------------------------------------------
+# Work notes (S027 § 8)
+# ---------------------------------------------------------------------------
+
+class TestValidateNote:
+
+    @pytest.mark.parametrize("body", [{}, {"remark": None}, {"remark": ""}, {"remark": "  \n "}])
+    def test_missing_or_blank_is_enter_a_note(self, body):
+        assert validate_note(body)[1] == [{"field": "remark", "message": NOTE_NEEDED}]
+        assert NOTE_NEEDED == "Enter a note"
+
+    @pytest.mark.parametrize("value", [12, ["Belt loose"]])
+    def test_not_text(self, value):
+        assert validate_note({"remark": value})[1] == [{"field": "remark", "message": "Must be text"}]
+
+    def test_the_length_limit(self):
+        assert validate_note({"remark": "x" * REMARK_MAX}) == ({"remark": "x" * REMARK_MAX}, [])
+        assert validate_note({"remark": "x" * (REMARK_MAX + 1)})[1] == [
+            {"field": "remark", "message": "Too long (max 1000)"}]
+
+    def test_trimmed_with_the_line_breaks_kept(self):
+        text = "  Pressure not reached in Pilot line.\nReason not known yet \n"
+        assert validate_note({"remark": text}) == (
+            {"remark": "Pressure not reached in Pilot line.\nReason not known yet"}, [])
+
+
+class TestTicketTimesWithNotes:
+
+    @staticmethod
+    def _with_notes(events):
+        """A note one minute after every event: notes in every state."""
+        out = []
+        for event in events:
+            out += [event, {"event": NOTE_EVENT, "occurred_at": event["occurred_at"] + timedelta(minutes=1),
+                            "intensity": None}]
+        return out
+
+    @pytest.mark.parametrize("events, now_minute", [
+        # Response, repair and downtime, with a send-back
+        ([_ev("raised", 0, "critical"), _ev("acknowledged", 5), _ev("started", 15), _ev("back_in_service", 75),
+          _ev("sent_back", 100), _ev("back_in_service", 130), _ev("closed", 200)], 300),
+        # Waiting by reason on a breakdown
+        ([_ev("raised", 0, "critical"), _ev("started", 10), _plan("scheduled", 40, "parts"),
+          _plan("rescheduled", 400, "slot"), _ev("started", 1000), _ev("back_in_service", 1060)], 2000),
+        # A planned stop on a scheduled defect
+        ([_ev("raised", 0, "degraded"), _plan("scheduled", 10, "slot"), _start(100, stopped=1),
+          _ev("back_in_service", 290)], 400),
+        # Still open, counting to now
+        ([_ev("raised", 0, "critical"), _ev("started", 10)], 70),
+    ])
+    def test_notes_change_no_figure(self, events, now_minute):
+        assert NOTE_EVENT not in ORDERED_EVENTS
+        assert _all(self._with_notes(events), now_minute) == _all(events, now_minute)

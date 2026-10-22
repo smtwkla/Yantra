@@ -638,6 +638,58 @@ _MIGRATIONS = [
             CONSTRAINT chk_ticket_parts_quantity CHECK (quantity > 0)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]),
+    # S027 — work notes (docs/steps/S027-work-notes/1-brief.md § 4): a note is a ticket_events
+    # row with event = 'note' and its text in remark (event is a free VARCHAR, so the new value
+    # needs no change).  v23 adds only what correcting a note needs: who corrected it last and
+    # when on the event row, and the earlier texts in ticket_note_edits (ISO 9001 § 7.5.3: a
+    # change of a record is identified).  updated_* is set on notes only.
+    # No _PRECONDITIONS entry: both columns are NULLable and the table is new, so no existing
+    # row needs a value (and production holds no ticket_events rows yet, v0.1.3).  IF NOT EXISTS
+    # on every statement, as v21, so a half-applied v23 simply re-runs.
+    (23, "Work notes: note corrections keep the earlier text (S027)", [
+        """ALTER TABLE ticket_events
+            ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL,
+            ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100) NULL""",
+        """CREATE TABLE IF NOT EXISTS ticket_note_edits (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            event_id    INT NOT NULL,
+            remark      VARCHAR(1000) NOT NULL,
+            replaced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            replaced_by VARCHAR(100) NOT NULL,
+            KEY ix_ticket_note_edits_event (event_id, id),
+            CONSTRAINT fk_ticket_note_edits_event FOREIGN KEY (event_id) REFERENCES ticket_events (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
+    # S021 — alerts by web push (docs/steps/S021-alerts-push/1-brief.md § 4): one row per device
+    # (one browser on one phone or computer) that turned notifications on, against the person
+    # whose alerts it gets.  endpoint_hash is the unique key (SHA-256 hex of endpoint: the
+    # endpoints are too long for an index); a re-subscribe of the same device moves the row to
+    # whoever signed in last.  p256dh and auth are the browser's keys for encrypting to it: they
+    # only let someone send to that device, so they are stored as plain columns, never sent back.
+    # The escalation times' defaults (A 10, B 30, C 60 minutes, decided 21-10-2026) are seeded as
+    # v20 seeds upload_max_mb, so get_setting_int finds a row instead of warning at every raise.
+    # No _PRECONDITIONS entry: a new table, and INSERT IGNORE adds rows without touching an
+    # existing one, so it is safe on any database.  IF NOT EXISTS and INSERT IGNORE, as v21–v23,
+    # so a half-applied v24 simply re-runs.
+    (24, "Web push subscriptions (S021)", [
+        """CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            person_id     INT NOT NULL,
+            endpoint      VARCHAR(1000) NOT NULL,
+            endpoint_hash CHAR(64) NOT NULL,
+            p256dh        VARCHAR(200) NOT NULL,
+            auth          VARCHAR(100) NOT NULL,
+            label         VARCHAR(100) NOT NULL,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_sent_at  DATETIME NULL,
+            last_error    VARCHAR(255) NULL,
+            CONSTRAINT uq_push_subscriptions_endpoint UNIQUE (endpoint_hash),
+            KEY ix_push_subscriptions_person (person_id),
+            CONSTRAINT fk_push_subscriptions_person FOREIGN KEY (person_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """INSERT IGNORE INTO app_settings (setting_key, setting_value)
+            VALUES ('escalate_minutes_a', '10'), ('escalate_minutes_b', '30'), ('escalate_minutes_c', '60')""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

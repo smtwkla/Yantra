@@ -80,6 +80,20 @@ if DEV_AUTH_BYPASS and not IS_DEV:
 DEV_STUB_ROLE = getattr(secrets_app, "DEV_STUB_ROLE", "admin")
 
 # ---------------------------------------------------------------------------
+# Web push (S021 § 3, § 5.6) — the VAPID key pair that signs every push (RFC 8292)
+# ---------------------------------------------------------------------------
+
+# Empty means push is off: My notifications says "not set up on this server" and alerts find
+# no channel.  Readers (push.py, push_sender.py) read config.VAPID_* at call time, so the test
+# fixture and the e2e backend can set them after import.  Wire forms (tooling/dev/
+# make_vapid_keys.py prints both): the public key the raw 65-byte uncompressed P-256 point,
+# the private key the raw 32-byte scalar, each base64url without padding (87 and 43 characters).
+# The subject is a mailto: address the push services may write to.
+VAPID_PUBLIC_KEY = getattr(secrets_app, "VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = getattr(secrets_app, "VAPID_PRIVATE_KEY", "")
+VAPID_SUBJECT = getattr(secrets_app, "VAPID_SUBJECT", "")
+
+# ---------------------------------------------------------------------------
 # Data directory and uploads
 # ---------------------------------------------------------------------------
 

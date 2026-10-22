@@ -87,6 +87,57 @@ All 21 use `FormModal` and `useFormModal` (or, for the two document dialogs, `Fo
 - `tooling/run-e2e-tests.bat`: **189 passed** (3 set-ups), exit 0. The first run had 1 failure, explained in § 5 and fixed in the test; the second run is the one reported.
 - Backend tests: not run (no server change).
 
+## Fix round 1 and A1
+
+**Result: both blockers are closed, and A1 is built. The full e2e suite passed twice: 189 passed, 189 passed (3 set-ups, 6 lanes), with no WebKit lost-typing failure.**
+
+### Findings
+
+| Finding | Answer |
+|---|---|
+| CR1-01 blocker | **Fixed.** `tickets-raise.spec.js` waits for one element: `expect(page.getByLabel(/What is wrong\?/)).toBeVisible()`. The working tree already held this line when this round started. |
+| CR1-02 blocker | **Fixed.** The Add equipment test calls `expectDialogFits(page)` after opening the dialog, and checks the message text `/Year must be between/`. Both were already in the tree. `expectDialogFits` now also waits until the dialog is fully open (A1). |
+| CR1-03, CR1-04, CR1-05, CR1-06 | **Not touched.** The user decides them at gate B. |
+
+### A1: a dialog is typed into only once it is open
+
+- `openDialog(page)` in `frontend/e2e/support/dialogs.js` is now `async`. It waits for `.modal.show`, then waits until `document.activeElement` is inside the modal. Bootstrap's focus trap moves focus there at `shown.bs.modal`, the end of the fade. It returns the dialog locator.
+- `expectDialogFits` calls it, so it waits out the transition too.
+- Every call site now awaits it: `equipment`, `tickets-work`, `tickets-parts` specs, and `support/tickets.js` (`openAction`).
+- Tests that opened a dialog with a raw `page.locator(".modal.show")` and then typed now use `await openDialog(page)`: `masters.spec.js` (five places), `tickets-work.spec.js` (labour, one dialog at line 271, the event-time and Ravi picks). The first full run showed why: the masters test "a press mode labelled like a General one is refused" lost its *Code* fill on WebKit (HTTP 400 instead of 409).
+- `saveDialog` (`support/tickets.js`) uses a plain locator and not `openDialog`. In the S019 schedule test the focus is on `<body>` at that point (a clicked "Change" button was removed), so the focus wait would time out. The dialog is open already there.
+- Decision: the end-of-transition signal is "focus inside the modal". It needs no change to the product code.
+
+### Files
+
+- `frontend/e2e/support/dialogs.js`, `frontend/e2e/support/tickets.js`: A1 helpers.
+- `frontend/e2e/equipment.spec.js`, `tickets-work.spec.js`, `tickets-parts.spec.js`, `masters.spec.js`: awaits and `openDialog` use.
+- Note: commit `c7e6396` (the user's lane-runner commit) already contains S026's earlier edits to `dialogs.js` and the specs `equipment`, `tickets-raise` and `tickets-work`. The working-tree changes of this round come on top of it.
+- No product code changed.
+
+### Results
+
+- `tooling/run-frontend-tests.bat`: 13 files, 110 tests passed.
+- `tooling/run-e2e-tests.bat`, full, run twice in a row: **189 passed** and **189 passed**, exit 0. A first attempt with a broken edit (missed `await` in five lines) and a second one (the `saveDialog` focus wait, and the masters test) failed; both were test-code faults found by the runs and fixed above.
+- Backend tests not run (no server change).
+- Manual checks: unchanged. The `[auto]` rows of the server-refusal and raise-page checks now rest on two stable runs.
+
+## Fix round 2
+
+### Findings
+
+- **CR2-01 (major): Fixed.** Five actions in `frontend/e2e/equipment.spec.js` (lines 19, 38, 81, 87, 103) ran `(await openDialog(page)).getByLabel(...).fill(...)` or `.selectOption(...)` without an outer `await`. Each now starts with `await (await openDialog(page))`, as in `masters.spec.js:144`. A search of all of `frontend/e2e` for the same pattern (`openDialog` or `openAction` result used without `await`) found no other case.
+
+### Files
+
+- `frontend/e2e/equipment.spec.js`: five added `await`s. No product code changed.
+
+### Results
+
+- `tooling/run-frontend-tests.bat`: 13 files, 110 tests passed.
+- `tooling/run-e2e-tests.bat e2e/equipment.spec.js e2e/screens.spec.js`: 39 passed, all three set-ups. These are the only spec files changed, plus `screens.spec.js` as the README asks.
+- Backend tests not run (no server change). CR1-03 to CR1-06 left alone, as instructed.
+
 ## Manual checks
 
 - [auto] Add labour with no time spent: the message is on screen and the cursor is in the hours field; on the iPhone 14 set-up the hours field is first off screen. After filling the time, the labour row shows — `frontend/e2e/tickets-work.spec.js::S026: Add labour with no time spent scrolls the dialog to the message and puts the cursor in the hours field`

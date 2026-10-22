@@ -175,6 +175,9 @@ app.register_blueprint(masters_bp, url_prefix="/api/masters")
 from settings import settings_bp
 app.register_blueprint(settings_bp, url_prefix="/api/settings")
 
+from push import push_bp
+app.register_blueprint(push_bp, url_prefix="/api/push")
+
 
 # ---------------------------------------------------------------------------
 # Run (development only — use Gunicorn in production)

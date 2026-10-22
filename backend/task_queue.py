@@ -3,7 +3,7 @@
 - enqueue(cur, ...)        — add a task in the caller's transaction
 - claim_next(conn)         — claim the next due task; its own committed transaction
 - mark_done(cur, id)       — in the handler's transaction, committed with its work
-- mark_failed(conn, ...)   — its own transaction: retry later with backoff, or failed
+- mark_failed(conn, ...)   — its own transaction: retry later (back-off, or the task's own delay), or failed
 - requeue_stale(cur)       — running tasks whose lock expired (a dead worker) become pending, or failed
                               when their attempts are used up
 
@@ -12,7 +12,7 @@ Times are the session's IST NOW(), as every table (S013 § 4).
 
 import json
 
-from company_settings import TASK_LOCK_MINUTES, TASK_RETRY_BACKOFF_MINUTES
+from company_settings import TASK_LOCK_MINUTES, TASK_RETRY_BACKOFF_MINUTES, TASK_RETRY_DELAY_MAX_SECONDS
 from db_helpers import transaction
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -54,18 +54,25 @@ def mark_done(cur, task_id):
                 "last_error = NULL WHERE id = %s", (task_id,))
 
 
-def mark_failed(conn, task_id, error, retry=True):
-    """Store the error; back to pending after TASK_RETRY_BACKOFF_MINUTES x attempts while
-    attempts < max_attempts (and ``retry``), else failed.  Works from the committed
-    attempts, so a failing task can't retry for ever.  Returns the new status."""
+def mark_failed(conn, task_id, error, retry=True, delay_seconds=None):
+    """Store the error; back to pending while attempts < max_attempts (and ``retry``), else
+    failed.  The next attempt waits TASK_RETRY_BACKOFF_MINUTES x attempts, or ``delay_seconds``
+    when given (a push service's Retry-After, S021 § 5.1), capped at
+    TASK_RETRY_DELAY_MAX_SECONDS so no task parks itself for a day.  With no attempt left the
+    delay is ignored.  Works from the committed attempts, so a failing task can't retry for
+    ever.  Returns the new status."""
     with transaction(conn), conn.cursor() as cur:
         cur.execute("SELECT attempts, max_attempts FROM task_queue WHERE id = %s FOR UPDATE", (task_id,))
         row = cur.fetchone()
         message = str(error)[:_ERROR_CHARS]
         if retry and row["attempts"] < row["max_attempts"]:
+            if delay_seconds is None:
+                wait_seconds = TASK_RETRY_BACKOFF_MINUTES * 60 * row["attempts"]
+            else:
+                wait_seconds = min(max(int(delay_seconds), 0), TASK_RETRY_DELAY_MAX_SECONDS)
             cur.execute("UPDATE task_queue SET status = 'pending', locked_until = NULL, last_error = %s, "
-                        "scheduled_for = NOW() + INTERVAL %s MINUTE WHERE id = %s",
-                        (message, TASK_RETRY_BACKOFF_MINUTES * row["attempts"], task_id))
+                        "scheduled_for = NOW() + INTERVAL %s SECOND WHERE id = %s",
+                        (message, wait_seconds, task_id))
             return "pending"
         cur.execute("UPDATE task_queue SET status = 'failed', locked_until = NULL, last_error = %s, "
                     "completed_at = NOW() WHERE id = %s", (message, task_id))

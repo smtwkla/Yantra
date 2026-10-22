@@ -352,7 +352,7 @@ onMounted(reload);
         <input id="person-employment-contractor" v-model="form.employment" class="form-check-input" type="radio" value="contractor" />
         <label class="form-check-label" for="person-employment-contractor">Contractor</label>
       </div>
-      <div v-if="fieldError('employment')" class="text-danger small">{{ fieldError("employment") }}</div>
+      <div v-if="fieldError('employment')" class="invalid-feedback d-block">{{ fieldError("employment") }}</div>
     </div>
     <div class="mb-3">
       <div class="form-label">Trades</div>
@@ -377,7 +377,7 @@ onMounted(reload);
       <template v-else>
         <div class="form-label mb-1">Login</div>
         <div>Has a Yantra login: {{ editing?.has_login ? "yes" : "no" }}</div>
-        <div v-if="fieldError('username')" class="text-danger small">{{ fieldError("username") }}</div>
+        <div v-if="fieldError('username')" class="invalid-feedback d-block">{{ fieldError("username") }}</div>
       </template>
     </div>
 
@@ -425,9 +425,9 @@ onMounted(reload);
             </div>
           </template>
           <div v-else class="small">{{ rowText(row) }}</div>
-          <div v-if="rowError?.siteId === row.site_id" class="text-danger small mt-1">{{ rowError.message }}</div>
+          <div v-if="rowError?.siteId === row.site_id" class="invalid-feedback d-block mt-1">{{ rowError.message }}</div>
         </div>
-        <div v-if="rowError && !form.sites.some((r) => r.site_id === rowError.siteId)" class="text-danger small mb-2">
+        <div v-if="rowError && !form.sites.some((r) => r.site_id === rowError.siteId)" class="invalid-feedback d-block mb-2">
           {{ rowError.message }}
         </div>
         <div v-if="addableSites.length" class="d-flex gap-2">

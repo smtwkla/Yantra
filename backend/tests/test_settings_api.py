@@ -75,3 +75,65 @@ class TestGetSettingInt:
         upload_limit_mb(stored)
         assert self._read("upload_max_mb") == 20
         assert any(r.levelname == "WARNING" and "upload_max_mb" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Settings › Notifications (S021 § 1.6, § 6): the escalation times, push set up, the devices
+# ---------------------------------------------------------------------------
+
+NOTIFICATIONS = "/api/settings/notifications"
+DEFAULTS = {"A": 10, "B": 30, "C": 60}
+
+
+@pytest.fixture
+def escalation_defaults(admin):
+    """The three times put back to the defaults after the test (the rows are shared)."""
+    yield
+    assert admin.put(NOTIFICATIONS, json={"escalate_minutes": DEFAULTS}).status_code == 200
+
+
+class TestNotifications:
+
+    @pytest.mark.parametrize("role", ["maint_manager", "it_admin"])
+    def test_manager_and_it_admin_read(self, role_client, role):
+        body = role_client(role).get(NOTIFICATIONS).get_json()
+        assert body["escalate_minutes"] == DEFAULTS
+        assert body["push_enabled"] is True and isinstance(body["devices"], int)
+
+    def test_push_off_shows(self, admin, push_off):
+        assert admin.get(NOTIFICATIONS).get_json()["push_enabled"] is False
+
+    def test_engineer_cannot_read(self, role_client):
+        assert role_client("maint_engineer").get(NOTIFICATIONS).status_code == 403
+
+    def test_it_admin_changes_the_three_and_it_is_logged(self, admin, escalation_defaults, caplog):
+        caplog.set_level(logging.INFO, logger="settings")
+        res = admin.put(NOTIFICATIONS, json={"escalate_minutes": {"A": 5, "B": 20, "C": 1440}})
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["escalate_minutes"] == {"A": 5, "B": 20, "C": 1440}
+        assert admin.get(NOTIFICATIONS).get_json()["escalate_minutes"] == {"A": 5, "B": 20, "C": 1440}
+        assert any("escalate_minutes_b changed by test_it_admin: " in r.getMessage() and r.getMessage().endswith("-> 20")
+                   for r in caplog.records)
+
+    def test_manager_cannot_change(self, role_client):
+        assert role_client("maint_manager").put(NOTIFICATIONS, json={"escalate_minutes": DEFAULTS}).status_code == 403
+
+    @pytest.mark.parametrize("value", [4, 1441, "20", 20.5, True, None])
+    def test_out_of_range_is_refused_on_its_box(self, admin, value):
+        res = admin.put(NOTIFICATIONS, json={"escalate_minutes": {"A": 10, "B": value, "C": 60}})
+        assert res.status_code == 400
+        assert res.get_json() == {"error": "Must be a whole number from 5 to 1440", "field": "escalate_minutes.B"}
+
+    @pytest.mark.parametrize("body", [{}, {"escalate_minutes": 10}, {"escalate_minutes": [10, 30, 60]}])
+    def test_not_an_object_is_one_400(self, admin, body):
+        res = admin.put(NOTIFICATIONS, json=body)
+        assert res.status_code == 400
+        assert res.get_json() == {"error": "Enter the three times.", "field": "escalate_minutes"}
+
+    def test_a_refused_save_changes_nothing(self, admin):
+        admin.put(NOTIFICATIONS, json={"escalate_minutes": {"A": 7, "B": 4, "C": 60}})
+        assert admin.get(NOTIFICATIONS).get_json()["escalate_minutes"] == DEFAULTS
+
+    def test_app_with_upload_max_mb_alone_still_saves(self, admin, upload_limit_mb):
+        """BR1-02: the escalation times are not in _APP_SETTINGS, so /app's contract is unchanged."""
+        assert admin.put(APP, json={"upload_max_mb": 9}).status_code == 200

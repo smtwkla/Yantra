@@ -35,6 +35,7 @@ import IntensityBadge from "../components/IntensityBadge.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPersonId } from "../stores/auth";
 import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../utils/documentTypes";
+import { revealError } from "../utils/revealError";
 import { roleLabel } from "../utils/siteRoles";
 import {
   ageText, INTENSITY_CHOICES, problemText, moveSaveLabel, raiseSaveLabel, restoreTimeLabel, toLocalDateValue, toLocalInputValue,
@@ -173,6 +174,14 @@ const timeTouched = ref(false);
 const fieldErrors = ref({});
 const formError = ref("");
 const saving = ref(false);
+const formEl = ref(null); // the <form>: where a refusal is searched for
+
+// A refusal is always in view (S026): on a phone the form is long and Save is at its bottom, so
+// scroll to the first message and focus its field. Post flush: is-invalid is in the DOM by then.
+// Every refusal assigns a new fieldErrors object, so the watch fires on a repeat too.
+watch([fieldErrors, formError], () => {
+  if (Object.keys(fieldErrors.value).length || formError.value) revealError(formEl.value);
+}, { flush: "post" });
 
 function blankForm() {
   return {
@@ -379,7 +388,7 @@ function done() {
 
         <div v-if="scrapped" class="alert alert-secondary">Scrapped equipment takes no tickets.</div>
         <div v-else-if="!canRaiseHere" class="alert alert-secondary">You can't raise tickets at this site.</div>
-        <form v-else novalidate @submit.prevent="save">
+        <form v-else ref="formEl" novalidate @submit.prevent="save">
           <div v-if="repeatOf" class="alert alert-info py-2">
             Repeat of <router-link :to="`/tickets/${repeatOf.id}`" target="_blank">{{ repeatOf.serial }}</router-link>:
             the same fault came back after the repair.

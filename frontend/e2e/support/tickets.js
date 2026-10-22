@@ -97,7 +97,8 @@ export async function setEventTime(dialog, value) {
 
 /** Save the open dialog with its submit button, named `label`, and wait for it to close. */
 export async function saveDialog(page, label) {
-  const dialog = openDialog(page);
+  // not openDialog(): the dialog is open already, and the focus may be on <body> (a clicked button was removed)
+  const dialog = page.locator(".modal.show .modal-dialog");
   const save = dialog.locator(".modal-footer button[type=submit]");
   await expect(save).toHaveText(label);
   await save.click();
@@ -119,7 +120,7 @@ export function timeValue(page, label) {
   return card(page, "Times").locator("dt", { hasText: label }).locator("xpath=following-sibling::dd[1]");
 }
 
-/** The timeline's entries (one per event), in order. */
+/** The timeline's entries (one per event), newest first: the Raised line is the last. */
 export function timeline(page) {
   return card(page, "Timeline").locator("li");
 }

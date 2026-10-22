@@ -10,6 +10,8 @@
  * - Network card: the plant's internal ranges, editable with settings:edit, and the address the
  *   server sees for this browser (S013 § 5.2). The backend validates and refuses a list that
  *   would block the saver.
+ * - Notifications card (S021 § 1.6): escalation times per criticality grade, whether push is set
+ *   up — its own component, NotificationsSettings.vue.
  * - Background tasks card: each scheduled task's last and next run, Overdue when the worker
  *   seems stopped, and the failed count (S013 § 5.6).
  * - Access log card, with access_log:view (S013 § 5.4).
@@ -19,6 +21,7 @@ import { apiGet, apiPut } from "../api";
 import { userPermissions } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
 import AccessLog from "./settings/AccessLog.vue";
+import NotificationsSettings from "./settings/NotificationsSettings.vue";
 import RemovedDocuments from "./settings/RemovedDocuments.vue";
 
 const status = ref(null);
@@ -364,6 +367,8 @@ onMounted(() => {
         </template>
       </div>
     </div>
+
+    <NotificationsSettings />
 
     <div class="card settings-card mt-3">
       <div class="card-header d-flex justify-content-between align-items-center">

@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026: user answers U1; brief-review r1)
 Track: full
-Status: Approved 22-10-2026 by KLA (coded after S026; § 9 answered as proposed, Q2b (b))
-Baseline: bbaed12 (S025, S019, S020 committed in b6b8dfb)
+Status: Gate B — code review r1 clean; fix round 1 (CR1-01, CR1-03, asked by the user) done; 2 nit open; awaiting the user's check and commit (approved 22-10-2026 by KLA; Q2b (b); staleness check s1 done)
+Baseline: 79fc61d + uncommitted S026 (staleness check s1, 22-10-2026)
 ```
 
 # S027 — Work notes
@@ -31,12 +31,13 @@ This step adds **work notes**:
   information; new findings are added as new notes, not edits (U1). Each edit
   keeps the earlier text.
 
-Order: coded **after S026** (another window's step, "A refusal is always in
-view"), so the note dialog follows S026's rule that a refused save shows its
-message in view. If S026 is not done first, the coder uses the dialog pattern
-as it is: the note field is marked `is-invalid` and its message
-`invalid-feedback d-block`, so S026's search finds it with no change, in
-either order (BR1-06).
+Order: coded **on top of S026** ("A refusal is always in view", uncommitted at
+gate B), so the note dialog follows its rule that a refused save shows its
+message in view (BS1-03). What the coder relies on: `revealError.js` finds the
+first `.is-invalid, .invalid-feedback.d-block, .alert-danger` in the dialog
+body; the note field is marked `is-invalid` and its message
+`invalid-feedback d-block` (BR1-06); a 409 "This ticket is closed" reaches the
+top bar through `FormModal`'s `error` prop, which S026 scrolls into view.
 
 ## 1. What will be built
 
@@ -191,7 +192,14 @@ either order (BR1-06).
 ### Frontend
 
 - `frontend/src/components/FormModal.vue`: on `shown.bs.modal`, focus the
-  first `[autofocus]` element in the body (§ 1.2).
+  first `[autofocus]` element in the body (§ 1.2). The order (BS1-04): at the
+  end of the open fade Bootstrap's focus trap focuses the modal element, then
+  fires `shown.bs.modal` in the same task; the handler then moves focus to the
+  `[autofocus]` field, which is inside the trap, so the trap leaves it. Register
+  the handler with `addEventListener` in `onMounted`, as `hide.bs.modal` is.
+  S026's `revealError` runs only on a refusal, never at open, so the two never
+  meet. No other dialog has an `autofocus` field, so the other 20 are
+  unchanged.
 - `frontend/src/views/tickets/NoteDialog.vue` (new, beside `MoveDialog.vue`):
   `FormModal` with the one field (`autofocus`, `is-invalid`, message
   `invalid-feedback d-block`); *Add note* / *Save note*, or *Edit note* /
@@ -224,9 +232,10 @@ either order (BR1-06).
 - `frontend/e2e/tickets-notes.spec.js` (new): § 8 *Automated*. The spec
   closes its own tickets in `afterEach` (S017's 50-ticket list, S020's
   lesson).
-- `frontend/e2e/tickets-work.spec.js`, the engineer test ("assign, edit and
-  change severity …", line 217): `card(page, "Description")` becomes the
-  Raised line of the timeline.
+- `frontend/e2e/tickets-work.spec.js`, the engineer test "engineer: assign,
+  edit and change severity; IT admin with no Team record acknowledges as
+  nobody" (BS1-02: named by title, its lines move): `card(page,
+  "Description")` becomes the Raised line of the timeline.
 - `docs/steps/device-checks.md`: the row of § 8 *On a real device*.
 
 ### Docs (at approval, by the planner)
@@ -419,7 +428,10 @@ and `updated_by`, and notes gain `earlier`; the detail gains no other field.
 ### Automated (e2e, `tickets-notes.spec.js`)
 
 - **Important** — a technician opens a ticket, presses *Add note* in the
-  action bar; the cursor is in the field; the technician enters a
+  action bar; the cursor is in the field (`openAction`, then
+  `toBeFocused()` on *Note*, as S026's labour test: `openDialog` returns only
+  once focus is inside the dialog, so this is no race; BS1-04); the
+  technician enters a
   two-line note, *Save note*; the timeline shows **Note**, the author and both
   lines. Phone and desktop.
 - **Important** — an engineer edits that note: the dialog shows the hint;
@@ -444,7 +456,9 @@ and `updated_by`, and notes gain `earlier`; the detail gains no other field.
 
 ### Acceptance
 
-Green suites; the e2e spec passes on the three projects; a note shows on the
+Green suites; the **full** e2e suite passes on the three projects, because
+S027 changes `FormModal.vue`, shared frontend code (BS1-01; README § Manual
+checks, decided 22-10-2026); a note shows on the
 timeline in place; an edit keeps the earlier text; no figure changes because
 of a note.
 
@@ -534,3 +548,14 @@ U2: the user approved the brief as shown, with § 9 as proposed and recommended:
 - Q3 no notes or edits after close; Q4 *Add note* in the action bar; Q5 a note
   does not acknowledge; Q6 the description stays editable in the *Edit* dialog
   by `ticket:work`.
+
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 22-10-2026
+
+Reviewed against 79fc61d + uncommitted S026. No blocker or major.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 the full suite is needed (FormModal.vue is shared code) | minor | **Accepted** (§ 8 Acceptance) |
+| BS1-02 "line 217" is stale | nit | **Accepted**: the test named by title (§ 3) |
+| BS1-03 the either-order hedge is moot | nit | **Accepted**: the facts the coder relies on; Baseline 79fc61d + uncommitted S026 (§ 1 Order, header) |
+| BS1-04 the focus sequence and how to test it | nit | **Accepted** (§ 3 FormModal, § 8 Automated) |

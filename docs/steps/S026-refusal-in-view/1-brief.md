@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026 after brief-review r1)
 Track: light
 Baseline: b6b8dfb (stale brief check 22-10-2026: no file of this brief changed since review r1)
-Status: In code review (approved 22-10-2026 by KLA; Q1: (a), the Raise ticket page included)
+Status: Gate B — code review r3 clean (0 blocker, 0 major; 2 minor, 2 nit open); awaiting the user (approved 22-10-2026 by KLA; Q1: (a); A1 by KLA 22-10-2026)
 ```
 
 # S026 — A refusal is always in view
@@ -200,7 +200,21 @@ Approved on the light track. Q1: (a), include the *Raise ticket* page; the searc
 
 ## 7. Amendments
 
-None.
+### A1 — dialogs are typed into only once open (user, 22-10-2026; approved: "continue S026 here, add the fix")
+
+**Why.** A full run in parallel lanes (22-10-2026) failed three WebKit tests the same way as
+CR1-02: a test types into a dialog while Bootstrap's open animation runs; at its end
+(`shown.bs.modal`) the focus trap moves focus to the modal and the typed text is lost (the
+S003 "engineer adds equipment" failure, S020 CR1-02, and two S020 parts tests). A busy CPU
+makes the animation longer, so it fails more often.
+
+**What.** `openDialog()` in `frontend/e2e/support/dialogs.js` returns only when the dialog is
+fully open: after `.modal.show`, it waits until the modal element has the focus the trap
+gives it at `shown` (or an equivalent signal of the end of the transition), so every test
+that opens a dialog through it types after the trap. Tests that open a dialog without
+`openDialog` (CR1-02's) use it or `expectDialogFits`. Test code only; no product change.
+
+**Checks.** The full e2e suite in lanes, twice, with no WebKit lost-typing failure.
 
 ## Review log
 

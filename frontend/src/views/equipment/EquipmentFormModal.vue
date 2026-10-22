@@ -181,7 +181,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
         <option v-for="l in levelChoices" :key="l" :value="l">{{ LEVEL_LABELS[l] }}</option>
       </select>
       <div v-else class="form-control-plaintext py-0">{{ LEVEL_LABELS[context.level] }}</div>
-      <div v-if="fieldError('level')" class="text-danger small">{{ fieldError("level") }}</div>
+      <div v-if="fieldError('level')" class="invalid-feedback d-block">{{ fieldError("level") }}</div>
     </div>
 
     <div v-if="context.mode === 'create-equipment'" class="row g-3 mb-3">
@@ -204,7 +204,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
     <div v-else class="mb-3">
       <label class="form-label">{{ isPart ? "Parent" : "Unit" }}</label>
       <div class="form-control-plaintext py-0">{{ context.place }}</div>
-      <div v-if="fieldError('parent_id')" class="text-danger small">{{ fieldError("parent_id") }}</div>
+      <div v-if="fieldError('parent_id')" class="invalid-feedback d-block">{{ fieldError("parent_id") }}</div>
       <div v-if="isEdit" class="form-text">Changed with Move.</div>
     </div>
 
@@ -275,6 +275,13 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
           <option v-for="[value, text] in CREATE_STATUSES" :key="value" :value="value">{{ text }}</option>
         </select>
         <div v-if="fieldError('status')" class="invalid-feedback d-block">{{ fieldError("status") }}</div>
+      </div>
+      <div class="col-12 form-text mt-1">
+        Criticality —
+        <strong>A</strong>: stops a production line, or is a safety or environment risk; no standby.
+        <strong>B</strong>: slows production, or has a standby; repair within the shift.
+        <strong>C</strong>: no direct effect on production; repair when convenient.
+        <template v-if="isPart">A component-unit or component without its own grade takes its equipment's grade.</template>
       </div>
     </div>
 

@@ -113,14 +113,14 @@ function partsCard(page) {
 async function openAddPart(page) {
   await partsCard(page).getByRole("button", { name: "Add part" }).click();
   await expectDialogFits(page);
-  const dialog = openDialog(page);
+  const dialog = await openDialog(page);
   await expect(dialog.locator(".modal-title")).toHaveText("Add part");
   return dialog;
 }
 
 /** Cancel a dialog with typed input: Cancel, then Discard. */
 async function discardDialog(page) {
-  const dialog = openDialog(page);
+  const dialog = await openDialog(page);
   await dialog.locator(".modal-footer").getByRole("button", { name: "Cancel" }).click();
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(page.locator(".modal.show")).toHaveCount(0);
@@ -154,7 +154,7 @@ test("S020: technician adds a part line the short way, fitted to a component; ch
 
   await line.getByTitle("Change").click();
   await expectDialogFits(page);
-  const change = openDialog(page);
+  const change = await openDialog(page);
   await expect(change.locator(".modal-title")).toHaveText("Change part");
   await expect(change.getByText("Fitted here before")).toHaveCount(0);
   await change.getByLabel("Quantity").fill("2");

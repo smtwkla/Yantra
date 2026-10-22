@@ -110,9 +110,9 @@ class TestRoleSources:
         assert holders == {"maint_technician", "maint_engineer", "maint_manager", "it_admin"}
         assert "ticket:work" in SITE_SCOPED
 
-    @pytest.mark.parametrize("key", ["ticket:assign", "ticket:close"])
+    @pytest.mark.parametrize("key", ["ticket:assign", "ticket:close", "ticket:edit_notes"])
     def test_ticket_assign_and_close_holders(self, key):
-        """S018 § 5.7: the engineer (so the manager) and IT admin."""
+        """S018 § 5.7: the engineer (so the manager) and IT admin; S027's note correction too."""
         holders = {role for role in ROLES if key in compute_permissions([role])}
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert key in SITE_SCOPED
@@ -164,26 +164,29 @@ class TestComputePermissions:
     @pytest.mark.parametrize("role, expected", [
         # S017: ticket:read and ticket:raise to the operator, so to every maintenance role and
         # the supervisor; IT admin too (user decision 7); never the storekeeper.  S018: restore to
-        # the operator; work to the technician; assign and close to the engineer; all to IT admin
-        ("maint_operator",    {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore"}),
-        ("maint_technician",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore",
+        # the operator; work to the technician; assign and close to the engineer; all to IT admin.
+        # S021: push:subscribe to every role ('*'): anyone may turn notifications on
+        ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore"}),
+        ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
                                "ticket:work"}),
-        ("maint_supervisor",  {"equipment:read", "masters:read", "ticket:read", "ticket:raise", "ticket:restore"}),
-        ("maint_engineer",    {"equipment:read", "masters:read", "equipment:edit", "people:edit",
+        ("maint_supervisor",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore"}),
+        ("maint_engineer",    {"equipment:read", "masters:read", "push:subscribe", "equipment:edit", "people:edit",
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
-                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close"}),
+                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
+                               "ticket:edit_notes"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
-        ("maint_manager",     {"equipment:read", "masters:read", "equipment:edit",
+        ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
                                "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
-                               "ticket:close"}),
-        ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "masters:edit",
+                               "ticket:close", "ticket:edit_notes"}),
+        ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
                                "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise",
-                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close"}),
-        ("maint_storekeeper", {"equipment:read", "masters:read"}),
+                               "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
+                               "ticket:edit_notes"}),
+        ("maint_storekeeper", {"equipment:read", "masters:read", "push:subscribe"}),
     ])
     def test_role_matrix(self, role, expected):
         assert set(compute_permissions([role])) == expected

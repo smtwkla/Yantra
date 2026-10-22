@@ -10,10 +10,12 @@
  *    gap and in outline, the significant moves Close / Not a fault / Send back. On a wider
  *    screen the same buttons sit in one row, the significant ones on the left. While there is
  *    no labour, Close is disabled with the reason written under it and Add labour beside it;
- * 2. the times, assignees, labour and parts used (S020) — shown to ticket:work holders, or when
- *    not empty; Edit and Assign sit with these panels. Two by two on a tablet, four across on a
- *    wide screen;
- * 3. repeats, details, description, photos and documents, timeline.
+ * 2. repeats; then details (half), times and assignees (a quarter each); then parts used (S020,
+ *    full width, in columns when long); then the timeline (full width, newest first; the newest 10,
+ *    *Show all* expands it in place). Times, assignees, parts and labour show to
+ *    ticket:work holders, or when not empty;
+ *    Edit and Assign sit with their cards. Stacked on a phone;
+ * 3. photos and documents, then labour.
  *
  * Every control follows the detail's `moves`, `permissions` (the keys at the ticket's site)
  * and `regrade_to`, so a user never sees a button that ends in a 403. Each write answers with
@@ -26,12 +28,19 @@
  *
  * S020 (parts used): the Parts used panel beside Labour; Not a fault is disabled with "Remove the
  * parts first" while the ticket has part lines (the API refuses it too, 409).
+ *
+ * S027 (work notes): *Add note* in outline in the action bar, after the next move, for
+ * ticket:restore holders while open. A note is a timeline line with its text in the normal size;
+ * the raise's *What is wrong?* (the description) shows on the Raised line in the same style, as
+ * the first note, so there is no Description card. ticket:edit_notes holders get a pencil on each
+ * note; a corrected note shows "Edited by …" and *Show earlier text*.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { apiDelete, apiGet } from "../api";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import DocumentsCards from "../components/documents/DocumentsCards.vue";
+import { useShowMore } from "../composables/useShowMore";
 import { userPersonId } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
 import {
@@ -42,6 +51,7 @@ import AssignDialog from "./tickets/AssignDialog.vue";
 import EditTicketDialog from "./tickets/EditTicketDialog.vue";
 import LabourPanel from "./tickets/LabourPanel.vue";
 import MoveDialog from "./tickets/MoveDialog.vue";
+import NoteDialog from "./tickets/NoteDialog.vue";
 import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
 
@@ -61,6 +71,8 @@ const moveDialog = ref(null);
 const regradeDialog = ref(null);
 const assignDialog = ref(null);
 const editDialog = ref(null);
+const noteDialog = ref(null);
+const shownEarlier = ref(new Set()); // the notes whose earlier texts are open
 const labourPanel = ref(null);
 const confirmingUnassignId = ref(null);
 const unassigning = ref(false);
@@ -70,6 +82,9 @@ const can = (key) => (ticket.value?.permissions ?? []).includes(key);
 const isOpen = computed(() => ticket.value && ticket.value.state !== "closed");
 const canWork = computed(() => isOpen.value && can("ticket:work"));
 const canAssign = computed(() => isOpen.value && can("ticket:assign"));
+// S027: whoever may confirm the machine is back may write what they see; correcting is narrower
+const canAddNote = computed(() => isOpen.value && can("ticket:restore"));
+const canEditNotes = computed(() => isOpen.value && can("ticket:edit_notes"));
 const chainMoves = computed(() => (ticket.value?.moves ?? [])
   .filter((m) => !SIGNIFICANT_MOVES.includes(m.name) && !PLAN_MOVES.includes(m.name)));
 const planMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => PLAN_MOVES.includes(m.name)));
@@ -95,6 +110,10 @@ const showLabour = computed(() => can("ticket:work") || ticket.value?.labour.len
 const showParts = computed(() => can("ticket:work") || ticket.value?.parts.length > 0);
 const intensityTexts = computed(() => intensityChanges(ticket.value?.events ?? []));
 const planTexts = computed(() => planChanges(ticket.value?.events ?? []));
+// The API sends the events oldest first, as the intensity and plan texts read each against the
+// one before; the timeline shows them newest first, each keeping its index into those texts
+const timelineRows = computed(() => (ticket.value?.events ?? []).map((e, i) => ({ e, i })).reverse());
+const timelineMore = useShowMore(() => timelineRows.value);
 const waiting = computed(() => waitingSplit(times.value.waiting_by_reason));
 
 async function loadPickers(loaded, seq) {
@@ -146,6 +165,13 @@ async function load() {
   } finally {
     if (seq === loadSeq) loading.value = false;
   }
+}
+
+function toggleEarlier(note) {
+  const shown = new Set(shownEarlier.value);
+  if (shown.has(note.id)) shown.delete(note.id);
+  else shown.add(note.id);
+  shownEarlier.value = shown;
 }
 
 function onSaved(result) {
@@ -206,6 +232,9 @@ watch(() => route.params.id, load, { immediate: true });
         <button v-if="showMachineStopped" type="button" class="btn btn-danger btn-lg" @click="regradeDialog.open('stopped')">
           <i class="fa-solid fa-circle-stop me-2"></i>Machine stopped
         </button>
+        <button v-if="canAddNote" type="button" class="btn btn-outline-primary btn-lg" @click="noteDialog.openAdd()">
+          <i class="fa-regular fa-comment me-2"></i>Add note
+        </button>
         <button v-if="showChangeSeverity" type="button" class="btn btn-outline-primary btn-lg" @click="regradeDialog.open('change')">
           Change severity
         </button>
@@ -246,87 +275,7 @@ watch(() => route.params.id, load, { immediate: true });
       </div>
       <div v-if="pickersError" class="alert alert-warning py-2">{{ pickersError }}</div>
 
-      <!-- 2. Times, assignees, labour, parts used -->
-      <div class="row g-3 mb-3">
-        <div v-if="showTimes" class="col-md-6 col-xl-3">
-          <div class="card h-100">
-            <div class="card-header">Times</div>
-            <div class="card-body">
-              <dl class="row mb-0">
-                <dt class="col-7 fw-normal">Response</dt><dd class="col-5 mb-1">{{ minutesText(times.response_minutes) }}</dd>
-                <dt class="col-7 fw-normal">Repair (hands on)</dt><dd class="col-5 mb-1">{{ minutesText(times.repair_minutes) }}</dd>
-                <dt class="col-7 fw-normal">Downtime</dt><dd class="col-5 mb-0">{{ minutesText(times.downtime_minutes) }}</dd>
-                <!-- S019: the waiting inside the downtime, per reason, then EN 13306's two delays -->
-                <template v-if="times.waiting_minutes !== null && times.waiting_minutes !== undefined">
-                  <dt class="col-7 fw-normal ps-4">of which waiting</dt><dd class="col-5 mb-0">{{ minutesText(times.waiting_minutes) }}</dd>
-                  <template v-for="r in waiting.reasons" :key="r.reason">
-                    <dt class="col-7 fw-normal ps-5 small text-secondary">{{ r.label }}</dt>
-                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(r.minutes) }}</dd>
-                  </template>
-                  <template v-if="waiting.logistic !== null">
-                    <dt class="col-7 fw-normal ps-5 small text-secondary">Logistic delay</dt>
-                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.logistic) }}</dd>
-                  </template>
-                  <template v-if="waiting.administrative !== null">
-                    <dt class="col-7 fw-normal ps-5 small text-secondary">Administrative delay</dt>
-                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.administrative) }}</dd>
-                  </template>
-                </template>
-                <template v-if="times.planned_downtime_minutes !== null && times.planned_downtime_minutes !== undefined">
-                  <dt class="col-7 fw-normal mt-1">Planned stop</dt><dd class="col-5 mb-0 mt-1">{{ minutesText(times.planned_downtime_minutes) }}</dd>
-                </template>
-              </dl>
-            </div>
-          </div>
-        </div>
-        <div v-if="showAssignees" class="col-md-6 col-xl-3">
-          <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span>Assigned</span>
-              <button v-if="canAssign" class="btn btn-outline-primary" @click="assignDialog.open()">
-                <i class="fa-solid fa-plus me-1"></i>Assign
-              </button>
-            </div>
-            <div v-if="unassignError" class="alert alert-danger py-2 m-2">{{ unassignError }}</div>
-            <div v-if="!ticket.assignees.length" class="card-body text-secondary">Nobody assigned</div>
-            <ul v-else class="list-group list-group-flush">
-              <li v-for="a in ticket.assignees" :key="a.id" class="list-group-item">
-                <div class="d-flex align-items-center gap-2">
-                  <span class="flex-grow-1 text-break">{{ a.name }}</span>
-                  <button
-                    v-if="canAssign && confirmingUnassignId !== a.id"
-                    class="btn btn-outline-danger"
-                    title="Unassign"
-                    @click="confirmingUnassignId = a.id"
-                  >
-                    <i class="fa-solid fa-user-minus"></i>
-                  </button>
-                </div>
-                <div v-if="canAssign && confirmingUnassignId === a.id" class="d-flex flex-wrap align-items-center justify-content-end gap-3 mt-2">
-                  <span>Remove {{ a.name }}?</span>
-                  <button class="btn btn-danger" :disabled="unassigning" @click="unassign(a)">Yes</button>
-                  <button class="btn btn-outline-secondary" @click="confirmingUnassignId = null">No</button>
-                </div>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div v-if="showLabour" class="col-md-6 col-xl-3">
-          <LabourPanel
-            ref="labourPanel"
-            :ticket="ticket"
-            :people="people"
-            :own-person-id="userPersonId"
-            :can-edit="canWork"
-            @saved="onSaved"
-          />
-        </div>
-        <div v-if="showParts" class="col-md-6 col-xl-3">
-          <PartsPanel :ticket="ticket" :can-edit="canWork" @saved="onSaved" />
-        </div>
-      </div>
-
-      <!-- 3. Repeats, details, description, photos and documents, timeline -->
+      <!-- 2. Repeats; details, times and assignees; parts used; the timeline (labour comes after the documents) -->
       <div v-if="ticket.repeat_of || ticket.repeats.length" class="alert alert-light border">
         <div v-if="ticket.repeat_of">
           Repeat of <router-link :to="`/tickets/${ticket.repeat_of.id}`">{{ ticket.repeat_of.serial }}</router-link>
@@ -339,7 +288,7 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
       </div>
 
-      <div class="row g-3">
+      <div class="row g-3 mb-3">
         <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -383,34 +332,138 @@ watch(() => route.params.id, load, { immediate: true });
             </div>
           </div>
         </div>
-        <div class="col-lg-6">
+        <div v-if="showTimes" class="col-md-6 col-lg-3">
           <div class="card h-100">
-            <div class="card-header">Timeline</div>
-            <ul class="list-group list-group-flush">
-              <li v-for="(e, i) in ticket.events" :key="i" class="list-group-item">
-                <div class="d-flex flex-wrap gap-2">
-                  <span class="fw-semibold">{{ EVENT_LABELS[e.event] ?? e.event }}</span>
-                  <span v-if="intensityTexts[i]" class="text-secondary">· {{ intensityTexts[i] }}</span>
-                  <span class="ms-auto small">{{ formatDateTime(e.occurred_at) }}</span>
+            <div class="card-header">Times</div>
+            <div class="card-body">
+              <dl class="row mb-0">
+                <dt class="col-7 fw-normal">Response</dt><dd class="col-5 mb-1">{{ minutesText(times.response_minutes) }}</dd>
+                <dt class="col-7 fw-normal">Repair (hands on)</dt><dd class="col-5 mb-1">{{ minutesText(times.repair_minutes) }}</dd>
+                <dt class="col-7 fw-normal">Downtime</dt><dd class="col-5 mb-0">{{ minutesText(times.downtime_minutes) }}</dd>
+                <!-- S019: the waiting inside the downtime, per reason, then EN 13306's two delays -->
+                <template v-if="times.waiting_minutes !== null && times.waiting_minutes !== undefined">
+                  <dt class="col-7 fw-normal ps-4">of which waiting</dt><dd class="col-5 mb-0">{{ minutesText(times.waiting_minutes) }}</dd>
+                  <template v-for="r in waiting.reasons" :key="r.reason">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">{{ r.label }}</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(r.minutes) }}</dd>
+                  </template>
+                  <template v-if="waiting.logistic !== null">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">Logistic delay</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.logistic) }}</dd>
+                  </template>
+                  <template v-if="waiting.administrative !== null">
+                    <dt class="col-7 fw-normal ps-5 small text-secondary">Administrative delay</dt>
+                    <dd class="col-5 mb-0 small text-secondary">{{ minutesText(waiting.administrative) }}</dd>
+                  </template>
+                </template>
+                <template v-if="times.planned_downtime_minutes !== null && times.planned_downtime_minutes !== undefined">
+                  <dt class="col-7 fw-normal mt-1">Planned stop</dt><dd class="col-5 mb-0 mt-1">{{ minutesText(times.planned_downtime_minutes) }}</dd>
+                </template>
+              </dl>
+            </div>
+          </div>
+        </div>
+        <div v-if="showAssignees" class="col-md-6 col-lg-3">
+          <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span>Assigned</span>
+              <button v-if="canAssign" class="btn btn-outline-primary" @click="assignDialog.open()">
+                <i class="fa-solid fa-plus me-1"></i>Assign
+              </button>
+            </div>
+            <div v-if="unassignError" class="alert alert-danger py-2 m-2">{{ unassignError }}</div>
+            <div v-if="!ticket.assignees.length" class="card-body text-secondary">Nobody assigned</div>
+            <ul v-else class="list-group list-group-flush">
+              <li v-for="a in ticket.assignees" :key="a.id" class="list-group-item">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="flex-grow-1 text-break">{{ a.name }}</span>
+                  <button
+                    v-if="canAssign && confirmingUnassignId !== a.id"
+                    class="btn btn-outline-danger"
+                    title="Unassign"
+                    @click="confirmingUnassignId = a.id"
+                  >
+                    <i class="fa-solid fa-user-minus"></i>
+                  </button>
                 </div>
-                <div v-if="planTexts[i]" class="small text-break">{{ planTexts[i] }}</div>
-                <div v-if="e.machine_stopped !== null && e.machine_stopped !== undefined" class="small">
-                  {{ e.machine_stopped ? "Machine stopped for this work" : "Machine kept running" }}
+                <div v-if="canAssign && confirmingUnassignId === a.id" class="d-flex flex-wrap align-items-center justify-content-end gap-3 mt-2">
+                  <span>Remove {{ a.name }}?</span>
+                  <button class="btn btn-danger" :disabled="unassigning" @click="unassign(a)">Yes</button>
+                  <button class="btn btn-outline-secondary" @click="confirmingUnassignId = null">No</button>
                 </div>
-                <div class="small text-secondary">
-                  {{ e.created_by }}<template v-if="e.person"> · {{ e.person.name }}</template>
-                </div>
-                <div v-if="e.remark" class="small text-break remark">{{ e.remark }}</div>
               </li>
             </ul>
           </div>
         </div>
       </div>
 
-      <div v-if="ticket.description" class="card mt-3">
-        <div class="card-header">Description</div>
-        <!-- pre-wrap: shown as entered -->
-        <div class="card-body description-text">{{ ticket.description }}</div>
+      <!-- Full width: an overhaul can use 100 parts or more, in columns (PartsPanel) -->
+      <div v-if="showParts" class="mb-3">
+        <PartsPanel :ticket="ticket" :can-edit="canWork" @saved="onSaved" />
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">Timeline</div>
+            <ul class="list-group list-group-flush">
+              <li v-for="{ e, i } in timelineMore.shown.value" :key="i" class="list-group-item">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <!-- S027: a note names its writer in the title, so it has no separate user line -->
+                  <span class="fw-semibold">
+                    {{ EVENT_LABELS[e.event] ?? e.event }}<template v-if="e.event === 'note'"> by {{ e.created_by }}</template>
+                  </span>
+                  <span v-if="intensityTexts[i]" class="text-secondary">· {{ intensityTexts[i] }}</span>
+                  <span class="ms-auto small">{{ formatDateTime(e.occurred_at) }}</span>
+                  <button
+                    v-if="e.event === 'note' && canEditNotes"
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary py-0"
+                    title="Edit note"
+                    aria-label="Edit note"
+                    @click="noteDialog.openEdit(e)"
+                  >
+                    <i class="fa-solid fa-pen fa-xs"></i>
+                  </button>
+                </div>
+                <div v-if="planTexts[i]" class="small text-break">{{ planTexts[i] }}</div>
+                <div v-if="e.machine_stopped !== null && e.machine_stopped !== undefined" class="small">
+                  {{ e.machine_stopped ? "Machine stopped for this work" : "Machine kept running" }}
+                </div>
+                <div v-if="e.event !== 'note'" class="small text-secondary">
+                  {{ e.created_by }}<template v-if="e.person"> · {{ e.person.name }}</template>
+                </div>
+                <!-- S027: a note's text is the content of its line, so the normal size; the
+                     raise's *What is wrong?* is the first note -->
+                <div v-if="e.event === 'raised' && ticket.description" class="note-text">{{ ticket.description }}</div>
+                <template v-if="e.event === 'note'">
+                  <div class="note-text">{{ e.remark }}</div>
+                  <div v-if="e.updated_by" class="small text-secondary">
+                    Edited by {{ e.updated_by }}, {{ formatDateTime(e.updated_at) }}
+                  </div>
+                  <template v-if="e.earlier?.length">
+                    <button type="button" class="btn btn-link px-0" @click="toggleEarlier(e)">
+                      {{ shownEarlier.has(e.id) ? "Hide earlier text" : "Show earlier text" }}
+                    </button>
+                    <!-- divs, not a nested list: the timeline's entries are its li elements -->
+                    <div v-if="shownEarlier.has(e.id)" class="earlier border-start ps-2 mt-1">
+                      <div v-for="(old, j) in e.earlier" :key="j" class="mb-1">
+                        <div class="small note-text">{{ old.remark }}</div>
+                        <div class="small text-secondary">Replaced by {{ old.replaced_by }}, {{ formatDateTime(old.replaced_at) }}</div>
+                      </div>
+                    </div>
+                  </template>
+                </template>
+                <div v-else-if="e.remark" class="small text-break remark">{{ e.remark }}</div>
+              </li>
+            </ul>
+            <div v-if="timelineMore.canExpand.value" class="card-footer">
+              <button type="button" class="btn btn-link px-0" @click="timelineMore.toggle">
+                {{ timelineMore.toggleLabel.value }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <DocumentsCards
@@ -420,16 +473,29 @@ watch(() => route.params.id, load, { immediate: true });
         large-add
       />
 
+      <div v-if="showLabour" class="mt-3">
+        <LabourPanel
+          ref="labourPanel"
+          :ticket="ticket"
+          :people="people"
+          :own-person-id="userPersonId"
+          :can-edit="canWork"
+          @saved="onSaved"
+        />
+      </div>
+
       <MoveDialog ref="moveDialog" :ticket="ticket" :people="people" :modes="modes" :own-person-id="userPersonId" @saved="onSaved" @reload="load" />
       <RegradeDialog ref="regradeDialog" :ticket="ticket" @saved="onSaved" @reload="load" />
       <AssignDialog ref="assignDialog" :ticket="ticket" :people="people" :own-person-id="userPersonId" @saved="onSaved" />
       <EditTicketDialog ref="editDialog" :ticket="ticket" :modes="modes" @saved="onSaved" />
+      <NoteDialog ref="noteDialog" :ticket="ticket" @saved="onSaved" @reload="load" />
     </template>
   </div>
 </template>
 
 <style scoped>
-.description-text,
+/* pre-wrap: shown as entered, line breaks kept */
+.note-text,
 .remark {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

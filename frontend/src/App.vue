@@ -8,6 +8,7 @@ import UpdateToast from "./components/layout/UpdateToast.vue";
 import { authenticated, authError, logout, networkDenied, userPermissions } from "./stores/auth";
 import { canOpenRoute, landingPath } from "./stores/navigation";
 import { startVersionChecks, stopVersionChecks } from "./stores/appVersion";
+import { loadNotifications } from "./stores/notifications";
 import NoAccessView from "./views/NoAccessView.vue";
 
 const noAccess = computed(() => authenticated.value && userPermissions.value.length === 0);
@@ -25,6 +26,12 @@ watch(userPermissions, (perms) => {
   if (!authenticated.value || canOpenRoute(route.name, perms)) return;
   const landing = landingPath(perms);
   if (landing && landing !== route.path) router.replace(landing);
+});
+
+// The bell's dot (S021 § 1.3): this device's state, once the user is known. A failure leaves no
+// dot; My notifications loads again and shows the error.
+watch(userPermissions, (perms) => {
+  if (authenticated.value && perms.includes("push:subscribe")) loadNotifications().catch(() => {});
 });
 </script>
 

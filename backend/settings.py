@@ -4,7 +4,8 @@ app_settings holds runtime-configurable values (key -> text).  Readers go throug
 get_setting_int (or get_setting_text and a check, as label_base_url), so an admin typo
 falls back to the default instead of breaking the feature that reads it.  Only the keys in
 _APP_SETTINGS can be written through /app; the internal networks (S013) and the label link
-address (S014) have their own routes, as they are not numbers.
+address (S014) have their own routes, as they are not numbers, and the escalation times
+(S021) theirs, as one card with its own Save (_ESCALATION_SETTINGS).
 
 Also the S013 read-only views: the access log and the background tasks.
 """
@@ -26,6 +27,7 @@ from db_helpers import count, get_db, row_to_dict, rows_to_list, transaction
 from labels_core import normalise_base_url
 from local_db import db_status
 from network_core import format_networks, is_internal, parse_networks
+from push_sender import enabled as push_enabled
 from scheduled_tasks import SCHEDULE, is_overdue, next_run
 from task_queue import last_enqueued
 
@@ -82,17 +84,21 @@ def upload_max_mb(cur):
     return get_setting_int(cur, UPLOAD_MAX_MB, *_APP_SETTINGS[UPLOAD_MAX_MB])
 
 
-def _validate_app_settings(body, _creating):
-    """A JSON integer in range — not a boolean, a float or a string, as ids are parsed.
-    Keys other than the whitelisted ones are ignored."""
+def _validate_int_settings(spec, values):
+    """``spec`` is {field: (minimum, maximum)}, ``values`` a dict -> ``(clean, errors)`` keyed by
+    field.  A JSON integer in range — not a boolean, a float or a string, as ids are parsed.
+    Keys not in ``spec`` are ignored.  Shared by /app and /notifications (S021 BR2-02)."""
     clean, errors = {}, []
-    for key, (_default, minimum, maximum) in _APP_SETTINGS.items():
-        raw = body.get(key)
+    for field, (minimum, maximum) in spec.items():
+        raw = values.get(field)
         if isinstance(raw, bool) or not isinstance(raw, int) or not minimum <= raw <= maximum:
-            errors.append({"field": key, "message": f"Must be a whole number from {minimum} to {maximum}"})
+            errors.append({"field": field, "message": f"Must be a whole number from {minimum} to {maximum}"})
         else:
-            clean[key] = raw
+            clean[field] = raw
     return clean, errors
+
+
+_APP_SPEC = {key: (minimum, maximum) for key, (_default, minimum, maximum) in _APP_SETTINGS.items()}
 
 
 @settings_bp.route("/db-status")
@@ -115,7 +121,7 @@ def get_app_settings():
 @settings_bp.route("/app", methods=["PUT"])
 @require_perm("settings:edit")
 def put_app_settings():
-    clean = clean_body(_validate_app_settings, creating=False)
+    clean = clean_body(lambda body, _creating: _validate_int_settings(_APP_SPEC, body), creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         for key, value in clean.items():
@@ -169,6 +175,69 @@ def put_labels():
     with transaction(conn), conn.cursor() as cur:
         _save_setting(cur, LABEL_BASE_URL, url)
     return jsonify({"base_url": url})
+
+
+# ---------------------------------------------------------------------------
+# Notifications (S021 § 1.6) — escalation times per criticality grade, and whether push is set up
+# ---------------------------------------------------------------------------
+
+# Grade -> (key, default, minimum, maximum): minutes after which a breakdown nobody acknowledged
+# escalates (decided 21-10-2026, Plan.MD Q2).  Its own dict, not _APP_SETTINGS: /app validates
+# every key that holds (BR1-02).
+_ESCALATION_SETTINGS = {
+    "A": ("escalate_minutes_a", 10, 5, 1440),
+    "B": ("escalate_minutes_b", 30, 5, 1440),
+    "C": ("escalate_minutes_c", 60, 5, 1440),
+}
+_ESCALATION_SPEC = {grade: (minimum, maximum) for grade, (_key, _default, minimum, maximum)
+                    in _ESCALATION_SETTINGS.items()}
+ESCALATE_FIELD = "escalate_minutes"
+ESCALATE_NOT_OBJECT = "Enter the three times."
+
+
+def escalation_minutes(cur):
+    """{"A": 10, "B": 30, "C": 60} as stored (the defaults for a missing or unreadable value),
+    read when an escalation is queued, so a later change does not move one already queued."""
+    return {grade: get_setting_int(cur, key, default, minimum, maximum)
+            for grade, (key, default, minimum, maximum) in _ESCALATION_SETTINGS.items()}
+
+
+def _validate_notifications(body, _creating):
+    """``{"escalate_minutes": {"A", "B", "C"}}``: one 400 on the object when it is not one;
+    otherwise each error on its box, ``escalate_minutes.A`` (BR2-02)."""
+    values = body.get(ESCALATE_FIELD)
+    if not isinstance(values, dict):
+        return {}, [{"field": ESCALATE_FIELD, "message": ESCALATE_NOT_OBJECT}]
+    clean, errors = _validate_int_settings(_ESCALATION_SPEC, values)
+    return clean, [{**error, "field": f"{ESCALATE_FIELD}.{error['field']}"} for error in errors]
+
+
+def _notifications_body(cur):
+    return {
+        ESCALATE_FIELD: escalation_minutes(cur),
+        "push_enabled": push_enabled(),
+        "devices": count(cur, "SELECT COUNT(*) AS n FROM push_subscriptions", ()),
+    }
+
+
+@settings_bp.route("/notifications")
+@require_perm("settings:read")
+def get_notifications():
+    with get_db().cursor() as cur:
+        return jsonify(_notifications_body(cur))
+
+
+@settings_bp.route("/notifications", methods=["PUT"])
+@require_perm("settings:edit")
+def put_notifications():
+    """One PUT for the whole card (§ 1.6): every value on it, saved together."""
+    clean = clean_body(_validate_notifications, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        for grade, minutes in clean.items():
+            _save_setting(cur, _ESCALATION_SETTINGS[grade][0], str(minutes))
+    with conn.cursor() as cur:
+        return jsonify(_notifications_body(cur))
 
 
 # ---------------------------------------------------------------------------

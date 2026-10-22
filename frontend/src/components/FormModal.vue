@@ -11,9 +11,14 @@
  * Esc / ✕ / Cancel ask "Discard your changes?" in the footer first. Every close passes
  * one gate, the cancellable `hide.bs.modal` event; close() (after a successful save) and
  * Discard are the only ways past it.
+ *
+ * The cursor starts in the first field marked `autofocus` (S027 § 1.2): Bootstrap ignores the
+ * attribute in a modal and focuses the modal itself at the end of the open fade, then fires
+ * `shown.bs.modal`, where the field takes the focus (inside the focus trap, so it stays).
  */
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Modal } from "bootstrap";
+import { revealError } from "../utils/revealError";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -81,6 +86,21 @@ function hideNow() {
   }
 }
 
+// A refusal is always in view (S026): scroll the first message into view and focus its field.
+// Called by useFormModal on its own error state, and below for the top bar's `error` prop.
+function reveal() {
+  revealError(el.value?.querySelector(".modal-body"));
+}
+
+// post flush: the message and its is-invalid class are in the DOM when the search runs
+watch(() => props.error, (message) => {
+  if (message) reveal();
+}, { flush: "post" });
+
+function focusAutofocusField() {
+  el.value.querySelector(".modal-body [autofocus]")?.focus();
+}
+
 function onSubmit() {
   if (!confirming.value) emit("save");
 }
@@ -89,6 +109,7 @@ onMounted(() => {
   modal = Modal.getOrCreateInstance(el.value, { backdrop: "static" });
   // addEventListener, not a template @hide.bs.modal: Vue would read that as the event "hide" with modifiers
   el.value.addEventListener("hide.bs.modal", onHide);
+  el.value.addEventListener("shown.bs.modal", focusAutofocusField);
   el.value.addEventListener("hidden.bs.modal", () => {
     visible = false;
   });
@@ -124,6 +145,7 @@ defineExpose({
     modal.show();
   },
   close: hideNow,
+  revealError: reveal,
 });
 </script>
 

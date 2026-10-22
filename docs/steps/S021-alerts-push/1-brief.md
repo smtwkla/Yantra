@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: Approved 21-10-2026 (coded after S025)
-Baseline: 28d3be3 + uncommitted S024
+Status: Implementing (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done; coded after S027)
+Baseline: 79fc61d + uncommitted S026, S027 (staleness check s1, 22-10-2026)
 ```
 
 # S021 — Alerts: PWA and web push
@@ -973,7 +973,79 @@ vite build` shows no new errors. `tooling/run-deps-audit.bat` exits 0 with
 
 ## 10. Amendments
 
-(none)
+**§ 10 overrides the body where they differ.** A1 writes in the fourth kind the user
+approved at gate A; the staleness corrections (s1) bring the body up to the code
+of 22-10-2026. The coder reads both before § 1–9.
+
+### A1 — *Job assigned to you* (approved 22-10-2026 by KLA: "go ahead with A1")
+
+Gate A (21-10-2026) answered Q3 "yes, as a fourth kind", but the body still
+excluded it (BS1-01, the planner's slip). This amendment writes it in. Every
+place of the body that says three kinds, or lists *Job assigned to you* as out
+of scope, reads with this kind added: § 1 Out of scope, § 1.3, § 1.4's table,
+§ 5.1–5.3, § 8, decision 11.
+
+1. **Kind `assigned`.** Enqueued by `add_assignee` (the *Assign* route,
+   `ticket:assign`) only when `_assign` returns `True`: assigning the same
+   person again enqueues nothing. `event_id` is the `assigned` event;
+   `exclude_person_ids` is the actor. **Not** from `_auto_assign` (acknowledge
+   and start take the ticket for the actor's own person, and nobody is alerted
+   about their own action).
+2. **Recipient:** the one assigned person, on every device they turned on.
+   `add_assignee` has already checked an assignable role
+   (`config_rbac.ASSIGNABLE_ROLES`) at the ticket's site, so the fan-out needs
+   no audience table and no unit check.
+3. **Normal, not quiet; no escalation.** Text, by the § 1.4 rules (the actor's
+   first name):
+   - title: "Assigned to you · SMTW.MCC2 · VBM001";
+   - body: "TK-2026-10-012 · Not building pressure — by Priya";
+   - the tap opens the ticket, as the other kinds.
+4. **`should_send("assigned", state)`** while the ticket is open; the handler
+   also checks the person is still in `ticket_assignees`. Closed, or unassigned
+   in between → nothing is sent, and the task ends as done.
+5. **Settings › Notifications › What you will get:** "Jobs assigned to you"
+   for anyone with a membership in `ASSIGNABLE_ROLES` (technician, engineer,
+   manager). A technician reads that line instead of "Nothing yet".
+6. **The bell's dot** (decision 11) shows to a technician too, when none of
+   their devices is turned on: they now have alerts to miss. Decision 11's
+   rejected alternative ("a dot for technicians would never go out") no longer
+   holds.
+7. **Tests** (§ 8 gains): the pure `should_send` and `you_get` cases; the API —
+   an engineer assigns a technician → one `assigned` task for that person, the
+   actor excluded; the same person again → none; acknowledge and start (the
+   auto-assign) → none; closed or unassigned before sending → not sent; the
+   e2e — a technician's *What you will get* lists "Jobs assigned to you".
+8. **Plan.MD § 4.7:** the *Job assigned to you* row is marked "(S021)".
+
+### Staleness corrections (s1, 22-10-2026)
+
+- **Migration v24** (BS1-02): v21–v23 are S019, S020 and S027. A new table only,
+  so no `_PRECONDITIONS` entry; its comment says so, as v21–v23 do. The test
+  follows `test_migration_v23.py` (the upgrade database: fresh, from v23, a
+  re-run changes nothing). `test_migration_v20.py` already pins the squashed
+  schema. `push_subscriptions` goes into `conftest._TABLES` before `people`.
+- **E2E** (BS1-03): there is no `settings.spec.js`. The card tests go in a new
+  `frontend/e2e/notifications.spec.js`; `screens.spec.js` gains
+  `/notifications`. S021 changes the router, the auth store and the top bar
+  (shared frontend code), so acceptance is the **full** suite, in lanes. Each
+  lane's `e2e_backend.py` makes its own VAPID pair per process.
+- **S026's rule** (BS1-04): the Settings › Notifications card calls
+  `revealError(form)` after a refused save, so "4 is refused beside the field"
+  passes `expectFieldMessage`'s `toBeInViewport()` on a phone.
+- **Paths and exports** (BS1-05): the top bar is
+  `frontend/src/components/layout/AppTopbar.vue`; the Settings cards are inline
+  in `SettingsView.vue`; `userPersonId` and `logout()` already exist in
+  `stores/auth.js` — use them.
+- **Docs** (BS1-06): `.claude/CLAUDE.md` drops "Not yet built: PWA shell" and
+  its SMTW-Review spec map gains `notifications` S021; the `tickets.py` LOCK
+  ORDER note gains the worker's reads.
+- **`mark_failed`** (BS1-07): `_task_failed` stores `"NoRetry: …"` as written,
+  not `str(exc)`.
+- **`push.js`** (BS1-08): catches service-worker registration and subscribe
+  failures and shows them in the card; the e2e console watch fails a test on
+  any `console.error`.
+- **The raise's enqueue** (BS1-09) sits after the *Already fixed* block, so an
+  *Already fixed* raise alerts as the ticket stands after it.
 
 ## Review log
 
@@ -1059,3 +1131,24 @@ defect alerts for managers; Q5 the worker reaches `fcm.googleapis.com` and
 a logo exists; Q7 coded after S025, S023 parked; Q8 settled by U1 (Chrome on
 Android). Baseline from r3's *Reviewed against:*.
 
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 22-10-2026
+
+Reviewed against 79fc61d + uncommitted S026, S027. One major (BS1-01), so the step
+went back to gate A for A1.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| BS1-01 *Job assigned to you* approved but not in the body | major | **Accepted**: the planner's slip at the gate-A record. Amendment **A1** (§ 10), approved by the user 22-10-2026 |
+| BS1-02 migration v24 and the S025 conventions | minor | **Accepted** (§ 10, staleness corrections) |
+| BS1-03 e2e spec names, targeted/full rule, lanes | minor | **Accepted** (§ 10) |
+| BS1-04 S026's rule on the Notifications card | minor | **Accepted** (§ 10) |
+| BS1-05 paths and existing exports | nit | **Accepted** (§ 10) |
+| BS1-06 CLAUDE.md and the LOCK ORDER note | nit | **Accepted** (§ 10) |
+| BS1-07 what `mark_failed` stores | nit | **Accepted** (§ 10) |
+| BS1-08 `push.js` and the console watch | nit | **Accepted** (§ 10) |
+| BS1-09 the raise's enqueue after *Already fixed* | nit | **Accepted** (§ 10) |
+
+### A1 — approved 22-10-2026 by KLA
+
+"go ahead with A1": the rules of § 10 A1 as proposed (assign by an engineer only,
+the one assignee, normal, "Jobs assigned to you", the technician's dot).

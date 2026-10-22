@@ -10,7 +10,7 @@
  * form is shown at the top of the dialog instead (modalError).
  */
 
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { apiPost, apiPut } from "../api";
 import { formSnapshot } from "../utils/formSnapshot";
 
@@ -41,6 +41,12 @@ export function useFormModal({ path, blank, fromRecord, afterSave, toBody = (for
     modal.value.open();
     nextTick(markClean);
   }
+
+  // A refusal is always in view (S026). Every refusal assigns a new object and send() clears to
+  // null first, so this fires on a second identical refusal too. `null` (open, send) is skipped.
+  watch(error, (refusal) => {
+    if (refusal) modal.value?.revealError();
+  }, { flush: "post" });
 
   const fieldError = (name) => (error.value?.field === name ? error.value.message : "");
   const modalError = computed(() =>

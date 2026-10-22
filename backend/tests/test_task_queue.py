@@ -112,6 +112,27 @@ class TestClaimAndFinish:
         claim_next(conn)
         assert mark_failed(conn, task_id, "bad payload", retry=False) == "failed"
 
+    # S021 § 5.1, BR2-03: a task's own retry delay
+    def test_a_given_delay_replaces_the_back_off(self, conn):
+        task_id = _add(conn, "noop")
+        claim_next(conn)
+        assert mark_failed(conn, task_id, "429", delay_seconds=120) == "pending"
+        row = _task(conn, task_id)
+        assert 115 <= (row["scheduled_for"] - row["now"]).total_seconds() <= 120
+
+    def test_a_delay_over_an_hour_is_capped(self, conn):
+        task_id = _add(conn, "noop")
+        claim_next(conn)
+        mark_failed(conn, task_id, "429", delay_seconds=86_400)
+        row = _task(conn, task_id)
+        assert 3595 <= (row["scheduled_for"] - row["now"]).total_seconds() <= 3600   # TASK_RETRY_DELAY_MAX_SECONDS
+
+    def test_on_the_last_attempt_the_delay_is_ignored(self, conn):
+        task_id = _add(conn, "noop", max_attempts=1)
+        claim_next(conn)
+        assert mark_failed(conn, task_id, "429", delay_seconds=120) == "failed"
+        assert _task(conn, task_id)["status"] == "failed"
+
     def test_a_stale_claim_is_requeued(self, conn):
         stale, live = _add(conn, "noop"), _add(conn, "noop")
         claim_next(conn)
@@ -234,3 +255,35 @@ class TestWorkerRuns:
         worker.run_one()
         row = _task(conn, task_id)
         assert row["status"] == "failed" and row["attempts"] == 1 and "takes no payload" in row["last_error"]
+
+    # S021 § 5.1: how a send task reports its outcome
+    def test_no_retry_fails_after_one_attempt(self, conn, worker, monkeypatch):
+        def handler(_conn, _payload, _stop):
+            raise task_handlers.NoRetry("Push service answered 400")
+        monkeypatch.setitem(task_handlers.HANDLERS, "test_no_retry", handler)
+        task_id = _add(conn, "test_no_retry")
+        worker.connect()
+        assert worker.run_one() == task_id
+        row = _task(conn, task_id)
+        assert row["status"] == "failed" and row["attempts"] == 1
+        assert row["last_error"] == "NoRetry: Push service answered 400"
+
+    def test_retry_later_is_pending_after_its_delay(self, conn, worker, monkeypatch):
+        def handler(_conn, _payload, _stop):
+            raise task_handlers.RetryLater("Push service answered 429", 120)
+        monkeypatch.setitem(task_handlers.HANDLERS, "test_retry_later", handler)
+        task_id = _add(conn, "test_retry_later")
+        worker.connect()
+        assert worker.run_one() == task_id
+        row = _task(conn, task_id)
+        assert row["status"] == "pending" and row["last_error"] == "RetryLater: Push service answered 429"
+        assert 115 <= (row["scheduled_for"] - row["now"]).total_seconds() <= 120
+
+    def test_retry_later_on_the_last_attempt_fails(self, conn, worker, monkeypatch):
+        def handler(_conn, _payload, _stop):
+            raise task_handlers.RetryLater("Push service answered 429", 120)
+        monkeypatch.setitem(task_handlers.HANDLERS, "test_retry_last", handler)
+        task_id = _add(conn, "test_retry_last", max_attempts=1)
+        worker.connect()
+        worker.run_one()
+        assert _task(conn, task_id)["status"] == "failed"

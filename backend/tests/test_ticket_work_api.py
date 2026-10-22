@@ -1186,3 +1186,190 @@ class TestPlanList:
         scheduled(eng[0], ticket)
         res = move(other, ticket, "reschedule", planned_date=plan_day(2), waiting_reason="parts", remark="x")
         assert res.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Work notes (S027 § 8)
+# ---------------------------------------------------------------------------
+
+def add_note(client, ticket, text="Found the fan belt loose"):
+    return client.post(url(ticket, "notes"), json={"remark": text})
+
+
+def noted(client, ticket, text="Found the fan belt loose"):
+    res = add_note(client, ticket, text)
+    assert res.status_code == 201, res.get_json()
+    return res.get_json()
+
+
+def edit_note(client, ticket, note, text):
+    return client.put(url(ticket, "notes", str(note["id"])), json={"remark": text})
+
+
+def notes(ticket_detail):
+    return [e for e in ticket_detail["events"] if e["event"] == "note"]
+
+
+class TestAddNote:
+
+    def test_a_technician_adds_a_note(self, tech, ticket):
+        client, person = tech
+        before = detail(client, ticket)
+        start = now_ist().replace(microsecond=0)
+        shown = noted(client, ticket, "  No amps, no movement.\nTo lift and check  ")
+        note = shown["events"][-1]
+        assert note["event"] == "note"
+        assert note["remark"] == "No amps, no movement.\nTo lift and check"
+        assert note["created_by"] == person["username"]
+        assert api_time(start - timedelta(seconds=1)) <= note["occurred_at"] <= api_time(
+            now_ist() + timedelta(seconds=1))
+        assert note["earlier"] == [] and note["updated_at"] is None and note["updated_by"] is None
+        assert (note["from_state"], note["to_state"], note["intensity"], note["person"]) == (None, None, None, None)
+        assert shown["state"] == before["state"] and shown["intensity"] == before["intensity"]
+        assert move_names(shown) == move_names(before)
+        # Only notes carry earlier texts
+        assert "earlier" not in shown["events"][0]
+
+    def test_notes_in_every_open_state(self, eng, ticket):
+        client, person = eng
+        noted(client, ticket, "raised")
+        moved(client, ticket, "acknowledge")
+        noted(client, ticket, "acknowledged")
+        scheduled(client, ticket)
+        noted(client, ticket, "scheduled")
+        moved(client, ticket, "start")
+        noted(client, ticket, "in progress")
+        assert moved(client, ticket, "restore", person_id=person["id"])["state"] == "back_in_service"
+        shown = noted(client, ticket, "back in service")
+        assert [n["remark"] for n in notes(shown)] == [
+            "raised", "acknowledged", "scheduled", "in progress", "back in service"]
+
+    def test_the_times_are_unchanged(self, admin, restored):
+        before = detail(admin, restored)
+        after = noted(admin, restored)
+        assert after["times"] == before["times"]
+        assert after["state"] == "back_in_service"
+
+    @pytest.mark.parametrize("role", ["maint_operator", "maint_supervisor"])
+    def test_an_operator_and_a_supervisor_add_notes(self, at_site, ticket, role):
+        client, person = at_site(role)
+        assert notes(noted(client, ticket, "The noise is back at 3 pm"))[0]["created_by"] == person["username"]
+
+    def test_a_storekeeper_is_403(self, role_client, ticket):
+        assert add_note(role_client("maint_storekeeper"), ticket).status_code == 403
+
+    def test_the_key_is_checked_at_the_tickets_site(self, admin, user_at_sites, make_unit, make_site, machine,
+                                                    ticket):
+        """An operator at the machine's new site reads the ticket but may not write on it."""
+        new_site = make_site()
+        new_unit = make_unit(new_site)
+        assert admin.put(f"{EQUIPMENT}/{machine['id']}", json={"unit_id": new_unit["id"]}).status_code == 200
+        client, _ = user_at_sites([(new_site, "maint_operator", [new_unit])])
+        assert client.get(url(ticket)).status_code == 200
+        assert add_note(client, ticket).status_code == 403
+
+    def test_outside_the_users_units_is_404(self, user_with_units, make_unit, ticket):
+        assert add_note(user_with_units("maint_engineer", [make_unit()]), ticket).status_code == 404
+
+    def test_a_closed_ticket_is_409(self, admin, ticket, set_ticket_state):
+        set_ticket_state(ticket, "closed")
+        assert refusal(add_note(admin, ticket)) == (409, None, "This ticket is closed")
+
+    @pytest.mark.parametrize("body, message", [
+        ({}, "Enter a note"), ({"remark": "   "}, "Enter a note"), ({"remark": ["x"]}, "Must be text"),
+        ({"remark": "x" * 1001}, "Too long (max 1000)"),
+    ])
+    def test_a_bad_body_is_400_on_remark(self, admin, ticket, body, message):
+        assert refusal(admin.post(url(ticket, "notes"), json=body)) == (400, "remark", message)
+        assert notes(detail(admin, ticket)) == []
+
+    def test_a_note_sets_no_lower_bound_for_a_move(self, admin, make_ticket, machine):
+        raised_at = now_ist() - timedelta(minutes=60)
+        ticket = make_ticket(machine, occurred_at=local(raised_at))
+        noted(admin, ticket)
+        shown = moved(admin, ticket, "acknowledge", occurred_at=local(raised_at + timedelta(minutes=30)))
+        # The acknowledgement sits before the later note on the timeline
+        assert events(shown) == ["raised", "acknowledged", "note"]
+
+    def test_a_ticket_that_came_back_as_a_repeat_accepts_a_note_and_its_edit(self, admin, eng, restored, machine):
+        res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
+                                        "description": "Again", "repeat_of_id": restored["id"]})
+        assert res.status_code == 201, res.get_json()
+        note = notes(noted(admin, restored, "Same belt again"))[0]
+        assert note["remark"] == "Same belt again"
+        res = edit_note(eng[0], restored, note, "Same belt, again")
+        assert res.status_code == 200, res.get_json()
+        assert notes(res.get_json())[0]["remark"] == "Same belt, again"
+
+
+class TestEditNote:
+
+    def test_an_engineer_corrects_a_technicians_note_twice(self, tech, eng, ticket):
+        tech_client, tech_person = tech
+        eng_client, eng_person = eng
+        first = notes(noted(tech_client, ticket, "Belt lose"))[0]
+        moved(eng_client, ticket, "acknowledge")
+
+        res = edit_note(eng_client, ticket, first, "Belt loose")
+        assert res.status_code == 200, res.get_json()
+        note = notes(res.get_json())[0]
+        assert note["remark"] == "Belt loose" and note["updated_by"] == eng_person["username"]
+        assert note["updated_at"] is not None
+        assert [(e["remark"], e["replaced_by"]) for e in note["earlier"]] == [("Belt lose", eng_person["username"])]
+        assert note["earlier"][0]["replaced_at"] == note["updated_at"]
+
+        shown = edit_note(eng_client, ticket, first, "Fan belt loose").get_json()
+        note = notes(shown)[0]
+        assert [e["remark"] for e in note["earlier"]] == ["Belt loose", "Belt lose"]
+        # The note keeps its author, its time and its place, before the acknowledgement
+        assert note["occurred_at"] == first["occurred_at"] and note["created_by"] == tech_person["username"]
+        assert events(shown)[:3] == ["raised", "note", "acknowledged"]
+
+    def test_a_technician_cannot_edit_even_their_own(self, tech, ticket):
+        client, _ = tech
+        note = notes(noted(client, ticket))[0]
+        assert edit_note(client, ticket, note, "Changed").status_code == 403
+
+    def test_an_engineer_at_another_site_only_is_403(self, user_at_sites, make_site, site, unit, admin, ticket):
+        note = notes(noted(admin, ticket))[0]
+        client, _ = user_at_sites([(site, "maint_technician", [unit]), (make_site(), "maint_engineer", "all")])
+        assert edit_note(client, ticket, note, "Changed").status_code == 403
+
+    def test_the_role_at_each_tickets_site_decides(self, user_at_sites, make_unit, make_equipment, make_ticket,
+                                                   site, unit, machine, admin):
+        here = make_ticket(machine)
+        other_unit = make_unit()
+        there = make_ticket(make_equipment(unit=other_unit))
+        client, _ = user_at_sites([(site, "maint_engineer", [unit]),
+                                   ({"id": other_unit["site_id"]}, "maint_technician", [other_unit])])
+        here_note = notes(noted(admin, here))[0]
+        there_note = notes(noted(admin, there))[0]
+        assert edit_note(client, here, here_note, "Changed").status_code == 200
+        assert edit_note(client, there, there_note, "Changed").status_code == 403
+        assert "ticket:edit_notes" in detail(client, here)["permissions"]
+        assert "ticket:edit_notes" not in detail(client, there)["permissions"]
+
+    def test_it_admin_edits(self, admin, tech, ticket):
+        note = notes(noted(tech[0], ticket))[0]
+        assert edit_note(admin, ticket, note, "Changed").status_code == 200
+
+    def test_a_move_or_another_tickets_note_is_404(self, admin, make_ticket, machine, ticket):
+        raised = detail(admin, ticket)["events"][0]
+        assert edit_note(admin, ticket, raised, "Changed").status_code == 404
+        other_note = notes(noted(admin, make_ticket(machine)))[0]
+        assert edit_note(admin, ticket, other_note, "Changed").status_code == 404
+
+    def test_the_same_text_is_nothing_to_change(self, admin, ticket):
+        note = notes(noted(admin, ticket, "Belt loose"))[0]
+        assert refusal(edit_note(admin, ticket, note, "  Belt loose ")) == (400, "remark", "Nothing to change")
+        assert refusal(edit_note(admin, ticket, note, "")) == (400, "remark", "Enter a note")
+        assert notes(detail(admin, ticket))[0]["earlier"] == []
+
+    def test_a_closed_ticket_is_409(self, admin, ticket, set_ticket_state):
+        note = notes(noted(admin, ticket))[0]
+        set_ticket_state(ticket, "closed")
+        assert refusal(edit_note(admin, ticket, note, "Changed")) == (409, None, "This ticket is closed")
+
+    def test_the_permissions_show_the_key(self, tech, eng, ticket):
+        assert "ticket:edit_notes" in detail(eng[0], ticket)["permissions"]
+        assert "ticket:edit_notes" not in detail(tech[0], ticket)["permissions"]
