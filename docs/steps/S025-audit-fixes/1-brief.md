@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026: squashed schema U1, brief-reviews r1–r3, backup dropped U2)
 Track: full
-Status: Gate B — code review r2 clean (fix round 1: 2 minor fixed; 0 blocker, 0 major, 0 minor, 4 nit open); awaiting the user (approved 21-10-2026 by KLA; staleness check s1 done)
+Status: Committed b6b8dfb (22-10-2026); important check pending: row 9 — the first release on production (Settings › Database shows schema 22, masters and Team intact)
 Baseline: 3df667c
 ```
 

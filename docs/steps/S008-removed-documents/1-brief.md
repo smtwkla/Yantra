@@ -3,7 +3,7 @@ Step: S008 — Removed documents: list, restore, delete for good
 Doc: brief
 Author: Planner (Fable)
 Date: 16-10-2026 (revised 16-10-2026 after brief-reviews r1 and r2)
-Status: Done (approved 16-10-2026 by KLA; committed 799851c)
+Status: Done (approved 16-10-2026 by KLA; committed 6351bac + c11a549)
 ```
 
 # S008 — Removed documents: list, restore, delete for good

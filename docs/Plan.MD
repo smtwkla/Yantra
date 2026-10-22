@@ -114,6 +114,7 @@ with each module. First cut of the main keys:
 | `ticket:restore` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `ticket:assign` | | | | ✓ | ✓ | ✓ |
 | `ticket:close` | | | | ✓ | ✓ | ✓ |
+| `ticket:edit_notes` | | | | ✓ | ✓ | ✓ |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
@@ -158,8 +159,10 @@ restored or purged with `equipment:purge_documents`.
 20-10-2026) replace `breakdown:work` and `breakdown:close`, all site-scoped and all held by
 IT admin: `ticket:work` (acknowledge, start, edit, labour, lower the grade) from the
 technician up; `ticket:restore` (back in service) from the operator up, so production
-confirms restorations; `ticket:assign` and `ticket:close` (close, not a fault, send back)
-engineer and manager. **Self-close is allowed** (user, gate A): an engineer may close a
+confirms restorations, and (S027) adds work notes; `ticket:assign` and `ticket:close`
+(close, not a fault, send back) engineer and manager. `ticket:edit_notes` (S027, approved
+22-10-2026; site-scoped) corrects a note, keeping the earlier text: engineer, manager and IT
+admin. **Self-close is allowed** (user, gate A): an engineer may close a
 ticket he worked himself — a recorded departure from segregation of duties (ISO 27001
 A.5.3), since the plant has few engineers. Assignees are technician, engineer or manager;
 the person named on back in service and on labour rows may be **anyone with a membership
@@ -443,7 +446,11 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   the fact: raised and marked back in service in one save, with the times and the technician
   named; the engineer then closes it with cause and action like any ticket. The record matters more than the
   workflow (ISO 14224 wants every maintenance event recorded, whoever asked for it).
-- **Photos and remarks** at any step.
+- **Photos and remarks** at any step, and **work notes** (S027, approved 22-10-2026): on an
+  open ticket, anyone who may confirm the machine is back (`ticket:restore`) writes what was
+  found and tried, as a line on the timeline; the raise's *What is wrong?* is the first note.
+  New findings are new notes; an engineer corrects a typo or wrong fact (`ticket:edit_notes`),
+  and the earlier text is kept (EN 13306 fault diagnosis; ISO 9001 § 7.5.3).
 - **Notifications:** new breakdown → maintenance; escalation if not acknowledged within a set time (per criticality). A new defect shows in the open-tickets list; whether it notifies is settled with the notification step.
 - Serial: `TK-YYYY-MM-NNN` (decided 20-10-2026, S017): one series for breakdowns and defects, since a defect can become a breakdown; numbered by the month the ticket is written.
 - **Shared ticket API (later)** — the intended way for other systems (plant-3i,
@@ -803,6 +810,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 - Equipment page (from QR): status, open tickets, due PMs; buttons "raise breakdown", "log reading", "start CIL" (before-use equipment).
 - Raise breakdown or defect: equipment, intensity (critical = breakdown, else defect), symptom, remark, photo — four taps for the common case.
 - Ticket: timeline, act on the next step, add photos, labour.
+- Every form (dialogs and the *Raise ticket* page): a refused save scrolls to the first message and puts the cursor in its field, so a refusal is never out of sight on a phone (S026, 22-10-2026; `SMTW-WebApp-Base.md` § Form / Modal Pattern).
 - PM job: checklist and readings one item per row, out-of-limit flagged as you type, photos, "done".
 
 **Desktop (engineer, manager, admin):**

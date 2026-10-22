@@ -4,7 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026 after brief-review r1)
 Track: light
-Status: In review
+Baseline: b6b8dfb (stale brief check 22-10-2026: no file of this brief changed since review r1)
+Status: In code review (approved 22-10-2026 by KLA; Q1: (a), the Raise ticket page included)
 ```
 
 # S026 — A refusal is always in view
@@ -179,7 +180,7 @@ dialog) are not dialogs with a form.
 
 ## 6. Open questions and assumptions
 
-- **Q1. The *Raise ticket* page — for the user at gate A.** It is a page, not a dialog. On
+- **Q1. The *Raise ticket* page — answered (a) by KLA at gate A, 22-10-2026: included.** It is a page, not a dialog. On
   a phone it is long and Save is at the bottom, so a refusal for *How bad is it?* (at the
   top) is out of sight the same way. It is the operator's main screen.
   - **(a) Include it (recommended).** One more screen file and one more test. Its markup is
@@ -191,6 +192,11 @@ dialog) are not dialogs with a form.
   the focus on phones.
 - **Assumption:** after the next `sync_common.py` run, Yantra's
   `.claude/SMTW-WebApp-Base.md` has the rule; until then, the introduction above quotes it.
+
+## Gate A — 22-10-2026 (KLA)
+
+Approved on the light track. Q1: (a), include the *Raise ticket* page; the search lives in
+`utils/revealError.js`. Coder: Sonnet.
 
 ## 7. Amendments
 

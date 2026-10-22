@@ -272,7 +272,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S005 | [Tidy-up](S005-tidy-up/1-brief.md) — page not found, leftover review nits | 2 | Done — committed 0a91b8b | 15-10-2026 |
 | S006 | [Documents and photos](S006-equipment-documents/1-brief.md) — files on equipment, thumbnails, upload/remove | 2 | Done — committed 76d7282 | 16-10-2026 |
 | S007 | [Dialog close guard; Nginx and deploy fixes](S007-dialog-guard-deploy-fixes/1-brief.md) — no lost input in dialogs; backend re-resolved; recreate on a secrets change | 2 | Done — committed 11789d7 + 7b504f4 | 16-10-2026 |
-| S008 | [Removed documents](S008-removed-documents/1-brief.md) — list removed files on Settings, restore, delete for good | 2 | Done — committed 799851c | 16-10-2026 |
+| S008 | [Removed documents](S008-removed-documents/1-brief.md) — list removed files on Settings, restore, delete for good | 2 | Done — committed 6351bac + c11a549 | 16-10-2026 |
 | S009 | [Documents on classes and types](S009-class-type-documents/1-brief.md) — one manual for every `RPP` pump, shown on each node | 2 | Dropped 16-10-2026 — documents belong on a model master (queued); code kept as `s009-code.patch` | 16-10-2026 |
 | S010 | [Team and trades](S010-technicians/1-brief.md) — a register of people (direct or contractor, a person or a firm), trades, optional login set by IT admin | 2 | Done — committed c486a4a; checks: 3 skipped (API tests) | 16-10-2026 |
 | S011 | [Roles per site, held in Yantra](S011-site-roles/1-brief.md) — memberships: role per site + units; Keycloak keeps maintenance_team and it_admin | 2 | Done — committed c486a4a (with S010); checks: 3 skipped (API tests), 1 done by KLA | 16-10-2026 |

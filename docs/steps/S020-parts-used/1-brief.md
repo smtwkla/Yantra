@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1 and r2)
 Track: full
-Status: Gate B — code review r2 clean (fix round 1: CR1-01 fixed; 0 blocker, 0 major, 1 minor — the S003 flake, outside S020 — 5 nit open); awaiting the user (approved 21-10-2026; staleness check s1 done)
+Status: Done (committed b6b8dfb; checks: 7 auto; row 11, plain, left for IT Admin)
 Baseline: 3df667c + uncommitted S025 and S019
 ```
 

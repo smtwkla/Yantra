@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1 and r2)
 Track: full
-Status: Gate B — code review r2 clean (fix round 1: 2 minor fixed; 0 blocker, 0 major, 0 minor, 4 nit open); awaiting the user (approved 21-10-2026; staleness check s1 done)
+Status: Committed b6b8dfb (22-10-2026); important check pending: row 10 — the phone date picker and DD-MM-YYYY (IT Admin)
 Baseline: 3df667c + uncommitted S025
 ```
 
