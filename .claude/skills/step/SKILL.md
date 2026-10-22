@@ -31,6 +31,9 @@ Read it before starting.
   Change nothing.
 - `/step ls [all]`: list the steps not yet `Done` or `Dropped`, then the queued
   ideas, as one table (§ Listing). `all` also lists Done and Dropped steps.
+- `/step check`: check the step files against each other and git (§ Check).
+  Report the problems and the fixes you propose; change nothing until the user
+  says which to make.
   Change nothing.
 
 When the user just says "go on" or "next", find where the step stands from its
@@ -186,8 +189,19 @@ brief's header (`Track: light | full`) and in the index row.
 
 ## Listing
 
-`/step ls` builds the table fresh from the step files and git every time; it
-is never stored, so it can't go stale. Columns:
+`/step ls` builds the table fresh every time; it is never stored, so it can't
+go stale. **Run `tooling/step-ls.bat` (`all` passes on) once and build the
+table from its output** — don't read the step files or run git yourself. The
+script prints, per step not yet Done or Dropped (all steps with `all`): the
+index title and folder, the brief's `Status:` line, the latest review with its
+verdict paragraph, the commits whose subject names the step, whether an impl
+report exists, and the working-tree changes in the step's folder (and, for an
+uncommitted step, among the files its impl report names); then the queued
+items with a step ID, the shared docs changed (README, `device-checks.md`), and
+the working-tree changes no step claims. It judges nothing: the bulb, the
+stage, the next action and the notes below the table are yours. Open a file
+only when the facts leave a question (a verdict cut short, a mismatch to
+explain). Columns:
 
 `| Step | Title | Stage | Committed? | Remarks |  |`
 
@@ -209,20 +223,52 @@ is never stored, so it can't go stale. Columns:
   out). Order by step ID.
 - **Stage**: the brief's `Status:` line, shortened (e.g. "In code review (A1)",
   "Approved, not coded"). Queued items: "Queued".
-- **Committed?**: `git log --oneline --grep "^S0NN"` → `Yes, <hash>`. With no
-  commit, run `git status --short` on the step folder and on the files listed in
-  its `3-impl-report.md`: "No — code in working tree" when they show changes,
-  "No — no code yet" when there is no impl report, "No — no folder" for queued
-  items.
+- **Committed?**: the script's `commits` → `Yes, <hash>` (the newest). With
+  none: "No — code in working tree" when it lists changes beyond the brief and
+  reviews, or when unclaimed changes clearly belong to the step (a step being
+  coded has no impl report yet: say which files you attribute to it); "No — no
+  code yet" when there is no impl report and nothing to attribute; "No — no
+  folder" for queued items.
 - **Remarks**: the latest review's verdict (`2-brief-review-*` before coding,
   `4-code-review-*` after) with its open `blocker`/`major` count and minor/nit
   count, then the next action in a few words: "ready to commit", "ready for
   `/step implement`", "answer CR3-02", etc. Flag a mismatch, e.g. Stage says
   "In code review" but the step is committed → "set Status to Done".
 
-Read only the files' header blocks and verdict lines, not whole files. Below the
-table, list working-tree changes that belong to no step (not in any impl
-report's file list), so the user can sort them before committing.
+Below the table, list the unclaimed working-tree changes, grouped by the step
+you think they belong to (say it is a guess) or as "no step", so the user can
+sort them before committing. Add a note for anything that looks wrong: a Status
+that contradicts the commits or the review, a step committed but not `Done`
+with no check named as pending, a stale `Baseline:`.
+
+## Check
+
+`/step check` finds inconsistencies in the step files. **Run
+`tooling/step-check.bat` once.** It prints one line per problem, tagged with
+the check's number, and changes nothing:
+
+1. the brief's Status and its README index row are in different stages;
+2. a commit names the step but the Status is not Committed or Done, or the
+   Status names a hash that is not in the current branch's history;
+3. `Done`, but the impl report still has an open important check (`- [ ]`);
+4. `Committed`, every important check resolved, but not `Done`;
+5. a BR / BS finding of a brief review is not answered in the brief;
+6. a step approved and not yet committed has no `Baseline:`, or its commit is
+   not in the history;
+7. `device-checks.md`'s *Done* column and the impl report's ticks disagree;
+8. an index row without a folder, a folder without a row, or a step ID used
+   twice;
+9. a stage's files are missing (an impl report, a code review), or an impl
+   report exists before approval;
+10. working-tree changes no step claims.
+
+Then add what the script cannot judge, opening only the files a problem points
+to: a Status that contradicts the latest verdict, a gate shown with findings
+still open, unclaimed changes and the step they probably belong to (say it is
+a guess), a check that is a false alarm and why. Report as a table: step,
+problem, proposed fix. Fix nothing until the user says which fixes to make;
+then follow the usual rules (never tick a check for someone, never edit a
+review file).
 
 ## Rules
 
