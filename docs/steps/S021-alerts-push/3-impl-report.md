@@ -330,3 +330,128 @@ Plain:
   read (row 23).
 - Remove the phone from a desktop; it gets nothing after (row 24).
 - Samsung Internet: Turn on; note whether it is refused (row 25).
+
+## Fix rounds
+
+### Round 1
+
+Review: `4-code-review-r1.md`. The orchestrator asked for CR1-01 only. CR1-02 to CR1-08 are
+left for the user to decide at gate B.
+
+- **CR1-01 (blocker) — Fixed.** The address check now refuses every address where the host
+  that is checked can differ from the host that is posted to.
+  - `backend/push_core.py` `refused_host` refuses an address unless all of these hold:
+    1. the scheme is `https`;
+    2. the whole address is printable ASCII, with no space, no control character and no
+       backslash (`_ADDRESS_RE`);
+    3. the authority is a bare DNS name: labels of `a-z`, `0-9` and `-`, no trailing dot
+       (`_HOST_RE`). This refuses user-info (`@`), any port (`:`, also an empty or default
+       one), IPv6 literals (`[`) and percent-encoding (`%`) in the authority;
+    4. `urllib3.util.parse_url`, the parser `requests` uses inside `pywebpush`, gives the same
+       scheme and host, and no user-info or port. A `LocationParseError` refuses;
+    5. the host is in `ALLOWED_PUSH_HOSTS` or a sub-domain of one (unchanged).
+  - Percent-encoding and `@` stay allowed **after** the authority. Fact: WNS (Edge on Windows)
+    addresses carry a URL-encoded token in the query, so refusing `%` everywhere would refuse
+    them.
+  - The check runs at both points (fact, read in the code): `push.py` `subscribe` calls
+    `refused_host` before it stores the address, and `task_handlers.py` `push_send` calls it
+    again before the post. Both call the same function, so both got the fix.
+  - Upper case: the host is still read as lower case, as `requests` does. A look-alike in upper
+    case is still refused.
+- **Tests added.**
+  - `tests/test_push_core.py::TestAddressCheck::test_parser_tricks_are_refused` (17 cases):
+    backslash (the review's two addresses and `https:\evil.example/…`), `%2f` and `%2e` in the
+    host, user-info on either side, a trailing dot, upper case, IPv4, IPv6 (`[::1]` and
+    `[2001:db8::1]`), a space, a newline and a tab (`urlsplit` drops a tab or newline without a
+    word), a non-ASCII full stop, an empty port.
+  - `tests/test_push_core.py::TestAddressCheck::test_percent_encoding_and_at_outside_the_authority_pass`
+    (2 cases): a WNS address with an encoded token, and `#@evil.example` after the authority.
+  - `tests/test_push_api.py::TestSubscribe::test_an_address_the_parsers_read_differently_is_400_and_not_stored`
+    (3 cases): the subscribe route answers 400 with the brief's message and stores no row.
+  - `tests/test_alerts.py::TestSendOutcomes::test_an_address_no_longer_allowed_is_not_posted` now also runs
+    with the backslash address: `push_send` raises `NoRetry` and does not call the sender.
+- **Decisions taken.**
+  - `push_core` imports `urllib3` directly. It is not in `backend/pyproject.toml`; it comes
+    with `requests`, which `pywebpush` needs. I did not add it as a direct dependency: the
+    check must use the parser `requests` uses, so it should follow `requests`' own urllib3, not
+    pin one. The user may prefer to declare it; that changes `uv.lock` and `sbom/`.
+  - The refused host is still returned for the log, also for the new cases (for example
+    `evil.example\.fcm.googleapis.com`). The shell logs it with `%r`, so control characters
+    show escaped.
+- **Files touched (round 1):** 4.
+  - `backend/push_core.py` — `refused_host` hardened; `_ADDRESS_RE`, `_HOST_RE`; urllib3 import.
+  - `backend/tests/test_push_core.py` — the bypass forms and the two passing forms.
+  - `backend/tests/test_push_api.py` — subscribe refuses three bypass addresses.
+  - `backend/tests/test_alerts.py` — the send-time re-check also with the backslash address.
+- **No frontend change**, so no e2e run and no `vite build` this round.
+- **Tests run (round 1).** `tooling/run-tests.bat`: **green**. Backend 2275 passed, frontend
+  114 passed, deps 42 passed, tooling 82 passed. The first run failed on deadlocks because
+  another pytest session used `vel_yantra_test` at the same time. It also showed one fault of
+  my own: the new API test compared `db_rows` (a tuple) with a list. I fixed the test and ran
+  the suite again.
+
+### Round 2
+
+Review: `4-code-review-r2.md`. The user asked to fix all open findings.
+
+- **CR1-02 (minor) — Fixed.** `push_send` builds the payload before the `try`. Only
+  `requests.RequestException` means "could not reach the push service": the device row gets the
+  "late" line and the task retries. Any other exception (a mistyped VAPID key, malformed device
+  keys) logs `type: message` at ERROR, gives the device row the "fault" line and raises `NoRetry`.
+  Test: `test_alerts.py::TestSendOutcomes::test_another_fault_is_not_retried_and_keeps_its_cause_in_the_log`.
+- **CR1-03 (minor) — Fixed.** `task_handlers.py` has four constants, one plain line per outcome.
+  The technical text stays in `task_queue.last_error` and the log.
+
+  | Outcome | Text on the device row |
+  |---|---|
+  | Refused (400, 403, 413) or address not allowed | The last alert did not reach this device. Turn notifications off and on again on it. |
+  | Retry (429, 5xx, timeout, redirect) | The last alert is late. Yantra tries again. |
+  | Push is off on the server | Notifications are not set up on this server yet. Ask IT admin. |
+  | Any other fault | The last alert could not be sent. Ask IT admin. |
+
+  The tests in `test_alerts.py` compare with these constants.
+- **CR1-04 (minor) — Fixed.** `push.js` `isIphone` no longer reads `navigator.platform`. An iPad is
+  `/Macintosh/` in the user agent with `maxTouchPoints > 1`.
+- **CR1-05 (minor) — Assessed, no change.** Checked on PyPI today (22-10-2026):
+  - `pywebpush` 2.5.0 (30-08-2026) is the latest release. It lists `aiohttp` as a plain
+    requirement, not an extra. No release makes it optional.
+  - `http-ece` 1.2.1 is the latest release (08-08-2024); it needs only `cryptography`.
+  - No maintained Python library does VAPID plus RFC 8291 encryption and avoids both.
+  - The only other route is hand-written encryption on `cryptography` and `py-vapid`, which
+    decision 3 rejected. That is more code and more risk than one unused package.
+  - So `pywebpush` stays. Watch: a `pywebpush` release that makes `aiohttp` optional (drop
+    it then), a later `http-ece` release, and the S022 audit's stale flag. Revisit decision 3 only
+    if `http-ece` shows a vulnerability.
+- **CR1-06, CR1-07 (nits) — Accepted, fixed by the planner.** CR1-06 in `1-brief.md` § 10 A1 rule 6
+  (now § 1.3's rule); CR1-07 in `docs/Plan.MD:454`. The user should see the A1 wording change at
+  gate B.
+- **CR1-08 (nit) — Fixed.** `stores/notifications.js` no longer imports `stores/auth.js`.
+  `loadNotifications(ownPersonId)` takes the person id as an argument and keeps it in a module ref.
+  The two callers (`App.vue`, `NotificationsView.vue`) pass `userPersonId.value`. `auth.js` is
+  unchanged, so the cycle is gone and `auth.js` still calls `forgetThisDevice`.
+- **CR2-01 (minor) — Fixed.** `"urllib3>=2"` in `backend/pyproject.toml`; `uv lock` run;
+  `tooling/run-deps-audit.bat` regenerated `sbom/backend.cdx.json` (exit 0; the 2 findings are
+  moderate `@vitest/mocker` dev advisories, not new). Commit `sbom/` with the change.
+- **CR2-02 (nit) — Fixed.** `push_sender._session()` returns a `requests.Session` with
+  `max_redirects = 0`, passed as `requests_session`. A redirect raises `TooManyRedirects`, which
+  is a `RequestException`, so it counts as "could not reach" and retries. Test:
+  `test_alerts.py::TestSendOutcomes::test_a_redirect_is_never_followed` (a local server answers 307).
+- **CR2-03 (nit) — Fixed.** Recorded above (CR1-06, CR1-07).
+- **Decisions taken.**
+  - The "fault" line and the "not set up" line are mine; the review gave the first three as examples.
+  - The `NoRetry` for "any other fault" has a short text with the exception type only; the
+    exception message goes to the log. This message comes from `pywebpush`, `py-vapid` or
+    `cryptography`, not from `requests`, so it does not carry the endpoint.
+  - For CR1-08 I took the first of the review's two options (argument), so the three Logout
+    buttons stay unchanged.
+- **Files touched (round 2):** 11 (plus `sbom/backend.cdx.json` and `backend/uv.lock`).
+  - `backend/task_handlers.py`, `backend/push_sender.py`, `backend/pyproject.toml`, `backend/uv.lock`,
+    `sbom/backend.cdx.json`, `backend/tests/test_alerts.py`;
+  - `frontend/src/push.js`, `frontend/src/stores/notifications.js`, `frontend/src/App.vue`,
+    `frontend/src/views/NotificationsView.vue`;
+  - this report.
+- **Tests run (round 2).** Targeted backend (`test_push_core`, `test_alerts`, `test_push_api`): 165
+  passed. `tooling/run-tests.bat`: backend 2277 passed, frontend 114 passed, deps 42 passed,
+  tooling 82 passed. `npx vite build`: clean. Targeted e2e
+  (`e2e/notifications.spec.js`, `e2e/screens.spec.js`; `auth.js` is unchanged, so not the full
+  suite): 51 passed, 6 skipped (the skips were skipped before this round).

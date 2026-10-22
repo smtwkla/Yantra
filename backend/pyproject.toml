@@ -14,9 +14,11 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "pywebpush>=2.5.0",
     "qrcode>=8.2",
+    "urllib3>=2",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.8",
 ]

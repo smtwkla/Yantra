@@ -9,7 +9,9 @@ point.
 """
 
 import hashlib
+import http.server
 import json
+import threading
 import uuid
 from datetime import timedelta
 
@@ -26,7 +28,7 @@ from task_handlers import NoRetry, RetryLater, push_send, ticket_alert, ticket_e
 from tests.conftest import TICKETS
 from worker import Worker
 
-TEST_LOCK = "yantra_worker_test"
+from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
 
 
 # ---------------------------------------------------------------------------
@@ -469,13 +471,13 @@ class TestSendOutcomes:
         with pytest.raises(NoRetry):
             run(push_send, _payload(device), send=fake_send(status))
         # Still there after the rollback: committed before the raise
-        assert _device_row(db_rows, device)["last_error"] == f"Push service answered {status}"
+        assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_REFUSED
 
     def test_429_with_retry_after_retries_later(self, device, db_rows):
         with pytest.raises(RetryLater) as raised:
             run(push_send, _payload(device), send=fake_send(429, "120"))
         assert raised.value.after_seconds == 120
-        assert _device_row(db_rows, device)["last_error"] == "Push service answered 429"
+        assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_LATE
 
     @pytest.mark.parametrize("status, retry_after", [(429, None), (429, "Wed, 21 Oct 2026 07:28:00 GMT"), (503, None)])
     def test_others_retry_with_the_back_off(self, device, db_rows, status, retry_after):
@@ -488,7 +490,38 @@ class TestSendOutcomes:
         with pytest.raises(RuntimeError) as raised:
             run(push_send, _payload(device), send=timing_out)
         assert "secret" not in str(raised.value)
-        assert _device_row(db_rows, device)["last_error"] == "Could not reach the push service (ConnectTimeout)"
+        assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_LATE
+
+    def test_another_fault_is_not_retried_and_keeps_its_cause_in_the_log(self, device, db_rows, caplog):
+        """CR1-02: a mistyped VAPID key is not a network fault."""
+        def bad_key(*_args):
+            raise ValueError("Could not deserialize key data")
+        with caplog.at_level("ERROR", logger="task_handlers"):
+            with pytest.raises(NoRetry) as raised:
+                run(push_send, _payload(device), send=bad_key)
+        assert "Could not reach" not in str(raised.value)
+        assert "ValueError: Could not deserialize key data" in caplog.text
+        assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_FAULT
+
+    def test_a_redirect_is_never_followed(self):
+        """CR2-02: the sender's session refuses a redirect, so the post cannot leave the host
+        the address check allowed."""
+        class Redirecting(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(307)
+                self.send_header("Location", "http://127.0.0.1:1/elsewhere")
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+        server = http.server.HTTPServer(("127.0.0.1", 0), Redirecting)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with pytest.raises(requests.exceptions.TooManyRedirects):
+                push_sender._session().post(f"http://127.0.0.1:{server.server_port}/x", timeout=5)
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_a_removed_device_is_done(self, device, db_rows):
         db_rows("DELETE FROM push_subscriptions WHERE id = %s", (device,))
@@ -496,8 +529,12 @@ class TestSendOutcomes:
         run(push_send, _payload(device), send=fake_send(201, calls=calls))
         assert calls == []
 
-    def test_an_address_no_longer_allowed_is_not_posted(self, device, db_rows):
-        db_rows("UPDATE push_subscriptions SET endpoint = 'https://evil.example/x' WHERE id = %s", (device,))
+    @pytest.mark.parametrize("endpoint", [
+        "https://evil.example/x",
+        "https://10.24.0.10\\.fcm.googleapis.com/",   # CR1-01: requests would post to 10.24.0.10
+    ])
+    def test_an_address_no_longer_allowed_is_not_posted(self, device, db_rows, endpoint):
+        db_rows("UPDATE push_subscriptions SET endpoint = %s WHERE id = %s", (endpoint, device))
         calls = []
         with pytest.raises(NoRetry):
             run(push_send, _payload(device), send=fake_send(201, calls=calls))
@@ -518,7 +555,7 @@ class TestSendOutcomes:
                           " FROM task_queue WHERE id = %s", (task_id,))[0]
             assert row["status"] == "pending" and row["last_error"] == "RetryLater: Push service answered 429"
             assert 110 <= row["wait"] <= 120
-            assert _device_row(db_rows, device)["last_error"] == "Push service answered 429"
+            assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_LATE
         finally:
             worker.close()
             conn.close()
@@ -536,7 +573,7 @@ class TestSendOutcomes:
             worker.run_one()
             row = db_rows("SELECT status, attempts FROM task_queue WHERE id = %s", (task_id,))[0]
             assert row == {"status": "failed", "attempts": 1}
-            assert _device_row(db_rows, device)["last_error"] == "Push service answered 400"
+            assert _device_row(db_rows, device)["last_error"] == task_handlers.DEVICE_REFUSED
         finally:
             worker.close()
             conn.close()

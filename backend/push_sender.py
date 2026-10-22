@@ -8,6 +8,7 @@ parameter, so tests pass a fake instead of posting anywhere.
 
 import json
 
+import requests
 from pywebpush import WebPushException, webpush
 
 import config
@@ -17,6 +18,15 @@ from company_settings import PUSH_TIMEOUT_SECONDS
 def enabled():
     """Push is set up when all three VAPID values are present (§ 3: empty means off)."""
     return bool(config.VAPID_PUBLIC_KEY and config.VAPID_PRIVATE_KEY and config.VAPID_SUBJECT)
+
+
+def _session():
+    """A session that follows no redirect: only the push service answers, and a redirect would
+    move the post to a host the address check never saw (CR2-02).  A redirect raises
+    requests.TooManyRedirects, which the caller treats as "could not reach"."""
+    session = requests.Session()
+    session.max_redirects = 0
+    return session
 
 
 def send(subscription, data, urgency, ttl):
@@ -34,6 +44,7 @@ def send(subscription, data, urgency, ttl):
             ttl=ttl,
             headers={"Urgency": urgency},
             timeout=PUSH_TIMEOUT_SECONDS,
+            requests_session=_session(),
         )
     except WebPushException as exc:
         # webpush raises on any status above 202; the answer itself is what the caller needs

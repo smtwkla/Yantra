@@ -8,7 +8,7 @@
  * notifications at all (iOS 16.4 or later).
  */
 import { computed, onMounted, ref } from "vue";
-import { userRoles } from "../stores/auth";
+import { userPersonId, userRoles } from "../stores/auth";
 import {
   deviceState, devices, loadNotifications, pushConfig, removeDevice, sendTest, turnOff, turnOn,
 } from "../stores/notifications";
@@ -29,7 +29,7 @@ const inTeam = computed(() => !["loading", "not_in_team"].includes(deviceState.v
 async function load() {
   loadError.value = "";
   try {
-    await loadNotifications();
+    await loadNotifications(userPersonId.value);
   } catch (err) {
     loadError.value = err.message;
   }

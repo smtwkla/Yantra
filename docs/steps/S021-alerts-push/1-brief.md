@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: In code review (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done; coded after S027)
+Status: Gate B — code review r2 clean (CR1-01 blocker fixed; 0 blocker, 0 major; 5 minor, 4 nit open); most of the code committed in 03ed528 (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done)
 Baseline: 79fc61d + uncommitted S026, S027 (staleness check s1, 22-10-2026)
 ```
 
@@ -1006,8 +1006,9 @@ of scope, reads with this kind added: § 1 Out of scope, § 1.3, § 1.4's table,
 5. **Settings › Notifications › What you will get:** "Jobs assigned to you"
    for anyone with a membership in `ASSIGNABLE_ROLES` (technician, engineer,
    manager). A technician reads that line instead of "Nothing yet".
-6. **The bell's dot** (decision 11) shows to a technician too, when none of
-   their devices is turned on: they now have alerts to miss. Decision 11's
+6. **The bell's dot** (decision 11) shows to a technician too, by § 1.3's
+   rule: when this device is not turned on (CR1-06: the code follows § 1.3;
+   this text said "none of their devices"). They now have alerts to miss. Decision 11's
    rejected alternative ("a dot for technicians would never go out") no longer
    holds.
 7. **Tests** (§ 8 gains): the pure `should_send` and `you_get` cases; the API —

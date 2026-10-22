@@ -38,7 +38,7 @@ export function isPushSupported() {
 /** An iPhone or iPad (iPadOS asks as a Mac with a touch screen). */
 export function isIphone() {
   return /iPhone|iPad|iPod/.test(navigator.userAgent)
-    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 }
 
 /** Running as the installed app (Home Screen on iOS, an installed app on Android). */

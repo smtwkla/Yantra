@@ -23,7 +23,7 @@ holds most of S021), plus the working tree (`frontend/src/push.js`,
 |---|---|
 | `tooling/run-tests.bat` | **green** — backend 2252 passed (5 min 26 s), frontend 114 passed, deps 42 passed, tooling 68 passed |
 | `npx vite build` (`frontend/`) | clean, no warnings |
-| `tooling/run-e2e-tests.bat` (full suite, 6 lanes, 3 projects) | E2E_RESULT |
+| `tooling/run-e2e-tests.bat` (full suite, 6 lanes, 3 projects) | **green** — 231 passed, 6 skipped, 0 failed (256 s). The 6 skips are `notifications.spec.js`'s per-project skips, each with its reason |
 
 The full e2e suite ran because S021 changes shared frontend code: the router, the auth store
 and `e2e/support/console.js` (§ 10 BS1-03).

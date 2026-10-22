@@ -558,7 +558,8 @@
         "pytest-34@9.1.1",
         "python-dotenv-35@1.2.4",
         "pywebpush-36@2.5.0",
-        "qrcode-37@8.2"
+        "qrcode-37@8.2",
+        "urllib3-40@2.8.0"
       ]
     },
     {

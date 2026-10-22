@@ -5,7 +5,7 @@ import AppSidebar from "./components/layout/AppSidebar.vue";
 import AppTopbar from "./components/layout/AppTopbar.vue";
 import AppBottomNav from "./components/layout/AppBottomNav.vue";
 import UpdateToast from "./components/layout/UpdateToast.vue";
-import { authenticated, authError, logout, networkDenied, userPermissions } from "./stores/auth";
+import { authenticated, authError, logout, networkDenied, userPermissions, userPersonId } from "./stores/auth";
 import { canOpenRoute, landingPath } from "./stores/navigation";
 import { startVersionChecks, stopVersionChecks } from "./stores/appVersion";
 import { loadNotifications } from "./stores/notifications";
@@ -31,7 +31,7 @@ watch(userPermissions, (perms) => {
 // The bell's dot (S021 § 1.3): this device's state, once the user is known. A failure leaves no
 // dot; My notifications loads again and shows the error.
 watch(userPermissions, (perms) => {
-  if (authenticated.value && perms.includes("push:subscribe")) loadNotifications().catch(() => {});
+  if (authenticated.value && perms.includes("push:subscribe")) loadNotifications(userPersonId.value).catch(() => {});
 });
 </script>
 

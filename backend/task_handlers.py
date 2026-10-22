@@ -21,6 +21,8 @@ with the back-off.
 
 import logging
 
+import requests
+
 import alerts
 import push_sender
 from alerts_core import ASSIGNED, ESCALATION, KINDS, message, should_escalate, should_send
@@ -155,6 +157,13 @@ def ticket_escalate(conn, payload, should_stop):
 # push_subscriptions.last_error
 _SUBSCRIPTION_ERROR_CHARS = 255
 
+# What My devices shows as *Last error* (CR1-03): one plain line per outcome, what happened and
+# what to do.  The technical text goes to task_queue.last_error and the log only.
+DEVICE_REFUSED = "The last alert did not reach this device. Turn notifications off and on again on it."
+DEVICE_LATE = "The last alert is late. Yantra tries again."
+DEVICE_NOT_SET_UP = "Notifications are not set up on this server yet. Ask IT admin."
+DEVICE_FAULT = "The last alert could not be sent. Ask IT admin."
+
 
 def _record_send_error(conn, subscription_id, text):
     """The device's last_error, committed now: the raise that follows rolls the worker's
@@ -178,19 +187,27 @@ def push_send(conn, payload, should_stop, send=None):
         return
     # Checked again before the post: the address came from a browser (§ 5.4)
     if refused_host(subscription["endpoint"]) is not None:
-        _record_send_error(conn, subscription_id, "Address not allowed")
+        _record_send_error(conn, subscription_id, DEVICE_REFUSED)
         raise NoRetry(f"subscription {subscription_id}: address not allowed")
     if not push_sender.enabled():
-        _record_send_error(conn, subscription_id, "Push is not set up on this server")
+        _record_send_error(conn, subscription_id, DEVICE_NOT_SET_UP)
         raise NoRetry("push is not set up on this server")
+    data = push_data(payload)
     try:
-        status, retry_after = send(subscription, push_data(payload), payload["urgency"], payload["ttl"])
-    except Exception as exc:  # noqa: BLE001 — every failure to post is recorded, then retried
+        status, retry_after = send(subscription, data, payload["urgency"], payload["ttl"])
+    except requests.RequestException as exc:
         # A new exception without the original text: requests' messages carry the endpoint,
         # which identifies the device, and stays out of the logs and the task row
         text = f"Could not reach the push service ({type(exc).__name__})"
-        _record_send_error(conn, subscription_id, text)
+        _record_send_error(conn, subscription_id, DEVICE_LATE)
         raise RuntimeError(text) from None
+    except Exception as exc:  # noqa: BLE001 — not a network fault, so a retry cannot fix it (CR1-02)
+        # Typically a bad VAPID key or malformed device keys.  The message of pywebpush's own
+        # errors does not carry the endpoint, so the cause stays in the log.
+        logger.error("push_send: subscription %s could not be sent: %s: %s", subscription_id,
+                     type(exc).__name__, exc)
+        _record_send_error(conn, subscription_id, DEVICE_FAULT)
+        raise NoRetry(f"push could not be sent ({type(exc).__name__})") from None
     outcome, after_seconds = send_outcome(status, retry_after)
     with conn.cursor() as cur:
         if outcome == SENT:
@@ -203,7 +220,7 @@ def push_send(conn, payload, should_stop, send=None):
             logger.info("push_send: subscription %s is gone (%s); removed", subscription_id, status)
             return
     text = f"Push service answered {status}"
-    _record_send_error(conn, subscription_id, text)
+    _record_send_error(conn, subscription_id, DEVICE_REFUSED if outcome == REFUSED else DEVICE_LATE)
     if outcome == REFUSED:
         raise NoRetry(text)
     if outcome == RETRY_LATER:
