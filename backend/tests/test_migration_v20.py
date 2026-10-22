@@ -1,5 +1,5 @@
-"""v20, the squashed schema (S025 § 1.1, § 8), in its own database vel_yantra_upgrade, dropped and
-created by these tests (tooling/run-backend-tests.bat grants it on an existing container).
+"""v20, the squashed schema (S025 § 1.1, § 8), in its own database (UPGRADE_DB, one per test run
+and worker: tests/db_names.py), dropped and created by these tests.
 
 - equivalence: the schema v20 builds on an empty database is the one v1–v13 built;
 - production path: a v0.1.3 database (v1–v5) with its masters filled is refused while it holds
@@ -18,9 +18,9 @@ import pytest
 import config
 import local_db
 from local_db import MigrationBlocked, describe_error, get_local_db, init_db
+from tests.db_names import UPGRADE_DB
 from tests.fixtures.migrations_v13 import MIGRATIONS_V13
 
-UPGRADE_DB = "vel_yantra_upgrade"
 UPGRADE_CONFIG = {**config.DB_CONFIG, "database": UPGRADE_DB}
 # v20 alone: later versions (v21, S019) are tested on their own (S019 BS1-04)
 V20 = [m for m in local_db._MIGRATIONS if m[0] == 20]

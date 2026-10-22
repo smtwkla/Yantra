@@ -48,9 +48,25 @@ The orchestrator gives you one of three tasks:
     a second real use. Simple and explicit beats general.
 - **Order of work.** Pure core and its tests first (green), then the shell, then
   the UI.
-- **Run the tests.** Run `tooling/run-tests.bat` (it needs the dev DB up). Run
-  `npx vite build` in `frontend/` when the frontend changed. Report the real
-  numbers. Never claim green without running.
+- **Your own test run name** (22-10-2026): set `YANTRA_TEST_RUN` to a short
+  name of your own, letters and digits only, for every backend or full test
+  run, e.g. `YANTRA_TEST_RUN=s021cr3 tooling/run-tests.bat` (the orchestrator
+  gives it; else the step, your role and round). Each run name gets its own
+  test databases, so you never collide with another agent, a second window or
+  a release (`release`). Never use `dev` or `release`.
+- **Run the tests: targeted while coding, the full suite once at the end** (6b,
+  22-10-2026, from `/step stats`: Opus coder runs averaged 26 minutes, much of
+  it full suites run again and again).
+  - While coding and between edits: only the tests of the modules you change,
+    e.g. `tooling/run-backend-tests.bat tests/test_tickets_core.py
+    tests/test_ticket_work_api.py` (pytest arguments pass through), and
+    `tooling/run-frontend-tests.bat <file>`; the targeted e2e specs (below).
+  - Once, when the code is done: `tooling/run-tests.bat` (it needs the dev DB
+    up), and `npx vite build` in `frontend/` when the frontend changed. A red
+    full run sends you back to targeted runs until fixed, then one more full
+    run.
+  - Report the real numbers of the final full run. Never claim green without
+    running.
 - **Browser tests** (S024; `docs/steps/README.md` § Manual checks):
   - write an e2e test (`frontend/e2e/`, Playwright) for each *Automated* check
     of the brief, asserting what the user would see; call `expectDialogFits`

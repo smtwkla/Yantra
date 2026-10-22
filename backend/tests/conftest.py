@@ -1,15 +1,18 @@
 """Test fixtures — app instance and role-specific test clients.
 
-Tests use a separate database (vel_yantra_test) so they never touch dev data.
-The test DB is created by the Docker init script (tooling/dev/init-test-db.sql);
-start it with tooling/dev/dev-db-up.bat. Migrations are applied automatically.
+Tests use their own database so they never touch dev data: one per test run and per
+pytest-xdist worker (tests/db_names.py), created here if missing; tooling/run-backend-tests.bat
+grants the DB user the right to create it.  Start the dev DB with tooling/dev/dev-db-up.bat.
+Migrations are applied automatically.
 """
 
+import atexit
 import os
 import shutil
 import sys
 import tempfile
 
+import pymysql
 import pytest
 from flask.testing import FlaskClient
 
@@ -18,17 +21,45 @@ os.environ["YANTRA_TESTING"] = "1"
 # Never run the suite with the dev auth bypass, even if the shell has it set
 os.environ.pop("DEV_AUTH_BYPASS", None)
 # Uploaded files go to a temporary folder, never the dev data/ folder; set before config
-# is imported, which reads it.  Removed at the end of the session (_remove_data_dir).
+# is imported, which reads it.  Removed at the end of the session (_remove_data_dir), and at exit
+# for the pytest-xdist controller, which imports this file but runs no fixtures.
 TEST_DATA_DIR = tempfile.mkdtemp(prefix="yantra-test-data-")
+atexit.register(shutil.rmtree, TEST_DATA_DIR, ignore_errors=True)
 os.environ["DATA_DIR"] = TEST_DATA_DIR
 
 # Add backend directory to path so imports work
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from tests.db_names import TEST_DB
+
 # Point at the test DB before importing app — mutate in place so the dict
 # app.py imported by reference sees it.
 import config
-config.DB_CONFIG["database"] = "vel_yantra_test"
+config.DB_CONFIG["database"] = TEST_DB
+
+
+def _create_test_db():
+    """This run's and worker's database, if missing; kept between runs so only new
+    migrations run (the first run builds the schema).  Before app is imported: its import
+    calls ensure_schema, which would otherwise remember "unknown database" for 30 s.
+    The xdist controller imports this file too, so it makes (and migrates) a database
+    ``..._main`` that no test uses.  Left so: skipping it would need the controller to not
+    import ``app``, i.e. a second code path through this file, for one idle database per run."""
+    cfg = config.DB_CONFIG
+    conn = pymysql.connect(host=cfg["host"], port=cfg["port"], user=cfg["user"], password=cfg["password"],
+                           autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{TEST_DB}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+    finally:
+        conn.close()
+
+
+try:
+    _create_test_db()
+    _CREATE_ERROR = None
+except pymysql.MySQLError as exc:   # reported by _clean_tables, so every test shows it
+    _CREATE_ERROR = exc
 
 import access_control
 from app import app as flask_app
@@ -117,6 +148,9 @@ SEED_CREATOR = "migration-v11"
 
 @pytest.fixture(scope="session", autouse=True)
 def _clean_tables():
+    if _CREATE_ERROR:
+        pytest.fail(f"Could not create the test database {TEST_DB} (is the dev DB up, and the grant made by "
+                    f"tooling/run-backend-tests.bat?): {_CREATE_ERROR}", pytrace=False)
     error = ensure_schema(config.DB_CONFIG)
     if error:
         pytest.fail(f"Test database not ready (is the dev DB up?): {error}", pytrace=False)

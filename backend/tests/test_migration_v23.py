@@ -1,6 +1,6 @@
-"""v23, work notes (S027 § 4, § 3 Tests), in the upgrade database vel_yantra_upgrade that the
-v20-v22 migration tests also use (pytest runs the files one after another, so they do not
-collide).  A v22 database with a ticket and its events gets ticket_events.updated_at/updated_by
+"""v23, work notes (S027 § 4, § 3 Tests), in the upgrade database UPGRADE_DB that the
+v20-v22 migration tests also use (one per test run and worker, tests/db_names.py; a worker runs its
+files one after another, so they do not collide).  A v22 database with a ticket and its events gets ticket_events.updated_at/updated_by
 (NULL on every existing row) and the ticket_note_edits table; a re-run changes nothing.  Needs the
 dev MariaDB container.
 """

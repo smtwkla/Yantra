@@ -22,10 +22,25 @@ from dbutils.pooled_db import PooledDB
 
 logger = logging.getLogger(__name__)
 
-# DB-level named lock (GET_LOCK) — one process runs migrations at a time.
+# DB-level named locks (GET_LOCK).  GET_LOCK names are server-wide, not per database, so each
+# lock's name carries the database's (named_lock): two databases on one server (production's
+# neighbours, the parallel test workers' databases) never wait on each other's lock.
+# Migrations: one process migrates a database at a time.
 LOCK_MIGRATIONS = "yantra_migrations"
 # The background worker's singleton lock (S013 § 5.5): one worker drains the queue
 LOCK_WORKER = "yantra_worker"
+
+
+# GET_LOCK refuses a longer name with an error
+MAX_LOCK_NAME_LENGTH = 64
+
+
+def named_lock(base, database):
+    """The GET_LOCK name of lock ``base`` for ``database`` (MariaDB allows 64 characters)."""
+    name = f"{base}:{database}"
+    if len(name) > MAX_LOCK_NAME_LENGTH:
+        raise ValueError(f"Lock name {name!r} is {len(name)} characters; MariaDB allows {MAX_LOCK_NAME_LENGTH}")
+    return name
 
 # Seconds between migration attempts while the database is unavailable
 _RETRY_INTERVAL_S = 30
@@ -829,10 +844,11 @@ def init_db(config):
     version are checked first, inside the lock: one failure raises MigrationBlocked and
     nothing is applied, so the previous release still runs on the schema as it was.
     """
+    lock = named_lock(LOCK_MIGRATIONS, config["database"])
     conn = get_local_db(config)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT GET_LOCK(%s, 60) AS got", (LOCK_MIGRATIONS,))
+            cur.execute("SELECT GET_LOCK(%s, 60) AS got", (lock,))
             if cur.fetchone()["got"] != 1:
                 raise DBUnavailable("Timed out waiting for the migration lock")
             try:
@@ -853,7 +869,7 @@ def init_db(config):
                     )
                     logger.info("Migration v%d applied", version)
             finally:
-                cur.execute("SELECT RELEASE_LOCK(%s)", (LOCK_MIGRATIONS,))
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
     finally:
         conn.close()
 

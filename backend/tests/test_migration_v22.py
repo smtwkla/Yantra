@@ -1,6 +1,6 @@
-"""v22, parts used (S020 § 4, § 3 Tests), in the upgrade database vel_yantra_upgrade that
-test_migration_v20.py and test_migration_v21.py also use (pytest runs the files one after another,
-so they do not collide).  The shared test database already has v22 when the tests start, so the
+"""v22, parts used (S020 § 4, § 3 Tests), in the upgrade database UPGRADE_DB that
+test_migration_v20.py and test_migration_v21.py also use (one per test run and worker, tests/db_names.py; a worker runs its
+files one after another, so they do not collide).  The shared test database already has v22 when the tests start, so the
 upgrade is run here: a v21 database gets ticket_parts with its columns, two CHECKs, two foreign
 keys and three indexes; a re-run changes nothing.  Needs the dev MariaDB container.
 """

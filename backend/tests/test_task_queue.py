@@ -11,9 +11,8 @@ import task_handlers
 from db_helpers import transaction
 from local_db import get_local_db
 from task_queue import claim_next, enqueue, mark_done, mark_failed, requeue_stale
+from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
 from worker import Worker
-
-TEST_LOCK = "yantra_worker_test"
 
 
 @pytest.fixture

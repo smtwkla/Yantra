@@ -1,8 +1,8 @@
 """The worker: its lock, reconnecting, the schedule, the purge and the tasks card
 (S013 § 5.5, § 5.6, § 8 Worker and Purge).
 
-The lock name is a test one: GET_LOCK names are server-wide, and a dev worker on the same
-MariaDB holds yantra_worker.
+The lock name is a test one, for this run's database (tests/db_names.py): GET_LOCK names are
+server-wide, and a dev worker on the same MariaDB holds yantra_worker:vel_yantra_master.
 """
 
 import signal
@@ -13,11 +13,10 @@ import pytest
 import config
 import task_handlers
 import worker as worker_module
-from local_db import get_local_db
+from local_db import LOCK_WORKER, get_local_db, named_lock
 from task_handlers import purge_access_log
+from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
 from worker import Worker
-
-TEST_LOCK = "yantra_worker_test"
 
 
 def _run(sql, params=()):
@@ -51,6 +50,9 @@ def make_worker():
 
 
 class TestLock:
+
+    def test_the_default_name_carries_the_database(self):
+        assert Worker(config.DB_CONFIG)._lock_name == named_lock(LOCK_WORKER, config.DB_CONFIG["database"])
 
     def test_taken_once(self, make_worker):
         first = make_worker()

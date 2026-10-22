@@ -108,9 +108,18 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   A flow the floor would not use as described (too many steps for the person
   who must do it, a field nobody can fill at that moment) is `major`; smaller
   friction is `minor` or `nit`.
-- **Earlier rounds.** If there are earlier rounds, first verify that every
-  earlier finding marked `Accepted` is actually reflected in the brief text, not
-  only in the Review log.
+- **Earlier rounds: round 2 and later re-check only what changed**
+  (decided 22-10-2026, from `/step stats`: rounds after the first found 0.35–0.4
+  blockers and majors each, rounds 4–5 none). In round N ≥ 2:
+  - verify that every earlier finding marked `Accepted` is reflected in the
+    brief text, not only in the Review log;
+  - review the brief's text **changed since the last round** (diff the brief
+    against the version the last review read: `git diff` if it was committed,
+    else the sections the Review log's answers name) and what that change
+    touches — the code it now relies on, the rules it now states;
+  - don't re-review sections that did not change. Something there you notice
+    in passing is reported only if it is a `blocker` or `major`;
+  - say in the verdict which sections you re-read.
 - **Track** (`docs/steps/README.md` § Tracks). For a `Track: light` brief:
   - review it against the short template, and don't ask for the full-track
     sections it leaves out on purpose;
@@ -131,8 +140,14 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
 
 ## How to write findings
 
-- Give each finding: an ID, a severity, the problem, why it matters, and options
-  with a recommendation.
+- **`blocker`, `major` and `minor`:** give each an ID, a severity, the problem,
+  why it matters, and options with a recommendation.
+- **`nit`s are a short list** (decided 22-10-2026, to save tokens): under one
+  heading `## Nits`, one bullet each — the ID, `nit`, the place, and the fix in
+  one or two sentences. No problem / why / options write-up. Keep the heading
+  form `### BR1-07 — nit — …` out of it: a bullet `- **BR1-07** (nit) § 3: …`
+  is enough; the orchestrator answers the whole list in one line.
+- A finding that is a judgement call the user should make is never a nit.
 - Order findings by severity.
 - Start with a one-line verdict: whether any `blocker` or `major` finding is open.
 - End with a short "Checked and found consistent" list.

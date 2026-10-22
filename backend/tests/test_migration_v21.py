@@ -1,6 +1,6 @@
-"""v21, deferred work (S019 § 4, § 8), in the upgrade database vel_yantra_upgrade that
-test_migration_v20.py also uses (pytest runs the files one after another, so they do not
-collide).  A v20 database holding a ticket gets v21: the row is unchanged, the new columns are
+"""v21, deferred work (S019 § 4, § 8), in the upgrade database UPGRADE_DB that
+test_migration_v20.py also uses (one per test run and worker, tests/db_names.py; a worker runs its
+files one after another, so they do not collide).  A v20 database holding a ticket gets v21: the row is unchanged, the new columns are
 NULL, the state ENUM has 'scheduled' appended and keeps NOT NULL DEFAULT 'raised', and
 chk_tickets_plan holds; a re-run changes nothing.  Needs the dev MariaDB container.
 """

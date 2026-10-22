@@ -29,7 +29,7 @@ import pymysql
 from company_settings import WORKER_POLL_SECONDS
 from config import DB_CONFIG
 from db_helpers import transaction
-from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db, is_connection_lost
+from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db, is_connection_lost, named_lock
 from scheduled_tasks import SCHEDULE, due_tasks
 from task_handlers import BadTask, NoRetry, RetryLater, run_task
 from task_queue import claim_next, enqueue, last_enqueued, mark_done, mark_failed, requeue_stale
@@ -53,9 +53,10 @@ def now_ist():
 class Worker:
     """One worker's state: its connection, whether it holds the lock, the stop flag."""
 
-    def __init__(self, config, lock_name=LOCK_WORKER, clock=now_ist):
+    def __init__(self, config, lock_name=None, clock=now_ist):
+        """``lock_name`` defaults to LOCK_WORKER for this config's database (named_lock)."""
         self._config = config
-        self._lock_name = lock_name
+        self._lock_name = lock_name or named_lock(LOCK_WORKER, config["database"])
         self._clock = clock
         self.conn = None
         self.stopping = False

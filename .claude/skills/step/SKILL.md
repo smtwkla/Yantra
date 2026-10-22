@@ -34,6 +34,11 @@ Read it before starting.
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
+- `/step stats [S00N]`: run `tooling/step-stats.bat` once (it writes
+  `scratch/step-stats.md`): review rounds, findings by severity, late blockers
+  and majors, time, tokens and e2e cost per step and per role, from the step
+  files and the stored transcripts. Report the main numbers and what they
+  suggest to cut (time, tokens) or to tighten (accuracy); change nothing.
 
 When the user just says "go on" or "next", find where the step stands from its
 files and its Status, and continue from there.
@@ -86,11 +91,87 @@ brief's header (`Track: light | full`) and in the index row.
      standards.
    - Ask the user first only about decisions that change the design. Other open
      points go into the brief's § Open questions.
+   - **Size** (6a, 22-10-2026, from `/step stats`: S021, 57 files, one Opus
+     coder run of 70 minutes and 0.5 M tokens). When the brief's *Where* lists
+     more than about **25 files**, or holds two concerns that could ship apart
+     (a backend engine and its screens, a new shell and a feature in it),
+     propose a split into two steps in one line, with the cut, before review.
+     The same when the draft passes **600 lines**, or adds more than one table
+     and two screens. The user decides.
+   - **Self-check before review round 1** (22-10-2026, from the analysis of
+     all brief and code reviews of S001–S027: 61 majors, 347 minors; by weight
+     the causes are rules left to the coder, unverified claims, tests,
+     permissions and identity, phone screens, locks). Check the draft against
+     each item and fix it before spawning the reviewer:
+     1. **Evidence for every claim** about code, a library, a browser or the
+        environment: `file:line` or a run result beside it. Run a 3-line
+        `uv run python` or `node -e` check for library behaviour (QR version,
+        Pillow, Bootstrap, urllib parsing). Open the file for "the API shows
+        X". Grep the devops repo, compose and cron for a task said not to
+        exist. A claim with no evidence is marked "to verify".
+     2. **Locks**: one numbered lock sequence per route — table, row, mode,
+        including the shared locks taken through foreign keys — compared with
+        the LOCK ORDER notes in `tickets.py` and `masters.py`. Decide from the
+        columns the locking statement reads, never from a plain read made
+        after an earlier plain read (REPEATABLE READ). A counter or "same
+        transaction" rule says what a rollback does.
+     3. **Permissions**: the exact key of every route and button, held at
+        which site (`SITE_SCOPED`); reads behind a senior key scoped to the
+        sites where it is held; no login or personal data beyond its key.
+     4. **Identity paths**: for each editable field, whether it changes who
+        can log in or what they see (`active`, login name, role, site).
+        Cover actor = target, normalised names, inactive people, and reused
+        routes that hard-code another key. A request with no identity gets
+        nothing, never admin.
+     5. **Tests**: the existing tests the change breaks, by file and test
+        name — always check `test_role_matrix`, `conftest.py` `_TABLES`, the
+        `db_down` fixture and the `test_migration_*` upgrade tests. For each
+        new test, its fixture and whether the session DB gives its starting
+        state. The e2e specs (targeted or full) and the S024 conventions
+        (allowed 400s, set-up by API, `expectDialogFits`, the open-dialog
+        wait, per-lane databases).
+     6. **No rule left to the coder**: every input's missing, empty,
+        wrong-type and boundary case; a `PUT` without a field; the bounds of a
+        setting; where a new screen or menu item lives.
+     7. **States and events**: for every state change, actor × state ×
+        already-in-the-target-state. For every alert or event, the line that
+        writes it and whether that path always runs.
+     8. **Plan.MD and earlier steps**: nothing decided there is re-asked or
+        contradicted; a departure is stated as one.
+     9. **Self-consistency and staleness**: after every edit, grep the brief
+        for the old phrase and each changed number. For a brief planned ahead
+        of its turn, list the steps committed since its baseline and check the
+        migration number, the lock notes, the e2e conventions and new README
+        rules.
+     10. **Migrations**: every column, ENUM and index the feature writes;
+         `_PRECONDITIONS` against production's real rows; the settings dicts
+         and routes a new setting touches.
+     11. **The database down and the worker** (CLAUDE.md): what each new hook,
+         route and task does when the DB is unreachable. For a worker task,
+         what is stored on success, on retry-later and on no-retry, and which
+         transaction holds the claim and the result.
+     12. **Security of new outside input**: a URL, file or address checked
+         with the same parser that will use it (S021 CR1-01).
+     13. **Screens**: for each dialog or control, the composable and its call
+         contract (what `blank` returns, what `open(seed)` does), the fields
+         that can be defaulted, the one-tap path of the common case, its place
+         on the page, the reason shown for a disabled control on a phone, and
+         how a destructive control is protected.
+     14. **Standards**: the clause number and one plain sentence of what it
+         says, checked; unverified → "to verify" instead of a number.
+     15. **Process and device checks**: grep for "synced from" or "generated"
+         before editing a file; release and deploy actions in order, each
+         runnable where it is placed; the machine, account and network of
+         every manual check; nothing on the device list a browser could do.
 2. **Review loop.**
    - Set the status to `In review`.
    - Spawn `brief-reviewer` with the brief's path and the round number.
    - Read its review file. Answer **every** finding in the brief's Review log
-     (`Accepted` / `Rejected` / `Deferred`) and revise the brief text.
+     (`Accepted` / `Rejected` / `Deferred`) and revise the brief text. Answer
+     the review's `## Nits` list in **one** Review-log row ("BR2-06…BR2-09:
+     accepted", naming any rejected one with its reason), not a row each.
+   - Round 2 and later re-check only what changed (the brief reviewer's
+     *Earlier rounds* rule): tell it which sections the answers changed.
    - Repeat until no `blocker` or `major` finding is open.
    - Stop after **3 rounds** and ask the user. Light track: one round (§ Tracks).
    - A finding that needs a user decision isn't settled by you. Collect it for
@@ -149,12 +230,16 @@ brief's header (`Track: light | full`) and in the index row.
    UI-only work, CRUD following an existing pattern, and fix rounds with minor
    findings stay on Sonnet.
 2. **Implement.** Spawn `coder` with the step ID, and with the amendment or fix
-   round where that applies.
+   round where that applies. Give every coder and code reviewer its own test
+   run name (`YANTRA_TEST_RUN`, e.g. `s021c1`, `s021cr2`), so agents running
+   tests at the same time never share a database.
    - If it returns **QUESTIONS FOR THE USER**, stop and ask them.
    - After the answers, record any design-level ones in the brief as an
      amendment that the user approves, then resume the coder.
 3. **Code-review loop.**
-   - Spawn `code-reviewer` with the step ID and the round number.
+   - Spawn `code-reviewer` with the step ID and the round number. From
+     round 2 on it verifies the fix round only (its *Round 2 and later* rule):
+     name the findings the fix round addressed.
    - If any `blocker` or `major` finding is open, spawn `coder` for that fix
      round, then review again.
    - Stop after **3 rounds** and ask the user.

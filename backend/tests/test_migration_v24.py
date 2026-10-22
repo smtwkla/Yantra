@@ -1,6 +1,6 @@
-"""v24, web push subscriptions (S021 § 4, § 10 BS1-02), in the upgrade database vel_yantra_upgrade
-that the v20-v23 migration tests also use (pytest runs the files one after another, so they do
-not collide).  A fresh database gets v24; a v23 database with a ticket and a person gets the
+"""v24, web push subscriptions (S021 § 4, § 10 BS1-02), in the upgrade database UPGRADE_DB
+that the v20-v23 migration tests also use (one per test run and worker, tests/db_names.py; a worker runs its
+files one after another, so they do not collide).  A fresh database gets v24; a v23 database with a ticket and a person gets the
 push_subscriptions table and keeps every existing row; a re-run changes nothing.  Needs the dev
 MariaDB container.
 """

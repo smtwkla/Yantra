@@ -27,6 +27,12 @@ review file there.
 
 ## What to check
 
+- **Your own test run name** (22-10-2026): set `YANTRA_TEST_RUN` to a short
+  name of your own, letters and digits only, for every backend or full test
+  run, e.g. `YANTRA_TEST_RUN=s021cr3 tooling/run-tests.bat` (the orchestrator
+  gives it; else the step, your role and round). Each run name gets its own
+  test databases, so you never collide with another agent, a second window or
+  a release (`release`). Never use `dev` or `release`.
 - **Run the tests yourself.** Run `tooling/run-tests.bat`, and `npx vite build`
   in `frontend/` if the frontend changed. Record the real result. A red suite is
   a `blocker`.
@@ -104,13 +110,29 @@ review file there.
   can show goes on the manual-check list.
 - **Test quality.** Do the tests cover the brief's § Tests list and the failure
   modes, or only the happy path?
-- **Earlier rounds.** If there are earlier rounds, verify that each finding
-  marked `Fixed` is really fixed.
+- **Round 2 and later verify; they don't re-review** (decided 22-10-2026, from
+  `/step stats`: rounds after the first found 0.06 blockers and majors each,
+  the one real finding a bug the fix itself introduced). In round N ≥ 2:
+  - verify that each finding the fix round says is fixed really is fixed;
+  - review the **fix round's own diff** (the files its impl-report section
+    lists, against the previous round's state) for new faults it brings in,
+    and what that diff touches;
+  - don't re-read the rest of the step; anything there you notice in passing
+    is reported only if it is a `blocker` or `major`;
+  - tests: `tooling/run-tests.bat`, and the **targeted** e2e specs of what the
+    fix round changed (the full suite only if the fix round changed shared
+    frontend code or `e2e/support/`);
+  - carry the open findings of earlier rounds by ID and status, without
+    re-describing them;
+  - say in the verdict which files you re-read.
 
 ## How to write findings
 
-- Give each finding: an ID, a severity, `file:line`, the problem, a concrete
-  failure scenario, and the suggested fix.
+- **`blocker`, `major` and `minor`:** give each an ID, a severity, `file:line`,
+  the problem, a concrete failure scenario, and the suggested fix.
+- **`nit`s are a short list** (decided 22-10-2026): under one heading
+  `## Nits`, one bullet each — `- **CR1-05** (nit) `file:line`: the fix`, in
+  one or two sentences, with no failure scenario.
 - Order findings by severity.
 - Start with a one-line verdict: whether any `blocker` or `major` finding is open.
 - End with "Checked and found consistent".
