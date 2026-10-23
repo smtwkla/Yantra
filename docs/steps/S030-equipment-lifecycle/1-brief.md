@@ -4,7 +4,7 @@ Author: Planner (Opus)
 Date: 23-10-2026
 Track: full
 Baseline: 4a13de5
-Status: Gate B (CR r1: 0 blocker, 0 major, 0 minor, 4 nits; approved 23-10-2026 by KLA; backup before release: not needed)
+Status: Done (committed 6866fbd; checks: 1 auto; CR r1: 4 nits left, CR1-04 queued in the tidy-up; approved 23-10-2026 by KLA)
 
 # S030 — Equipment lifecycle
 
