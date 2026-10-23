@@ -762,54 +762,11 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 - **Email** (S032, 23-10-2026): Mailgun over SMTP (`smtplib`, STARTTLS), from the job queue, plain text, one email per recipient. Addresses come from the Keycloak login token, copied onto the Team record at each login; nobody types one in Yantra. Office 365 (Microsoft Graph) was rejected: it refuses basic SMTP login.
 - All sends go through the DB-backed job queue, so a slow channel never blocks a request.
 
-## 5. Data model (broad strokes)
+## 5. Data model
 
-| Table | Holds |
-|---|---|
-| `sites` | Code (e.g. `SMTW`, `BRICKS`), name, address, active |
-| `units` | `site_id`, code (the part after the dot; the full `SITE.UNIT` code is derived), name, optional OneERP warehouse code, active |
-| `equipment_classes` | Code (= the equipment-code prefix, e.g. `VBM`), name, active |
-| `equipment_types` | Per class: name, active (S004); `equipment.type_id` must be a type of the equipment's class |
-| `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required), `class_id` and `type_id` (copied from the model, S012) |
-| `manufacturers` | Makers: name (unique without regard to case), active (S012). Generic and in-house makers are ordinary rows |
-| `equipment_models` | Manufacturer, designation (unique per maker), class, optional type of that class — all but the designation fixed after creation; active (S012) |
-| `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002) |
-| `memberships` | Person → site: the person's one role at that site, and "all units" (S011 A1) |
-| `person_units` | Person → unit: the units within a site where the person has a membership without "all units" (S011 A1) |
-| `user_units` | Legacy (S001): username → unit. No longer used; its rows are copied into Team (`people`, `person_units`) by migration v20 (was v8; squashed S025), kept for a rollback, dropped by a later step |
-| `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
-| `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1) |
-| `person_trades` | Person → trades, none or more (S010 A1) |
-| `procedures`, `procedure_items` | *Proposed* (§ 4.3a): title, kind, optional class, Markdown body, attachments; steps in the shared item shape (§ 4.3) |
-| `procedure_completions` | *Proposed* (§ 4.3a): person, procedure, equipment or class, date, recorded by — onboarding done |
-| `verification_rounds`, `verification_items` | *Proposed* (§ 4.1): a walk per unit; per equipment confirmed / not found, who, when |
-| `pm_routes`, `pm_route_plans` | *Proposed* (§ 4.3): a named walk — performer, the plans it covers in order; jobs stay one per equipment |
-| `equipment_documents` | Files attached to equipment, an equipment model (S012) or a ticket (photos, S017) — exactly one owner: kind (document / photo; a pick-list of kinds is proposed, § 4.1), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
-| `failure_modes` | Symptoms (S016): code, label, description, class (NULL = General), active |
-| `failure_causes` | Causes (S016): code, label, description, ISO cause group, active |
-| `maintenance_actions` | Actions (S016): code, label, description, active |
-| `tickets` | Ticket (breakdown or defect, by intensity): machine, component, unit at raise, state, intensity, codes, description, reported by, serial, source (S017); cause, action, not-a-fault flag, repeat of (S018); state *scheduled*, planned date, waiting reason (S019) |
-| `ticket_events` | One row per change: who, event time, entered at, intensity, remark — the timestamps come from here (S017) |
-| `ticket_labour` | Person, trade worked, work date and minutes per ticket (S018) |
-| `ticket_assignees` | Ticket → people assigned, who and when (S018) |
-| `ticket_parts` | Parts fitted per ticket (S020): description, part number and its kind, maker, quantity and unit, the node fitted to. PM jobs' parts decided with PM |
-| `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
-| `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
-| `pm_templates`, `pm_template_items` | Reusable PM work: items in the shared item shape (§ 4.3: type task / check / reading, unit and limits, optional meter, help text, reference photo, photo setting), triggers |
-| `pm_plans` | Equipment, title, kind (PM / CIL), performer (maintenance / operator), source template, triggers (calendar interval, meter + threshold, before use), default assignee |
-| `pm_plan_items` | Items of a plan, same shape as template items; CIL items carry their group (C / I / L) |
-| `pm_jobs` | Generated job: plan, due date or triggering reading, state, serial |
-| `pm_job_results` | One row per plan item: done / OK-NotOK-NA / value by type, remark, photo link |
-| `breakdown_procedure_items`, `breakdown_procedure_results` | *Proposed* (§ 4.3a): a procedure's steps copied onto a ticket and their results, same shape as `pm_job_results` |
-| `pm_job_events` | State changes, like `breakdown_events` |
-| `push_subscriptions` | Web push endpoints per user and device |
-| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix from phase 2 (S002), `TK-` ticket serials per month (S017), later `PM-` |
-| `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
-| `task_queue` | Base pattern: notifications, PM generation, sync; first task the daily access-log purge (S013) |
-| `app_settings` | Escalation times, upload limits, internal networks, etc. |
-
-All timestamps are stored as IST (`DATETIME`, connection timezone Asia/Kolkata) per
-the base timezone policy. Dates are shown as DD-MM-YYYY.
+Moved to [`schema.md`](schema.md) (23-10-2026): what each table holds, the
+built and the planned tables, and the relationship diagram (also
+[`schema.html`](schema.html), to open in a browser).
 
 ## 6. Screens
 
