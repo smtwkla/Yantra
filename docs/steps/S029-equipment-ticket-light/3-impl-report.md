@@ -71,5 +71,9 @@ On a real device: none (no rows added to `docs/steps/device-checks.md`).
 ### Round 1
 
 - **CR1-01 — Accepted, fixed.** `EquipmentView.vue` `listUrl()` now skips the `tickets` key when `canSeeTickets` (`ticket:read`) is false, so a bookmarked `?tickets=down` shows the plain list to a user without the column and filter. The URL itself is left alone. New e2e test `frontend/e2e/equipment.spec.js::S029: a bookmarked tickets=down shows the plain list to a storekeeper, who has no ticket column` (storekeeper opens `/equipment?tickets=down` and sees the red, amber and green machines, and no Tickets filter).
-- CR1-02, CR1-03, CR1-04, CR1-05: not asked for by the user.
+- CR1-02, CR1-03, CR1-04, CR1-05: not asked for by the user. CR1-02 (colour alone on a
+  phone, no tooltip on touch): accepted as built by KLA, 23-10-2026 (not fixed, no
+  objection at gate B).
+- Red without the fix: not run in this round (the rule came after it, 23-10-2026); the code
+  reviewer's r2 reasons that the test fails without the fix.
 - Tests: frontend `YANTRA_TEST_RUN=s029c2` 119 passed; targeted e2e `e2e/equipment.spec.js e2e/screens.spec.js` 51 passed. Full backend suite not re-run (no backend change).
