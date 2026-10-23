@@ -113,7 +113,7 @@ def _read_node_for_change(cur, node_id, key):
     check, so a refused or scrapped node gets no file read or written.  The decisions that
     count are the locked ones (_lock_node_for_change)."""
     _, node = load_node_for_user(cur, node_id, for_update=False, key=key)
-    if node["status"] == SCRAPPED:
+    if node["lifecycle"] == SCRAPPED:
         raise ApiError(SCRAPPED_MESSAGE, 409)
     return node
 
@@ -122,7 +122,7 @@ def _lock_node_for_change(cur, node_id, key):
     """Lock the node (1), check ``key`` at its site (403, S011) and refuse a scrapped one from
     the locked row (S002 BR3-01)."""
     locked, _ = load_node_for_user(cur, node_id, for_update=True, key=key)
-    if locked["status"] == SCRAPPED:
+    if locked["lifecycle"] == SCRAPPED:
         raise ApiError(SCRAPPED_MESSAGE, 409)
 
 
@@ -443,20 +443,20 @@ _REMOVED_DOC_COLUMNS = (
 )
 _REMOVED_NODE_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'equipment' AS owner, e.id AS owner_id, e.id AS equipment_id, e.code,"
-    " e.name, e.level, e.status, s.code AS site_code, u.code AS unit_code, p.code AS p_code, gp.code AS gp_code,"
+    " e.name, e.level, e.lifecycle, s.code AS site_code, u.code AS unit_code, p.code AS p_code, gp.code AS gp_code,"
     " NULL AS mf_name, NULL AS m_designation, NULL AS ticket_state"
     " FROM equipment_documents d JOIN equipment e ON e.id = d.equipment_id" + NODE_JOINS
 )
 _REMOVED_MODEL_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'model' AS owner, m.id AS owner_id, NULL AS equipment_id, NULL AS code,"
-    " NULL AS name, NULL AS level, NULL AS status, NULL AS site_code, NULL AS unit_code, NULL AS p_code,"
+    " NULL AS name, NULL AS level, NULL AS lifecycle, NULL AS site_code, NULL AS unit_code, NULL AS p_code,"
     " NULL AS gp_code, mf.name AS mf_name, m.designation AS m_designation, NULL AS ticket_state"
     " FROM equipment_documents d JOIN equipment_models m ON m.id = d.model_id"
     " JOIN manufacturers mf ON mf.id = m.manufacturer_id"
 )
 _REMOVED_TICKET_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'ticket' AS owner, t.id AS owner_id, NULL AS equipment_id, NULL AS code,"
-    " t.serial AS name, NULL AS level, NULL AS status, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
+    " t.serial AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
     " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, t.state AS ticket_state"
     " FROM equipment_documents d JOIN tickets t ON t.id = d.ticket_id"
     " JOIN units u ON u.id = t.unit_id JOIN sites s ON s.id = u.site_id"

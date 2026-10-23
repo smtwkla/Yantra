@@ -1,4 +1,4 @@
-"""Equipment register API — the equipment tree, codes, status, events and unit access,
+"""Equipment register API — the equipment tree, codes, lifecycle, events and unit access,
 against the test DB (needs the dev MariaDB container, tooling/dev/dev-db-up.bat).
 
 Codes are asserted relative to the first one issued in a fresh class (n, n+1), never
@@ -333,7 +333,7 @@ class TestReparent:
         old_drive = make_equipment(parent=mill)
         motor = make_equipment(parent=old_drive, level="component")
         dead_drive = make_equipment(parent=mill)
-        assert _put(admin, dead_drive, status="scrapped").status_code == 200
+        assert _put(admin, dead_drive, lifecycle="scrapped").status_code == 200
         res = _put(admin, motor, parent_id=dead_drive["id"])
         assert (res.status_code, res.get_json()["field"]) == (409, "parent_id")
 
@@ -344,80 +344,97 @@ class TestReparent:
         assert (res.status_code, res.get_json()["field"]) == (400, "parent_id")
 
 
-class TestStatus:
+class TestLifecycle:
 
     @pytest.mark.parametrize("old, new", [
         ("in_service", "standby"), ("in_service", "out_of_use"), ("standby", "in_service"),
         ("standby", "out_of_use"), ("out_of_use", "in_service"), ("out_of_use", "standby"),
     ])
     def test_every_allowed_change(self, admin, make_equipment, old, new):
-        node = make_equipment(status=old)
-        assert node["status"] == old
-        res = _put(admin, node, status=new)
-        assert (res.status_code, res.get_json()["status"]) == (200, new)
-        assert _events(admin, node)[0] == ("status", old, new)
+        node = make_equipment(lifecycle=old)
+        assert node["lifecycle"] == old
+        res = _put(admin, node, lifecycle=new)
+        assert (res.status_code, res.get_json()["lifecycle"]) == (200, new)
+        assert _events(admin, node)[0] == ("lifecycle", old, new)
 
     def test_created_scrapped_is_400(self, admin, make_unit, make_model):
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
-                                          "model_id": make_model()["id"], "name": "x", "status": "scrapped"})
-        assert (res.status_code, res.get_json()["field"]) == (400, "status")
+                                          "model_id": make_model()["id"], "name": "x", "lifecycle": "scrapped"})
+        assert (res.status_code, res.get_json()["field"]) == (400, "lifecycle")
 
     def test_scrapping_with_live_parts_is_409(self, admin, make_equipment):
         mill = make_equipment()
         drive = make_equipment(parent=mill)
         motor = make_equipment(parent=drive, level="component")
         for node in (mill, drive):
-            res = _put(admin, node, status="scrapped")
+            res = _put(admin, node, lifecycle="scrapped")
             assert res.status_code == 409
-            assert res.get_json() == {"error": "Scrap or move its parts first", "field": "status"}
-        assert _put(admin, motor, status="scrapped").status_code == 200
+            assert res.get_json() == {"error": "Scrap or move its parts first", "field": "lifecycle"}
+        assert _put(admin, motor, lifecycle="scrapped").status_code == 200
         # The grandchild is scrapped now, but the child is not
-        assert _put(admin, mill, status="scrapped").status_code == 409
-        assert _put(admin, drive, status="scrapped").status_code == 200
-        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 409
+        assert _put(admin, drive, lifecycle="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
 
     def test_a_live_grandchild_blocks_scrapping(self, admin, make_equipment):
         mill = make_equipment()
         drive = make_equipment(parent=mill)
         make_equipment(parent=drive, level="component")
         # Force the child to scrapped directly, so only the grandchild is live
-        _db("UPDATE equipment SET status = 'scrapped' WHERE id = %s", (drive["id"],))
-        assert _put(admin, mill, status="scrapped").status_code == 409
+        _db("UPDATE equipment SET lifecycle = 'scrapped' WHERE id = %s", (drive["id"],))
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 409
 
     def test_any_put_on_a_scrapped_node_is_409(self, admin, make_equipment):
         node = make_equipment()
-        assert _put(admin, node, status="scrapped").status_code == 200
-        for body in ({"name": "x"}, {"status": "in_service"}, {}):
+        assert _put(admin, node, lifecycle="scrapped").status_code == 200
+        for body in ({"name": "x"}, {"lifecycle": "in_service"}, {}):
             res = _put(admin, node, **body)
             assert res.status_code == 409
             assert res.get_json() == {"error": "This record is scrapped and cannot be changed"}
 
     def test_a_scrapped_node_is_no_create_target(self, admin, make_equipment, make_model):
         mill = make_equipment()
-        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
         res = admin.post(EQUIPMENT, json={"level": "component", "parent_id": mill["id"],
                                           "model_id": make_model()["id"], "name": "x"})
         assert (res.status_code, res.get_json()["field"]) == (409, "parent_id")
 
     def test_scrapping_with_a_name_change_applies_both(self, admin, make_equipment):
         node = make_equipment()
-        res = _put(admin, node, status="scrapped", name="Old mill")
+        res = _put(admin, node, lifecycle="scrapped", name="Old mill")
         assert res.status_code == 200
-        assert (res.get_json()["status"], res.get_json()["name"]) == ("scrapped", "Old mill")
+        assert (res.get_json()["lifecycle"], res.get_json()["name"]) == ("scrapped", "Old mill")
 
     def test_a_scrapped_part_stays_on_its_parents_page(self, admin, make_equipment):
         mill = make_equipment()
         drive = make_equipment(parent=mill)
-        _put(admin, drive, status="scrapped")
+        _put(admin, drive, lifecycle="scrapped")
         children = _get(admin, mill)["children"]
-        assert [(c["id"], c["status"]) for c in children] == [(drive["id"], "scrapped")]
-        assert _get(admin, drive)["status"] == "scrapped"
+        assert [(c["id"], c["lifecycle"]) for c in children] == [(drive["id"], "scrapped")]
+        assert _get(admin, drive)["lifecycle"] == "scrapped"
 
-    def test_a_part_has_its_own_status(self, admin, make_equipment):
+    OLD_FIELD = {"error": "This field is now called Lifecycle. Reload the page.", "field": "status"}
+
+    def test_the_old_status_field_is_refused(self, admin, make_equipment, make_unit, make_model):
+        """S030 § 4.4: an old tab that still sends ``status`` fails loudly, on a save and on a
+        create, instead of having its change ignored."""
+        node = make_equipment()
+        res = _put(admin, node, status="standby")
+        assert (res.status_code, res.get_json()) == (400, self.OLD_FIELD)
+        assert _get(admin, node)["lifecycle"] == "in_service"
+        assert [e[0] for e in _events(admin, node)] == ["created"]
+
+        name = f"Old tab {node['code']}"
+        res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
+                                          "model_id": make_model()["id"], "name": name, "status": "standby"})
+        assert (res.status_code, res.get_json()) == (400, self.OLD_FIELD)
+        assert _db("SELECT COUNT(*) AS n FROM equipment WHERE name = %s", (name,))[0]["n"] == 0
+
+    def test_a_part_has_its_own_lifecycle(self, admin, make_equipment):
         mill = make_equipment()
         motor = make_equipment(parent=mill, level="component")
-        assert _put(admin, motor, status="scrapped").status_code == 200
-        assert _get(admin, mill)["status"] == "in_service"
+        assert _put(admin, motor, lifecycle="scrapped").status_code == 200
+        assert _get(admin, mill)["lifecycle"] == "in_service"
 
 
 class TestScrapWithOpenTickets:
@@ -425,16 +442,16 @@ class TestScrapWithOpenTickets:
     parts are closed."""
 
     # With the count since S025 (BR1-15): the unit deactivation says the same
-    CLOSE_FIRST = {"error": "Close its tickets first (1 open)", "field": "status"}
+    CLOSE_FIRST = {"error": "Close its tickets first (1 open)", "field": "lifecycle"}
 
     def test_an_open_ticket_on_the_node_refuses_until_closed(self, admin, make_equipment, make_ticket,
                                                              set_ticket_state):
         mill = make_equipment()
         ticket = make_ticket(mill, intensity="degraded")
-        res = _put(admin, mill, status="scrapped")
+        res = _put(admin, mill, lifecycle="scrapped")
         assert (res.status_code, res.get_json()) == (409, self.CLOSE_FIRST)
         set_ticket_state(ticket, "closed")
-        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
 
     def test_an_open_ticket_on_a_component_below_refuses(self, admin, make_equipment, make_ticket,
                                                         set_ticket_state):
@@ -443,30 +460,30 @@ class TestScrapWithOpenTickets:
         motor = make_equipment(parent=drive, level="component")
         ticket = make_ticket(motor)
         # The ticket is on the motor itself: scrapping it is refused
-        assert (_put(admin, motor, status="scrapped").get_json()) == self.CLOSE_FIRST
+        assert (_put(admin, motor, lifecycle="scrapped").get_json()) == self.CLOSE_FIRST
         # With the motor and its component-unit forced to scrapped, the motor's open ticket
         # still blocks scrapping the machine
-        _db("UPDATE equipment SET status = 'scrapped' WHERE id IN (%s, %s)", (motor["id"], drive["id"]))
-        assert (_put(admin, mill, status="scrapped").get_json()) == self.CLOSE_FIRST
+        _db("UPDATE equipment SET lifecycle = 'scrapped' WHERE id IN (%s, %s)", (motor["id"], drive["id"]))
+        assert (_put(admin, mill, lifecycle="scrapped").get_json()) == self.CLOSE_FIRST
         set_ticket_state(ticket, "closed")
-        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
 
     def test_a_ticket_on_a_sibling_does_not_block(self, admin, make_equipment, make_ticket):
         mill = make_equipment()
         drive, pump = make_equipment(parent=mill), make_equipment(parent=mill)
         make_ticket(pump)
-        assert _put(admin, drive, status="scrapped").status_code == 200
+        assert _put(admin, drive, lifecycle="scrapped").status_code == 200
 
 
 class TestEvents:
 
     def test_one_event_per_changed_tracked_field(self, admin, make_model, make_equipment):
         mill, model = make_equipment(), make_model()
-        _put(admin, mill, model_id=model["id"], criticality="A", status="standby", name="Renamed")
+        _put(admin, mill, model_id=model["id"], criticality="A", lifecycle="standby", name="Renamed")
         events = _events(admin, mill)
         assert sorted(events[:4]) == sorted([
             ("model", mill["model_label"], model["label"]), ("class", mill["class_code"], model["class_code"]),
-            ("criticality", "C", "A"), ("status", "in_service", "standby"),
+            ("criticality", "C", "A"), ("lifecycle", "in_service", "standby"),
         ])
         assert len(events) == 5
 
@@ -503,17 +520,17 @@ class TestEvents:
             raise RuntimeError("forced after the events were written")
         monkeypatch.setattr(equipment, "_write_events", write_then_fail)
         # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
-        assert server_error(_put(admin, mill, status="standby")) == SERVER_ERROR
+        assert server_error(_put(admin, mill, lifecycle="standby")) == SERVER_ERROR
         monkeypatch.undo()
-        assert _get(admin, mill)["status"] == "in_service"
+        assert _get(admin, mill)["lifecycle"] == "in_service"
         assert [e[0] for e in _events(admin, mill)] == ["created"]
 
     def test_newest_first(self, admin, make_equipment):
         mill = make_equipment()
-        _put(admin, mill, status="standby")
-        _put(admin, mill, status="out_of_use")
+        _put(admin, mill, lifecycle="standby")
+        _put(admin, mill, lifecycle="out_of_use")
         events = _get(admin, mill)["events"]
-        assert [e["event"] for e in events] == ["status", "status", "created"]
+        assert [e["event"] for e in events] == ["lifecycle", "lifecycle", "created"]
         assert [e["new_value"] for e in events[:2]] == ["out_of_use", "standby"]
         assert events[0]["created_by"] == "test_it_admin"
         assert events[0]["created_at"].endswith("+05:30")
@@ -581,11 +598,11 @@ class TestRereadAfterWrite:
                                                                 stale_reread, monkeypatch):
         mill, target = make_equipment(), make_unit()
         stale_reread(lambda row: None)
-        res = _put(admin, mill, unit_id=target["id"], status="standby")
+        res = _put(admin, mill, unit_id=target["id"], lifecycle="standby")
         monkeypatch.undo()
         assert (res.status_code, res.get_json()) == (409, self.RETRY)
         node = _get(admin, mill)
-        assert (node["unit_id"], node["status"]) == (mill["unit_id"], "in_service")
+        assert (node["unit_id"], node["lifecycle"]) == (mill["unit_id"], "in_service")
         assert [e[0] for e in _events(admin, mill)] == ["created"]
 
     def test_a_target_parent_the_snapshot_cannot_see_is_409_parent_id(self, admin, make_equipment,
@@ -672,7 +689,7 @@ class TestListing:
     @pytest.mark.parametrize("params, field", [
         ({"page": "0"}, "page"), ({"page": "x"}, "page"), ({"per_page": "0"}, "per_page"),
         ({"per_page": "201"}, "per_page"), ({"per_page": "-1"}, "per_page"), ({"unit_id": "a"}, "unit_id"),
-        ({"status": "broken"}, "status"), ({"criticality": "D"}, "criticality"), ({"level": "part"}, "level"),
+        ({"lifecycle": "broken"}, "lifecycle"), ({"criticality": "D"}, "criticality"), ({"level": "part"}, "level"),
         ({"type_id": "x"}, "type_id"), ({"type_id": "0"}, "type_id"),
         # CR1-02: digits int() rejects, and pages past MAX_PAGE (an OFFSET MariaDB would refuse)
         ({"page": "²"}, "page"), ({"per_page": "²"}, "per_page"), ({"unit_id": "١"}, "unit_id"),
@@ -707,7 +724,7 @@ class TestListing:
         # Exact, so it also guards that the list has no notes (S004 § 5.5)
         assert set(item) == {"id", "code", "level", "name", "class_id", "class_code", "type_id", "type_name",
                              "model_id", "model_designation", "manufacturer_name", "model_label",
-                             "unit_id", "unit", "full_path", "effective_criticality", "status", "part_count",
+                             "unit_id", "unit", "full_path", "effective_criticality", "lifecycle", "part_count",
                              "ticket_light"}
         assert (item["unit_id"], item["unit"], item["full_path"]) == (unit["id"], unit["full_code"],
                                                                       mill["full_path"])
@@ -723,16 +740,16 @@ class TestListing:
         assert _ids(admin, unit_id=unit["id"], level="component") == [motor["id"]]
         assert set(_ids(admin, unit_id=unit["id"], level="all")) == {mill["id"], drive["id"], motor["id"]}
 
-    def test_site_unit_class_and_status_filters(self, admin, make_site, make_unit, make_class, make_equipment):
+    def test_site_unit_class_and_lifecycle_filters(self, admin, make_site, make_unit, make_class, make_equipment):
         site = make_site()
         unit_a, unit_b = make_unit(site), make_unit(site)
         cls = make_class()
         a = make_equipment(unit=unit_a, cls=cls)
-        b = make_equipment(unit=unit_b, status="standby")
+        b = make_equipment(unit=unit_b, lifecycle="standby")
         assert set(_ids(admin, site_id=site["id"])) == {a["id"], b["id"]}
         assert _ids(admin, unit_id=unit_b["id"]) == [b["id"]]
         assert _ids(admin, class_id=cls["id"]) == [a["id"]]
-        assert _ids(admin, site_id=site["id"], status="standby") == [b["id"]]
+        assert _ids(admin, site_id=site["id"], lifecycle="standby") == [b["id"]]
 
     def test_search_escapes_wildcards(self, admin, make_unit, make_equipment):
         unit = make_unit()
@@ -753,7 +770,7 @@ class TestListing:
     def test_scrapped_hidden_unless_requested(self, admin, make_unit, make_equipment):
         unit = make_unit()
         mill = make_equipment(unit=unit)
-        _put(admin, mill, status="scrapped")
+        _put(admin, mill, lifecycle="scrapped")
         assert _ids(admin, unit_id=unit["id"]) == []
         assert _ids(admin, unit_id=unit["id"], include_scrapped=1) == [mill["id"]]
 
@@ -763,7 +780,7 @@ class TestListing:
         drive = make_equipment(parent=mill)
         make_equipment(parent=drive, level="component")   # grandchild: not counted
         dead = make_equipment(parent=mill, level="component")
-        _put(admin, dead, status="scrapped")
+        _put(admin, dead, lifecycle="scrapped")
         assert _list(admin, unit_id=unit["id"])["items"][0]["part_count"] == 1
 
 
@@ -811,7 +828,7 @@ class TestUnitAccess:
     def test_a_scrapped_parent_elsewhere_is_403_not_409(self, admin, user_with_units, two_units, make_model):
         """BR3-02: access is refused before the parent's state, so its state is not revealed."""
         unit_a, _, _, mill_b = two_units
-        assert _put(admin, mill_b, status="scrapped").status_code == 200
+        assert _put(admin, mill_b, lifecycle="scrapped").status_code == 200
         engineer = user_with_units("maint_engineer", [unit_a])
         res = engineer.post(EQUIPMENT, json={"level": "component", "parent_id": mill_b["id"],
                                              "model_id": make_model()["id"], "name": "x"})
@@ -1092,7 +1109,7 @@ class TestTypes:
 
     def test_a_scrapped_node_takes_no_model_or_notes(self, admin, make_model, make_equipment):
         node = make_equipment()
-        _put(admin, node, status="scrapped")
+        _put(admin, node, lifecycle="scrapped")
         assert _put(admin, node, model_id=make_model()["id"]).status_code == 409
         assert _put(admin, node, notes="x").status_code == 409
 
@@ -1292,7 +1309,7 @@ class TestTicketLight:
 
     def test_a_scrapped_row_is_none(self, admin, make_equipment):
         mill = make_equipment()
-        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
         assert self._light(admin, mill, include_scrapped="1") == "none"
 
     def test_filters_and_total(self, admin, make_unit, make_equipment, make_ticket):

@@ -87,8 +87,8 @@ class TestQrSvg:
         assert make_qr(label_url(base, "ABCD12345678")).version <= 5
 
 
-def _row(node_id, code, parent_id=None, status="in_service"):
-    return {"id": node_id, "code": code, "parent_id": parent_id, "status": status}
+def _row(node_id, code, parent_id=None, lifecycle="in_service"):
+    return {"id": node_id, "code": code, "parent_id": parent_id, "lifecycle": lifecycle}
 
 
 # 1 PRS001 ─┬─ 3 MOT002 ── 5 BRG001

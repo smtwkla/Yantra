@@ -458,7 +458,7 @@ class TestEdit:
 
     def test_a_scrapped_component_is_400(self, admin, make_equipment, machine, ticket):
         part = make_equipment(parent=machine)
-        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         assert refusal(admin.put(url(ticket), json={"component_id": part["id"]}))[:2] == (400, "component_id")
 
     def test_a_scrap_committed_during_the_edit_is_seen(self, admin, make_equipment, machine, ticket, db_rows,
@@ -470,7 +470,7 @@ class TestEdit:
 
         def lock_then_scrap_elsewhere(cur, ticket_id, key):
             locked = real_lock(cur, ticket_id, key)   # its plain read has taken the snapshot
-            db_rows("UPDATE equipment SET status = 'scrapped' WHERE id = %s", (part["id"],))
+            db_rows("UPDATE equipment SET lifecycle = 'scrapped' WHERE id = %s", (part["id"],))
             return locked
         monkeypatch.setattr(tickets, "_lock_open_ticket", lock_then_scrap_elsewhere)
         assert refusal(admin.put(url(ticket), json={"component_id": part["id"]}))[:2] == (400, "component_id")

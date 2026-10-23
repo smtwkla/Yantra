@@ -1,6 +1,6 @@
 // The equipment register's dialogs on the three screen sizes (S012 manufacturers and models;
-// S003 add, move and status; S006 documents: upload and title), each checked with
-// expectDialogFits.  Names carry the project's name: the three projects share one database.
+// S003 add, move and lifecycle, named status before S030; S006 documents: upload and title),
+// each checked with expectDialogFits.  Names carry the project's name: the three projects share one database.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
@@ -71,7 +71,7 @@ test("S003: engineer adds equipment from the list; its page opens", async ({ pag
   await expect(page.getByText("SMTW.MCC1").first()).toBeVisible();
 });
 
-test("S003/S006: engineer moves equipment, changes its status, uploads a document and edits its title", async ({ page }, testInfo) => {
+test("S003/S006: engineer moves equipment, changes its lifecycle, uploads a document and edits its title", async ({ page }, testInfo) => {
   const node = await createEquipment(`E2E moved ${testInfo.project.name}`);
   await asPerson(page, "engineer", `/equipment/${node.id}`);
   await expect(page.getByText("SMTW.MCC1").first()).toBeVisible();
@@ -82,9 +82,9 @@ test("S003/S006: engineer moves equipment, changes its status, uploads a documen
   await saveDialog(page, "Save");
   await expect(page.getByText("SMTW.MCC2").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Change status" }).click();
+  await page.getByRole("button", { name: "Change lifecycle" }).click();
   await expectDialogFits(page);
-  await (await openDialog(page)).getByLabel("Status").selectOption({ label: "Standby" });
+  await (await openDialog(page)).getByLabel("Lifecycle").selectOption({ label: "Standby" });
   await saveDialog(page, "Save");
   await expect(page.getByText("Standby").first()).toBeVisible();
 
@@ -103,6 +103,37 @@ test("S003/S006: engineer moves equipment, changes its status, uploads a documen
   await (await openDialog(page)).getByLabel("Title").fill("Service manual, 2026 edition");
   await saveDialog(page, "Save");
   await expect(documents).toContainText("Service manual, 2026 edition");
+});
+
+test("S030: the lifecycle is named Lifecycle on the form, the page, the list and the history", async ({ page }, testInfo) => {
+  // The word Status is reserved for the machine's maintenance status (S030 U1); the checks for it
+  // are scoped to the dialogs and the list's header, since the Tickets filter rightly says "Any ticket status"
+  const noStatus = /\bStatus\b/;
+  await asPerson(page, "engineer", "/equipment");
+  await expect(page.locator("thead th", { hasText: /^Lifecycle$/ })).toBeVisible();
+  await expect(page.locator("thead")).not.toContainText(noStatus);
+  await expect(page.getByRole("combobox", { name: "Lifecycle" }).locator("option").first()).toHaveText("Any lifecycle");
+
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  await expectDialogFits(page);
+  const addDialog = await openDialog(page);
+  await expect(addDialog.getByLabel("Lifecycle").locator("option:checked")).toHaveText("In service");
+  await expect(addDialog).not.toContainText(noStatus);
+  await addDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+
+  const node = await createEquipment(`E2E lifecycle ${testInfo.project.name}`);
+  await page.goto(`/equipment/${node.id}`);
+  await page.getByRole("button", { name: "Change lifecycle" }).click();
+  await expectDialogFits(page);
+  const changeDialog = await openDialog(page);
+  await expect(changeDialog.locator(".modal-title")).toHaveText(`Change lifecycle of ${node.code}`);
+  await expect(changeDialog).not.toContainText(noStatus);
+  await changeDialog.getByLabel("Lifecycle").selectOption({ label: "Standby" });
+  await saveDialog(page, "Save");
+  await expect(page.locator("h4 + .badge")).toHaveText("Standby");
+  const history = page.locator(".card", { has: page.locator(".card-header", { hasText: /^\s*History\s*$/ }) });
+  await expect(history).toContainText("Lifecycle: In service → Standby");
 });
 
 /** A machine at SMTW.MCC1 made through the API as admin (the test's own record). */

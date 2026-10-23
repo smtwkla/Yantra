@@ -738,7 +738,7 @@ def raise_ticket():
     with transaction(conn), conn.cursor() as cur:
         # (1) the node; 404 outside the user's units; 403 unless ticket:raise at its site
         locked, node = load_node_for_user(cur, clean["equipment_id"], for_update=True, key=RAISE_KEY)
-        if locked["status"] == SCRAPPED:
+        if locked["lifecycle"] == SCRAPPED:
             raise ApiError(SCRAPPED_NO_TICKETS, 409)
         if clean["restore"] is not None:
             # A1: back in service needs its own key at the node's site, checked before the insert
@@ -749,9 +749,9 @@ def raise_ticket():
         else:
             # Ancestors are read plain, never locked.  Through the API a machine is scrapped
             # only after its parts, so this is defence in depth.
-            cur.execute("SELECT id, status, unit_id, class_id FROM equipment WHERE id = %s", (machine_id,))
+            cur.execute("SELECT id, lifecycle, unit_id, class_id FROM equipment WHERE id = %s", (machine_id,))
             machine = cur.fetchone()
-            if machine["status"] == SCRAPPED:
+            if machine["lifecycle"] == SCRAPPED:
                 raise ApiError(SCRAPPED_NO_TICKETS, 409)
 
         mode_code = None
@@ -1066,10 +1066,10 @@ def _locked_node_of_machine(cur, node_id, machine_id, machine_counts):
     is seen, or waits for this write and counts its ticket (S025 § 1.6).  The parent is read
     plain: a locking read through the join would lock it too.  Shared by the ticket edit's
     component and the parts line's node (S020 § 5.2); each caller raises its own refusal."""
-    cur.execute("SELECT id, code, name, level, status, parent_id FROM equipment WHERE id = %s LOCK IN SHARE MODE",
+    cur.execute("SELECT id, code, name, level, lifecycle, parent_id FROM equipment WHERE id = %s LOCK IN SHARE MODE",
                 (node_id,))
     node = cur.fetchone()
-    if node is None or node["status"] == SCRAPPED:
+    if node is None or node["lifecycle"] == SCRAPPED:
         return None
     if node["level"] == MACHINE_LEVEL:
         return node if machine_counts and node["id"] == machine_id else None

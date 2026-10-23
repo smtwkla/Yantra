@@ -5,7 +5,7 @@
  * Scrapped parts stay listed, greyed and struck through.
  */
 import CriticalityBadge from "../../components/CriticalityBadge.vue";
-import StatusBadge from "../../components/StatusBadge.vue";
+import LifecycleBadge from "../../components/LifecycleBadge.vue";
 
 defineProps({
   children: { type: Array, required: true },
@@ -17,10 +17,10 @@ defineProps({
   <p v-if="children.length === 0 && !nested" class="text-secondary mb-0">No parts yet.</p>
   <ul v-else class="list-unstyled mb-0" :class="{ 'ms-4 mt-1': nested }">
     <li v-for="part in children" :key="part.id" class="mb-1">
-      <div class="part-row" :class="{ 'text-secondary text-decoration-line-through': part.status === 'scrapped' }">
+      <div class="part-row" :class="{ 'text-secondary text-decoration-line-through': part.lifecycle === 'scrapped' }">
         <router-link :to="`/equipment/${part.id}`" class="fw-semibold">{{ part.code }}</router-link>
         <span>{{ part.name }}</span>
-        <StatusBadge :status="part.status" class="ms-auto" />
+        <LifecycleBadge :lifecycle="part.lifecycle" class="ms-auto" />
         <CriticalityBadge :grade="part.effective_criticality" :inherited="part.criticality === null" />
       </div>
       <PartsTree v-if="part.children?.length" :children="part.children" nested />

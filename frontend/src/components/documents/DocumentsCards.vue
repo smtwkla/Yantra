@@ -33,7 +33,7 @@ const props = defineProps({
   // `undefined` default: an absent Boolean prop would otherwise be cast to false
   canEditDocuments: { type: Boolean, default: undefined },
   // Show the "Managed in Masters" line on inherited groups: for users who may edit model
-  // documents (equipment:edit held at any site), whatever the node's status; the parent decides
+  // documents (equipment:edit held at any site), whatever the node's lifecycle; the parent decides
   showManagedIn: { type: Boolean, default: false },
   // "model" for a Masters owner, whose documents show at every site and on every
   // machine of it; "" for a node

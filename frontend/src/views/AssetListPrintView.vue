@@ -10,7 +10,7 @@ import { apiGet } from "../api";
 import { ensureEquipmentClasses, ensureEquipmentTypes, equipmentClasses, equipmentTypes } from "../stores/masters";
 import { filtersLabel, parseAssetListQuery } from "../utils/assetList";
 import { formatDateTime } from "../utils/datetime";
-import { STATUS_LABELS } from "../utils/equipmentLabels";
+import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 
 const route = useRoute();
 const router = useRouter();
@@ -55,9 +55,9 @@ function setSwitch(key, on) {
 }
 
 const classType = (row) => (row.type_name ? `${row.class_code} · ${row.type_name}` : row.class_code);
-const statusText = (row) => STATUS_LABELS[row.status] ?? row.status;
+const lifecycleText = (row) => LIFECYCLE_LABELS[row.lifecycle] ?? row.lifecycle;
 const detailLine = (row) =>
-  [classType(row), row.model_label, row.serial_no, row.year, row.effective_criticality, statusText(row)]
+  [classType(row), row.model_label, row.serial_no, row.year, row.effective_criticality, lifecycleText(row)]
     .filter((v) => v !== null && v !== undefined && v !== "")
     .join(" · ");
 const countLine = (unit) =>
@@ -130,7 +130,7 @@ function print() {
           <thead>
             <tr>
               <th>#</th><th>Code</th><th>Name</th><th>Class · Type</th><th>Model</th><th>Serial no.</th>
-              <th>Year</th><th>Crit.</th><th>Status</th>
+              <th>Year</th><th>Crit.</th><th>Lifecycle</th>
             </tr>
           </thead>
           <tbody>
@@ -143,7 +143,7 @@ function print() {
               <td>{{ row.serial_no }}</td>
               <td>{{ row.year }}</td>
               <td>{{ row.effective_criticality }}</td>
-              <td>{{ statusText(row) }}</td>
+              <td>{{ lifecycleText(row) }}</td>
             </tr>
           </tbody>
         </table>

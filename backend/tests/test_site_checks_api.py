@@ -51,9 +51,9 @@ class TestEquipmentWrites:
     def test_read_at_b(self, user, world):
         assert user.get(f"{EQUIPMENT}/{world['mill_b']['id']}").status_code == 200
 
-    @pytest.mark.parametrize("body", [{"status": "standby"}, {"notes": "Bearing 6205"}, {"model_id": "other"},
+    @pytest.mark.parametrize("body", [{"lifecycle": "standby"}, {"notes": "Bearing 6205"}, {"model_id": "other"},
                                       {"criticality": "A"}])
-    def test_status_notes_model_at_b(self, user, world, body):
+    def test_lifecycle_notes_model_at_b(self, user, world, body):
         if body.get("model_id") == "other":
             # A model of another class: a reclassification, refused at B (BR3-03)
             body = {"model_id": world["other_model"]["id"]}

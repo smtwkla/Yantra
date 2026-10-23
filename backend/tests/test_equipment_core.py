@@ -3,7 +3,7 @@
 import pytest
 
 from equipment_core import (
-    MODEL_INACTIVE, PICK_A_MODEL, check_parent, check_status_change, check_type_class, derive_from_model,
+    MODEL_INACTIVE, PICK_A_MODEL, check_lifecycle_change, check_parent, check_type_class, derive_from_model,
     effective_criticality, format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 
@@ -111,7 +111,7 @@ class TestDeriveFromModel:
 
 def _state(**overrides):
     base = {"level": "equipment", "full_path": "S.U.VBM001", "model_label": "Atlas Copco GA37", "class_code": "VBM",
-            "type_name": None, "criticality": "C", "status": "in_service", "name": "Mill", "serial_no": "X",
+            "type_name": None, "criticality": "C", "lifecycle": "in_service", "name": "Mill", "serial_no": "X",
             "year": 2020, "notes": None}
     return {**base, **overrides}
 
@@ -128,7 +128,7 @@ class TestTrackedChanges:
         ("model_label", "Atlas Copco GA37", "Atlas Copco GA55", "model"),
         ("class_code", "VBM", "HP", "class"),
         ("criticality", "C", "A", "criticality"),
-        ("status", "in_service", "standby", "status"),
+        ("lifecycle", "in_service", "standby", "lifecycle"),
     ])
     def test_each_tracked_field(self, field, old, new, event):
         assert tracked_changes(_state(**{field: old}), _state(**{field: new})) == [(event, old, new)]
@@ -179,11 +179,11 @@ class TestTrackedChanges:
         assert tracked_changes(_state(), _state(notes="Mounted on the\nleft side")) == []
 
     def test_several_changes_one_event_each(self):
-        events = tracked_changes(_state(), _state(class_code="HP", status="scrapped", name="x"))
-        assert sorted(e[0] for e in events) == ["class", "status"]
+        events = tracked_changes(_state(), _state(class_code="HP", lifecycle="scrapped", name="x"))
+        assert sorted(e[0] for e in events) == ["class", "lifecycle"]
 
 
-class TestCheckStatusChange:
+class TestCheckLifecycleChange:
 
     @pytest.mark.parametrize("old, new, ok", [
         (None, "in_service", True), (None, "standby", True), (None, "out_of_use", True), (None, "scrapped", False),
@@ -194,7 +194,7 @@ class TestCheckStatusChange:
         ("scrapped", "scrapped", True), ("in_service", "in_service", True),
     ])
     def test_table(self, old, new, ok):
-        assert (check_status_change(old, new) is None) is ok
+        assert (check_lifecycle_change(old, new) is None) is ok
 
 
 class TestValidateCreate:
@@ -240,7 +240,7 @@ class TestValidateCreate:
         assert errors == [] and "code" not in clean
 
     @pytest.mark.parametrize("field, value", [
-        ("status", "broken"), ("criticality", "D"), ("criticality", "a"), ("model_id", "2"),
+        ("lifecycle", "broken"), ("criticality", "D"), ("criticality", "a"), ("model_id", "2"),
         ("model_id", True), ("model_id", 0), ("unit_id", 0), ("serial_no", 5), ("serial_no", "x" * 101),
         ("name", "  "),
     ])
@@ -248,13 +248,13 @@ class TestValidateCreate:
         _, errors = _create(**{**EQUIPMENT, field: value})
         assert _fields(errors) == [field]
 
-    @pytest.mark.parametrize("status", ["in_service", "standby", "out_of_use"])
-    def test_born_status(self, status):
-        assert _create(**EQUIPMENT, status=status)[1] == []
+    @pytest.mark.parametrize("lifecycle", ["in_service", "standby", "out_of_use"])
+    def test_born_lifecycle(self, lifecycle):
+        assert _create(**EQUIPMENT, lifecycle=lifecycle)[1] == []
 
     def test_born_scrapped_is_400(self):
-        _, errors = _create(**EQUIPMENT, status="scrapped")
-        assert _fields(errors) == ["status"]
+        _, errors = _create(**EQUIPMENT, lifecycle="scrapped")
+        assert _fields(errors) == ["lifecycle"]
 
     @pytest.mark.parametrize("year, ok", [
         (1899, False), (1900, True), (THIS_YEAR, True), (THIS_YEAR + 1, True), (THIS_YEAR + 2, False),
@@ -293,6 +293,7 @@ class TestModelAndRefusedFields:
         ("model", "Make and model are now picked from Models"),
         ("class_id", "Class and type come from the model"),
         ("type_id", "Class and type come from the model"),
+        ("status", "This field is now called Lifecycle. Reload the page."),   # S030 § 4.4
     ])
     @pytest.mark.parametrize("value", [None, 2, "Kirloskar"])
     def test_old_fields_are_refused_even_as_null(self, field, message, value):
@@ -351,5 +352,5 @@ class TestValidateUpdate:
         assert _update(unit_id=7) == ({"unit_id": 7}, [])
         assert _update(stored_level="component", parent_id=7) == ({"parent_id": 7}, [])
 
-    def test_scrapped_is_a_valid_target_status_on_update(self):
-        assert _update(status="scrapped") == ({"status": "scrapped"}, [])
+    def test_scrapped_is_a_valid_target_lifecycle_on_update(self):
+        assert _update(lifecycle="scrapped") == ({"lifecycle": "scrapped"}, [])

@@ -10,22 +10,23 @@ export const LEVEL_LABELS = {
   component: "Component",
 };
 
-// EN 13306 terms are in_service (operating or idle) and standby; out_of_use and scrapped are Yantra life-cycle statuses.
-export const STATUS_LABELS = {
+// The lifecycle (S030; ISO 55000 life cycle). EN 13306 terms are in_service (operating or idle) and standby;
+// out_of_use and scrapped are Yantra lifecycle stages.
+export const LIFECYCLE_LABELS = {
   in_service: "In service",
   standby: "Standby",
   out_of_use: "Out of use",
   scrapped: "Scrapped",
 };
 
-export const STATUS_HELP = {
+export const LIFECYCLE_HELP = {
   in_service: "In use (EN 13306 operating or idle).",
   standby: "Ready to run, not running, e.g. a spare pump (EN 13306 standby).",
-  out_of_use: "Laid up; no PM due (Yantra life-cycle status).",
-  scrapped: "Removed from the plant for good (Yantra life-cycle status).",
+  out_of_use: "Laid up; no PM due (Yantra lifecycle stage).",
+  scrapped: "Removed from the plant for good (Yantra lifecycle stage).",
 };
 
-export const STATUS_BADGE_CLASS = {
+export const LIFECYCLE_BADGE_CLASS = {
   in_service: "text-bg-success",
   standby: "text-bg-primary",
   out_of_use: "text-bg-secondary",
@@ -60,8 +61,8 @@ export function describeEvent(event) {
     case "moved_unit":
     case "moved_parent":
       return change("Moved", oldValue, newValue);
-    case "status":
-      return change("Status", label(STATUS_LABELS, oldValue), label(STATUS_LABELS, newValue));
+    case "lifecycle":
+      return change("Lifecycle", label(LIFECYCLE_LABELS, oldValue), label(LIFECYCLE_LABELS, newValue));
     case "criticality":
       return change("Criticality", criticalityText(oldValue), criticalityText(newValue));
     case "class":

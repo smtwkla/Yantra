@@ -5,7 +5,7 @@
  *
  * The parent calls openCreateEquipment(), openCreatePart(parentNode) or openEdit(node)
  * through a template ref and handles @saved ({result, created}). Edit sends only the
- * fields it owns; moving and the status have their own dialogs.
+ * fields it owns; moving and the lifecycle have their own dialogs.
  *
  * The node picks its model (S012 § 1.4); its class and type come from the model and are shown,
  * not picked. The class filter only narrows the model list and is not sent.
@@ -18,14 +18,14 @@ import {
   defaultSiteId, ensureEquipmentClasses, ensureModels, ensureSites, ensureUnits, equipmentClasses,
   equipmentModels, sites, units,
 } from "../../stores/masters";
-import { LEVEL_LABELS, STATUS_LABELS } from "../../utils/equipmentLabels";
+import { LEVEL_LABELS, LIFECYCLE_LABELS } from "../../utils/equipmentLabels";
 import { classHasNoModel, modelChoices } from "../../utils/modelPicker";
 
 const emit = defineEmits(["saved"]);
 
 const COMMON_BLANK = { model_id: "", name: "", serial_no: "", year: "", notes: "" };
 // A new record cannot start scrapped; the labels come from the one shared place
-const CREATE_STATUSES = Object.entries(STATUS_LABELS).filter(([value]) => value !== "scrapped");
+const CREATE_LIFECYCLES = Object.entries(LIFECYCLE_LABELS).filter(([value]) => value !== "scrapped");
 
 // What the open dialog is about, for display only; nothing here is sent
 const NO_CONTEXT = {
@@ -41,10 +41,10 @@ function blank(seed) {
     return {
       level: seed.parent.level === "equipment" ? "component_unit" : "component",
       parent_id: seed.parent.id,
-      ...COMMON_BLANK, criticality: "", status: "in_service",
+      ...COMMON_BLANK, criticality: "", lifecycle: "in_service",
     };
   }
-  return { level: "equipment", unit_id: "", ...COMMON_BLANK, criticality: "C", status: "in_service" };
+  return { level: "equipment", unit_id: "", ...COMMON_BLANK, criticality: "C", lifecycle: "in_service" };
 }
 
 const optionalText = (value) => (String(value ?? "").trim() === "" ? null : String(value).trim());
@@ -270,11 +270,11 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
         <div v-if="fieldError('criticality')" class="invalid-feedback d-block">{{ fieldError("criticality") }}</div>
       </div>
       <div v-if="!isEdit" class="col-sm-4">
-        <label class="form-label" for="eq-status">Status</label>
-        <select id="eq-status" v-model="form.status" class="form-select" :class="{ 'is-invalid': fieldError('status') }">
-          <option v-for="[value, text] in CREATE_STATUSES" :key="value" :value="value">{{ text }}</option>
+        <label class="form-label" for="eq-lifecycle">Lifecycle</label>
+        <select id="eq-lifecycle" v-model="form.lifecycle" class="form-select" :class="{ 'is-invalid': fieldError('lifecycle') }">
+          <option v-for="[value, text] in CREATE_LIFECYCLES" :key="value" :value="value">{{ text }}</option>
         </select>
-        <div v-if="fieldError('status')" class="invalid-feedback d-block">{{ fieldError("status") }}</div>
+        <div v-if="fieldError('lifecycle')" class="invalid-feedback d-block">{{ fieldError("lifecycle") }}</div>
       </div>
       <div class="col-12 form-text mt-1">
         Criticality —

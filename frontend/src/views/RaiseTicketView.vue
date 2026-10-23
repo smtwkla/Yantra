@@ -71,7 +71,7 @@ const nodeId = computed(() => route.query.equipment ?? null);
 const repeatOfId = computed(() => route.query.repeat_of ?? null);
 const canRaiseHere = computed(() => (node.value?.permissions ?? []).includes("ticket:raise"));
 const canRestoreHere = computed(() => (node.value?.permissions ?? []).includes("ticket:restore"));
-const scrapped = computed(() => node.value?.status === "scrapped");
+const scrapped = computed(() => node.value?.lifecycle === "scrapped");
 
 async function loadNode() {
   const seq = ++loadSeq;
@@ -88,7 +88,7 @@ async function loadNode() {
     const loaded = await apiGet(`/api/equipment/${nodeId.value}`);
     if (seq !== loadSeq) return;
     node.value = loaded;
-    if (loaded.status === "scrapped" || !loaded.permissions.includes("ticket:raise")) return;
+    if (loaded.lifecycle === "scrapped" || !loaded.permissions.includes("ticket:raise")) return;
     // The open-tickets warning is about the machine, also when the label scanned was a part's (BR2-08)
     const machine = loaded.level === "equipment" ? loaded.id : loaded.ancestors[0].id;
     const [modeList, peopleList, open] = await Promise.all([

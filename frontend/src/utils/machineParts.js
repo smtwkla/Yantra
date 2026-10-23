@@ -9,7 +9,7 @@ import { apiGet } from "../api";
 
 /** The equipment detail's `children` (two levels) -> [{id, label}], scrapped ones left out. */
 export function partRows(children, depth = 0) {
-  return (children ?? []).flatMap((child) => (child.status === "scrapped" ? [] : [
+  return (children ?? []).flatMap((child) => (child.lifecycle === "scrapped" ? [] : [
     { id: child.id, label: `${"— ".repeat(depth)}${child.code} ${child.name}` },
     ...partRows(child.children, depth + 1),
   ]));

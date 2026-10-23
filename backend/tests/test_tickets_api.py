@@ -120,13 +120,13 @@ class TestRaiseRefusals:
 
     def test_scrapped_node_is_409(self, admin, make_equipment, machine):
         part = make_equipment(parent=machine)
-        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         res = admin.post(TICKETS, json={"equipment_id": part["id"], "intensity": "critical", "description": "x"})
         assert _refusal(res) == (409, None, "Scrapped equipment takes no tickets")
 
     def test_a_part_of_a_scrapped_machine_is_409(self, admin, make_equipment, machine, db_rows):
         part = make_equipment(parent=machine)
-        db_rows("UPDATE equipment SET status = 'scrapped' WHERE id = %s", (machine["id"],))
+        db_rows("UPDATE equipment SET lifecycle = 'scrapped' WHERE id = %s", (machine["id"],))
         res = admin.post(TICKETS, json={"equipment_id": part["id"], "intensity": "critical", "description": "x"})
         assert _refusal(res) == (409, None, "Scrapped equipment takes no tickets")
 

@@ -9,8 +9,8 @@ def machine(id_, code, site="S1", unit="U1", **extra):
             "unit_code": unit, "unit_name": f"{unit} name", **extra}
 
 
-def part(id_, parent_id, code, status="in_service"):
-    return {"id": id_, "parent_id": parent_id, "code": code, "status": status}
+def part(id_, parent_id, code, lifecycle="in_service"):
+    return {"id": id_, "parent_id": parent_id, "code": code, "lifecycle": lifecycle}
 
 
 def codes(unit):

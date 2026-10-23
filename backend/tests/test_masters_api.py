@@ -267,7 +267,7 @@ class TestUnitCodeFreeze:
     def test_scrapped_equipment_still_freezes_the_unit(self, admin, make_unit, make_equipment, uniq):
         unit = make_unit()
         node = make_equipment(unit=unit)
-        assert admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"/api/equipment/{node['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         assert admin.put(f"{BASE}/units/{unit['id']}", json={"code": uniq.unit_code()}).status_code == 409
 
     def test_a_unit_used_only_by_a_closed_ticket_stays_frozen(self, admin, make_unit, make_site, make_equipment,
@@ -322,11 +322,11 @@ class TestActivationRules:
         assert unit["id"] in [u["id"] for u in admin.get(f"{BASE}/units?include_inactive=1").get_json()["items"]]
 
 
-    @pytest.mark.parametrize("status", ["in_service", "standby", "out_of_use"])
+    @pytest.mark.parametrize("lifecycle", ["in_service", "standby", "out_of_use"])
     def test_unit_holding_equipment_not_scrapped_cannot_be_deactivated(self, admin, make_unit, make_equipment,
-                                                                       status):
+                                                                       lifecycle):
         unit = make_unit()
-        make_equipment(unit=unit, status=status)
+        make_equipment(unit=unit, lifecycle=lifecycle)
         res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
         assert res.status_code == 409
         assert res.get_json()["field"] == "active"
@@ -357,7 +357,7 @@ class TestActivationRules:
     def test_unit_with_only_scrapped_equipment_can_be_deactivated(self, admin, make_unit, make_equipment):
         unit = make_unit()
         node = make_equipment(unit=unit)
-        admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"})
+        admin.put(f"/api/equipment/{node['id']}", json={"lifecycle": "scrapped"})
         assert admin.put(f"{BASE}/units/{unit['id']}", json={"active": False}).status_code == 200
 
 
@@ -411,7 +411,7 @@ class TestEquipmentClasses:
     def test_scrapped_equipment_still_freezes_the_class(self, admin, engineer, make_class, make_equipment, uniq):
         cls = make_class()
         node = make_equipment(cls=cls)
-        admin.put(f"/api/equipment/{node['id']}", json={"status": "scrapped"})
+        admin.put(f"/api/equipment/{node['id']}", json={"lifecycle": "scrapped"})
         res = engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"code": uniq.class_code()})
         assert res.status_code == 409
 

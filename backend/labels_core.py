@@ -111,7 +111,7 @@ def qr_svg(text):
 def expand_selection(selected_ids, rows, with_parts):
     """The nodes to print, in order → ``(rows, None)`` or ``(None, message)``.
 
-    ``rows`` are the fetched nodes (dicts with id, parent_id, code, status): the selected
+    ``rows`` are the fetched nodes (dicts with id, parent_id, code, lifecycle): the selected
     ones and, with parts, their children and grandchildren.  Each selected node comes in
     the order selected, then its parts level by level, by code.  Scrapped parts are left
     out (a scrapped part is gone; a scrapped node that was selected is printed).  A node
@@ -124,7 +124,7 @@ def expand_selection(selected_ids, rows, with_parts):
             children.setdefault(row["parent_id"], []).append(row)
 
     def live_parts(parent_ids):
-        found = [c for pid in parent_ids for c in children.get(pid, []) if c["status"] != SCRAPPED]
+        found = [c for pid in parent_ids for c in children.get(pid, []) if c["lifecycle"] != SCRAPPED]
         return sorted(found, key=lambda r: r["code"])
 
     ordered, seen = [], set()

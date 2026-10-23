@@ -306,6 +306,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S027 | [Work notes](S027-work-notes/1-brief.md) — *Add note* on an open ticket: what was found and tried, on the timeline (EN 13306 fault localisation and diagnosis); the raise's *What is wrong?* is the first note; engineers correct a note, the earlier text kept (v23) | 3 | Done — committed 03ed528; checks: 5 auto; row 13 (plain) for IT Admin | 22-10-2026 |
 | S028 | [Back-dating window: admin and backlog entry](S028-backdating-window/1-brief.md) — entered ticket times up to 3 years back for admin (key `ticket:backdate`) and for everyone until 30-11-2026; 7 days otherwise | — | Gate B (CR r1: 0 blocker, 0 major, 0 minor, 5 nits; approved 22-10-2026 by KLA) | 22-10-2026 |
 | S029 | [Ticket light on the equipment list](S029-equipment-ticket-light/1-brief.md) — a red / amber / green bulb per row (breakdown open = down; other open ticket; none) and a filter for equipment with tickets | 3 | Done — committed 12a1238; checks: 3 auto (light track) | 23-10-2026 |
+| S030 | [Equipment lifecycle](S030-equipment-lifecycle/1-brief.md) — the register field *Status* (in service / standby / out of use / scrapped) renamed *Lifecycle* in screens, API, code and DB (v25); *Status* reserved for down / working / degraded / PM due | 2 | Gate B (CR r1: 0 blocker, 0 major, 0 minor, 4 nits; full track) | 23-10-2026 |
 
 ## Queued (not yet briefed)
 

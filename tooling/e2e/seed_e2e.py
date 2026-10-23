@@ -123,7 +123,7 @@ def main():
     seed_dev.create_people(api, [(name, "direct", trades, login, roles)
                                  for _key, login, name, trades, roles in PEOPLE], ids)
     nodes = seed_dev.create_equipment(api, EQUIPMENT, ids)
-    api("PUT", f"/api/equipment/{nodes[SCRAPPED]['id']}", {"status": "scrapped"})
+    api("PUT", f"/api/equipment/{nodes[SCRAPPED]['id']}", {"lifecycle": "scrapped"})
     seed_overdue_ticket(api, nodes[OVERDUE_NODE]["id"])
 
     print(f"e2e seed: {len(sites)} sites, {len(units)} units, {len(PEOPLE)} people, {len(nodes)} equipment nodes,"

@@ -705,6 +705,30 @@ _MIGRATIONS = [
         """INSERT IGNORE INTO app_settings (setting_key, setting_value)
             VALUES ('escalate_minutes_a', '10'), ('escalate_minutes_b', '30'), ('escalate_minutes_c', '60')""",
     ]),
+    # S030 — equipment lifecycle (docs/steps/S030-equipment-lifecycle/1-brief.md § 4.1): the
+    # register field status is renamed lifecycle (ISO 55000 life cycle), so *status* is free for
+    # the machine's maintenance status (down / working).  The column keeps its type, default and
+    # place (RENAME COLUMN changes only the name; MariaDB ≥ 10.5.2).  The history event 'status'
+    # becomes 'lifecycle' on every existing row; old_value, new_value, time and author stay.
+    # The event statements run in this order so that no row holds 'status' when the last MODIFY
+    # drops it: a MODIFY that drops a used ENUM value fails in strict mode and blanks the value
+    # to '' without it.  Every statement is safe to run twice (a half-applied v25 re-runs: the
+    # rename skips, 'status' is re-added, no row is updated, 'status' is dropped again).
+    # _PRECONDITIONS: _v25_shape_check.  The previous release cannot run on v25 (it reads
+    # e.status): a rollback restores the database dump.
+    (25, "Equipment lifecycle: status renamed (S030)", [
+        "ALTER TABLE equipment RENAME COLUMN IF EXISTS status TO lifecycle",
+        # 1. Allow both names, so existing rows stay valid (safe to re-run; values kept by name)
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','status','criticality','class','type','model','lifecycle')
+            NOT NULL""",
+        # 2. Rename the event on every existing row
+        "UPDATE equipment_events SET event = 'lifecycle' WHERE event = 'status'",
+        # 3. Drop the old name; no row holds it now
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model')
+            NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]
@@ -747,8 +771,32 @@ def _v20_shape_check(cur):
     return f"Drop the old {' and '.join(old)} tables first (they must be empty) — S025 § 5.1"
 
 
+def _v25_shape_check(cur):
+    """v25's precondition (S030 § 4.2) -> None, or the refusal Settings › Database shows.
+
+    equipment must have exactly one of status (the normal case) and lifecycle (a half-applied
+    v25).  An absent table passes: on an empty database this runs before v20 has created it,
+    and v20 then creates status for v25 to rename.  Both columns would fail the RENAME half-way;
+    neither would skip it and leave every equipment read failing.  information_schema is read
+    with TABLE_SCHEMA = DATABASE(), as _old_tables_for_v20 does."""
+    cur.execute("SELECT COUNT(*) AS n FROM information_schema.TABLES"
+                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'equipment'")
+    if not cur.fetchone()["n"]:
+        return None
+    cur.execute("SELECT COLUMN_NAME FROM information_schema.COLUMNS"
+                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'equipment'"
+                " AND COLUMN_NAME IN ('status', 'lifecycle')")
+    columns = {row["COLUMN_NAME"] for row in cur.fetchall()}
+    if len(columns) == 2:
+        return ("equipment has both status and lifecycle columns; drop the one that is not in use first"
+                " — S030 § 4.2")
+    if not columns:
+        return "equipment has neither a status nor a lifecycle column — S030 § 4.2"
+    return None
+
+
 # version -> a function of the cursor that returns None (go) or why the version cannot run yet
-_PRECONDITIONS = {20: _v20_shape_check}
+_PRECONDITIONS = {20: _v20_shape_check, 25: _v25_shape_check}
 
 
 class DBUnavailable(Exception):

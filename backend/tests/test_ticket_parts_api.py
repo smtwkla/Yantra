@@ -126,13 +126,13 @@ class TestFittedTo:
             assert refusal(add(admin, ticket, node)) == (400, "node_id", PART_NODE_NEEDED)
 
     def test_a_scrapped_part_is_400(self, admin, ticket, part):
-        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         assert refusal(add(admin, ticket, part)) == (400, "node_id", PART_NODE_NEEDED)
 
     def test_an_edit_keeping_a_node_scrapped_since_succeeds(self, admin, ticket, machine, part, make_equipment):
         """BR1-03: the line is history; only a changed node is checked."""
         row = added(admin, ticket, part)["parts"][0]
-        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{EQUIPMENT}/{part['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         kept = admin.put(url(ticket, "parts", str(row["id"])), json=line(part, quantity="3"))
         assert kept.status_code == 200, kept.get_json()
         assert kept.get_json()["parts"][0]["quantity"] == "3.00"
@@ -149,7 +149,7 @@ class TestFittedTo:
 
         def lock_then_scrap_elsewhere(cur, ticket_id, key):
             locked = real_lock(cur, ticket_id, key)   # its plain read has taken the snapshot
-            db_rows("UPDATE equipment SET status = 'scrapped' WHERE id = %s", (part["id"],))
+            db_rows("UPDATE equipment SET lifecycle = 'scrapped' WHERE id = %s", (part["id"],))
             return locked
         monkeypatch.setattr(tickets, "_lock_open_ticket", lock_then_scrap_elsewhere)
         assert refusal(add(admin, ticket, part)) == (400, "node_id", PART_NODE_NEEDED)

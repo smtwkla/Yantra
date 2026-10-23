@@ -88,7 +88,7 @@ class TestList:
         assert ids(page) == [photo["id"], pdf["id"]]
         assert page["total"] == 2 and active["id"] not in ids(page)
         newest, older = page["items"]
-        assert (older["code"], older["name"], older["level"], older["status"]) == (
+        assert (older["code"], older["name"], older["level"], older["lifecycle"]) == (
             root["code"], "Test node", "equipment", "in_service")
         assert older["removed_by"] == "test_it_admin" and older["created_by"] == "test_it_admin"
         assert older["equipment_id"] == root["id"] and older["original_name"] == "manual.pdf"
@@ -168,10 +168,10 @@ class TestModelRows:
         page = listing(manager, q=cls["code"])
         assert (page["total"], ids(page)) == (2, [model_doc["id"], node_doc["id"]])
         model_row, node_row = page["items"]
-        assert {key: model_row[key] for key in ("owner", "path", "name", "code", "equipment_id", "level", "status",
+        assert {key: model_row[key] for key in ("owner", "path", "name", "code", "equipment_id", "level", "lifecycle",
                                                 "unit", "full_path")} == {
             "owner": "model", "path": model_docs_url(model), "name": model["label"], "code": None,
-            "equipment_id": None, "level": None, "status": None, "unit": None, "full_path": None}
+            "equipment_id": None, "level": None, "lifecycle": None, "unit": None, "full_path": None}
         assert (node_row["owner"], node_row["path"], node_row["code"]) == ("equipment", docs_url(root), root["code"])
         assert model_row["removed_by"] == "test_it_admin"
         assert ids(listing(manager, q=cls["code"], per_page=1, page=2)) == [node_doc["id"]]

@@ -16,7 +16,7 @@ import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
-import StatusBadge from "../components/StatusBadge.vue";
+import LifecycleBadge from "../components/LifecycleBadge.vue";
 import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import { userPermissions } from "../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
@@ -27,7 +27,7 @@ import { ageText, problemText } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
-import EquipmentStatusModal from "./equipment/EquipmentStatusModal.vue";
+import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
 import PartsTree from "./equipment/PartsTree.vue";
 
 const route = useRoute();
@@ -41,10 +41,10 @@ let loadSeq = 0;
 
 const formModal = ref(null);
 const moveModal = ref(null);
-const statusModal = ref(null);
+const lifecycleModal = ref(null);
 const documentsCards = ref(null);
 
-const scrapped = computed(() => node.value?.status === "scrapped");
+const scrapped = computed(() => node.value?.lifecycle === "scrapped");
 // No actions while another node is loading: they would act on the node still on screen.
 // Rights follow the node's site (S011): the API sends the user's keys at that site.
 const canEdit = computed(
@@ -145,7 +145,7 @@ function onSaved({ result, created }) {
 
       <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <h4 class="mb-0 me-2">{{ node.code }} — {{ node.name }}</h4>
-        <StatusBadge :status="node.status" />
+        <LifecycleBadge :lifecycle="node.lifecycle" />
         <CriticalityBadge :grade="node.effective_criticality" :inherited="node.criticality === null" />
         <span v-if="loading" class="text-secondary small">Loading…</span>
         <div class="dropdown ms-auto">
@@ -184,8 +184,8 @@ function onSaved({ result, created }) {
         <button class="btn btn-sm btn-outline-primary" @click="moveModal.open(node)">
           <i class="fa-solid fa-right-left me-1"></i>Move
         </button>
-        <button class="btn btn-sm btn-outline-primary" @click="statusModal.open(node)">
-          <i class="fa-solid fa-toggle-on me-1"></i>Change status
+        <button class="btn btn-sm btn-outline-primary" @click="lifecycleModal.open(node)">
+          <i class="fa-solid fa-toggle-on me-1"></i>Change lifecycle
         </button>
       </div>
 
@@ -268,7 +268,7 @@ function onSaved({ result, created }) {
 
     <EquipmentFormModal ref="formModal" @saved="onSaved" />
     <EquipmentMoveModal ref="moveModal" @saved="load" />
-    <EquipmentStatusModal ref="statusModal" @saved="load" />
+    <EquipmentLifecycleModal ref="lifecycleModal" @saved="load" />
   </div>
 </template>
 

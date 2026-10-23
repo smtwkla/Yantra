@@ -81,7 +81,7 @@ const actionPath = (item, action) => `${item.path}/${item.id}/${action}`;
 
 // Why Restore is disabled for a row, or "" when it is not: the server would refuse it
 function restoreBlocked(item) {
-  if (item.status === "scrapped") return "Scrapped equipment cannot be changed";
+  if (item.lifecycle === "scrapped") return "Scrapped equipment cannot be changed";
   if (item.owner === "ticket" && item.state === "closed") return "Closed tickets cannot be changed";
   return "";
 }
@@ -191,7 +191,7 @@ onMounted(load);
                 <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>
                   {{ item.name }}
-                  <div v-if="item.status === 'scrapped'" class="small">scrapped</div>
+                  <div v-if="item.lifecycle === 'scrapped'" class="small">scrapped</div>
                   <div class="small text-secondary">{{ item.full_path }}</div>
                 </td>
                 <td>

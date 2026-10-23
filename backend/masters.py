@@ -290,7 +290,7 @@ def update_unit(unit_id):
                 raise ApiError(close_tickets_first(open_tickets), 409, "active")
         # Laid-up (out_of_use) equipment still stands in the unit, so it blocks too (S002 § 10.2)
         if clean.get("active") == 0 and count(
-                cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s AND status <> 'scrapped'",
+                cur, "SELECT COUNT(*) AS n FROM equipment WHERE unit_id = %s AND lifecycle <> 'scrapped'",
                 (unit_id,)):
             raise ApiError("The unit holds equipment that is not scrapped; move or scrap it first",
                            409, "active")

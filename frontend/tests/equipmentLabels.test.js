@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  CRITICALITY_BADGE_CLASS, CRITICALITY_LABELS, LEVEL_LABELS, STATUS_BADGE_CLASS, STATUS_HELP, STATUS_LABELS,
+  CRITICALITY_BADGE_CLASS, CRITICALITY_LABELS, LEVEL_LABELS, LIFECYCLE_BADGE_CLASS, LIFECYCLE_HELP, LIFECYCLE_LABELS,
   describeEvent,
 } from "../src/utils/equipmentLabels.js";
 
 // The enums of backend/equipment_core.py
 const LEVELS = ["equipment", "component_unit", "component"];
-const STATUSES = ["in_service", "standby", "out_of_use", "scrapped"];
+const LIFECYCLES = ["in_service", "standby", "out_of_use", "scrapped"];
 const CRITICALITIES = ["A", "B", "C"];
 
 const ev = (event, old_value, new_value) => ({ event, old_value, new_value });
@@ -14,8 +14,8 @@ const ev = (event, old_value, new_value) => ({ event, old_value, new_value });
 describe("label maps", () => {
   it("cover every enum value of S002", () => {
     expect(Object.keys(LEVEL_LABELS).sort()).toEqual([...LEVELS].sort());
-    for (const map of [STATUS_LABELS, STATUS_HELP, STATUS_BADGE_CLASS]) {
-      expect(Object.keys(map).sort()).toEqual([...STATUSES].sort());
+    for (const map of [LIFECYCLE_LABELS, LIFECYCLE_HELP, LIFECYCLE_BADGE_CLASS]) {
+      expect(Object.keys(map).sort()).toEqual([...LIFECYCLES].sort());
     }
     for (const map of [CRITICALITY_LABELS, CRITICALITY_BADGE_CLASS]) {
       expect(Object.keys(map).sort()).toEqual([...CRITICALITIES].sort());
@@ -36,9 +36,9 @@ describe("describeEvent", () => {
       .toBe("Moved: SMTW.FWMILL.VBM001.DRV002 → SMTW.FWMILL.VBM002.DRV005");
   });
 
-  it("status uses the labels", () => {
-    expect(describeEvent(ev("status", "in_service", "standby"))).toBe("Status: In service → Standby");
-    expect(describeEvent(ev("status", "out_of_use", "scrapped"))).toBe("Status: Out of use → Scrapped");
+  it("lifecycle uses the labels", () => {
+    expect(describeEvent(ev("lifecycle", "in_service", "standby"))).toBe("Lifecycle: In service → Standby");
+    expect(describeEvent(ev("lifecycle", "out_of_use", "scrapped"))).toBe("Lifecycle: Out of use → Scrapped");
   });
 
   it("criticality shows the literal inherit as Inherited", () => {

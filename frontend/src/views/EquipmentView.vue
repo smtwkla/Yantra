@@ -11,7 +11,7 @@ import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
-import StatusBadge from "../components/StatusBadge.vue";
+import LifecycleBadge from "../components/LifecycleBadge.vue";
 import TicketLight from "../components/TicketLight.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPermissions } from "../stores/auth";
@@ -19,7 +19,7 @@ import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
 import {
   ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses, equipmentTypes, sites, units,
 } from "../stores/masters";
-import { STATUS_LABELS } from "../utils/equipmentLabels";
+import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
 import { TICKET_FILTER_CHOICES } from "../utils/ticketLabels";
@@ -53,8 +53,8 @@ let loadSeq = 0;
 const query = computed(() => route.query);
 const level = computed(() => query.value.level ?? DEFAULT_LEVEL);
 const pageNumber = computed(() => Math.max(1, Number.parseInt(query.value.page, 10) || 1));
-// A bookmarked status=scrapped needs the scrapped rows, so it ticks the box
-const showScrapped = computed(() => query.value.scrapped === "1" || query.value.status === "scrapped");
+// A bookmarked lifecycle=scrapped needs the scrapped rows, so it ticks the box
+const showScrapped = computed(() => query.value.scrapped === "1" || query.value.lifecycle === "scrapped");
 const hasFilters = computed(() => Object.keys(query.value).some((k) => k !== "page"));
 const noUnits = computed(() => myUnits.value && !myUnits.value.all_units && myUnits.value.unit_ids.length === 0);
 
@@ -93,8 +93,8 @@ const typeChoices = computed(() => {
   return choices;
 });
 const typeLabel = (t) => (String(t.class_id) === query.value.class_id ? t.name : `${t.class_code} · ${t.name}`);
-const statusChoices = computed(() =>
-  Object.entries(STATUS_LABELS).filter(([value]) => value !== "scrapped" || showScrapped.value)
+const lifecycleChoices = computed(() =>
+  Object.entries(LIFECYCLE_LABELS).filter(([value]) => value !== "scrapped" || showScrapped.value)
 );
 
 function chooseSite(value) {
@@ -112,20 +112,20 @@ const unitModel = filterModel("unit_id");
 // A type belongs to one class, so choosing a class always clears the type
 const classModel = filterModel("class_id", "", (value) => update({ class_id: value, type_id: null }));
 const typeModel = filterModel("type_id");
-// Leaving a bookmarked status=scrapped must not untick "Show scrapped" behind the user's back
-function chooseStatus(value) {
-  const changes = { status: value };
-  if (query.value.status === "scrapped" && query.value.scrapped !== "1") changes.scrapped = "1";
+// Leaving a bookmarked lifecycle=scrapped must not untick "Show scrapped" behind the user's back
+function chooseLifecycle(value) {
+  const changes = { lifecycle: value };
+  if (query.value.lifecycle === "scrapped" && query.value.scrapped !== "1") changes.scrapped = "1";
   update(changes);
 }
-const statusModel = filterModel("status", "", chooseStatus);
+const lifecycleModel = filterModel("lifecycle", "", chooseLifecycle);
 const criticalityModel = filterModel("criticality");
 const levelModel = filterModel("level", DEFAULT_LEVEL);
 const ticketsModel = filterModel("tickets");
 
 function toggleScrapped(on) {
   const changes = { scrapped: on ? "1" : null };
-  if (!on && query.value.status === "scrapped") changes.status = null;
+  if (!on && query.value.lifecycle === "scrapped") changes.lifecycle = null;
   update(changes);
 }
 
@@ -154,7 +154,7 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "class_id", "type_id", "status", "criticality", "tickets", "q"]) {
+  for (const key of ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q"]) {
     // A bookmarked ?tickets= must not filter invisibly for a user who has no ticket column or filter
     if (key === "tickets" && !canSeeTickets.value) continue;
     if (query.value[key]) params.set(key, query.value[key]);
@@ -268,9 +268,9 @@ function printAssetList() {
         <option value="">All types</option>
         <option v-for="t in typeChoices" :key="t.id" :value="t.id">{{ typeLabel(t) }}{{ t.active ? "" : " (inactive)" }}</option>
       </select>
-      <select v-model="statusModel" class="form-select form-select-sm w-auto" aria-label="Status">
-        <option value="">All statuses</option>
-        <option v-for="[value, text] in statusChoices" :key="value" :value="value">{{ text }}</option>
+      <select v-model="lifecycleModel" class="form-select form-select-sm w-auto" aria-label="Lifecycle">
+        <option value="">Any lifecycle</option>
+        <option v-for="[value, text] in lifecycleChoices" :key="value" :value="value">{{ text }}</option>
       </select>
       <select v-model="criticalityModel" class="form-select form-select-sm w-auto" aria-label="Criticality">
         <option value="">Any criticality</option>
@@ -328,7 +328,7 @@ function printAssetList() {
               <i class="fa-solid fa-ticket" title="Tickets" role="img" aria-label="Tickets"></i>
             </th>
             <th>Code</th><th>Name</th><th>Class</th><th>Model</th><th>{{ level === "equipment" ? "Unit" : "Path" }}</th>
-            <th>Crit.</th><th>Status</th><th class="text-end">Parts</th>
+            <th>Crit.</th><th>Lifecycle</th><th class="text-end">Parts</th>
           </tr>
         </thead>
         <tbody>
@@ -337,7 +337,7 @@ function printAssetList() {
             :key="e.id"
             role="link"
             style="cursor: pointer"
-            :class="{ 'text-secondary': e.status === 'scrapped' }"
+            :class="{ 'text-secondary': e.lifecycle === 'scrapped' }"
             @click="openNode(e.id)"
           >
             <td class="tick-cell" @click.stop>
@@ -350,7 +350,7 @@ function printAssetList() {
               />
             </td>
             <td v-if="canSeeTickets" class="tick-cell text-center">
-              <TicketLight v-if="e.status !== 'scrapped'" :light="e.ticket_light" />
+              <TicketLight v-if="e.lifecycle !== 'scrapped'" :light="e.ticket_light" />
             </td>
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>
@@ -359,7 +359,7 @@ function printAssetList() {
             <td>{{ e.model_label }}</td>
             <td>{{ level === "equipment" ? e.unit : e.full_path }}</td>
             <td><CriticalityBadge :grade="e.effective_criticality" /></td>
-            <td><StatusBadge :status="e.status" /></td>
+            <td><LifecycleBadge :lifecycle="e.lifecycle" /></td>
             <td class="text-end">{{ e.part_count }}</td>
           </tr>
         </tbody>

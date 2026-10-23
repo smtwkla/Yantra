@@ -91,5 +91,5 @@ def folder_files(node):
 
 
 def scrap(admin, node):
-    res = admin.put(f"{EQUIPMENT}/{node['id']}", json={"status": "scrapped"})
+    res = admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": "scrapped"})
     assert res.status_code == 200, res.get_json()

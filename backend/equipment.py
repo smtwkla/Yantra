@@ -86,7 +86,7 @@ from asset_list_core import build_asset_list
 from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
-    CRITICALITIES, LEVELS, SCRAPPED, STATUSES, check_parent, derive_from_model, effective_criticality,
+    CRITICALITIES, LEVELS, LIFECYCLES, SCRAPPED, check_parent, derive_from_model, effective_criticality,
     format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
@@ -127,7 +127,7 @@ _NODE_FROM = " FROM equipment e" + NODE_JOINS
 
 _NODE_COLUMNS = (
     "SELECT e.id, e.code, e.level, e.parent_id, e.class_id, e.type_id, e.model_id, e.name,"
-    " e.serial_no, e.year, e.criticality, e.status, e.notes, e.created_at, e.created_by, e.updated_at,"
+    " e.serial_no, e.year, e.criticality, e.lifecycle, e.notes, e.created_at, e.created_by, e.updated_at,"
     " e.updated_by, c.code AS class_code, t.name AS type_name,"
     " m.designation AS model_designation, mf.name AS manufacturer_name, u.id AS root_unit_id,"
     " s.id AS site_id, s.code AS site_code, u.code AS unit_code,"
@@ -138,7 +138,7 @@ _NODE_COLUMNS = (
 
 # Direct children that are still in use
 _PART_COUNT = (
-    "(SELECT COUNT(*) FROM equipment ch WHERE ch.parent_id = e.id AND ch.status <> 'scrapped') AS part_count"
+    "(SELECT COUNT(*) FROM equipment ch WHERE ch.parent_id = e.id AND ch.lifecycle <> 'scrapped') AS part_count"
 )
 
 # Ticket light (S029).  Tickets of the row's node: a machine row counts ``equipment_id`` (its
@@ -169,7 +169,7 @@ def _ticket_light_column(ticket_unit_ids):
 
 
 # Locking reads: each returns the columns its decisions need (BR3-01)
-LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id, model_id FROM equipment "
+LOCK_EQUIPMENT = ("SELECT id, level, lifecycle, parent_id, unit_id, class_id, type_id, model_id FROM equipment "
                   "WHERE id = %s FOR UPDATE")
 _LOCK_UNIT = "SELECT id, code, active, site_id FROM units WHERE id = %s FOR UPDATE"
 _LOCK_MODEL = "SELECT id, class_id, type_id, designation, active FROM equipment_models WHERE id = %s FOR UPDATE"
@@ -225,7 +225,7 @@ def _summary(node):
         "unit": f"{node['site_code']}.{node['unit_code']}",
         "full_path": node_path(node),
         "effective_criticality": effective_criticality(node["criticality"], node["root_criticality"]),
-        "status": node["status"],
+        "lifecycle": node["lifecycle"],
     }
 
 
@@ -243,7 +243,7 @@ def _ancestors(node):
 
 def _child_rows(cur, where, params, root_grade):
     cur.execute(
-        "SELECT ch.id, ch.parent_id, ch.code, ch.level, ch.name, ch.criticality, ch.status,"
+        "SELECT ch.id, ch.parent_id, ch.code, ch.level, ch.name, ch.criticality, ch.lifecycle,"
         " c.code AS class_code FROM equipment ch JOIN equipment_classes c ON c.id = ch.class_id"
         f" WHERE {where} ORDER BY ch.code", params)
     return [{**row, "effective_criticality": effective_criticality(row["criticality"], root_grade)}
@@ -328,7 +328,7 @@ def _load_target_node(cur, node_id, child_level, key):
     target = _reread(cur, node_id, "The parent changed while saving — try again", "parent_id")
     if not _can_access(cur, target["root_unit_id"]):
         raise ApiError("You have no access to the parent's unit", 403, "parent_id")
-    if locked["status"] == SCRAPPED:
+    if locked["lifecycle"] == SCRAPPED:
         raise ApiError("The parent is scrapped", 409, "parent_id")
     message = check_parent(child_level, locked["level"])
     if message:
@@ -408,15 +408,15 @@ def _write_events(cur, equipment_id, changes):
 def _check_parts_scrapped(cur, node_id):
     """Scrapping needs every child and grandchild scrapped — decided from locking reads, so
     a part cannot be revived or slipped in while we decide.  Returns the locked parts' ids."""
-    cur.execute("SELECT id, status FROM equipment WHERE parent_id = %s FOR UPDATE", (node_id,))
+    cur.execute("SELECT id, lifecycle FROM equipment WHERE parent_id = %s FOR UPDATE", (node_id,))
     parts = cur.fetchall()
     if parts:
         ids = [p["id"] for p in parts]
-        cur.execute(f"SELECT id, status FROM equipment WHERE parent_id IN ({', '.join(['%s'] * len(ids))}) "
+        cur.execute(f"SELECT id, lifecycle FROM equipment WHERE parent_id IN ({', '.join(['%s'] * len(ids))}) "
                     "FOR UPDATE", ids)
         parts = [*parts, *cur.fetchall()]
-    if any(p["status"] != SCRAPPED for p in parts):
-        raise ApiError("Scrap or move its parts first", 409, "status")
+    if any(p["lifecycle"] != SCRAPPED for p in parts):
+        raise ApiError("Scrap or move its parts first", 409, "lifecycle")
     return [p["id"] for p in parts]
 
 
@@ -432,7 +432,7 @@ def _check_no_open_tickets(cur, node_ids):
            f" AND (equipment_id IN ({placeholders}) OR component_id IN ({placeholders}))")
     open_tickets = count(cur, sql, [CLOSED, *node_ids, *node_ids])
     if open_tickets:
-        raise ApiError(close_tickets_first(open_tickets), 409, "status")
+        raise ApiError(close_tickets_first(open_tickets), 409, "lifecycle")
 
 
 def _tracked_state(node):
@@ -467,7 +467,7 @@ def _this_year():
 
 def _list_filters():
     """The conditions and parameters of the filters the list and the printed asset list share
-    (site, unit, class, type, status, criticality, scrapped), read from the request.  One
+    (site, unit, class, type, lifecycle, criticality, scrapped), read from the request.  One
     place decides what a filter means, so the print can never disagree with the list."""
     conditions, params = [], []
     for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
@@ -476,16 +476,16 @@ def _list_filters():
         if value is not None:
             conditions.append(f"{column} = %s")
             params.append(value)
-    status = enum_arg("status", STATUSES)
-    if status:
-        conditions.append("e.status = %s")
-        params.append(status)
+    lifecycle = enum_arg("lifecycle", LIFECYCLES)
+    if lifecycle:
+        conditions.append("e.lifecycle = %s")
+        params.append(lifecycle)
     criticality = enum_arg("criticality", CRITICALITIES)
     if criticality:
         conditions.append(f"COALESCE(e.criticality, {_ROOT_CRITICALITY}) = %s")
         params.append(criticality)
     if request.args.get("include_scrapped") != "1":
-        conditions.append("e.status <> 'scrapped'")
+        conditions.append("e.lifecycle <> 'scrapped'")
     return conditions, params
 
 
@@ -629,7 +629,7 @@ def equipment_labels():
         if unit_ids is not None:
             where += f" AND u.id IN ({', '.join(['%s'] * len(unit_ids))})"
             params += sorted(unit_ids)
-        cur.execute(f"SELECT e.id, e.parent_id, e.code, e.name, e.status, s.code AS site_code{_NODE_FROM}"
+        cur.execute(f"SELECT e.id, e.parent_id, e.code, e.name, e.lifecycle, s.code AS site_code{_NODE_FROM}"
                     f" WHERE {where}", params)
         rows = cur.fetchall()
         base_url = label_base_url(cur)
@@ -732,7 +732,7 @@ def update_equipment(node_id):
         # (1); 404; 403 unless equipment:edit at the node's current site (a move or
         # re-parent is checked at the target's site too, below)
         locked, node = load_node_for_user(cur, node_id, for_update=True, key="equipment:edit")
-        if locked["status"] == SCRAPPED:
+        if locked["lifecycle"] == SCRAPPED:
             raise ApiError("This record is scrapped and cannot be changed", 409)
         this_year = _this_year()
         stored = {"code": node["code"], "level": locked["level"]}
@@ -750,7 +750,7 @@ def update_equipment(node_id):
         if "model_id" in clean:
             # Another class is a reclassification: the code is kept (S002)
             equipment_model, equipment_class = _pick_model(cur, clean, locked["model_id"])   # (4), (5)
-        if clean.get("status") == SCRAPPED:
+        if clean.get("lifecycle") == SCRAPPED:
             _check_no_open_tickets(cur, [node_id, *_check_parts_scrapped(cur, node_id)])
         before = _tracked_state(node)
         update_row(cur, "equipment", node_id, clean, actor())

@@ -432,6 +432,8 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | PM job | One occurrence of a PM plan, generated when due |
 | Meter | A tracked quantity on a piece of equipment — counter or gauge |
 | Criticality | A / B / C grade of an equipment's importance |
+| Lifecycle | Where a piece of equipment is in its life: in service, standby, out of use, scrapped (ISO 55000 life cycle). Set by hand on the equipment page (S030; called *status* before) |
+| Status | Whether a machine can run now: working, degraded, down, PM due (EN 13306 up / down state). Derived from tickets and PM, never typed by hand; S029's ticket light is its first form (decided 23-10-2026, S030) |
 | Site | A facility: SMTW, BRICKS, SSVT, a farm (ISO 14224 level 3) |
 | Unit | An area or shop floor within a site, e.g. `SMTW.FWMILL` (levels 4–5) |
 | Equipment | A maintained item: press, pump, solar system (level 6) — not "asset", which OneERP uses for fixed-asset accounting |

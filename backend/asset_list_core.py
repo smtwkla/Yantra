@@ -20,7 +20,7 @@ def build_asset_list(machines, parts, include_scrapped):
 
     ``machines``: dicts with id, code, site_code, site_name, unit_code, unit_name (plus any
     display fields, which are passed through).  ``parts``: dicts with id, parent_id, code,
-    status.  ``result`` is ``{units: [{site_code, site_name, unit_code, unit_name, rows,
+    lifecycle.  ``result`` is ``{units: [{site_code, site_name, unit_code, unit_name, rows,
     machine_count, part_count}], total_rows}``.  Each row is the input dict plus ``depth``
     (0 for the machine, then +1 per level below it: a component-unit, or a component fitted
     directly to the machine, is 1; a component in a component-unit is 2) and ``number`` (running machine number in the
@@ -28,7 +28,7 @@ def build_asset_list(machines, parts, include_scrapped):
     whose machine is not in ``machines`` is ignored."""
     children = {}
     for part in parts:
-        if include_scrapped or part["status"] != SCRAPPED:
+        if include_scrapped or part["lifecycle"] != SCRAPPED:
             children.setdefault(part["parent_id"], []).append(part)
     for group in children.values():
         group.sort(key=lambda r: r["code"])

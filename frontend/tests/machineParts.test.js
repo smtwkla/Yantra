@@ -6,12 +6,12 @@ const { apiGet } = await import("../src/api");
 const { keepChoice, loadMachineParts, partRows } = await import("../src/utils/machineParts.js");
 
 const CHILDREN = [
-  { id: 2, code: "EXT-GB1", name: "Gearbox", status: "active", children: [
-    { id: 3, code: "EXT-GB1-B1", name: "Bearing", status: "active" },
-    { id: 4, code: "EXT-GB1-OLD", name: "Old seal", status: "scrapped" },
+  { id: 2, code: "EXT-GB1", name: "Gearbox", lifecycle: "in_service", children: [
+    { id: 3, code: "EXT-GB1-B1", name: "Bearing", lifecycle: "in_service" },
+    { id: 4, code: "EXT-GB1-OLD", name: "Old seal", lifecycle: "scrapped" },
   ] },
-  { id: 5, code: "EXT-M1", name: "Motor", status: "scrapped", children: [
-    { id: 6, code: "EXT-M1-F", name: "Fan", status: "active" },
+  { id: 5, code: "EXT-M1", name: "Motor", lifecycle: "scrapped", children: [
+    { id: 6, code: "EXT-M1-F", name: "Fan", lifecycle: "in_service" },
   ] },
 ];
 

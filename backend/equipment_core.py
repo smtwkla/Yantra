@@ -13,7 +13,7 @@ set apart from it.
 from masters_core import RESERVED_TYPE_NAME, optional_text_parser, parse_name
 
 LEVELS = ("equipment", "component_unit", "component")
-STATUSES = ("in_service", "standby", "out_of_use", "scrapped")
+LIFECYCLES = ("in_service", "standby", "out_of_use", "scrapped")
 CRITICALITIES = ("A", "B", "C")
 SCRAPPED = "scrapped"
 
@@ -115,15 +115,15 @@ def full_path(site_code, unit_code, codes_root_to_node):
     return ".".join([site_code, unit_code, *codes_root_to_node])
 
 
-def check_status_change(old, new):
-    """Return an error message if the status may not go from old to new (old None = on create).
+def check_lifecycle_change(old, new):
+    """Return an error message if the lifecycle may not go from old to new (old None = on create).
 
     Whether a node's parts allow scrapping needs the database; the shell checks that.
     """
     if old is None:
         return "A new record cannot be scrapped" if new == SCRAPPED else None
     if old == SCRAPPED and new != SCRAPPED:
-        return "Scrapped is final; the status cannot change"
+        return "Scrapped is final. The lifecycle cannot change."
     return None
 
 
@@ -161,7 +161,7 @@ _TRACKED = (
     ("class_code", "class"),
     ("type_name", "type"),
     ("criticality", "criticality"),
-    ("status", "status"),
+    ("lifecycle", "lifecycle"),
 )
 
 
@@ -177,7 +177,7 @@ def tracked_changes(before, after):
     """Compare two dicts of display values; return ``[(event, old, new)]`` for each tracked change.
 
     Keys read: ``level``, ``full_path``, ``model_label``, ``class_code``, ``type_name``
-    (None = no type), ``criticality`` (own value, None = inherit) and ``status``.  Any other
+    (None = no type), ``criticality`` (own value, None = inherit) and ``lifecycle``.  Any other
     key (name, serial number, notes, ...) is not tracked.  Types are compared by name, so a reclassification
     between two types of the same name gives no type event (S004 § 5.2).
     """
@@ -198,13 +198,16 @@ def tracked_changes(before, after):
 
 PICK_A_MODEL = "Pick a model"
 
-# Keys an old open tab may still send (S012 § 5.4): refused, even as null or unchanged, so
-# such a tab fails loudly instead of having its make, model, class or type ignored
+# Keys an old open tab may still send (S012 § 5.4, S030 § 4.4): refused, even as null or
+# unchanged, so such a tab fails loudly instead of having its make, model, class, type or
+# lifecycle ignored
 _REFUSED_FIELDS = {
     "make": "Make and model are now picked from Models",
     "model": "Make and model are now picked from Models",
     "class_id": "Class and type come from the model",
     "type_id": "Class and type come from the model",
+    # S030 § 4.4: the field was renamed lifecycle
+    "status": "This field is now called Lifecycle. Reload the page.",
 }
 
 
@@ -226,7 +229,7 @@ def _fields(this_year):
         "serial_no": (optional_text_parser("Serial number", TEXT_MAX), False),
         "year": (_year_parser(this_year), False),
         "criticality": (_parse_criticality, False),
-        "status": (_enum_parser("Status", STATUSES), False),
+        "lifecycle": (_enum_parser("Lifecycle", LIFECYCLES), False),
         "notes": (optional_text_parser("Notes", NOTES_MAX), False),
     }
 
@@ -265,7 +268,8 @@ def validate_equipment(data, creating, this_year, stored=None):
     """Return ``(clean, errors)`` in the masters_core shape (errors: list of {field, message}).
 
     ``this_year`` is the current IST year, passed in by the shell.  ``make``, ``model``,
-    ``class_id`` and ``type_id`` are refused (S012 § 5.4); the class and type come from the
+    ``class_id`` and ``type_id`` are refused (S012 § 5.4), and so is ``status``, renamed
+    ``lifecycle`` (S030 § 4.4); the class and type come from the
     model (derive_from_model).  On an update,
     ``stored`` is the node's current ``{code, level}``: code and level may be sent
     back unchanged (they are then dropped) but not changed, and the place rules are
@@ -308,9 +312,9 @@ def validate_equipment(data, creating, this_year, stored=None):
             # Absent keys are not written: a part's NULL parent_id/unit_id are the column defaults
             clean = {k: v for k, v in clean.items() if not (k in ("parent_id", "unit_id") and v is None)}
 
-    if creating and "status" in clean:
-        message = check_status_change(None, clean["status"])
+    if creating and "lifecycle" in clean:
+        message = check_lifecycle_change(None, clean["lifecycle"])
         if message:
-            errors.append({"field": "status", "message": message})
+            errors.append({"field": "lifecycle", "message": message})
 
     return clean, errors

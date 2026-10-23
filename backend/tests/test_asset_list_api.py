@@ -24,7 +24,7 @@ def _codes(res):
 
 
 def _scrap(admin, node):
-    assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"status": "scrapped"}).status_code == 200
+    assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": "scrapped"}).status_code == 200
 
 
 @pytest.fixture
@@ -57,14 +57,14 @@ class TestFilters:
         assert _codes(_get(admin, unit_id=in_unit["id"])) == [a["code"]]
         assert sorted(_codes(_get(admin, site_id=site["id"]))) == sorted([a["code"], b["code"]])
 
-    def test_class_status_criticality(self, admin, make_equipment, make_class, unit):
+    def test_class_lifecycle_criticality(self, admin, make_equipment, make_class, unit):
         cls = make_class()
         a = make_equipment(unit=unit, cls=cls, criticality="A")
         b = make_equipment(unit=unit, criticality="C")
         assert _codes(_get(admin, unit_id=unit["id"], class_id=cls["id"])) == [a["code"]]
         assert _codes(_get(admin, unit_id=unit["id"], criticality="C")) == [b["code"]]
-        assert admin.put(f"{EQUIPMENT}/{b['id']}", json={"status": "standby"}).status_code == 200
-        assert _codes(_get(admin, unit_id=unit["id"], status="standby")) == [b["code"]]
+        assert admin.put(f"{EQUIPMENT}/{b['id']}", json={"lifecycle": "standby"}).status_code == 200
+        assert _codes(_get(admin, unit_id=unit["id"], lifecycle="standby")) == [b["code"]]
 
     def test_scrapped_machines_only_when_included(self, admin, make_equipment, unit):
         node = make_equipment(unit=unit)
@@ -73,9 +73,9 @@ class TestFilters:
         assert _codes(_get(admin, unit_id=unit["id"], include_scrapped=1)) == [node["code"]]
 
     def test_a_bad_filter_is_400_with_its_field(self, admin):
-        res = _get(admin, status="nope")
+        res = _get(admin, lifecycle="nope")
         assert res.status_code == 400
-        assert res.get_json()["field"] == "status"
+        assert res.get_json()["field"] == "lifecycle"
 
     def test_machines_only_without_parts(self, admin, tree, unit):
         assert _codes(_get(admin, unit_id=unit["id"])) == [tree["press"]["code"]]

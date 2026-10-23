@@ -65,6 +65,6 @@ test("operator of one unit: only that unit's section", async ({ page }) => {
 });
 
 test("filters that match nothing say so", async ({ page }) => {
-  await asPerson(page, "manager", "/asset-list?status=out_of_use");
+  await asPerson(page, "manager", "/asset-list?lifecycle=out_of_use");
   await expect(page.getByText("Nothing to list for these filters")).toBeVisible();
 });

@@ -60,7 +60,7 @@ def tree(make_equipment, admin, unit):
     motor = make_equipment(parent=press, name="Motor")
     seal = make_equipment(parent=gearbox, level="component", name="Seal")
     bearing = make_equipment(parent=gearbox, level="component", name="Bearing")
-    assert admin.put(f"{EQUIPMENT}/{bearing['id']}", json={"status": "scrapped"}).status_code == 200
+    assert admin.put(f"{EQUIPMENT}/{bearing['id']}", json={"lifecycle": "scrapped"}).status_code == 200
     return {"press": press, "gearbox": gearbox, "motor": motor, "seal": seal, "bearing": bearing}
 
 
@@ -100,7 +100,7 @@ class TestByCode:
 
     def test_a_scrapped_node_still_resolves(self, admin, make_equipment):
         node = make_equipment()
-        assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"status": "scrapped"}).status_code == 200
+        assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": "scrapped"}).status_code == 200
         assert admin.get(f"{BY_CODE}/{node['code']}").get_json() == {"id": node["id"]}
 
 
