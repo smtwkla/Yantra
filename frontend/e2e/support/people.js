@@ -7,9 +7,15 @@ import { BACKEND_URL } from "./stack.js";
 // IT admin holds a token role; everyone else logs in as maintenance_team (S011)
 const TOKEN_ROLE = { it_admin: "it_admin", admin: "admin" };
 
+// The seed people whose login token carries an email claim (S032 BR1-04), sent as X-Test-Email;
+// /api/auth/me copies it onto the person at each page load.  Everyone else has none.
+export const EMAILS = { manager: "e2e_manager@example.test" };
+
 /** The test headers of a seed person. */
 export function headersFor(key) {
-  return { "X-Test-Role": TOKEN_ROLE[key] ?? "maintenance_team", "X-Test-User": `e2e_${key}` };
+  const headers = { "X-Test-Role": TOKEN_ROLE[key] ?? "maintenance_team", "X-Test-User": `e2e_${key}` };
+  if (EMAILS[key]) headers["X-Test-Email"] = EMAILS[key];
+  return headers;
 }
 
 /**

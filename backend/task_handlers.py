@@ -16,7 +16,8 @@ every failed attempt, so it needs no attempt number.  That commit is the second 
 exception, beside the purge's.  The exception raised says what happens next: BadTask (the
 task itself is malformed) and NoRetry (the other side refused it as given) fail at once;
 RetryLater retries after its own delay (capped by mark_failed); any other exception retries
-with the back-off.
+with the back-off.  email_send (S032) has no row of its own to write on: its failure is kept in
+task_queue.last_error and the log only.
 """
 
 import logging
@@ -24,12 +25,14 @@ import logging
 import requests
 
 import alerts
+import mail_sender
 import push_sender
-from alerts_core import ASSIGNED, ESCALATION, KINDS, message, should_escalate, should_send
+from alerts_core import ASSIGNED, CHANNELS, EMAIL, ESCALATION, KINDS, PUSH, message, should_escalate, should_send
 from company_settings import ACCESS_LOG_RETENTION_DAYS, DONE_TASK_RETENTION_DAYS, PURGE_BATCH_ROWS
 from push_core import (
     ALERT_TTL_SECONDS, GONE, REFUSED, RETRY_LATER, SENT, push_data, refused_host, send_outcome, send_task_payload,
 )
+from email_core import closed_email, smtp_outcome
 from task_queue import enqueue
 
 logger = logging.getLogger(__name__)
@@ -89,7 +92,7 @@ def purge_access_log(conn, payload, should_stop):
 
 # ---------------------------------------------------------------------------
 # Alerts (S021 § 5.1): ticket_alert fans out, ticket_escalate checks then fans out, push_send
-# sends to one device
+# sends to one device, email_send (S032) to one person
 # ---------------------------------------------------------------------------
 
 def _ids(task_type, payload, *keys):
@@ -103,9 +106,10 @@ def _ids(task_type, payload, *keys):
 
 
 def ticket_alert(conn, payload, should_stop):
-    """One alert about a ticket -> one push_send per device of each recipient, in this
+    """One alert about a ticket -> its sends, by the kind's channels (S032 § 5.1): one push_send
+    per device of each recipient, or one email_send per recipient with an address, in this
     transaction (all or nothing, so a retry never doubles it).  Sent only while the alert is
-    still worth it (should_send); with push not set up there is no channel, and it is done."""
+    still worth it (should_send); a channel not set up on the server is skipped."""
     ticket_id, event_id = _ids("ticket_alert", payload, "ticket_id", "event_id")
     kind = payload.get("kind")
     if kind not in KINDS:
@@ -119,20 +123,43 @@ def ticket_alert(conn, payload, should_stop):
         if not should_send(kind, ticket["state"]):
             logger.info("ticket_alert %s for ticket %s not sent: the ticket is %s", kind, ticket_id, ticket["state"])
             return
-        if not push_sender.enabled():
-            logger.info("ticket_alert %s for ticket %s: push is not set up, no channel", kind, ticket_id)
-            return
-        if kind == ASSIGNED:
-            (person_id,) = _ids("ticket_alert", payload, "person_id")
-            people = alerts.assignee(cur, ticket_id, person_id, exclude)
-        else:
-            people = alerts.recipients(cur, ticket, kind, exclude)
-        text = message(kind, facts, payload.get("minutes"))
-        devices = alerts.subscription_ids(cur, people)
-        for subscription_id in devices:
-            enqueue(cur, alerts.PUSH_SEND, send_task_payload(subscription_id, text, ALERT_TTL_SECONDS),
-                    max_attempts=alerts.PUSH_SEND_ATTEMPTS)
+        if PUSH in CHANNELS[kind]:
+            _push_fan_out(cur, kind, ticket, facts, payload, exclude)
+        if EMAIL in CHANNELS[kind]:
+            _email_fan_out(cur, kind, ticket, event_id, exclude)
+
+
+def _push_fan_out(cur, kind, ticket, facts, payload, exclude):
+    ticket_id = ticket["id"]
+    if not push_sender.enabled():
+        logger.info("ticket_alert %s for ticket %s: push is not set up, no channel", kind, ticket_id)
+        return
+    if kind == ASSIGNED:
+        (person_id,) = _ids("ticket_alert", payload, "person_id")
+        people = alerts.assignee(cur, ticket_id, person_id, exclude)
+    else:
+        people = alerts.recipients(cur, ticket, kind, exclude)
+    text = message(kind, facts, payload.get("minutes"))
+    devices = alerts.subscription_ids(cur, people)
+    for subscription_id in devices:
+        enqueue(cur, alerts.PUSH_SEND, send_task_payload(subscription_id, text, ALERT_TTL_SECONDS),
+                max_attempts=alerts.PUSH_SEND_ATTEMPTS)
     logger.info("ticket_alert %s for ticket %s: %d people, %d devices", kind, ticket_id, len(people), len(devices))
+
+
+def _email_fan_out(cur, kind, ticket, event_id, exclude):
+    """The recipients with an address first; the email's extra facts are read only when there is
+    one (BR1-15).  *Ticket closed* is the only kind on this channel, so its text is closed_email."""
+    ticket_id = ticket["id"]
+    if not mail_sender.enabled():
+        logger.info("ticket_alert %s for ticket %s: email is not set up, no channel", kind, ticket_id)
+        return
+    people = alerts.recipients_with_email(cur, ticket, kind, exclude)
+    if people:
+        subject, body = closed_email(alerts.read_closed_facts(cur, ticket_id, event_id))
+        for person_id in people:
+            alerts.enqueue_email(cur, person_id, subject, body)
+    logger.info("ticket_alert %s for ticket %s: %d emails", kind, ticket_id, len(people))
 
 
 def ticket_escalate(conn, payload, should_stop):
@@ -229,11 +256,42 @@ def push_send(conn, payload, should_stop, send=None):
     raise RuntimeError(text)
 
 
+def email_send(conn, payload, should_stop, send=None):
+    """Send one email to one person (S032 § 5.5).  The address is read now, never kept in the
+    queue: no address any more, or an inactive person, is done.  A failure's meaning is
+    email_core.smtp_outcome's; the text raised (and so task_queue.last_error and the log) holds
+    the outcome and the SMTP code or the exception's type, never the address, the password or the
+    body.  ``send`` is mail_sender.send unless a test passes a fake."""
+    send = send or mail_sender.send
+    (person_id,) = _ids("email_send", payload, "person_id")
+    subject, body = payload.get("subject"), payload.get("body")
+    if not isinstance(subject, str) or not isinstance(body, str):
+        raise BadTask(f"email_send needs a subject and a body, for person {person_id}")
+    with conn.cursor() as cur:
+        cur.execute("SELECT email, active FROM people WHERE id = %s", (person_id,))
+        person = cur.fetchone()
+    if person is None or not person["active"] or not person["email"]:
+        logger.info("email_send: person %s has no address now, or is inactive; nothing to send", person_id)
+        return
+    if not mail_sender.enabled():
+        raise NoRetry("email is not set up on this server")
+    try:
+        send(person["email"], subject, body)
+    except Exception as exc:  # noqa: BLE001 — smtp_outcome decides; str(exc) may carry the address
+        retry, text = smtp_outcome(exc)
+        logger.warning("email_send: person %s not sent: %s", person_id, text)
+        if retry:
+            raise RuntimeError(text) from None
+        raise NoRetry(text) from None
+    logger.info("email_send: sent to person %s", person_id)
+
+
 HANDLERS = {
     "purge_access_log": purge_access_log,
     alerts.TICKET_ALERT: ticket_alert,
     alerts.TICKET_ESCALATE: ticket_escalate,
     alerts.PUSH_SEND: push_send,
+    alerts.EMAIL_SEND: email_send,
 }
 
 

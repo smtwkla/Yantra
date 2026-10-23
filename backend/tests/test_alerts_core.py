@@ -1,14 +1,14 @@
-"""alerts_core — audiences, what each ticket change enqueues, escalation, the texts and *What
-you will get* (S021 § 5.1–5.3, § 8 Pure, § 10 A1)."""
+"""alerts_core — audiences, channels, what each ticket change enqueues, escalation, the texts and
+*What you will get* (S021 § 5.1–5.3, § 8 Pure, § 10 A1; S032 *ticket closed*)."""
 
 from datetime import datetime, timedelta
 
 import pytest
 
 from alerts_core import (
-    ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, DEFECT, ESCALATION, Alert, alert_text, display_name,
-    escalation_minutes, excluded_people, message, raise_alert, regrade_alert, send_back_alert, should_escalate,
-    should_send, message_for_test, ticket_facts, you_get,
+    ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, DEFECT, ESCALATION, Alert, alert_text,
+    close_alert, display_name, escalation_minutes, excluded_people, message, raise_alert, regrade_alert,
+    send_back_alert, should_escalate, should_send, message_for_test, ticket_facts, you_get,
 )
 
 MINUTES = {"A": 10, "B": 30, "C": 60}
@@ -41,6 +41,19 @@ class TestAudience:
         assert excluded_people(BREAKDOWN, None, None) == []
         assert excluded_people(ESCALATION, 3, 5) == []
         assert excluded_people(ASSIGNED, 3, 5) == [3]       # A1: the actor only
+        assert excluded_people(CLOSED, 3, 5) == [3]         # S032: the closer only, never the reporter
+        assert excluded_people(CLOSED, None, None) == []
+
+    def test_closed_goes_to_managers_only(self):
+        assert AUDIENCE[CLOSED] == ("maint_manager",)
+
+
+class TestChannels:
+
+    def test_closed_by_email_the_others_by_push(self):
+        assert CHANNELS[CLOSED] == ("email",)
+        for kind in (BREAKDOWN, DEFECT, ESCALATION, ASSIGNED):
+            assert CHANNELS[kind] == ("push",)
 
 
 class TestWhatEnqueues:
@@ -72,6 +85,15 @@ class TestWhatEnqueues:
     def test_assigned(self):
         assert ASSIGNED_ALERT == Alert(ASSIGNED, False)
 
+    def test_close_within_7_days(self):
+        assert close_alert(timedelta(0)) == Alert(CLOSED, False)
+        assert close_alert(timedelta(days=7)) == Alert(CLOSED, False)
+
+    def test_close_of_history_sends_nothing(self):
+        """S032 § 1.3: back-entered history (S028), as for the raise."""
+        assert close_alert(timedelta(days=7, minutes=1)) is None
+        assert close_alert(timedelta(days=8)) is None
+
 
 class TestShouldSend:
 
@@ -87,6 +109,11 @@ class TestShouldSend:
         for state in ("raised", "acknowledged", "scheduled", "in_progress", "back_in_service"):
             assert should_send(kind, state)
         assert not should_send(kind, "closed")
+
+    def test_closed_only_while_still_closed(self):
+        assert should_send(CLOSED, "closed")
+        for state in ("raised", "in_progress", "back_in_service"):
+            assert not should_send(CLOSED, state)
 
 
 class TestEscalation:
@@ -185,8 +212,17 @@ class TestYouGet:
             "Breakdowns at SMTW.MCC1, SMTW.MCC2"]
 
     def test_manager_at_two_sites(self):
+        """S032: each manager membership adds its closed-ticket email line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
-            "Breakdowns at BRICKS, escalations", "Breakdowns at SMTW, escalations", "Jobs assigned to you"]
+            "Breakdowns at BRICKS, escalations", "Closed tickets at BRICKS, by email",
+            "Breakdowns at SMTW, escalations", "Closed tickets at SMTW, by email", "Jobs assigned to you"]
+
+    def test_manager_at_one_unit(self):
+        assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
+            "Breakdowns at SMTW.MCC2, escalations", "Closed tickets at SMTW.MCC2, by email", "Jobs assigned to you"]
+
+    def test_engineer_gets_no_email_line(self):
+        assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
 
     def test_technician_gets_assigned_jobs(self):
         assert you_get([_membership("SMTW", "maint_technician")]) == ["Jobs assigned to you"]

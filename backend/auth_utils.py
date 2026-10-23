@@ -8,6 +8,7 @@
 - has_perm_at(key, site_id) / require_perm_at(...) — a site-scoped key at one site (S011)
 - permissions_at_site(site_id) — every key the user holds at one site
 - current_person_id(cur)    — the user's own person (Team record), or None (S018)
+- store_login_email(...)    — copy the token's email onto the user's person (S032)
 - user_unit_ids(key)        — the units where the user holds a site-scoped key
 - compute_permissions(roles) — returns list of permission keys for role(s) (access_core)
 
@@ -28,6 +29,7 @@ from flask import current_app, g, jsonify, request
 import access_core
 from access_core import Membership, compute_permissions, expand_roles  # noqa: F401  (re-exported)
 from config_rbac import LOGIN_ROLE, SITE_ROLES, SITE_SCOPED, TOKEN_ROLES
+from email_core import clean_address
 from masters_core import normalise_username
 
 # api_common and db_helpers import config, which imports this module: they are imported
@@ -87,14 +89,16 @@ def _decode(token, jwks_url):
     return jwt.decode(token, signing_key.key, algorithms=["RS256"], options=decode_opts)
 
 
-def make_user(username, name, roles, memberships=None, stale_roles=(), session_id=None):
+def make_user(username, name, roles, memberships=None, stale_roles=(), session_id=None, email=""):
     """The g.user dict.  ``roles`` are token roles; ``memberships`` is None to read them
     from the database (production), or a fixed list (the dev stub and the test harness).
     ``role`` is the most privileged token role, for logging; /auth/me shows the one that
     counts the site roles too.  ``session_id`` is the token's sid claim: the Keycloak login
-    session, which the access log calls a session (S013)."""
+    session, which the access log calls a session (S013).  ``email`` is the token's email
+    claim as given ("" when none); /auth/me checks it and stores it (S032 § 5.4)."""
     return {
         "username": username,
+        "email": email,
         "session_id": session_id,
         "name": name,
         "role": access_core.display_role(roles, []),
@@ -171,7 +175,7 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
     # /auth/me logs who still carries them (§ 5.7 step 4)
     stale_roles = sorted(all_roles & set(SITE_ROLES))
     return make_user(payload.get("preferred_username", ""), payload.get("name", ""), matched_roles,
-                     stale_roles=stale_roles, session_id=payload.get("sid"))
+                     stale_roles=stale_roles, session_id=payload.get("sid"), email=payload.get("email", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +196,15 @@ def _get_dev_stub_user():
     global _DEV_STUB_USER
     if _DEV_STUB_USER is None:
         import config
-        role = config.DEV_STUB_ROLE
+        role, email = config.DEV_STUB_ROLE, config.DEV_STUB_EMAIL
         if role in SITE_ROLES:
             # That role at every site, all units (S011 § 5.8)
-            _DEV_STUB_USER = make_user("dev", "Dev User", [LOGIN_ROLE], [Membership(None, role, True)])
+            _DEV_STUB_USER = make_user("dev", "Dev User", [LOGIN_ROLE], [Membership(None, role, True)], email=email)
         elif role in ("admin", LOGIN_ROLE, *TOKEN_ROLES):
             # maintenance_team: a login-only stub, to see the "no access yet" page
-            _DEV_STUB_USER = make_user("dev", "Dev User", [role])
+            _DEV_STUB_USER = make_user("dev", "Dev User", [role], email=email)
         else:
-            _DEV_STUB_USER = make_user("dev", "Dev User", [], [])
+            _DEV_STUB_USER = make_user("dev", "Dev User", [], [], email=email)
     return _DEV_STUB_USER
 
 
@@ -223,14 +227,15 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
 
         # In test mode the X-Test-Role header sets the user through the harness's factory, here,
         # so every later hook (the network gate, the access log) sees g.user as in production
-        # (S013 BR1-02).  No factory configured: refused, never let through.
+        # (S013 BR1-02).  No factory configured: refused, never let through.  X-Test-Email stands
+        # for the token's email claim (S032 BR1-04), empty when absent.
         test_role = request.headers.get("X-Test-Role")
         if current_app.config.get("TESTING") and test_role:
             factory = current_app.config.get("TEST_USER_FACTORY")
             if factory is None:
                 g.access_outcome = "auth_failed"
                 return jsonify({"error": "Unauthorized"}), 401
-            g.user = factory(test_role, request.headers.get("X-Test-User"))
+            g.user = factory(test_role, request.headers.get("X-Test-User"), request.headers.get("X-Test-Email", ""))
             return None
 
         if dev_bypass:
@@ -267,6 +272,17 @@ def current_person_id(cur):
         row = cur.fetchone()
         g._access_person_id = row["id"] if row else None
     return g._access_person_id
+
+
+def store_login_email(cur, person_id, email):
+    """Copy the login token's email onto the person (S032 § 5.4): stripped and lower-cased when
+    email_core accepts it, else NULL (no claim, or a broken one, clears it) -> the UPDATE's row
+    count, 0 when it was already so.  Keycloak is the one source of the address; Yantra keeps a
+    copy because the worker sends without a token.  updated_at / updated_by stay as they were: a
+    cached value, not an edit of the Team record."""
+    address = clean_address(email)
+    cur.execute("UPDATE people SET email = %s WHERE id = %s AND NOT (email <=> %s)", (address, person_id, address))
+    return cur.rowcount
 
 
 def current_memberships():

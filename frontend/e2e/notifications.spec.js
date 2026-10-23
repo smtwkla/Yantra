@@ -252,3 +252,22 @@ test("S021: the manifest is served and parses; the service worker registers", as
     expect(new URL(scope).pathname).toBe("/");
   }
 });
+
+test("S032: the manager sees the closed-ticket email line and their address; Send test email says it is on its way", async ({ page }) => {
+  // The manager's token carries an email claim (people.js EMAILS); the page load stores it
+  await asPerson(page, "manager", "/notifications");
+  await expect(page.locator(".card").filter({ hasText: "What you will get" })).toContainText("Closed tickets at SMTW, by email");
+  const card = page.locator(".email-card");
+  await expect(card).toContainText("Email goes to e2e_manager@example.test, from your login.");
+  await card.getByRole("button", { name: "Send test email" }).click();
+  await expect(card.getByText("A test email is on its way to e2e_manager@example.test. Check your inbox in a few minutes."))
+    .toBeVisible();
+});
+
+test("S032: a person whose login has no email is told so, and gets no Send test email", async ({ page }) => {
+  await asPerson(page, "technician", "/notifications");
+  const card = page.locator(".email-card");
+  await expect(card).toContainText(
+    "Your login has no email address, so you get no email. Ask IT admin to add an email address to your login.");
+  await expect(card.getByRole("button", { name: "Send test email" })).toHaveCount(0);
+});

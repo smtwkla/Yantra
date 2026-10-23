@@ -16,6 +16,7 @@ import access_control
 import auth_utils
 import config
 import db_helpers
+from local_db import get_local_db
 
 CLIENT_ID = config.KEYCLOAK_CLIENT_ID
 
@@ -36,7 +37,8 @@ def stub_jwks(monkeypatch):
     monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _StubJWKClient(_KEY))
 
 
-def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe", sid=None):
+def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe", sid=None,
+           email=None):
     payload = {
         "sid": sid,
         "preferred_username": username,
@@ -46,6 +48,8 @@ def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY,
         "realm_access": {"roles": list(realm_roles)},
         "resource_access": {CLIENT_ID: {"roles": list(client_roles)}},
     }
+    if email is not None:
+        payload["email"] = email
     return jwt.encode(payload, key, algorithm="RS256")
 
 
@@ -117,6 +121,12 @@ class TestValidateToken:
 
     def test_missing_header_is_rejected(self, app):
         assert _validate(app, None) is None
+
+    def test_the_email_claim_goes_into_the_user_as_given(self, app):
+        """S032 § 5.4: checked and cleaned only when /auth/me stores it."""
+        assert _validate(app, _token(client_roles=["maintenance_team"], email=" Priya@Example.TEST"))["email"] == (
+            " Priya@Example.TEST")
+        assert _validate(app, _token(client_roles=["maintenance_team"]))["email"] == ""
 
 
 class TestMiddleware:
@@ -257,3 +267,63 @@ class TestAccessLogMarks:
         client.get("/api/masters/sites", headers=_bearer(_token(client_roles=["it_admin"], username=login, sid=sid)))
         rows = db_rows("SELECT session_id, outcome FROM access_log WHERE username = %s", (login,))
         assert [(r["session_id"], r["outcome"]) for r in rows] == [(sid, "ok")]
+
+
+class TestLoginEmail:
+    """S032 § 5.4, § 8: /auth/me copies the token's email onto the person."""
+
+    def _person(self, make_unit, make_person, uniq):
+        unit = make_unit()
+        login = uniq.username()
+        person = make_person(username=login, sites=[{"site_id": unit["site_id"], "role": "maint_manager",
+                                                     "all_units": True, "unit_ids": []}])
+        return login, person
+
+    def _me(self, client, login, email):
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"], username=login,
+                                                                email=email)))
+        assert res.status_code == 200, res.get_json()
+        return res.get_json()
+
+    def _stored(self, db_rows, person):
+        return db_rows("SELECT email, updated_at, updated_by FROM people WHERE id = %s", (person["id"],))[0]
+
+    def test_stored_lower_cased_replaced_and_cleared(self, client, db_rows, make_unit, make_person, uniq):
+        login, person = self._person(make_unit, make_person, uniq)
+        before = self._stored(db_rows, person)
+        self._me(client, login, "  Priya@Example.TEST ")
+        assert self._stored(db_rows, person)["email"] == "priya@example.test"
+        self._me(client, login, "priya.k@example.test")
+        assert self._stored(db_rows, person)["email"] == "priya.k@example.test"
+        self._me(client, login, "a@b.test, c@d.test")       # fails the address check: cleared
+        assert self._stored(db_rows, person)["email"] is None
+        self._me(client, login, "priya@example.test")
+        self._me(client, login, None)                       # no claim at all: cleared
+        stored = self._stored(db_rows, person)
+        assert stored["email"] is None
+        # A cached value from Keycloak, not an edit of the Team record
+        assert (stored["updated_at"], stored["updated_by"]) == (before["updated_at"], before["updated_by"])
+
+    def test_no_person_writes_nothing(self, client, db_rows, uniq):
+        login = uniq.username()
+        body = self._me(client, login, "nobody@example.test")
+        assert body["person_id"] is None
+        assert db_rows("SELECT id FROM people WHERE email = 'nobody@example.test'") == ()
+
+    def test_database_down_answers_as_today(self, client, db_down):
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["it_admin"], email="it@example.test")))
+        assert res.status_code == 200
+        assert res.get_json()["db_unavailable"] is True and res.get_json()["person_id"] is None
+
+    def test_store_login_email_counts_a_real_write_only(self, app, make_unit, make_person, uniq):
+        """BR2-05: people.updated_at has no ON UPDATE, so the row count is what shows a write."""
+        _login, person = self._person(make_unit, make_person, uniq)
+        conn = get_local_db(config.DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                assert auth_utils.store_login_email(cur, person["id"], "Same@Example.test") == 1
+                assert auth_utils.store_login_email(cur, person["id"], "same@example.test") == 0
+                assert auth_utils.store_login_email(cur, person["id"], "") == 1
+                assert auth_utils.store_login_email(cur, person["id"], None) == 0
+        finally:
+            conn.close()

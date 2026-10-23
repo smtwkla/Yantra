@@ -4,7 +4,7 @@ throw-away database, vel_yantra_e2e, rebuilt by the migrations at every start.
 Started by Playwright (frontend/playwright.config.js, webServer) in the backend's uv
 environment:  uv run --project ../backend python ../tooling/e2e/e2e_backend.py
 
-Who the user is comes from the test headers (X-Test-Role, X-Test-User), as in the pytest
+Who the user is comes from the test headers (X-Test-Role, X-Test-User, X-Test-Email), as in the pytest
 suite: TESTING on, with a TEST_USER_FACTORY.  A request without them falls to the dev stub
 user, which is set to "nobody" here, so a lost header gets no access, never admin
 (S024 § 5.1).  Dev only: FLASK_DEBUG=1 (config.py allows the auth bypass only then),
@@ -72,12 +72,13 @@ def _empty_data_dir():
 
 
 def _user_factory(harness_user, names):
-    """X-Test-Role / X-Test-User -> g.user, as the pytest factory, with the seed person's
-    name for the top bar.  The username defaults to e2e_<role>: created_by is NOT NULL, so
-    a missing X-Test-User must not make a write fail (BR2-02)."""
-    def factory(role_name, username):
+    """X-Test-Role / X-Test-User / X-Test-Email -> g.user, as the pytest factory, with the seed
+    person's name for the top bar.  The username defaults to e2e_<role>: created_by is NOT NULL,
+    so a missing X-Test-User must not make a write fail (BR2-02).  X-Test-Email is the token's
+    email claim (S032 BR1-04), "" when absent."""
+    def factory(role_name, username, email=""):
         username = username or f"e2e_{role_name}"
-        return harness_user(role_name, username, names.get(username, username))
+        return harness_user(role_name, username, names.get(username, username), email=email)
     return factory
 
 
@@ -99,6 +100,11 @@ def main():
     from vapid_keys import make_key_pair
     config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY = make_key_pair()
     config.VAPID_SUBJECT = "mailto:e2e@example.invalid"
+    # Email on (S032 § 8) with reserved test values, whatever the local secrets hold: the test
+    # email stays a queued task, since no worker runs.  The dev stub gets no address.
+    config.SMTP_HOST, config.SMTP_PORT, config.SMTP_FROM = "smtp.example.test", 2525, "yantra@example.test"
+    config.SMTP_USER, config.SMTP_PASSWORD = "", ""
+    config.DEV_STUB_EMAIL = ""
     refusal = check_target(config.DB_CONFIG)
     if refusal:
         sys.exit(f"e2e backend: {refusal}")

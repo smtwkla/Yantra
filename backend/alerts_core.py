@@ -3,9 +3,10 @@
 Telegram would read the same facts and texts.
 
 An alert is a message about a ticket: a new breakdown, a new defect, *down again*, an
-escalation of a breakdown nobody acknowledged in time, or *assigned to you*.  It answers ISO
-55001 § 7.4 / ISO 9001 § 7.4 (what is communicated, when, to whom): the audience table below
-is that decision, and you_get shows each person their part of it.
+escalation of a breakdown nobody acknowledged in time, *assigned to you*, or (S032) *ticket
+closed*.  It answers ISO 55001 § 7.4 / ISO 9001 § 7.4 (what is communicated, when, to whom and
+how): the audience and channel tables below are that decision, and you_get shows each person
+their part of it.
 """
 
 from collections import namedtuple
@@ -14,14 +15,15 @@ from datetime import timedelta
 from config_rbac import ASSIGNABLE_ROLES
 from equipment_core import effective_criticality
 from tickets_core import (
-    BREAKDOWN_INTENSITY, DOWN_STATES, MAX_BACKDATE_DAYS, OPEN_STATES, RAISED, SENT_BACK_EVENT,
+    BREAKDOWN_INTENSITY, CLOSED as CLOSED_STATE, DOWN_STATES, MAX_BACKDATE_DAYS, OPEN_STATES, RAISED, SENT_BACK_EVENT,
 )
 
 BREAKDOWN = "breakdown"
 DEFECT = "defect"
 ESCALATION = "escalation"
 ASSIGNED = "assigned"      # A1: Job assigned to you
-KINDS = (BREAKDOWN, DEFECT, ESCALATION, ASSIGNED)
+CLOSED = "closed"          # S032: Ticket closed, by email
+KINDS = (BREAKDOWN, DEFECT, ESCALATION, ASSIGNED, CLOSED)
 
 ENGINEER = "maint_engineer"
 SUPERVISOR = "maint_supervisor"
@@ -34,11 +36,27 @@ AUDIENCE = {
     BREAKDOWN: (ENGINEER, SUPERVISOR, MANAGER),
     DEFECT: (ENGINEER,),
     ESCALATION: (ENGINEER, MANAGER),
+    CLOSED: (MANAGER,),    # S032 § 5.2: the close-out review is the manager's
+}
+
+# How each kind travels (S032 § 5.1).  ticket_alert fans out per channel; a channel not set up on
+# the server is skipped there.  Adding email to another kind is one entry here (and its text).
+PUSH = "push"
+EMAIL = "email"
+CHANNELS = {
+    BREAKDOWN: (PUSH,),
+    DEFECT: (PUSH,),
+    ESCALATION: (PUSH,),
+    ASSIGNED: (PUSH,),
+    CLOSED: (EMAIL,),
 }
 
 # When a drained alert is still worth sending (BR2-04): a worker an hour late does not wake the
 # supervisor for a machine already back in service
-_SEND_STATES = {BREAKDOWN: DOWN_STATES, DEFECT: DOWN_STATES, ESCALATION: OPEN_STATES, ASSIGNED: OPEN_STATES}
+_SEND_STATES = {BREAKDOWN: DOWN_STATES, DEFECT: DOWN_STATES, ESCALATION: OPEN_STATES, ASSIGNED: OPEN_STATES,
+                # S032 § 5.3: only while still closed (a closed ticket stays closed today; this
+                # guards a future reopen)
+                CLOSED: (CLOSED_STATE,)}
 
 # Escalation per criticality grade (§ 1.5; Maintenance-Philosophy § 9).  Equipment must have a
 # grade (new equipment starts at C), so an ungraded item is a leftover and counts as C.
@@ -88,9 +106,19 @@ def send_back_alert(machine_down):
 ASSIGNED_ALERT = Alert(ASSIGNED, False)
 
 
+def close_alert(age):
+    """S032 § 1.3: *Close* and *Not a fault* send *Ticket closed*, never escalated.  A close dated
+    more than MAX_BACKDATE_DAYS back (``age`` = now - occurred_at) is back-entered history (S028),
+    as for raise_alert: nothing."""
+    if age > timedelta(days=MAX_BACKDATE_DAYS):
+        return None
+    return Alert(CLOSED, False)
+
+
 def excluded_people(kind, actor_person_id, reported_by_id):
-    """§ 5.2: the person whose action set the alert off is left out; for a breakdown or a defect
-    the ticket's reported-by person too.  An escalation leaves nobody out."""
+    """§ 5.2: the person whose action set the alert off is left out (the closer, for *ticket
+    closed*, S032 § 5.2); for a breakdown or a defect the ticket's reported-by person too.  An
+    escalation leaves nobody out."""
     if kind == ESCALATION:
         return []
     ids = {actor_person_id}
@@ -217,19 +245,24 @@ def _what_line(role, place):
 
 def you_get(memberships):
     """*What you will get* (BR2-06, A1) from the person's memberships: ``[{site_code, role,
-    all_units, unit_codes}]``.  One line per membership whose role is in an audience, e.g.
+    all_units, unit_codes}]``.  One line per membership whose role is in a push audience, e.g.
     "Breakdowns and defects at SMTW, escalations" (all units) or "Breakdowns at SMTW.MCC1,
-    SMTW.MCC2"; then "Jobs assigned to you" once for an assignable role.  Empty: nothing to get
-    (a technician before A1, IT admin, a storekeeper)."""
+    SMTW.MCC2", followed by "Closed tickets at SMTW, by email" when the role gets *ticket closed*
+    (S032); then "Jobs assigned to you" once for an assignable role.  Empty: nothing to get (a
+    technician before A1, IT admin, a storekeeper)."""
     lines = []
     for membership in sorted(memberships, key=lambda m: m["site_code"]):
         if membership["all_units"]:
             place = membership["site_code"]
         else:
             place = ", ".join(f"{membership['site_code']}.{code}" for code in sorted(membership["unit_codes"]))
-        line = _what_line(membership["role"], place) if place else None
+        if not place:
+            continue
+        line = _what_line(membership["role"], place)
         if line:
             lines.append(line)
+        if membership["role"] in AUDIENCE[CLOSED]:
+            lines.append(f"Closed tickets at {place}, by email")
     if any(m["role"] in ASSIGNABLE_ROLES for m in memberships):
         lines.append("Jobs assigned to you")
     return lines

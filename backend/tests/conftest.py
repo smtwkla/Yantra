@@ -95,15 +95,37 @@ def push_off(monkeypatch):
         monkeypatch.setattr(config, name, "")
 
 
+# Email (S032): on for the session with reserved test values, whatever the local secrets hold,
+# so no test can reach a real mail server; the tests pass a fake sender.  email_off empties it
+# for the "not set up" cases.
+_SMTP_TEST_VALUES = {"SMTP_HOST": "smtp.example.test", "SMTP_PORT": 2525, "SMTP_USER": "yantra-test",
+                     "SMTP_PASSWORD": "test-password", "SMTP_FROM": "yantra@example.test"}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def smtp_test_values():
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in _SMTP_TEST_VALUES.items():
+            patch.setattr(config, name, value)
+        patch.setattr(config, "DEV_STUB_EMAIL", "")
+        yield _SMTP_TEST_VALUES
+
+
+@pytest.fixture
+def email_off(monkeypatch):
+    monkeypatch.setattr(config, "SMTP_HOST", "")
+
+
 # ---------------------------------------------------------------------------
-# The X-Test-Role harness: require_auth calls TEST_USER_FACTORY(role, X-Test-User) in
+# The X-Test-Role harness: require_auth calls TEST_USER_FACTORY(role, X-Test-User, X-Test-Email) in
 # TESTING mode and sets g.user itself, so every later hook sees it (S013 BR1-02).
 # harness_user lives in tests/harness.py, shared with the browser tests' backend (S024).
 # ---------------------------------------------------------------------------
 
-def _test_user_factory(role_name, username):
-    # X-Test-User gives a unit-access test its own fresh username (default test_<role>)
-    return harness_user(role_name, username or f"test_{role_name}")
+def _test_user_factory(role_name, username, email=""):
+    # X-Test-User gives a unit-access test its own fresh username (default test_<role>);
+    # X-Test-Email the token's email claim (S032)
+    return harness_user(role_name, username or f"test_{role_name}", email=email)
 
 
 flask_app.config["TEST_USER_FACTORY"] = _test_user_factory

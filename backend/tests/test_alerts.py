@@ -351,6 +351,14 @@ class TestFanOut:
         restore(plant, ticket)
         assert self._drain_first_alert(plant, db_rows, ticket) == []
 
+    def test_push_kinds_queue_push_only_even_for_people_with_an_address(self, plant, db_rows):
+        """S032 § 5.1: breakdown, defect, escalation and assigned stay push only."""
+        db_rows("UPDATE people SET email = CONCAT('p', id, '@example.test') WHERE id IN (%s, %s)",
+                (person_id(plant, "manager"), person_id(plant, "engineer")))
+        ticket = raise_on(plant)
+        assert self._drain_first_alert(plant, db_rows, ticket)
+        assert db_rows("SELECT id FROM task_queue WHERE task_type = 'email_send'") == ()
+
     def test_push_off_finds_no_channel(self, plant, db_rows, push_off):
         ticket = raise_on(plant)
         assert self._drain_first_alert(plant, db_rows, ticket) == []

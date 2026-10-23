@@ -28,6 +28,9 @@ KEYCLOAK_HOST_IP = ""
 # that role at every site, all units.  "maintenance_team": logged in with no access, to see
 # the "no access yet" page (S011 § 5.8).
 # DEV_STUB_ROLE = "admin"
+# The dev stub's email address (dev only, S032): set it to send yourself a test email from My
+# notifications.  Left out or empty, the stub has no address.
+# DEV_STUB_EMAIL = ""
 
 # Web push (S021): the VAPID key pair, from tooling/dev/make_vapid_keys.py (dev gets its own
 # pair; production's is made once and never rotated casually — a new pair silently ends every
@@ -35,3 +38,12 @@ KEYCLOAK_HOST_IP = ""
 VAPID_PUBLIC_KEY = ""
 VAPID_PRIVATE_KEY = ""
 VAPID_SUBJECT = ""   # e.g. "mailto:it@smtw.in"
+
+# Email (S032): the SMTP server Yantra sends through (STARTTLS, then a login).  In production the
+# values come from the Ansible vars; none is ever written in the repo.  Email is on only when
+# SMTP_HOST, SMTP_PORT and SMTP_FROM are all set; left empty (and the port 0), email is off.
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASSWORD = ""
+SMTP_FROM = ""

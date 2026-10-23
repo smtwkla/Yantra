@@ -22,7 +22,8 @@ const SIGN_OUT_WAIT_MS = 3_000;
 /** Who is signed in as a Team person, null when nobody (CR1-08: given by the caller, so this
  * store does not import auth.js, which imports this one). */
 const personId = ref(null);
-/** {enabled, public_key, you_get: [...]} from the server, or null before the first load. */
+/** {enabled, public_key, you_get: [...], email: {enabled, address}} from the server, or null before
+ * the first load. */
 export const pushConfig = ref(null);
 /** My devices, as GET /api/push/subscriptions lists them. */
 export const devices = ref([]);
@@ -89,6 +90,11 @@ export async function removeDevice(device) {
 /** A test alert to all my devices -> how many. */
 export async function sendTest() {
   return (await apiPost("/api/push/test")).devices;
+}
+
+/** A test email to my own address (S032 § 1.5) -> the address it goes to. */
+export async function sendTestEmail() {
+  return (await apiPost("/api/push/test-email")).address;
 }
 
 /**

@@ -198,3 +198,83 @@ class TestSendTest:
         res = client.post(f"{PUSH}/test")
         assert res.status_code == 409
         assert res.get_json()["error"] == "Notifications are not set up on this server yet. Ask IT admin."
+
+
+# ---------------------------------------------------------------------------
+# Email (S032 § 1.5, § 5.8, § 6)
+# ---------------------------------------------------------------------------
+
+ADDRESS = "priya@example.test"
+
+
+def log_in_with_email(client, address):
+    """/auth/me with the token's email claim (X-Test-Email), as a page load stores it."""
+    res = client.get("/api/auth/me", headers={"X-Test-Email": address})
+    assert res.status_code == 200, res.get_json()
+
+
+def _email_sends(db_rows, person_id):
+    rows = db_rows("SELECT payload, max_attempts FROM task_queue WHERE task_type = 'email_send'"
+                   " AND JSON_EXTRACT(payload, '$.person_id') = %s ORDER BY id", (person_id,))
+    return [{**json.loads(row["payload"]), "max_attempts": row["max_attempts"]} for row in rows]
+
+
+class TestEmailConfig:
+
+    def test_set_up_with_my_address(self, engineer_in_team):
+        client, _person = engineer_in_team
+        log_in_with_email(client, ADDRESS)
+        assert client.get(f"{PUSH}/config").get_json()["email"] == {"enabled": True, "address": ADDRESS}
+
+    def test_no_address_yet(self, engineer_in_team):
+        client, _person = engineer_in_team
+        assert client.get(f"{PUSH}/config").get_json()["email"] == {"enabled": True, "address": None}
+
+    def test_email_off(self, engineer_in_team, email_off):
+        client, _person = engineer_in_team
+        assert client.get(f"{PUSH}/config").get_json()["email"]["enabled"] is False
+
+    def test_no_team_record(self, role_client):
+        body = role_client("maint_engineer", "email_nobody").get(f"{PUSH}/config").get_json()
+        assert body["email"] == {"enabled": True, "address": None}
+
+    def test_a_manager_is_told_of_the_closed_ticket_email(self, user_at_sites, site):
+        client, _person = user_at_sites([(site, "maint_manager", "all")])
+        assert f"Closed tickets at {site['code']}, by email" in client.get(f"{PUSH}/config").get_json()["you_get"]
+
+
+class TestSendTestEmail:
+
+    def test_queues_one_email_to_my_own_person(self, engineer_in_team, db_rows):
+        client, person = engineer_in_team
+        log_in_with_email(client, ADDRESS)
+        res = client.post(f"{PUSH}/test-email")
+        assert res.status_code == 202 and res.get_json() == {"address": ADDRESS}
+        (sent,) = _email_sends(db_rows, person["id"])
+        assert sent == {"person_id": person["id"], "subject": "Yantra test email",
+                        "body": "This is a test email from Yantra.\nYantra can send email to this address.\n",
+                        "max_attempts": 3}
+        # A.5.34: the queue carries the person's id, never the address
+        assert ADDRESS not in json.dumps(sent)
+
+    def test_not_in_team_is_409_first(self, role_client, email_off, db_rows):
+        res = role_client("maint_engineer", "email_ghost").post(f"{PUSH}/test-email")
+        assert res.status_code == 409 and res.get_json()["error"] == "You are not in Team. Ask IT admin to add you."
+
+    def test_email_off_is_409(self, engineer_in_team, email_off, db_rows):
+        client, person = engineer_in_team
+        res = client.post(f"{PUSH}/test-email")
+        assert res.status_code == 409
+        assert res.get_json()["error"] == "Email is not set up on this server yet. Ask IT admin."
+        assert _email_sends(db_rows, person["id"]) == []
+
+    def test_no_address_is_409(self, engineer_in_team, db_rows):
+        client, person = engineer_in_team
+        res = client.post(f"{PUSH}/test-email")
+        assert res.status_code == 409
+        assert res.get_json()["error"] == ("Your login has no email address. Ask IT admin to add an email address "
+                                           "to your login.")
+        assert _email_sends(db_rows, person["id"]) == []
+
+    def test_a_login_with_no_role_is_forbidden(self, role_client):
+        assert role_client("maintenance_team", "email_login_only").post(f"{PUSH}/test-email").status_code == 403

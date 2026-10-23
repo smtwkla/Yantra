@@ -308,6 +308,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S029 | [Ticket light on the equipment list](S029-equipment-ticket-light/1-brief.md) — a red / amber / green bulb per row (breakdown open = down; other open ticket; none) and a filter for equipment with tickets | 3 | Done — committed 12a1238; checks: 3 auto (light track) | 23-10-2026 |
 | S030 | [Equipment lifecycle](S030-equipment-lifecycle/1-brief.md) — the register field *Status* (in service / standby / out of use / scrapped) renamed *Lifecycle* in screens, API, code and DB (v25); *Status* reserved for down / working / degraded / PM due | 2 | Done — committed 6866fbd; checks: 1 auto (full track) | 23-10-2026 |
 | S031 | [Me: my open work, tickets I raised, my activity](S031-me-page/1-brief.md) — a *Me* nav item with three tabs: open tickets assigned to me, tickets I raised or reported, timeline lines I recorded; v26 two indexes | 3 | Committed; device check pending | 23-10-2026 |
+| S032 | [Email to managers when a ticket is closed](S032-closed-ticket-email/1-brief.md) — email as a second alert channel (Mailgun over SMTP, addresses from Keycloak at login); *Ticket closed* to the site's managers; v27 `people.email` | 3 | Committed; device checks pending (rows 27-30 of device-checks.md) | 23-10-2026 |
 
 ## Queued (not yet briefed)
 

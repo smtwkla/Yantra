@@ -1,7 +1,8 @@
 <script setup>
 /**
  * My notifications (docs/steps/S021-alerts-push/1-brief.md § 1.3): this device's state with Turn
- * on / Turn off, Send a test, my devices with Remove, and What you will get.
+ * on / Turn off, Send a test, my devices with Remove, the email card with Send test email (S032
+ * § 1.5), and What you will get.
  *
  * The state and the rules live in stores/notifications.js (the bell's dot reads the same) and the
  * server; this page shows them. An iPhone needs Yantra on the Home Screen before it can get
@@ -10,7 +11,7 @@
 import { computed, onMounted, ref } from "vue";
 import { userPersonId, userRoles } from "../stores/auth";
 import {
-  deviceState, devices, loadNotifications, pushConfig, removeDevice, sendTest, turnOff, turnOn,
+  deviceState, devices, loadNotifications, pushConfig, removeDevice, sendTest, sendTestEmail, turnOff, turnOn,
 } from "../stores/notifications";
 import { BLOCKED } from "../push";
 import { formatDateTime } from "../utils/datetime";
@@ -20,11 +21,17 @@ const actionError = ref("");
 const busy = ref(false);
 const testSent = ref("");
 const confirmingId = ref(null);
+const emailBusy = ref(false);
+const emailError = ref("");
+const emailSent = ref("");
 
 const isItAdmin = computed(() => userRoles.value.includes("it_admin"));
 const youGet = computed(() => pushConfig.value?.you_get ?? []);
 const canTest = computed(() => pushConfig.value?.enabled && devices.value.length > 0);
 const inTeam = computed(() => !["loading", "not_in_team"].includes(deviceState.value));
+// S032: the email channel, as the server reports it; the address is the person's own, from the login
+const email = computed(() => pushConfig.value?.email ?? { enabled: false, address: null });
+const canTestEmail = computed(() => email.value.enabled && Boolean(email.value.address));
 
 async function load() {
   loadError.value = "";
@@ -59,6 +66,20 @@ function onTest() {
     const count = await sendTest();
     testSent.value = `Sent to ${count} ${count === 1 ? "device" : "devices"}`;
   });
+}
+
+async function onTestEmail() {
+  emailBusy.value = true;
+  emailError.value = "";
+  emailSent.value = "";
+  try {
+    const address = await sendTestEmail();
+    emailSent.value = `A test email is on its way to ${address}. Check your inbox in a few minutes.`;
+  } catch (err) {
+    emailError.value = err.message;
+  } finally {
+    emailBusy.value = false;
+  }
 }
 
 function onRemove(device) {
@@ -170,6 +191,25 @@ onMounted(load);
           </div>
         </li>
       </ul>
+    </div>
+
+    <div v-if="inTeam" class="card mt-3 email-card">
+      <div class="card-header d-flex justify-content-between align-items-center gap-2">
+        <span><i class="fa-solid fa-envelope me-2"></i>Email</span>
+        <button v-if="canTestEmail" class="btn btn-outline-primary" :disabled="emailBusy" @click="onTestEmail">
+          <span v-if="emailBusy" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="fa-solid fa-paper-plane me-1"></i>Send test email
+        </button>
+      </div>
+      <div class="card-body">
+        <p v-if="!email.enabled" class="mb-0">Email is not set up on this server yet. Ask IT admin.</p>
+        <p v-else-if="!email.address" class="mb-0">
+          Your login has no email address, so you get no email. Ask IT admin to add an email address to your login.
+        </p>
+        <p v-else class="mb-0 text-break">Email goes to {{ email.address }}, from your login.</p>
+        <div v-if="emailSent" class="alert alert-success py-2 mt-3 mb-0 text-break">{{ emailSent }}</div>
+        <div v-if="emailError" class="alert alert-danger mt-3 mb-0">{{ emailError }}</div>
+      </div>
     </div>
 
     <div v-if="inTeam" class="card mt-3">

@@ -379,6 +379,11 @@ onMounted(reload);
         <div>Has a Yantra login: {{ editing?.has_login ? "yes" : "no" }}</div>
         <div v-if="fieldError('username')" class="invalid-feedback d-block">{{ fieldError("username") }}</div>
       </template>
+      <!-- S032 § 1.6: read-only, copied from Keycloak at each login; the server sends it to IT admin only -->
+      <div v-if="editing && 'email' in editing" class="mt-2 text-break person-email">
+        <template v-if="editing.email">Email (from Keycloak): {{ editing.email }}</template>
+        <template v-else>Email (from Keycloak): none yet. Filled at the person's next login.</template>
+      </div>
     </div>
 
     <div class="mb-0">

@@ -869,8 +869,9 @@ def _site_rows(cur, person_ids):
 
 def _people_out(cur, rows):
     """Rows with their trades and, for those who may see them, their site rows.  Editors
-    (people:edit) learn whether a person has a login; the login itself goes only to those who
-    maintain it, IT admin (A.5.15, A.5.34).  Site rows: _SiteViewer."""
+    (people:edit) learn whether a person has a login; the login itself, and the email address
+    copied from it (S032 § 1.6), go only to those who maintain it, IT admin (A.5.15, A.5.34).
+    Site rows: _SiteViewer."""
     items = _attach_trades(cur, rows_to_list(rows))
     viewer = _SiteViewer(cur)
     site_rows = _site_rows(cur, [item["id"] for item in items]) if viewer.editor else {}
@@ -884,6 +885,7 @@ def _people_out(cur, rows):
             item["has_login"] = item["username"] is not None
         if not viewer.senior:
             del item["username"]
+            del item["email"]
     return items
 
 

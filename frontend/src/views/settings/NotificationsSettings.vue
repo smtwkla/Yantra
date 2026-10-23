@@ -23,7 +23,7 @@ const MINUTES_MAX = 1440;
 const FIELD_PREFIX = "escalate_minutes.";
 
 const canEdit = computed(() => userPermissions.value.includes("settings:edit"));
-const stored = ref(null);          // {escalate_minutes: {A, B, C}, push_enabled, devices}
+const stored = ref(null);          // {escalate_minutes: {A, B, C}, push_enabled, devices, email_enabled, email_from}
 const inputs = ref({ A: null, B: null, C: null });
 const loadError = ref("");
 const saveError = ref("");         // a refusal about the whole card
@@ -93,6 +93,16 @@ onMounted(load);
           <template v-else>
             <span class="badge text-bg-warning me-1">Not set up</span>Push notifications are not set up on this
             server: the push keys are missing.
+          </template>
+        </p>
+        <!-- S032 § 1.7: the email channel -->
+        <p class="mb-3 text-break">
+          <template v-if="stored.email_enabled">
+            <span class="badge text-bg-success me-1">Set up</span>Email: set up, sent from {{ stored.email_from }}.
+          </template>
+          <template v-else>
+            <span class="badge text-bg-warning me-1">Not set up</span>Email: not set up. Fill the SMTP values in the
+            server's secrets.
           </template>
         </p>
         <div class="fw-semibold mb-1">Escalate a breakdown not acknowledged after</div>

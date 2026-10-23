@@ -1,13 +1,13 @@
 """Alerts — the thin shell around alerts_core (docs/steps/S021-alerts-push/1-brief.md § 3, § 5.2,
-§ 5.3, § 10 A1).
+§ 5.3, § 10 A1; S032 § 5.1–5.5: *ticket closed* by email).
 
 Request side: tickets.py calls enqueue_alert inside the ticket's own transaction, after the
 event that causes the alert is written, so the task rows commit or roll back with the ticket.
 They are enqueued always, whether or not push is set up (§ 7 decision 10): the task finds the
 channels, so the ticket path has no `if` for them, and every alert leaves its task_queue row.
 
-Worker side: task_handlers reads the ticket's facts, the recipients and their devices through
-the functions below.  Plain reads, except the escalation's ticket lock, which is the
+Worker side: task_handlers reads the ticket's facts, the recipients and their devices (or, for
+email, their addresses and the closed ticket's facts) through the functions below.  Plain reads, except the escalation's ticket lock, which is the
 handler's.
 """
 
@@ -16,6 +16,7 @@ from datetime import timedelta
 from alerts_core import AUDIENCE, display_name, escalation_minutes, excluded_people, first_name, ticket_facts
 from settings import escalation_minutes as escalation_settings, label_base_url
 from task_queue import enqueue
+from tickets_core import latest_restoration, ticket_times
 
 TICKET_ALERT = "ticket_alert"
 TICKET_ESCALATE = "ticket_escalate"
@@ -23,6 +24,9 @@ PUSH_SEND = "push_send"
 # A send is internal and idempotent, so it may retry (base pattern); a push resent after a
 # timeout shows twice at worst
 PUSH_SEND_ATTEMPTS = 3
+EMAIL_SEND = "email_send"
+# The same reasoning (S032 § 5.5): an email resent after a lost answer arrives twice at worst
+EMAIL_SEND_ATTEMPTS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +76,13 @@ def enqueue_alert(cur, ticket_id, alert, event_id, actor_person_id, reported_by_
         enqueue_escalation(cur, ticket_id, event_id, minutes, now)
 
 
+def enqueue_email(cur, person_id, subject, body):
+    """One email_send task (S032 § 5.5): the person's id, never the address, which the task reads
+    when it sends (A.5.34: the queue keeps done rows 90 days; a corrected address is used)."""
+    return enqueue(cur, EMAIL_SEND, {"person_id": person_id, "subject": subject, "body": body},
+                   max_attempts=EMAIL_SEND_ATTEMPTS)
+
+
 # ---------------------------------------------------------------------------
 # Worker side
 # ---------------------------------------------------------------------------
@@ -106,22 +117,29 @@ def read_alert_ticket(cur, ticket_id, event_id):
     return row, ticket_facts(row, event, name, actor, label_base_url(cur))
 
 
-def recipients(cur, ticket, kind, exclude_person_ids):
+def recipients(cur, ticket, kind, exclude_person_ids, with_email=False):
     """§ 5.2: the active people with a membership at the ticket's site whose role is in the
     kind's audience (exactly), covering the ticket's unit (all units, or a person_units row),
     less the left-out ones -> their ids.  The join to push_subscriptions that follows already
-    needs a login."""
+    needs a login; ``with_email`` keeps only those with an address (S032 § 5.2)."""
     roles = AUDIENCE[kind]
     sql = ("SELECT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id AND ms.site_id = %s"
            f" WHERE p.active = 1 AND ms.role IN ({', '.join(['%s'] * len(roles))})"
            " AND (ms.all_units = 1 OR EXISTS (SELECT 1 FROM person_units pu WHERE pu.person_id = p.id"
            " AND pu.unit_id = %s))")
+    if with_email:
+        sql += " AND p.email IS NOT NULL"
     params = [ticket["site_id"], *roles, ticket["unit_id"]]
     if exclude_person_ids:
         sql += f" AND p.id NOT IN ({', '.join(['%s'] * len(exclude_person_ids))})"
         params.extend(exclude_person_ids)
     cur.execute(f"{sql} ORDER BY p.id", params)
     return [row["id"] for row in cur.fetchall()]
+
+
+def recipients_with_email(cur, ticket, kind, exclude_person_ids):
+    """The email channel's recipients (S032 § 5.1): recipients() with an address."""
+    return recipients(cur, ticket, kind, exclude_person_ids, with_email=True)
 
 
 def assignee(cur, ticket_id, person_id, exclude_person_ids):
@@ -167,3 +185,45 @@ def person_memberships(cur, person_id):
                 by_site[row["site_id"]]["unit_codes"].append(row["code"])
     return memberships
 
+
+
+def read_closed_facts(cur, ticket_id, event_id):
+    """The facts of the closed-ticket email (S032 § 5.3), read plain -> the dict
+    email_core.closed_email takes, or None when the ticket or the event does not exist.
+
+    The times come from tickets_core.ticket_times, the function the ticket page uses, so the
+    figures match the page.  A closed ticket's figures end at its close, so the closing event's
+    time stands for "now".  Every parts line is read; closed_email shows the first ten."""
+    found = read_alert_ticket(cur, ticket_id, event_id)
+    if found is None:
+        return None
+    ticket, facts = found
+    cur.execute("SELECT c.name AS component_name, t.not_a_fault, fc.label AS cause, ma.label AS action"
+                " FROM tickets t LEFT JOIN equipment c ON c.id = t.component_id"
+                " LEFT JOIN failure_causes fc ON fc.id = t.cause_id LEFT JOIN maintenance_actions ma ON ma.id = t.action_id"
+                " WHERE t.id = %s", (ticket_id,))
+    extra = cur.fetchone()
+    cur.execute("SELECT id, event, occurred_at, intensity, remark, waiting_reason, machine_stopped FROM ticket_events"
+                " WHERE ticket_id = %s ORDER BY occurred_at, id", (ticket_id,))
+    events = cur.fetchall()
+    closing = next(e for e in events if e["id"] == event_id)
+    cur.execute("SELECT COALESCE(SUM(minutes), 0) AS minutes, COUNT(DISTINCT person_id) AS people FROM ticket_labour"
+                " WHERE ticket_id = %s", (ticket_id,))
+    labour = cur.fetchone()
+    cur.execute("SELECT description, quantity, qty_unit FROM ticket_parts WHERE ticket_id = %s ORDER BY id",
+                (ticket_id,))
+    parts = list(cur.fetchall())
+    not_a_fault = bool(extra["not_a_fault"])
+    return {
+        "serial": ticket["serial"], "site_code": ticket["site_code"], "unit_code": ticket["unit_code"],
+        "machine_code": ticket["machine_code"], "machine_name": ticket["machine_name"],
+        "component_code": ticket["component_code"], "component_name": extra["component_name"],
+        "intensity": ticket["intensity"], "not_a_fault": not_a_fault, "symptom": ticket["symptom"],
+        "description": ticket["description"], "raised_at": ticket["occurred_at"], "raised_by": facts["name"],
+        "back_in_service_at": latest_restoration(ticket["state"], not_a_fault, events),
+        "times": ticket_times(events, closing["occurred_at"]),
+        "cause": extra["cause"], "action": extra["action"],
+        "labour_minutes": int(labour["minutes"]), "labour_people": labour["people"], "parts": parts,
+        "closed_at": closing["occurred_at"], "closed_by": facts["actor_name"], "remark": closing["remark"],
+        "url": facts["url"],
+    }

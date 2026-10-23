@@ -30,7 +30,12 @@ fails with "no role"):
 - `preferred_username` and `name` (client scope `profile`, default);
 - realm roles in `realm_access.roles` and client roles in
   `resource_access.vel-yantra-master.roles` (client scope `roles`, default,
-  with its "realm roles" and "client roles" mappers).
+  with its "realm roles" and "client roles" mappers);
+- `email` (client scope `email`, default) for anyone who should get email
+  from Yantra (S032: the managers get *Ticket closed*). For AD users the LDAP
+  federation's "email" mapper fills it from AD's `mail` attribute. Yantra
+  copies it onto the person's Team record at each page load; a token without
+  it clears the address, and Masters › Team shows "none yet" to IT admin.
 
 The backend checks the token's signature against the realm's keys, its
 expiry, and that `azp` (authorized party) is `vel-yantra-master`. It does not

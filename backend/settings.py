@@ -16,6 +16,7 @@ from datetime import timedelta
 
 from flask import Blueprint, g, jsonify, request
 
+import config
 from access_control import INTERNAL_NETWORKS_KEY, clear_networks_cache, client_ip, read_stored_networks
 from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, ApiError, actor, clean_body, date_arg, enum_arg, int_arg,
@@ -27,6 +28,7 @@ from db_helpers import count, get_db, row_to_dict, rows_to_list, transaction
 from labels_core import normalise_base_url
 from local_db import db_status
 from network_core import format_networks, is_internal, parse_networks
+from mail_sender import enabled as email_enabled
 from push_sender import enabled as push_enabled
 from scheduled_tasks import SCHEDULE, is_overdue, next_run
 from task_queue import last_enqueued
@@ -217,6 +219,9 @@ def _notifications_body(cur):
         ESCALATE_FIELD: escalation_minutes(cur),
         "push_enabled": push_enabled(),
         "devices": count(cur, "SELECT COUNT(*) AS n FROM push_subscriptions", ()),
+        # S032 § 6: the email channel's status line; the sender is read at call time
+        "email_enabled": email_enabled(),
+        "email_from": config.SMTP_FROM,
     }
 
 

@@ -89,7 +89,7 @@ from api_common import (
 )
 from auth_utils import check_perm, current_person_id, has_perm, has_perm_at, permissions_at_site, require_perm, require_perm_at
 import alerts
-from alerts_core import ASSIGNED_ALERT, raise_alert, regrade_alert, send_back_alert
+from alerts_core import ASSIGNED_ALERT, close_alert, raise_alert, regrade_alert, send_back_alert
 from config_rbac import ASSIGNABLE_ROLES
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment import IST, accessible_unit_ids, load_node_for_user
@@ -1078,6 +1078,11 @@ def _apply_move(cur, ticket, move, clean, now, prefix=""):
         # was; after the event, so the alert names it
         alerts.enqueue_alert(cur, ticket_id, send_back_alert(clean["machine_down"]), event_id,
                              current_person_id(cur), ticket["rp_id"], now)
+    if spec.to_state == CLOSED:
+        # S032 § 1.3: Close and Not a fault — *ticket closed* to the site's managers, by email; the
+        # closer is left out, the reporter is not; a close of back-entered history sends nothing
+        alerts.enqueue_alert(cur, ticket_id, close_alert(now - occurred_at), event_id, current_person_id(cur), None,
+                             now)
 
 
 @tickets_bp.route("/<int:ticket_id>/regrade", methods=["POST"])

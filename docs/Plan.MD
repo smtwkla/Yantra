@@ -752,13 +752,14 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | Machine down again (sent back with the machine down) | as a new breakdown, no escalation (S021) | | |
 | Breakdown not acknowledged in time | engineers and managers, once (S021) | maintenance group | |
 | Job assigned to you | the person assigned by an engineer, not on taking a ticket oneself (S021 A1) | | |
+| Ticket closed (close or not a fault) | | | the site's managers covering the unit, not the closer; not for a close dated over 7 days back (S032) |
 | PM job due / overdue | assigned technician | maintenance group (overdue only) | |
 | Reading out of limits | engineers | | |
 | Daily summary (open tickets, overdue PMs, yesterday's downtime and work done) | | | engineers, manager |
 
 - **Web push:** Yantra is installable as a PWA; push uses the browser's Web Push (VAPID keys, no third party).
 - **Telegram:** the base pattern — group-routed, sent from the job queue. **Parked 21-10-2026** (user: "for now, its PWA alone"): web push is the only channel until push has run on the real phones; the design is kept in `docs/steps/S023-alerts-telegram/1-brief.md`.
-- **Email:** the existing mail server, from the job queue.
+- **Email** (S032, 23-10-2026): Mailgun over SMTP (`smtplib`, STARTTLS), from the job queue, plain text, one email per recipient. Addresses come from the Keycloak login token, copied onto the Team record at each login; nobody types one in Yantra. Office 365 (Microsoft Graph) was rejected: it refuses basic SMTP login.
 - All sends go through the DB-backed job queue, so a slow channel never blocks a request.
 
 ## 5. Data model (broad strokes)

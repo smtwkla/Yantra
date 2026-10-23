@@ -739,6 +739,15 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS ix_ticket_events_created_by ON ticket_events (created_by, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_tickets_created_by ON tickets (created_by)",
     ]),
+    # S032 — email to managers (docs/steps/S032-closed-ticket-email/1-brief.md § 4): each person's
+    # address, copied from the login token's email claim at /api/auth/me; NULL = no address.  254
+    # characters, the longest address SMTP carries (RFC 5321).  No index: read by person id.  No
+    # _PRECONDITIONS entry: a new NULLable column needs no value from any existing row.  IF NOT
+    # EXISTS makes a re-run of a half-applied v27 a no-op.  The previous release ignores the
+    # column, so a rollback needs no restore.
+    (27, "Email address per person, from Keycloak (S032)", [
+        "ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(254) NULL",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

@@ -78,6 +78,9 @@ if DEV_AUTH_BYPASS and not IS_DEV:
     raise RuntimeError("DEV_AUTH_BYPASS=1 is only allowed with FLASK_DEBUG=1 (local dev server)")
 
 DEV_STUB_ROLE = getattr(secrets_app, "DEV_STUB_ROLE", "admin")
+# The dev stub's email (S032 BR1-06, dev only): set it to send yourself a test email from the
+# laptop.  Empty: the stub has no address.
+DEV_STUB_EMAIL = getattr(secrets_app, "DEV_STUB_EMAIL", "")
 
 # ---------------------------------------------------------------------------
 # Web push (S021 § 3, § 5.6) — the VAPID key pair that signs every push (RFC 8292)
@@ -92,6 +95,21 @@ DEV_STUB_ROLE = getattr(secrets_app, "DEV_STUB_ROLE", "admin")
 VAPID_PUBLIC_KEY = getattr(secrets_app, "VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = getattr(secrets_app, "VAPID_PRIVATE_KEY", "")
 VAPID_SUBJECT = getattr(secrets_app, "VAPID_SUBJECT", "")
+
+# ---------------------------------------------------------------------------
+# Email (S032 § 3, § 5.5) — the SMTP server Yantra sends through, with STARTTLS and a login
+# ---------------------------------------------------------------------------
+
+# Email is on only when the host, the port and the sender are all set (mail_sender.enabled);
+# empty or 0 means off.  No value has a default here: the server, the port and the addresses come
+# from the Ansible vars only, never from the repo (user policy, S032 U5).  Readers (mail_sender,
+# push.py, settings.py) read config.SMTP_* at call time, so the test fixture and the e2e backend
+# can set them after import.
+SMTP_HOST = getattr(secrets_app, "SMTP_HOST", "")
+SMTP_PORT = int(getattr(secrets_app, "SMTP_PORT", 0) or 0)
+SMTP_USER = getattr(secrets_app, "SMTP_USER", "")
+SMTP_PASSWORD = getattr(secrets_app, "SMTP_PASSWORD", "")
+SMTP_FROM = getattr(secrets_app, "SMTP_FROM", "")
 
 # ---------------------------------------------------------------------------
 # Data directory and uploads

@@ -315,3 +315,32 @@ class TestAccess:
         assert person.get_json()["created_by"] == f"test_{role}"
         assert client.put(f"{BASE}/people/{person.get_json()['id']}", json={"active": 0}).status_code == 200
         assert client.put(f"{BASE}/trades/{trade.get_json()['id']}", json={"active": 0}).status_code == 200
+
+
+class TestEmailFromLogin:
+    """S032 § 1.6, BR1-13: the address copied from the login goes to IT admin only, and no people
+    POST or PUT writes it (/auth/me is its one writer)."""
+
+    def _manager_with_email(self, make_person, make_site, uniq, role_client):
+        site, login = make_site(), uniq.username()
+        person = make_person(username=login, sites=[{"site_id": site["id"], "role": "maint_manager",
+                                                     "all_units": True, "unit_ids": []}])
+        res = role_client("maintenance_team", login).get("/api/auth/me", headers={"X-Test-Email": "Arun@Example.test"})
+        assert res.status_code == 200
+        return person
+
+    def test_it_admin_sees_it_an_engineer_does_not(self, admin, engineer, make_person, make_site, uniq, role_client):
+        person = self._manager_with_email(make_person, make_site, uniq, role_client)
+        assert _row(admin, person["id"])["email"] == "arun@example.test"
+        assert "email" not in _row(engineer, person["id"])
+        assert _row(admin, make_person()["id"])["email"] is None
+
+    def test_post_and_put_never_write_it(self, admin, db_rows, make_person, make_site, uniq, role_client):
+        person = self._manager_with_email(make_person, make_site, uniq, role_client)
+        res = admin.put(f"{BASE}/people/{person['id']}", json={"name": "Arun K", "email": "other@example.test"})
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["email"] == "arun@example.test"
+        res = admin.post(f"{BASE}/people", json={"name": "New person", "employment": "direct", "trade_ids": [],
+                                                 "email": "new@example.test"})
+        assert res.status_code == 201, res.get_json()
+        assert db_rows("SELECT email FROM people WHERE id = %s", (res.get_json()["id"],))[0]["email"] is None

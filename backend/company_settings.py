@@ -26,3 +26,7 @@ TASK_RETRY_DELAY_MAX_SECONDS = 3600
 # Web push (S021 § 3): requests has no timeout by default, so a hung push service would hold
 # the worker; a send that takes longer is retried with the back-off
 PUSH_TIMEOUT_SECONDS = 10
+
+# Email (S032 § 5.5): smtplib waits for ever without a timeout, which would hold the worker; a
+# send that takes longer is a network fault and retries with the back-off
+SMTP_TIMEOUT_SECONDS = 30

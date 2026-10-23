@@ -103,6 +103,14 @@ class TestNotifications:
     def test_push_off_shows(self, admin, push_off):
         assert admin.get(NOTIFICATIONS).get_json()["push_enabled"] is False
 
+    def test_email_status_and_sender(self, admin):
+        """S032 § 1.7: the session's test values (conftest smtp_test_values)."""
+        body = admin.get(NOTIFICATIONS).get_json()
+        assert body["email_enabled"] is True and body["email_from"] == "yantra@example.test"
+
+    def test_email_off_shows(self, admin, email_off):
+        assert admin.get(NOTIFICATIONS).get_json()["email_enabled"] is False
+
     def test_engineer_cannot_read(self, role_client):
         assert role_client("maint_engineer").get(NOTIFICATIONS).status_code == 403
 

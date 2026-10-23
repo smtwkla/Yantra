@@ -180,3 +180,26 @@ test("S025: IT admin cannot deactivate a unit while it has open tickets; the ref
     await moveByApi("engineer", ticket.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: "S025 test done" });
   }
 });
+
+/** Masters › Team as `key`, the person dialog of `name` open and checked to fit the screen. */
+async function openPersonDialog(page, key, name) {
+  await asPerson(page, key, "/masters");
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  await rows(page).filter({ hasText: name }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  return openDialog(page);
+}
+
+test("S032: IT admin sees the manager's email from Keycloak in the Team dialog; the engineer sees no email line", async ({ page }) => {
+  // The manager loads a page first, which copies the token's email onto their Team record, so
+  // the test does not depend on another test's order (BR1-04)
+  await asPerson(page, "manager", "/equipment");
+
+  const dialog = await openPersonDialog(page, "it_admin", "Arun (manager)");
+  await expect(dialog.getByText("Email (from Keycloak): e2e_manager@example.test")).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  const asEngineer = await openPersonDialog(page, "engineer", "Arun (manager)");
+  await expect(asEngineer.getByText("Has a Yantra login: yes")).toBeVisible();
+  await expect(asEngineer.getByText(/Email \(from Keycloak\)/)).toHaveCount(0);
+});

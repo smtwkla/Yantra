@@ -1,12 +1,13 @@
 """My notifications — a person's own devices for web push (docs/steps/S021-alerts-push/1-brief.md
-§ 1.2, § 1.3, § 5.5, § 6).
+§ 1.2, § 1.3, § 5.5, § 6), and the email channel's line and test (S032 § 1.5, § 5.8, § 6).
 
 Every route needs push:subscribe (any logged-in role).  Alerts go to a person, so turning a
 device on, listing and testing also need a Team record; removing a device by its endpoint
 does not (sign-out removes this device whoever owns the row, BR3-03: presenting the
 endpoint proves the caller holds the device, since nobody else has that address).
 
-The VAPID public key is read from config at call time, not at import (BR3-11).
+The VAPID public key is read from config at call time, not at import (BR3-11).  The email
+address is the person's own, copied from the login (S032 § 5.4): shown only to its owner here.
 """
 
 import logging
@@ -14,9 +15,11 @@ import logging
 from flask import Blueprint, jsonify, request
 
 import config
+import mail_sender
 import push_sender
-from alerts import PUSH_SEND, PUSH_SEND_ATTEMPTS, person_memberships, subscription_ids
+from alerts import PUSH_SEND, PUSH_SEND_ATTEMPTS, enqueue_email, person_memberships, subscription_ids
 from alerts_core import message_for_test, you_get
+from email_core import email_for_test
 from api_common import ApiError, actor, clean_body
 from auth_utils import current_person_id, require_perm
 from db_helpers import get_db, row_to_dict, transaction
@@ -35,6 +38,8 @@ NOT_IN_TEAM = "You are not in Team. Ask IT admin to add you."
 NOT_SET_UP = "Notifications are not set up on this server yet. Ask IT admin."
 TURN_ON_FIRST = "Turn notifications on first."
 ENDPOINT_NEEDED = "endpoint is required"
+EMAIL_NOT_SET_UP = "Email is not set up on this server yet. Ask IT admin."
+NO_EMAIL_ADDRESS = "Your login has no email address. Ask IT admin to add an email address to your login."
 
 _ROW = "SELECT id, label, created_at, last_sent_at, last_error, endpoint_hash FROM push_subscriptions"
 
@@ -54,16 +59,28 @@ def _own_person(cur):
     return person_id
 
 
+def _email_of(cur, person_id):
+    """The person's stored address, or None (S032 § 5.4)."""
+    cur.execute("SELECT email FROM people WHERE id = %s", (person_id,))
+    row = cur.fetchone()
+    return row["email"] if row else None
+
+
 @push_bp.route("/config")
 @require_perm(KEY)
 def get_config():
-    """Whether push is set up, the public key the browser subscribes with, and *What you will
-    get* (BR2-06) from the person's memberships; [] without a Team record."""
+    """Whether push is set up, the public key the browser subscribes with, *What you will get*
+    (BR2-06) from the person's memberships ([] without a Team record), and the email channel:
+    set up or not, and the person's own address (S032 § 6; null without one)."""
     enabled = push_sender.enabled()
+    address = None
     with get_db().cursor() as cur:
         person_id = current_person_id(cur)
         lines = you_get(person_memberships(cur, person_id)) if person_id is not None else []
-    return jsonify({"enabled": enabled, "public_key": config.VAPID_PUBLIC_KEY if enabled else "", "you_get": lines})
+        if person_id is not None:
+            address = _email_of(cur, person_id)
+    return jsonify({"enabled": enabled, "public_key": config.VAPID_PUBLIC_KEY if enabled else "", "you_get": lines,
+                    "email": {"enabled": mail_sender.enabled(), "address": address}})
 
 
 @push_bp.route("/subscriptions")
@@ -174,3 +191,21 @@ def send_test():
             enqueue(cur, PUSH_SEND, send_task_payload(subscription_id, message_for_test(), TEST_TTL_SECONDS),
                     max_attempts=PUSH_SEND_ATTEMPTS)
     return jsonify({"devices": len(devices)})
+
+
+@push_bp.route("/test-email", methods=["POST"])
+@require_perm(KEY)
+def send_test_email():
+    """A test email to my own address -> ``{address}``, 202; the worker sends it (S032 § 1.5).
+    Only to the caller's own address, so it cannot mail anyone else.  Refusals in order: not in
+    Team, email not set up, no address (§ 5.8)."""
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        person_id = _own_person(cur)
+        if not mail_sender.enabled():
+            raise ApiError(EMAIL_NOT_SET_UP, 409)
+        address = _email_of(cur, person_id)
+        if not address:
+            raise ApiError(NO_EMAIL_ADDRESS, 409)
+        enqueue_email(cur, person_id, *email_for_test())
+    return jsonify({"address": address}), 202

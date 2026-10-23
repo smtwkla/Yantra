@@ -10,7 +10,9 @@ from flask_cors import CORS
 from access_control import client_network, make_access_log_hook, require_network
 from api_common import register_error_handlers
 from access_core import display_role
-from auth_utils import current_memberships, current_person_id, global_permissions, membership_sites, require_auth
+from auth_utils import (
+    current_memberships, current_person_id, global_permissions, membership_sites, require_auth, store_login_email,
+)
 from config import (
     APP_VERSION, DB_CONFIG, DEV_AUTH_BYPASS, KEYCLOAK_CLIENT_ID,
     KEYCLOAK_INTERNAL_REALM_URL, KEYCLOAK_REALM, KEYCLOAK_REALM_URL, KEYCLOAK_URL, MB,
@@ -134,7 +136,11 @@ def auth_me():
     roles a token still carries (S011 § 5.1), and answers while the database is down with
     the token's permissions only, so IT admin can still reach Settings › Database.  ``network``
     is the address the server saw and whether it counts as internal (S013 § 6).  ``person_id``
-    is the user's own Team record, or null (S018 § 3: *Assigned to me*, the labour default)."""
+    is the user's own Team record, or null (S018 § 3: *Assigned to me*, the labour default).
+
+    S032 § 5.4: the token's email is copied onto the person here, a GET that writes on purpose
+    (this is the login moment); a no-op write on every load after the first.  No person, or the
+    database down: nothing is written."""
     user = g.user
     if user["stale_roles"]:
         logger.warning("User %s still carries old Keycloak roles %s; they are ignored (S011 § 5.7)",
@@ -144,8 +150,12 @@ def auth_me():
             "network": {"ip": ip, "internal": internal}}
     try:
         memberships = current_memberships()
+        # Pool connections are autocommit: the one-row UPDATE commits by itself, in its own
+        # short transaction (S032 § 5.6)
         with get_db().cursor() as cur:
             person_id = current_person_id(cur)
+            if person_id is not None:
+                store_login_email(cur, person_id, user["email"])
         body.update(role=display_role(user["roles"], memberships), permissions=global_permissions(),
                     sites=membership_sites(memberships), person_id=person_id, db_unavailable=False)
     except DBUnavailable:
