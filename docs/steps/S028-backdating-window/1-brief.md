@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 22-10-2026 (revised 22-10-2026: brief-review r1, r2; user answers Q1 (b), Q2 (b))
 Track: full
 Baseline: d686fcd
-Status: In code review (approved 22-10-2026 by KLA; Q1 (b), Q2 (b), A1, A2 confirmed)
+Status: Done (committed 12a1238, with S029; checks: 2 auto; CR r1: 5 nits left; approved 22-10-2026 by KLA; Q1 (b), Q2 (b), A1, A2 confirmed)
 ```
 
 # S028 — Back-dating window: admin and backlog entry

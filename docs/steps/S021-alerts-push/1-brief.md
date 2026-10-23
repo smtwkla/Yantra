@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 21-10-2026 (revised 21-10-2026 after brief-reviews r1, r2 and r3)
 Track: full
-Status: Gate B — code review r3 clean; fix round 3 (CR3-01..05, asked by the user) done; no finding open; awaiting the user's commit and the device checks rows 14–25 (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done)
+Status: Committed 3470fb9 (also 03ed528, 876a421, 3441b8b, 63eda6c); checks: 12 auto; important checks pending: device-checks rows 14–25 on real phones (approved 21-10-2026; A1 approved 22-10-2026 by KLA; staleness check s1 done)
 Baseline: 79fc61d + uncommitted S026, S027 (staleness check s1, 22-10-2026)
 ```
 
