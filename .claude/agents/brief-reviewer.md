@@ -54,6 +54,13 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   - `.claude/CLAUDE.md`
 - Read the **current code** the brief touches. Verify each claim the brief makes
   about it; don't trust the brief.
+- **Facts file.** The orchestrator gives you `scratch/brief-facts-S0NN.md`
+  (`tooling/step-brief-facts.bat`): for each file, test, route and code name
+  the brief cites, whether it exists, where it is defined, and which code and
+  test files use it. Verify claims from it first; open code only where it
+  leaves a question (behaviour, semantics, a rule). Don't re-grep what it
+  already lists. A claim about a name it doesn't list (not in backticks) is
+  still yours to check. If no facts file was given, say so in the verdict.
 - Look for:
   - contradictions with Plan.MD decisions;
   - rules the coder would otherwise have to decide alone;
@@ -125,8 +132,9 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
     sections it leaves out on purpose;
   - check that it really meets **every** light criterion. If it doesn't (a
     migration, access checks, locking, a new endpoint beyond plain CRUD, …),
-    raise a `major` finding "belongs on the full track", with the criterion it
-    fails;
+    raise a `minor` finding "belongs on the full track", with the criterion it
+    fails (23-10-2026: a track question alone never blocks). A risk the brief
+    leaves unhandled is its own finding, at its own severity;
   - this is the only round: say so in the verdict.
 - **Manual checks.** Check that the checks a person must do (real phones,
   production steps) are marked **important**, and that the plain ones aren't.

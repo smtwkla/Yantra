@@ -23,6 +23,13 @@ The orchestrator gives you one of three tasks:
    `### Round N` under the report's `## Fix rounds`, answering **every**
    finding: `Fixed` (what changed), `Rejected` (why), or `Deferred` (to which
    step).
+   - **Red, then green** (23-10-2026, from S029: CR1-01's new test was never
+     shown to fail on the old code, and the code reviewer may not edit code to
+     check). For each `Fixed` finding whose fix adds or changes a test for the
+     fault: undo the fix, run that test alone and see it fail, restore the fix
+     exactly, and run it again. Write both results in the answer ("fails
+     without the fix: <assertion>; passes with it"). If a red run is not
+     possible, say why.
 
 ## Rules
 
@@ -71,6 +78,13 @@ The orchestrator gives you one of three tasks:
   - write an e2e test (`frontend/e2e/`, Playwright) for each *Automated* check
     of the brief, asserting what the user would see; call `expectDialogFits`
     on every dialog a flow test opens;
+  - **get a new test green alone first** (23-10-2026, from S029: browser runs
+    were 38 % of the coder's time, and 2 of its 3 runs failed on mistakes in
+    its own new tests). While writing it, run only it, on one device, on one
+    lane: `set E2E_LANES=1` then `tooling/run-e2e-tests.bat
+    e2e/<spec>.spec.js --project=desktop-chromium -g "S0NN"` (the other
+    projects are `phone-chromium` and `phone-webkit`). Once it passes there,
+    run the targeted set below once;
   - run `tooling/run-e2e-tests.bat` whenever the frontend or an API the
     screens use changed: the **targeted** specs only, never the whole suite unasked
     (22-10-2026, user): the spec files of the screens and APIs the step

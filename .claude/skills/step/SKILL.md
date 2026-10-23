@@ -74,6 +74,11 @@ brief's header (`Track: light | full`) and in the index row.
   raises a `blocker` or `major` finding, or the coder or a reviewer finds the
   step meets a full-track criterion. Update the header and the index row; the
   brief then gets the full-track sections it lacks before gate A.
+- **A track finding alone is `minor`** (23-10-2026, from S029: its only major
+  was "belongs on the full track", with the design sound, and it paused the
+  step for a process question). It still switches the track as above, and the
+  user may keep light at gate A. `blocker` and `major` stay for risks the brief
+  leaves unhandled.
 
 ## Phase 1: brief
 
@@ -98,6 +103,16 @@ brief's header (`Track: light | full`) and in the index row.
      propose a split into two steps in one line, with the cut, before review.
      The same when the draft passes **600 lines**, or adds more than one table
      and two screens. The user decides.
+   - **Facts run** (23-10-2026, from S029's `/step stats`: most brief-review
+     findings were facts about existing code the planner had not checked).
+     Once the draft is written, run `tooling/step-brief-facts.bat S0NN` (it
+     writes `scratch/brief-facts-S0NN.md`): every `backticked` file, test id,
+     route and code name in the brief, with where it is defined and which code
+     and test files use it. Fix every claim it contradicts: a "new" name that
+     exists, a file or line that isn't there, a test file using a changed
+     function or route that § Tests doesn't name. Name every identifier the
+     brief relies on in backticks, so the run covers it. Run it again after
+     large edits. It feeds self-check items 1 and 5 below.
    - **Self-check before review round 1** (22-10-2026, from the analysis of
      all brief and code reviews of S001–S027: 61 majors, 347 minors; by weight
      the causes are rules left to the coder, unverified claims, tests,
@@ -165,7 +180,9 @@ brief's header (`Track: light | full`) and in the index row.
          every manual check; nothing on the device list a browser could do.
 2. **Review loop.**
    - Set the status to `In review`.
-   - Spawn `brief-reviewer` with the brief's path and the round number.
+   - Spawn `brief-reviewer` with the brief's path, the round number and the
+     facts file (`scratch/brief-facts-S0NN.md`, from a run on the current
+     draft).
    - Read its review file. Answer **every** finding in the brief's Review log
      (`Accepted` / `Rejected` / `Deferred`) and revise the brief text. Answer
      the review's `## Nits` list in **one** Review-log row ("BR2-06…BR2-09:

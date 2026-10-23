@@ -114,6 +114,10 @@ review file there.
   `/step stats`: rounds after the first found 0.06 blockers and majors each,
   the one real finding a bug the fix itself introduced). In round N ≥ 2:
   - verify that each finding the fix round says is fixed really is fixed;
+  - check that each new or changed test for a fixed fault comes with its red
+    result: the fix round says it failed without the fix (the coder's *Red,
+    then green* rule). A missing red result with no reason given is a `minor`
+    finding; don't undo code yourself to check;
   - review the **fix round's own diff** (the files its impl-report section
     lists, against the previous round's state) for new faults it brings in,
     and what that diff touches;

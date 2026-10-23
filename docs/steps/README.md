@@ -83,7 +83,14 @@ The planner proposes the track; the user confirms or overrides it.
 
 **Switch to full** when the brief reviewer raises a `blocker` or `major`
 finding, or the step turns out to meet a full-track criterion. The header and
-the index row are updated, and the user is told.
+the index row are updated, and the user is told. A finding that only says
+"belongs on the full track" is `minor` (23-10-2026, S029): it switches the
+track, and the user may keep light at approval.
+
+**Facts run.** Before brief review round 1, the planner runs
+`tooling/step-brief-facts.bat S0NN`: where each file, test, route and code name
+the brief cites exists, and which tests use it. The planner fixes the brief
+from it; the brief reviewer gets the output (23-10-2026, S029).
 
 **The light brief** (about a page):
 1. What will be built, and out of scope;
