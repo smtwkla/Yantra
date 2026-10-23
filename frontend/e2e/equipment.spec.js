@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
-import { saveDialog } from "./support/tickets.js";
+import { raiseByApi, saveDialog } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
 
@@ -106,6 +106,61 @@ test("S003/S006: engineer moves equipment, changes its status, uploads a documen
 });
 
 /** A machine at SMTW.MCC1 made through the API as admin (the test's own record). */
+// S029: each test makes its own machines and judges the rows inside a search for their names
+// (the three projects share one database, and other specs raise tickets on the seed machines).
+async function lightMachines(testInfo, tag) {
+  const prefix = `E2E light ${tag} ${testInfo.project.name}`;
+  const [red, amber, green] = await Promise.all(["red", "amber", "green"].map((c) => createEquipment(`${prefix} ${c}`)));
+  await raiseByApi("supervisor", { equipment_id: red.id, intensity: "critical", description: "Light test: stopped" });
+  await raiseByApi("supervisor", { equipment_id: amber.id, intensity: "degraded", description: "Light test: running slow" });
+  return { prefix, red, amber, green };
+}
+
+// The list rows carry role="link", so they are found by the table row itself
+const rowOf = (page, machine) => page.locator("tbody tr", { hasText: machine.code });
+
+test("S029: the equipment list shows a red, amber and green bulb with a name each", async ({ page }, testInfo) => {
+  const { prefix, red, amber, green } = await lightMachines(testInfo, "bulbs");
+  await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
+  await expect(rowOf(page, red).getByRole("img", { name: "Down — breakdown open" })).toBeVisible();
+  await expect(rowOf(page, amber).getByRole("img", { name: "Open ticket" })).toBeVisible();
+  await expect(rowOf(page, green).getByRole("img", { name: "No open ticket" })).toBeVisible();
+});
+
+test("S029: Down now lists only the red row and the URL carries it; All equipment clears it", async ({ page }, testInfo) => {
+  const { prefix, red, amber, green } = await lightMachines(testInfo, "filter");
+  await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
+  await expect(rowOf(page, green)).toBeVisible();
+  await page.getByRole("combobox", { name: "Tickets" }).selectOption({ label: "Down now" });
+  await expect(page).toHaveURL(/tickets=down/);
+  await expect(rowOf(page, red)).toBeVisible();
+  await expect(rowOf(page, amber)).toHaveCount(0);
+  await expect(rowOf(page, green)).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Tickets" }).selectOption({ label: "All equipment" });
+  await expect(page).not.toHaveURL(/tickets=/);
+  await expect(rowOf(page, green)).toBeVisible();
+});
+
+test("S029: the bulb is in view without scrolling and the Tickets filter fits the screen", async ({ page }, testInfo) => {
+  const { prefix, red } = await lightMachines(testInfo, "fit");
+  await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
+  const bulb = rowOf(page, red).getByRole("img", { name: "Down — breakdown open" });
+  await expect(bulb).toBeVisible();
+  const width = page.viewportSize().width;
+  const box = await bulb.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
+  const select = await page.getByRole("combobox", { name: "Tickets" }).boundingBox();
+  expect(select.x + select.width).toBeLessThanOrEqual(width);
+});
+
+test("S029: a bookmarked tickets=down shows the plain list to a storekeeper, who has no ticket column", async ({ page }, testInfo) => {
+  const { prefix, red, amber, green } = await lightMachines(testInfo, "bookmark");
+  await asPerson(page, "storekeeper", `/equipment?tickets=down&q=${encodeURIComponent(prefix)}`);
+  for (const machine of [red, amber, green]) await expect(rowOf(page, machine)).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Tickets" })).toHaveCount(0);
+});
+
 async function createEquipment(name) {
   const api = await apiAs("admin");
   try {

@@ -12,6 +12,7 @@ import { apiGet } from "../api";
 import CriticalityBadge from "../components/CriticalityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import TicketLight from "../components/TicketLight.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPermissions } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
@@ -21,6 +22,7 @@ import {
 import { STATUS_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
+import { TICKET_FILTER_CHOICES } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 
 const PAGE_SIZE = 50; // the API default
@@ -36,6 +38,9 @@ const route = useRoute();
 const router = useRouter();
 
 const canEdit = computed(() => userPermissions.value.includes("equipment:edit"));
+// The bulb and its filter are for people who may read tickets at some site (the list is the union
+// over their sites; the API answers a dash for the rows of the other sites)
+const canSeeTickets = computed(() => userPermissions.value.includes("ticket:read"));
 const formModal = ref(null);
 
 const page = ref(null); // {items, total, page, per_page}
@@ -116,6 +121,7 @@ function chooseStatus(value) {
 const statusModel = filterModel("status", "", chooseStatus);
 const criticalityModel = filterModel("criticality");
 const levelModel = filterModel("level", DEFAULT_LEVEL);
+const ticketsModel = filterModel("tickets");
 
 function toggleScrapped(on) {
   const changes = { scrapped: on ? "1" : null };
@@ -148,7 +154,9 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "class_id", "type_id", "status", "criticality", "q"]) {
+  for (const key of ["site_id", "unit_id", "class_id", "type_id", "status", "criticality", "tickets", "q"]) {
+    // A bookmarked ?tickets= must not filter invisibly for a user who has no ticket column or filter
+    if (key === "tickets" && !canSeeTickets.value) continue;
     if (query.value[key]) params.set(key, query.value[key]);
   }
   if (showScrapped.value) params.set("include_scrapped", "1");
@@ -268,6 +276,9 @@ function printAssetList() {
         <option value="">Any criticality</option>
         <option v-for="g in ['A', 'B', 'C']" :key="g" :value="g">{{ g }}</option>
       </select>
+      <select v-if="canSeeTickets" v-model="ticketsModel" class="form-select form-select-sm w-auto" aria-label="Tickets">
+        <option v-for="[value, text] in TICKET_FILTER_CHOICES" :key="value" :value="value">{{ text }}</option>
+      </select>
       <select v-model="levelModel" class="form-select form-select-sm w-auto" aria-label="Level">
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
@@ -313,6 +324,9 @@ function printAssetList() {
                 @change="toggleAllOnPage"
               />
             </th>
+            <th v-if="canSeeTickets" class="tick-cell text-center">
+              <i class="fa-solid fa-ticket" title="Tickets" role="img" aria-label="Tickets"></i>
+            </th>
             <th>Code</th><th>Name</th><th>Class</th><th>Model</th><th>{{ level === "equipment" ? "Unit" : "Path" }}</th>
             <th>Crit.</th><th>Status</th><th class="text-end">Parts</th>
           </tr>
@@ -334,6 +348,9 @@ function printAssetList() {
                 :aria-label="`Select ${e.code} for labels`"
                 @change="toggleOne(e.id, $event)"
               />
+            </td>
+            <td v-if="canSeeTickets" class="tick-cell text-center">
+              <TicketLight v-if="e.status !== 'scrapped'" :light="e.ticket_light" />
             </td>
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>

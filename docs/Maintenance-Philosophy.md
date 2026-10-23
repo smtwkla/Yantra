@@ -22,8 +22,9 @@ Status markers:
 - Operators already do informal autonomous maintenance on every equipment: they
   clean, lubricate and flag malfunctions. Yantra formalises what already happens
   before asking for more.
-- Yantra starts with no history. Backfilling from the notebooks is deferred
-  (**Decided**).
+- Yantra starts with no history. Backfilling from the notebooks is by hand on the
+  ticket screens until 30-11-2026 (**Decided** 22-10-2026, S028); a bulk import is
+  deferred.
 
 So this document describes a **target**, not current practice. Yantra introduces
 it step by step.

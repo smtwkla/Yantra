@@ -318,6 +318,12 @@ def admin(role_client):
 
 
 @pytest.fixture
+def keycloak_admin(role_client):
+    """The Keycloak admin role (mspv-apps-admin), not IT admin: holds every key by the bypass."""
+    return role_client("admin")
+
+
+@pytest.fixture
 def engineer(role_client):
     return role_client("maint_engineer")
 

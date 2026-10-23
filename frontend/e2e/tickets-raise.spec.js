@@ -126,6 +126,18 @@ test("S017: a back-dated ticket shows that time in the timeline", async ({ page 
   await expect(timeline(page).last()).toContainText(shownTime(twoDaysAgo));
 });
 
+test("S028: admin raises a ticket 30 days back; the timeline shows that time and the hint says how far", async ({ page }) => {
+  const thirtyDaysAgo = istLocal(30 * 24 * 60);
+  await asPerson(page, "admin", `/tickets/new?equipment=${seed.extruder.id}`);
+  await page.getByRole("button", { name: /Early signs/ }).click();
+  await page.getByLabel(/What is wrong\?/).fill("S028 test: admin back-dated");
+  await page.getByLabel("When did it happen?").fill(thirtyDaysAgo);
+  await expect(page.getByText("That was 30 days ago")).toBeVisible();
+  await saveButton(page).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(timeline(page).last()).toContainText(shownTime(thirtyDaysAgo));
+});
+
 test("S018 A1: Already fixed with a start time; the fields fit and the ticket is back in service", async ({ page }) => {
   const base = thisMinute();
   const stopped = istLocal(60, base);

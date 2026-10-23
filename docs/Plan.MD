@@ -62,7 +62,8 @@ module before each is built.
   case). EN 13306 keeps modification and installation apart from maintenance. Such work is
   written by hand on the printed daily work log (§ 4.6); the new equipment itself is
   registered with its in-service date.
-- Backfilling history from the plant's notebooks — later.
+- Backfilling history from the plant's notebooks: by hand on the ticket screens until
+  30-11-2026 (S028); a bulk import later.
 - Multiple companies. VEL is one org unit; SSVT, a separate company, is handled as a site for now.
 
 ## 3. Roles
@@ -168,6 +169,8 @@ A.5.3), since the plant has few engineers. Assignees are technician, engineer or
 the person named on back in service and on labour rows may be **anyone with a membership
 at the ticket's site, operators included** (an operator who fixes his own defect is
 recorded truthfully; his rows carry no trade, so man-hours per trade are unaffected).
+`ticket:backdate` (S028, approved 22-10-2026; global) enters ticket times up to 3 years
+back: held by no role, so by admin only through the bypass (ISO 27001 A.8.2).
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -325,7 +328,9 @@ about 50 users, and the record of the event stays in one place (ISO 14224).
 - Table and permission-key names settled by S017 (approved 20-10-2026): tables `tickets`,
   `ticket_events`; keys `ticket:*`. **The symptom (failure mode) is optional at raise** and
   required at close (S018). **"Not fixed" after back in service is a new ticket**, linked to
-  the old one, not a reopen (built in S018). Raising may be back-dated up to 7 days.
+  the old one, not a reopen (built in S018). Entered times may be back-dated up to 7 days; admin
+  (key `ticket:backdate`) up to 3 years; everyone up to 3 years until 30-11-2026 for the
+  backlog, and a raise more than 7 days back sends no alert (S028).
 
 States and who moves them:
 

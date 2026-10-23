@@ -1,7 +1,7 @@
 """alerts_core — audiences, what each ticket change enqueues, escalation, the texts and *What
 you will get* (S021 § 5.1–5.3, § 8 Pure, § 10 A1)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -46,9 +46,15 @@ class TestAudience:
 class TestWhatEnqueues:
 
     def test_raise(self):
-        assert raise_alert("critical") == Alert(BREAKDOWN, True)
-        assert raise_alert("degraded") == Alert(DEFECT, False)
-        assert raise_alert("initial") == Alert(DEFECT, False)
+        assert raise_alert("critical", timedelta(0)) == Alert(BREAKDOWN, True)
+        assert raise_alert("degraded", timedelta(0)) == Alert(DEFECT, False)
+        assert raise_alert("initial", timedelta(0)) == Alert(DEFECT, False)
+
+    def test_raise_for_history_sends_nothing(self):
+        """S028 § 4.6: more than 7 days back is history; exactly 7 days still alerts."""
+        assert raise_alert("critical", timedelta(days=7)) == Alert(BREAKDOWN, True)
+        assert raise_alert("critical", timedelta(days=7, minutes=1)) is None
+        assert raise_alert("degraded", timedelta(days=8)) is None
 
     @pytest.mark.parametrize("state, escalate", [("raised", True), ("acknowledged", False), ("scheduled", False),
                                                  ("in_progress", False)])

@@ -107,6 +107,23 @@ export function toLocalInputValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** tickets_core.MAX_BACKDATE_DAYS; the server checks the limit, this only starts the hint below. */
+export const MAX_BACKDATE_DAYS = 7;
+
+/**
+ * S028 § 4.5: how far back an entered time is, once it is more than MAX_BACKDATE_DAYS back:
+ * "That was 412 days ago", so a wrong year or month is seen before saving.  `entered` is the
+ * field's value ("YYYY-MM-DDTHH:MM", local), `now` a Date; "" for anything else (empty,
+ * unparsable, in the future, or not far enough back).  Display only.
+ */
+export function daysAgoHint(entered, now) {
+  if (!entered) return "";
+  const at = new Date(entered);
+  if (Number.isNaN(at.getTime())) return "";
+  const days = Math.floor((now.getTime() - at.getTime()) / 86_400_000);
+  return days > MAX_BACKDATE_DAYS ? `That was ${days} days ago` : "";
+}
+
 // ---------------------------------------------------------------------------
 // Working the ticket (S018)
 // ---------------------------------------------------------------------------
@@ -403,3 +420,20 @@ export function matchingParts(parts, typed) {
   if (!needle) return parts;
   return parts.filter((p) => partText(p).toLowerCase().includes(needle));
 }
+
+// --- S029: the ticket light on the equipment list -----------------------------------------
+
+/** The bulb's tooltip and accessible name per `ticket_light` of a list row (null: no ticket:read there). */
+export const TICKET_LIGHT_LABELS = {
+  down: "Down — breakdown open",
+  open: "Open ticket",
+  none: "No open ticket",
+  hidden: "Tickets not shown",
+};
+
+/** The list's Tickets filter: the value in the URL (`tickets=`) and its text; "" = no filter. */
+export const TICKET_FILTER_CHOICES = [
+  ["", "All equipment"],
+  ["down", "Down now"],
+  ["open", "Any open ticket"],
+];

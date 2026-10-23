@@ -38,7 +38,7 @@ import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../utils/documentTy
 import { revealError } from "../utils/revealError";
 import { roleLabel } from "../utils/siteRoles";
 import {
-  ageText, INTENSITY_CHOICES, problemText, moveSaveLabel, raiseSaveLabel, restoreTimeLabel, toLocalDateValue, toLocalInputValue,
+  ageText, daysAgoHint, INTENSITY_CHOICES, problemText, moveSaveLabel, raiseSaveLabel, restoreTimeLabel, toLocalDateValue, toLocalInputValue,
 } from "../utils/ticketLabels";
 import EventFields from "./tickets/EventFields.vue";
 import PersonPicker from "./tickets/PersonPicker.vue";
@@ -454,6 +454,7 @@ function done() {
               @input="timeTouched = true"
             />
             <div v-if="fieldErrors.occurred_at" class="invalid-feedback d-block">{{ fieldErrors.occurred_at }}</div>
+            <div v-if="daysAgoHint(form.occurredAt, new Date())" class="form-text">{{ daysAgoHint(form.occurredAt, new Date()) }}</div>
           </div>
 
           <div class="mb-3">

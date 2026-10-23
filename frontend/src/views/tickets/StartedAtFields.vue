@@ -8,8 +8,8 @@
  * the user has not picked another one: a night-shift start before midnight is entered by
  * changing the date. Used by MoveDialog and the raise screen's *Already fixed* (A1, BS2-03).
  */
-import { watch } from "vue";
-import { toLocalDateValue } from "../../utils/ticketLabels";
+import { computed, watch } from "vue";
+import { daysAgoHint, toLocalDateValue } from "../../utils/ticketLabels";
 
 const props = defineProps({
   restoredAt: { type: String, default: null },
@@ -19,6 +19,9 @@ const props = defineProps({
   idPrefix: { type: String, required: true },
 });
 const emit = defineEmits(["update:date", "update:time"]);
+
+// Only when both the date and the time are filled (the parent sends `started_at` the same way)
+const hint = computed(() => (props.date && props.time ? daysAgoHint(`${props.date}T${props.time}`, new Date()) : ""));
 
 function dayOf(restoredAt) {
   return restoredAt ? restoredAt.slice(0, 10) : toLocalDateValue(new Date());
@@ -58,5 +61,6 @@ watch(() => props.restoredAt, (value) => {
       />
     </div>
     <div v-if="error" class="invalid-feedback d-block">{{ error }}</div>
+    <div v-if="hint" class="form-text">{{ hint }}</div>
   </div>
 </template>

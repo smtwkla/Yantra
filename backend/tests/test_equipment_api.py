@@ -707,7 +707,8 @@ class TestListing:
         # Exact, so it also guards that the list has no notes (S004 § 5.5)
         assert set(item) == {"id", "code", "level", "name", "class_id", "class_code", "type_id", "type_name",
                              "model_id", "model_designation", "manufacturer_name", "model_label",
-                             "unit_id", "unit", "full_path", "effective_criticality", "status", "part_count"}
+                             "unit_id", "unit", "full_path", "effective_criticality", "status", "part_count",
+                             "ticket_light"}
         assert (item["unit_id"], item["unit"], item["full_path"]) == (unit["id"], unit["full_code"],
                                                                       mill["full_path"])
         assert item["model_label"] == f"{item['manufacturer_name']} {item['model_designation']}"
@@ -1241,3 +1242,102 @@ class TestTypeFilterAndSearch:
         node = make_equipment(unit=unit, cls=cls, type_id=closed["id"], name="Pump")
         make_equipment(unit=unit, cls=cls, name="Pump")
         assert _ids(admin, unit_id=unit["id"], q="closed") == [node["id"]]
+
+
+class TestTicketLight:
+    """S029: the bulb on a list row and the tickets filter."""
+
+    def _light(self, client, node, **params):
+        items = _list(client, level="all", **params)["items"]
+        return {i["id"]: i["ticket_light"] for i in items}[node["id"]]
+
+    def test_no_ticket_is_none(self, admin, make_equipment):
+        assert self._light(admin, make_equipment()) == "none"
+
+    @pytest.mark.parametrize("intensity, state, light", [
+        ("critical", "raised", "down"),
+        ("critical", "scheduled", "down"),
+        ("critical", "in_progress", "down"),
+        ("critical", "back_in_service", "open"),
+        ("degraded", "raised", "open"),
+        ("initial", "raised", "open"),
+        ("critical", "closed", "none"),
+        ("degraded", "closed", "none"),
+    ])
+    def test_state_and_intensity(self, admin, make_equipment, make_ticket, set_ticket_state, intensity, state, light):
+        mill = make_equipment()
+        ticket = make_ticket(mill, intensity=intensity)
+        if state == "scheduled":    # the table's own check wants the plan on a scheduled ticket
+            _db("UPDATE tickets SET state = 'scheduled', planned_date = CURDATE(), waiting_reason = 'parts'"
+                " WHERE id = %s", (ticket["id"],))
+        else:
+            set_ticket_state(ticket, state)
+        assert self._light(admin, mill) == light
+
+    def test_critical_and_degraded_on_one_node_is_down(self, admin, make_equipment, make_ticket):
+        mill = make_equipment()
+        make_ticket(mill, intensity="degraded")
+        make_ticket(mill)
+        assert self._light(admin, mill) == "down"
+
+    def test_levels(self, admin, make_equipment, make_ticket):
+        mill = make_equipment()
+        drive = make_equipment(parent=mill)
+        motor = make_equipment(parent=drive, level="component")
+        make_ticket(motor)
+        assert self._light(admin, mill) == "down"
+        assert self._light(admin, motor) == "down"
+        # A component-unit's bulb counts tickets raised on it, not on its components
+        assert self._light(admin, drive) == "none"
+
+    def test_a_scrapped_row_is_none(self, admin, make_equipment):
+        mill = make_equipment()
+        assert _put(admin, mill, status="scrapped").status_code == 200
+        assert self._light(admin, mill, include_scrapped="1") == "none"
+
+    def test_filters_and_total(self, admin, make_unit, make_equipment, make_ticket):
+        unit = make_unit()
+        red, amber, green = (make_equipment(unit=unit) for _ in range(3))
+        make_ticket(red)
+        make_ticket(amber, intensity="degraded")
+        assert len(_ids(admin, unit_id=unit["id"])) == 3
+        down = _list(admin, unit_id=unit["id"], tickets="down")
+        assert ([i["id"] for i in down["items"]], down["total"]) == ([red["id"]], 1)
+        opened = _list(admin, unit_id=unit["id"], tickets="open")
+        assert {i["id"] for i in opened["items"]} == {red["id"], amber["id"]}
+        assert opened["total"] == 2
+        assert green["id"] not in _ids(admin, unit_id=unit["id"], tickets="open")
+
+    @pytest.mark.parametrize("value", ["bogus", ""])
+    def test_bad_filter_is_400(self, admin, value):
+        res = admin.get(EQUIPMENT, query_string={"tickets": value})
+        assert (res.status_code, res.get_json()["field"]) == (400, "tickets")
+
+    def test_ticket_read_at_one_of_two_sites(self, admin, user_at_sites, make_site, make_unit, make_equipment,
+                                              make_ticket):
+        site_a, site_b = make_site(), make_site()
+        mill_a, mill_b = make_equipment(unit=make_unit(site_a)), make_equipment(unit=make_unit(site_b))
+        make_ticket(mill_a)
+        make_ticket(mill_b)
+        client, _ = user_at_sites([(site_a, "maint_engineer", "all"), (site_b, "maint_storekeeper", "all")])
+        lights = {i["id"]: i["ticket_light"] for i in _list(client)["items"]}
+        assert (lights[mill_a["id"]], lights[mill_b["id"]]) == ("down", None)
+        listed = _list(client, tickets="down")
+        assert [i["id"] for i in listed["items"]] == [mill_a["id"]]
+        assert listed["total"] == 1
+        assert _list(client, tickets="open")["total"] == 1
+
+    def test_no_ticket_read_anywhere(self, user_with_units, make_unit, make_equipment, make_ticket):
+        unit = make_unit()
+        mill = make_equipment(unit=unit)
+        make_ticket(mill)
+        storekeeper = user_with_units("maint_storekeeper", [unit])
+        assert [i["ticket_light"] for i in _list(storekeeper)["items"]] == [None]
+        assert _list(storekeeper, tickets="down") == {"items": [], "total": 0, "page": 1, "per_page": 50}
+
+    def test_asset_list_has_no_light(self, admin, make_unit, make_equipment):
+        unit = make_unit()
+        make_equipment(unit=unit)
+        res = admin.get(f"{EQUIPMENT}/asset-list", query_string={"unit_id": unit["id"], "tickets": "down"})
+        assert res.status_code == 200, res.get_json()
+        assert "ticket_light" not in res.get_data(as_text=True)

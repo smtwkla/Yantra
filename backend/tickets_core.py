@@ -51,6 +51,12 @@ PLAN_FILTERS = ("scheduled", "overdue")
 # history (notebooks) is out of scope and would distort this month's figures (§ 7 decision 9)
 FUTURE_SKEW = timedelta(minutes=5)
 MAX_BACKDATE_DAYS = 7
+# S028: admin always, and everyone while the backlog window is open, may enter times this far
+# back.  A leap day short of three calendar years, on purpose: one subtraction, like the 7 days.
+LONG_BACKDATE_YEARS = 3
+LONG_BACKDATE_DAYS = LONG_BACKDATE_YEARS * 365
+# S028: the last IST day (inclusive) on which everyone may enter the plant's notebook backlog
+BACKLOG_UNTIL = date(2026, 11, 30)
 
 DESCRIPTION_MAX = 1000
 
@@ -67,6 +73,7 @@ _EVENT_TIME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2})?$")
 EVENT_TIME_FORMAT = "Enter the time as YYYY-MM-DD HH:MM"
 EVENT_TIME_FUTURE = "That time is in the future"
 EVENT_TIME_TOO_OLD = f"When did it happen? Up to {MAX_BACKDATE_DAYS} days back"
+EVENT_TIME_TOO_OLD_LONG = f"When did it happen? Up to {LONG_BACKDATE_YEARS} years back"
 EVENT_TIME_BEFORE_LAST = "That time is before the last entry on this ticket"
 DESCRIPTION_NEEDED = "Description is needed when no symptom is picked"
 DESCRIPTION_NEEDED_OTHER = "Describe the problem when the symptom is Other"
@@ -98,14 +105,29 @@ def parse_event_time(text):
     return value, None
 
 
-def event_time_error(event_time, now, not_before=None):
+def backdate_days(now, may_backdate):
+    """How many days back an entered time may lie (S028): LONG_BACKDATE_DAYS for a holder of
+    ticket:backdate, and for everyone while now's date is on or before BACKLOG_UNTIL;
+    otherwise MAX_BACKDATE_DAYS.  BACKLOG_UNTIL is read at call time, so a test can move it."""
+    if may_backdate or now.date() <= BACKLOG_UNTIL:
+        return LONG_BACKDATE_DAYS
+    return MAX_BACKDATE_DAYS
+
+
+def too_old_message(max_back_days):
+    """The refusal for a time older than the limit; the message follows the limit, not the role."""
+    assert max_back_days in (MAX_BACKDATE_DAYS, LONG_BACKDATE_DAYS), max_back_days
+    return EVENT_TIME_TOO_OLD_LONG if max_back_days == LONG_BACKDATE_DAYS else EVENT_TIME_TOO_OLD
+
+
+def event_time_error(event_time, now, max_back_days, not_before=None):
     """The window an entered event time must fall in -> the message, or None: at most
-    FUTURE_SKEW ahead of ``now``, at most MAX_BACKDATE_DAYS back, and not before
+    FUTURE_SKEW ahead of ``now``, at most ``max_back_days`` back (backdate_days), and not before
     ``not_before`` (S018: the ticket's last event)."""
     if event_time > now + FUTURE_SKEW:
         return EVENT_TIME_FUTURE
-    if event_time < now - timedelta(days=MAX_BACKDATE_DAYS):
-        return EVENT_TIME_TOO_OLD
+    if event_time < now - timedelta(days=max_back_days):
+        return too_old_message(max_back_days)
     if not_before is not None and event_time < not_before:
         return EVENT_TIME_BEFORE_LAST
     return None
@@ -125,7 +147,7 @@ def _optional_id(body, field, message, clean, errors):
         errors.append({"field": field, "message": message})
 
 
-def validate_raise(body, now):
+def validate_raise(body, now, max_back_days):
     """The raise body -> ``(clean, errors)``, before the transaction.  ``clean`` holds every
     field: equipment_id, intensity, failure_mode_id, reported_by_id, repeat_of_id (None when not given),
     description (trimmed, None when empty) and occurred_at (``now`` when not given).  The
@@ -165,7 +187,7 @@ def validate_raise(body, now):
         clean["occurred_at"] = now
     else:
         occurred_at, message = parse_event_time(raw_time)
-        message = message or event_time_error(occurred_at, now)
+        message = message or event_time_error(occurred_at, now, max_back_days)
         if message:
             errors.append({"field": "occurred_at", "message": message})
         else:
@@ -309,7 +331,7 @@ REGRADE_STATES = (RAISED, ACKNOWLEDGED, SCHEDULED, IN_PROGRESS)
 REPEAT_FROM_STATES = (BACK_IN_SERVICE, CLOSED)
 # Downtime runs while the machine is critical in these states (§ 5.4; a stopped machine
 # waiting in scheduled is down, S019 § 1.5)
-_DOWN_STATES = (RAISED, ACKNOWLEDGED, SCHEDULED, IN_PROGRESS)
+DOWN_STATES = (RAISED, ACKNOWLEDGED, SCHEDULED, IN_PROGRESS)
 
 # Messages the page or the tests match
 PERSON_NEEDED = "Who did the work? Pick a name"
@@ -569,12 +591,12 @@ def _when(value):
 RAISE_SCREEN_LABELS = {**EVENT_LABELS, RAISED: "the time it happened"}
 
 
-def validate_event_time(event_time, last_event, now, labels=EVENT_LABELS):
+def validate_event_time(event_time, last_event, now, max_back_days, labels=EVENT_LABELS):
     """S017's window for an entered time (event_time_error), with the ticket's last ordered
     event ``(event, occurred_at)`` as the lower bound; the refusal names that event (as
     ``labels`` words it) and its time -> the message, or None."""
     last_name, last_time = last_event
-    message = event_time_error(event_time, now, not_before=last_time)
+    message = event_time_error(event_time, now, max_back_days, not_before=last_time)
     if message == EVENT_TIME_BEFORE_LAST:
         return f"Must be at or after {labels.get(last_name, last_name)}, {_when(last_time)}"
     return message
@@ -768,7 +790,7 @@ def ticket_times(events, now):
             repair += length
             if planned_stop:
                 planned += length
-        if critical and state in _DOWN_STATES:
+        if critical and state in DOWN_STATES:
             downtime += length
         if critical and state == SCHEDULED:
             waiting += length

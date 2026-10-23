@@ -104,6 +104,11 @@ PERMISSIONS = {
     # departure from "maintenance work is not IT admin's"; the storekeeper holds neither.
     "ticket:read": ("maint_operator", "it_admin"),
     "ticket:raise": ("maint_operator", "it_admin"),
+    # Back-dating beyond the 7 days (S028): no role holds it, so only admin does (the bypass;
+    # ISO 27001 A.8.2, a privileged right).  A role granted it later enters times up to
+    # LONG_BACKDATE_DAYS back.  Global: if a site role is ever granted it, it joins SITE_SCOPED
+    # and is checked at the ticket's site.
+    "ticket:backdate": (),
     # Working the ticket (S018 § 5.7).  Back in service by whoever has operator rights at the
     # unit (Plan.MD § 4.2), so production confirms the restoration; the work itself and the
     # labour by the maintenance ladder from the technician up; assignment, send back and close

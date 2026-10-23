@@ -9,11 +9,12 @@ is that decision, and you_get shows each person their part of it.
 """
 
 from collections import namedtuple
+from datetime import timedelta
 
 from config_rbac import ASSIGNABLE_ROLES
 from equipment_core import effective_criticality
 from tickets_core import (
-    ACKNOWLEDGED, BREAKDOWN_INTENSITY, CLOSED, IN_PROGRESS, RAISED, SCHEDULED, SENT_BACK_EVENT, STATES,
+    BREAKDOWN_INTENSITY, DOWN_STATES, MAX_BACKDATE_DAYS, OPEN_STATES, RAISED, SENT_BACK_EVENT,
 )
 
 BREAKDOWN = "breakdown"
@@ -37,9 +38,7 @@ AUDIENCE = {
 
 # When a drained alert is still worth sending (BR2-04): a worker an hour late does not wake the
 # supervisor for a machine already back in service
-_DOWN_STATES = (RAISED, ACKNOWLEDGED, SCHEDULED, IN_PROGRESS)
-_OPEN_STATES = tuple(state for state in STATES if state != CLOSED)
-_SEND_STATES = {BREAKDOWN: _DOWN_STATES, DEFECT: _DOWN_STATES, ESCALATION: _OPEN_STATES, ASSIGNED: _OPEN_STATES}
+_SEND_STATES = {BREAKDOWN: DOWN_STATES, DEFECT: DOWN_STATES, ESCALATION: OPEN_STATES, ASSIGNED: OPEN_STATES}
 
 # Escalation per criticality grade (§ 1.5; Maintenance-Philosophy § 9).  Equipment must have a
 # grade (new equipment starts at C), so an ungraded item is a leftover and counts as C.
@@ -59,9 +58,13 @@ TEST_TAG = "test"
 Alert = namedtuple("Alert", "kind escalate")
 
 
-def raise_alert(intensity):
+def raise_alert(intensity, age):
     """§ 5.3: a breakdown alerts and escalates; a defect (degraded or initial) alerts quietly.
-    A raise with *Already fixed* calls nothing (the caller's rule, S018 A1)."""
+    A raise with *Already fixed* calls nothing (the caller's rule, S018 A1).  S028 § 4.6: a raise
+    entered for a time more than MAX_BACKDATE_DAYS back (``age`` = now - occurred_at, a timedelta)
+    is history, not news: nothing."""
+    if age > timedelta(days=MAX_BACKDATE_DAYS):
+        return None
     if intensity == BREAKDOWN_INTENSITY:
         return Alert(BREAKDOWN, True)
     return Alert(DEFECT, False)

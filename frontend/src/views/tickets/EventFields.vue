@@ -9,7 +9,7 @@
  *   left out with `withRemark: false` (the raise screen's *Already fixed*, S018 A1, BS2-03).
  */
 import { ref, watch } from "vue";
-import { toLocalInputValue } from "../../utils/ticketLabels";
+import { daysAgoHint, toLocalInputValue } from "../../utils/ticketLabels";
 
 const REMARK_MAX = 1000;
 
@@ -75,6 +75,7 @@ function onInput(event) {
       <button type="button" class="btn btn-link p-0" @click="backToNow">Now</button>
     </div>
     <div v-if="timeError" class="invalid-feedback d-block">{{ timeError }}</div>
+    <div v-if="changing && daysAgoHint(draft, new Date())" class="form-text">{{ daysAgoHint(draft, new Date()) }}</div>
   </div>
 
   <div v-if="withRemark" class="mb-3">

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import tickets
+import tickets_core
 from tests.conftest import EQUIPMENT, MASTERS, SERVER_ERROR, TICKETS, server_error
 from tests.ticket_helpers import api_time as _api_time
 from tests.ticket_helpers import local as _local
@@ -191,11 +192,86 @@ class TestRaiseRefusals:
                                         "description": "x", **body})
         assert _refusal(res)[:2] == (400, field)
 
-    def test_event_time_out_of_the_window_is_400(self, admin, machine):
+    def test_event_time_out_of_the_window_is_400(self, monkeypatch, admin, machine):
+        """IT admin, after the backlog window: the future and 8 days back are refused."""
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_before_today())
         for when in (_now_ist() + timedelta(minutes=10), _now_ist() - timedelta(days=8)):
             res = admin.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical",
                                             "description": "x", "occurred_at": _local(when)})
             assert _refusal(res)[:2] == (400, "occurred_at")
+
+
+def _day_before_today():
+    return _now_ist().date() - timedelta(days=1)
+
+
+def _day_after_today():
+    return _now_ist().date() + timedelta(days=1)
+
+
+def _raise_back(client, machine, days, **extra):
+    when = _now_ist() - timedelta(days=days)
+    return client.post(TICKETS, json={"equipment_id": machine["id"], "intensity": "critical", "description": "x",
+                                      "occurred_at": _local(when), **extra})
+
+
+class TestBackdateWindow:
+    """S028: admin (key ticket:backdate) and the backlog window lift the 7 days to 3 years."""
+
+    def test_admin_after_the_window_raises_30_days_back(self, monkeypatch, keycloak_admin, machine):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_before_today())
+        assert _raise_back(keycloak_admin, machine, 30).status_code == 201
+
+    def test_admin_after_the_window_stops_at_3_years_and_the_future(self, monkeypatch, keycloak_admin, machine):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_before_today())
+        status, field, message = _refusal(_raise_back(keycloak_admin, machine, 1096))
+        assert (status, field) == (400, "occurred_at") and message.endswith("Up to 3 years back")
+        assert _refusal(_raise_back(keycloak_admin, machine, -1))[:2] == (400, "occurred_at")
+
+    def test_operator_after_the_window_has_7_days(self, monkeypatch, operator, machine):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_before_today())
+        status, field, message = _refusal(_raise_back(operator, machine, 8))
+        assert (status, field) == (400, "occurred_at") and message.endswith("Up to 7 days back")
+
+    def test_operator_in_the_window_raises_400_days_back(self, monkeypatch, operator, machine):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_after_today())
+        assert _raise_back(operator, machine, 400).status_code == 201
+
+    def test_operator_in_the_window_stops_at_3_years(self, monkeypatch, operator, machine):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_after_today())
+        status, field, message = _refusal(_raise_back(operator, machine, 1096))
+        assert (status, field) == (400, "occurred_at") and message.endswith("Up to 3 years back")
+
+    def test_already_fixed_times_use_the_same_limit(self, monkeypatch, operator, machine, user_at_sites, unit):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_after_today())
+        _, engineer_person = user_at_sites([({"id": unit["site_id"]}, "maint_engineer", [unit])])
+        restore = {"restore": {"person_id": engineer_person["id"],
+                               "occurred_at": _local(_now_ist() - timedelta(days=99))}}
+        res = _raise_back(operator, machine, 100, **restore)
+        assert res.status_code == 201, res.get_json()
+
+    @pytest.mark.parametrize("in_window, status", [(False, 400), (True, 200)])
+    def test_a_move_30_days_back(self, monkeypatch, keycloak_admin, at_unit, make_ticket, machine, in_window, status):
+        monkeypatch.setattr(tickets_core, "BACKLOG_UNTIL", _day_after_today() if in_window else _day_before_today())
+        ticket = make_ticket(machine, client=keycloak_admin,
+                             occurred_at=_local(_now_ist() - timedelta(days=31)))
+        res = at_unit("maint_technician").post(f"{TICKETS}/{ticket['id']}/moves/start", json={
+            "occurred_at": _local(_now_ist() - timedelta(days=30))})
+        assert res.status_code == status, res.get_json()
+        if status == 400:
+            assert _refusal(res)[1] == "occurred_at"
+
+    def test_a_raise_for_history_queues_no_alert(self, keycloak_admin, make_ticket, machine, db_rows):
+        history = make_ticket(machine, client=keycloak_admin, occurred_at=_local(_now_ist() - timedelta(days=30)))
+        recent = make_ticket(machine, client=keycloak_admin, occurred_at=_local(_now_ist() - timedelta(days=1)))
+        assert _alert_tasks(db_rows, history) == []
+        assert sorted(_alert_tasks(db_rows, recent)) == ["ticket_alert", "ticket_escalate"]
+
+
+def _alert_tasks(db_rows, ticket):
+    rows = db_rows("SELECT task_type FROM task_queue WHERE task_type IN ('ticket_alert', 'ticket_escalate')"
+                   " AND JSON_EXTRACT(payload, '$.ticket_id') = %s", (ticket["id"],))
+    return [row["task_type"] for row in rows]
 
 
 class TestList:

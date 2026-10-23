@@ -117,6 +117,13 @@ class TestRoleSources:
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert key in SITE_SCOPED
 
+    def test_ticket_backdate_is_held_by_admin_only_and_is_global(self):
+        """S028: no role holds it; admin has it by the bypass; not site-scoped."""
+        assert PERMISSIONS["ticket:backdate"] == ()
+        assert not [role for role in ROLES if "ticket:backdate" in compute_permissions([role])]
+        assert "ticket:backdate" in compute_permissions(["admin"])
+        assert "ticket:backdate" not in SITE_SCOPED
+
     def test_no_login_roles(self):
         """S017 user decision 5: without a login, Technician or Operator; both site roles."""
         assert set(NO_LOGIN_ROLES) == {"maint_technician", "maint_operator"}

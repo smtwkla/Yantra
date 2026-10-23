@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ageText, EVENT_LABELS, firstName, groupPeople, INTENSITY_BADGE_CLASS, INTENSITY_CHOICES, INTENSITY_LABELS,
+  ageText, daysAgoHint, EVENT_LABELS, firstName, groupPeople, INTENSITY_BADGE_CLASS, INTENSITY_CHOICES, INTENSITY_LABELS,
   intensityChanges, isBreakdown, isLowering, minutesText, moveConsequence, moveLabel, moveSaveLabel, problemText,
   raiseSaveLabel, restoreTimeLabel, sendBackChoices, sendBackQuestion, STATE_LABELS, toLocalDateValue, toLocalInputValue,
 } from "../src/utils/ticketLabels.js";
@@ -8,6 +8,7 @@ import {
   machineStoppedQuestion, overdueBadge, planChanges, planLine, stateLabel, STATE_FILTERS, WAITING_REASON_DELAYS,
   WAITING_REASON_LABELS, waitingSplit, waitingText,
 } from "../src/utils/ticketLabels.js";
+import { TICKET_FILTER_CHOICES, TICKET_LIGHT_LABELS } from "../src/utils/ticketLabels.js";
 import {
   DEFAULT_PART_KIND, matchingParts, PART_KIND_CHOICES, PART_KIND_SHORT, PART_UNITS, partText, quantityText,
 } from "../src/utils/ticketLabels.js";
@@ -58,6 +59,27 @@ describe("problemText", () => {
     expect(problemText({ failure_mode: null, description: "Oil on the floor" })).toBe("Oil on the floor");
     expect(problemText({ failure_mode: null, description: "x".repeat(100) }, 10)).toBe(`${"x".repeat(9)}…`);
     expect(problemText({ failure_mode: null, description: null })).toBe("");
+  });
+});
+
+describe("daysAgoHint (S028)", () => {
+  const now = new Date(2026, 10, 1, 12, 0);
+
+  it("says nothing up to 7 days back", () => {
+    expect(daysAgoHint("2026-10-25T12:00", now)).toBe("");
+    expect(daysAgoHint("2026-10-26T09:00", now)).toBe("");
+  });
+
+  it("counts whole days from 8 days back", () => {
+    expect(daysAgoHint("2026-10-24T12:00", now)).toBe("That was 8 days ago");
+    expect(daysAgoHint("2025-09-25T12:00", now)).toBe("That was 402 days ago");
+  });
+
+  it("says nothing for empty, garbage or future values", () => {
+    expect(daysAgoHint("", now)).toBe("");
+    expect(daysAgoHint(null, now)).toBe("");
+    expect(daysAgoHint("noon", now)).toBe("");
+    expect(daysAgoHint("2026-11-02T12:00", now)).toBe("");
   });
 });
 
@@ -279,5 +301,17 @@ describe("parts used (S020)", () => {
     expect(matchingParts([SEAL, OIL], "  seal ")).toEqual([SEAL]);
     expect(matchingParts([SEAL, OIL], "indian")).toEqual([OIL]);
     expect(matchingParts([SEAL, OIL], "bearing")).toEqual([]);
+  });
+});
+
+describe("ticket light labels (S029)", () => {
+  it("names each bulb, so colour is never the only signal", () => {
+    expect(TICKET_LIGHT_LABELS).toEqual({
+      down: "Down — breakdown open", open: "Open ticket", none: "No open ticket", hidden: "Tickets not shown",
+    });
+  });
+
+  it("offers the filter choices with the URL values the API accepts", () => {
+    expect(TICKET_FILTER_CHOICES).toEqual([["", "All equipment"], ["down", "Down now"], ["open", "Any open ticket"]]);
   });
 });

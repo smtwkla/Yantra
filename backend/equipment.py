@@ -92,7 +92,7 @@ from equipment_core import (
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters_core import model_label
 from settings import label_base_url
-from tickets_core import CLOSED, close_tickets_first
+from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
 
 equipment_bp = Blueprint("equipment", __name__)
 
@@ -140,6 +140,33 @@ _NODE_COLUMNS = (
 _PART_COUNT = (
     "(SELECT COUNT(*) FROM equipment ch WHERE ch.parent_id = e.id AND ch.status <> 'scrapped') AS part_count"
 )
+
+# Ticket light (S029).  Tickets of the row's node: a machine row counts ``equipment_id`` (its
+# parts' tickets too), a component-unit or component row counts ``component_id`` (its own only),
+# as tickets._equipment_filter does.  A machine is never a component_id and a part is never an
+# equipment_id, so the one OR gives both.
+_TICKETS_OF_NODE = "SELECT 1 FROM tickets t WHERE (t.equipment_id = e.id OR t.component_id = e.id)"
+_TICKET_DOWN = (f"EXISTS ({_TICKETS_OF_NODE} AND t.intensity = %s"
+                f" AND t.state IN ({', '.join(['%s'] * len(DOWN_STATES))}))")
+_TICKET_DOWN_PARAMS = (BREAKDOWN_INTENSITY, *DOWN_STATES)
+_TICKET_OPEN = f"EXISTS ({_TICKETS_OF_NODE} AND t.state <> %s)"
+_TICKET_FILTERS = {"down": (_TICKET_DOWN, _TICKET_DOWN_PARAMS), "open": (_TICKET_OPEN, (CLOSED,))}
+
+
+def _ticket_light_column(ticket_unit_ids):
+    """The ``ticket_light`` column → (sql, params): down, open or none, and NULL for a row whose
+    unit the user holds no ticket:read in, so no ticket fact is read for it.  ticket_unit_ids
+    None = every unit."""
+    light = (f"CASE WHEN {_TICKET_DOWN} THEN 'down' WHEN {_TICKET_OPEN} THEN 'open' ELSE 'none' END")
+    params = [*_TICKET_DOWN_PARAMS, CLOSED]
+    if ticket_unit_ids is None:
+        return f"{light} AS ticket_light", params
+    if not ticket_unit_ids:
+        return "NULL AS ticket_light", []
+    placeholders = ", ".join(["%s"] * len(ticket_unit_ids))
+    return (f"CASE WHEN u.id IN ({placeholders}) THEN {light} END AS ticket_light",
+            [*sorted(ticket_unit_ids), *params])
+
 
 # Locking reads: each returns the columns its decisions need (BR3-01)
 LOCK_EQUIPMENT = ("SELECT id, level, status, parent_id, unit_id, class_id, type_id, model_id FROM equipment "
@@ -481,6 +508,8 @@ def list_equipment():
                           " OR CONCAT(mf.name, ' ', m.designation) LIKE %s)")
         params.extend([like_pattern(q)] * 5)
 
+    tickets = enum_arg("tickets", tuple(_TICKET_FILTERS))
+
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
     with get_db().cursor() as cur:
         unit_ids = accessible_unit_ids(cur)
@@ -489,11 +518,24 @@ def list_equipment():
                 return jsonify(empty)
             conditions.append(f"u.id IN ({', '.join(['%s'] * len(unit_ids))})")
             params.extend(sorted(unit_ids))
+        # The bulb and its filter are read only at units where the user holds ticket:read
+        ticket_unit_ids = accessible_unit_ids(cur, "ticket:read")
+        if tickets:
+            if ticket_unit_ids is not None:
+                if not ticket_unit_ids:
+                    return jsonify(empty)
+                conditions.append(f"u.id IN ({', '.join(['%s'] * len(ticket_unit_ids))})")
+                params.extend(sorted(ticket_unit_ids))
+            condition, condition_params = _TICKET_FILTERS[tickets]
+            conditions.append(condition)
+            params.extend(condition_params)
+        light_sql, light_params = _ticket_light_column(ticket_unit_ids)
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
         total = count(cur, f"SELECT COUNT(*) AS n{_NODE_FROM}{where}", params)
-        cur.execute(f"{_NODE_COLUMNS}, {_PART_COUNT}{_NODE_FROM}{where} ORDER BY e.code LIMIT %s OFFSET %s",
-                    [*params, per_page, (page - 1) * per_page])
-        items = [{**_summary(row), "part_count": row["part_count"]} for row in cur.fetchall()]
+        cur.execute(f"{_NODE_COLUMNS}, {_PART_COUNT}, {light_sql}{_NODE_FROM}{where} ORDER BY e.code LIMIT %s OFFSET %s",
+                    [*light_params, *params, per_page, (page - 1) * per_page])
+        items = [{**_summary(row), "part_count": row["part_count"], "ticket_light": row["ticket_light"]}
+                 for row in cur.fetchall()]
     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
 
 

@@ -20,6 +20,9 @@ from tickets_core import (  # S019
     MACHINE_STOPPED_NEEDED, PLANNED_DATE_MAX_DAYS, PLANNED_DATE_NEEDED, PLANNED_DATE_PAST, PLANNED_DATE_TOO_FAR,
     REMARK_NEEDED, WAITING_REASON_NEEDED, WAITING_REASONS, is_overdue, machine_stopped_needed, planned_date_error,
 )
+from tickets_core import (  # S028
+    EVENT_TIME_TOO_OLD_LONG, LONG_BACKDATE_DAYS, MAX_BACKDATE_DAYS, backdate_days, too_old_message,
+)
 from tickets_core import NOTE_EVENT, NOTE_NEEDED, ORDERED_EVENTS, validate_note  # S027
 from tickets_core import (  # S020
     PART_DESCRIPTION_NEEDED, PART_KIND_NEEDED, PART_KINDS, PART_MAKER_NEEDED, PART_NODE_NEEDED, PART_QUANTITY_DECIMALS,
@@ -89,26 +92,31 @@ class TestParseEventTime:
 class TestEventTimeWindow:
 
     def test_now_is_accepted(self):
-        assert event_time_error(NOW, NOW) is None
+        assert event_time_error(NOW, NOW, 7) is None
 
     def test_four_minutes_ahead_is_accepted(self):
-        assert event_time_error(NOW + timedelta(minutes=4), NOW) is None
+        assert event_time_error(NOW + timedelta(minutes=4), NOW, 7) is None
 
     def test_six_minutes_ahead_is_refused(self):
-        assert event_time_error(NOW + timedelta(minutes=6), NOW) == EVENT_TIME_FUTURE
+        assert event_time_error(NOW + timedelta(minutes=6), NOW, 7) == EVENT_TIME_FUTURE
 
     def test_seven_days_back_is_accepted(self):
-        assert event_time_error(NOW - timedelta(days=7), NOW) is None
+        assert event_time_error(NOW - timedelta(days=7), NOW, 7) is None
 
     def test_eight_days_back_is_refused(self):
-        assert event_time_error(NOW - timedelta(days=8), NOW) == EVENT_TIME_TOO_OLD
+        assert event_time_error(NOW - timedelta(days=8), NOW, 7) == EVENT_TIME_TOO_OLD
         assert "7 days" in EVENT_TIME_TOO_OLD
+
+    def test_long_limit_accepts_1095_days_and_refuses_1096(self):
+        assert event_time_error(NOW - timedelta(days=1095), NOW, 1095) is None
+        assert event_time_error(NOW - timedelta(days=1096), NOW, 1095) == EVENT_TIME_TOO_OLD_LONG
+        assert "3 years" in EVENT_TIME_TOO_OLD_LONG
 
     def test_not_before_refuses_an_earlier_time(self):
         last = NOW - timedelta(hours=1)
-        assert event_time_error(NOW - timedelta(hours=2), NOW, not_before=last) == EVENT_TIME_BEFORE_LAST
-        assert event_time_error(last, NOW, not_before=last) is None
-        assert event_time_error(NOW, NOW, not_before=last) is None
+        assert event_time_error(NOW - timedelta(hours=2), NOW, 7, not_before=last) == EVENT_TIME_BEFORE_LAST
+        assert event_time_error(last, NOW, 7, not_before=last) is None
+        assert event_time_error(NOW, NOW, 7, not_before=last) is None
 
 
 class TestValidateRaise:
@@ -117,7 +125,7 @@ class TestValidateRaise:
 
     @pytest.mark.parametrize("intensity", INTENSITIES)
     def test_each_intensity(self, intensity):
-        clean, errors = validate_raise({**self.BODY, "intensity": intensity}, NOW)
+        clean, errors = validate_raise({**self.BODY, "intensity": intensity}, NOW, 7)
         assert errors == []
         assert clean == {"equipment_id": 5, "intensity": intensity, "failure_mode_id": None,
                          "reported_by_id": None, "repeat_of_id": None, "description": None, "occurred_at": NOW,
@@ -126,34 +134,34 @@ class TestValidateRaise:
     @pytest.mark.parametrize("intensity", [None, "", "breakdown", "CRITICAL", 1])
     def test_missing_or_unknown_intensity(self, intensity):
         body = {"equipment_id": 5} if intensity is None else {**self.BODY, "intensity": intensity}
-        assert _fields(validate_raise(body, NOW)[1]) == ["intensity"]
+        assert _fields(validate_raise(body, NOW, 7)[1]) == ["intensity"]
 
     @pytest.mark.parametrize("equipment_id", [None, 0, -1, "5", True, 1.5])
     def test_missing_or_bad_equipment_id(self, equipment_id):
         body = {"intensity": "critical"} if equipment_id is None else {**self.BODY, "equipment_id": equipment_id}
-        assert _fields(validate_raise(body, NOW)[1]) == ["equipment_id"]
+        assert _fields(validate_raise(body, NOW, 7)[1]) == ["equipment_id"]
 
     def test_description_is_trimmed_and_empty_is_none(self):
-        assert validate_raise({**self.BODY, "description": "  oil leak  "}, NOW)[0]["description"] == "oil leak"
-        assert validate_raise({**self.BODY, "description": "   "}, NOW)[0]["description"] is None
+        assert validate_raise({**self.BODY, "description": "  oil leak  "}, NOW, 7)[0]["description"] == "oil leak"
+        assert validate_raise({**self.BODY, "description": "   "}, NOW, 7)[0]["description"] is None
 
     def test_description_too_long(self):
-        assert validate_raise({**self.BODY, "description": "x" * DESCRIPTION_MAX}, NOW)[1] == []
-        assert _fields(validate_raise({**self.BODY, "description": "x" * (DESCRIPTION_MAX + 1)}, NOW)[1]) == [
+        assert validate_raise({**self.BODY, "description": "x" * DESCRIPTION_MAX}, NOW, 7)[1] == []
+        assert _fields(validate_raise({**self.BODY, "description": "x" * (DESCRIPTION_MAX + 1)}, NOW, 7)[1]) == [
             "description"]
 
     def test_description_must_be_text(self):
-        assert _fields(validate_raise({**self.BODY, "description": 12}, NOW)[1]) == ["description"]
+        assert _fields(validate_raise({**self.BODY, "description": 12}, NOW, 7)[1]) == ["description"]
 
     @pytest.mark.parametrize("field", ["failure_mode_id", "reported_by_id", "repeat_of_id"])
     def test_optional_ids(self, field):
-        assert validate_raise({**self.BODY, field: 9}, NOW)[0][field] == 9
-        assert validate_raise({**self.BODY, field: None}, NOW)[0][field] is None
+        assert validate_raise({**self.BODY, field: 9}, NOW, 7)[0][field] == 9
+        assert validate_raise({**self.BODY, field: None}, NOW, 7)[0][field] is None
         for bad in ("9", 0, True):
-            assert _fields(validate_raise({**self.BODY, field: bad}, NOW)[1]) == [field]
+            assert _fields(validate_raise({**self.BODY, field: bad}, NOW, 7)[1]) == [field]
 
     def test_occurred_at_given(self):
-        clean, errors = validate_raise({**self.BODY, "occurred_at": "2026-10-18T09:15"}, NOW)
+        clean, errors = validate_raise({**self.BODY, "occurred_at": "2026-10-18T09:15"}, NOW, 7)
         assert errors == [] and clean["occurred_at"] == datetime(2026, 10, 18, 9, 15)
 
     @pytest.mark.parametrize("text, message", [
@@ -162,7 +170,7 @@ class TestValidateRaise:
         ("2026-10-10T10:00", EVENT_TIME_TOO_OLD),
     ])
     def test_occurred_at_refused(self, text, message):
-        _, errors = validate_raise({**self.BODY, "occurred_at": text}, NOW)
+        _, errors = validate_raise({**self.BODY, "occurred_at": text}, NOW, 7)
         assert errors == [{"field": "occurred_at", "message": message}]
 
 
@@ -173,30 +181,30 @@ class TestValidateRaiseRestore:
 
     def test_the_block_is_the_moves_body(self):
         block = {"person_id": 4, "occurred_at": "2026-10-20T11:00", "started_at": "2026-10-20T10:30"}
-        clean, errors = validate_raise({**self.BODY, "restore": block}, NOW)
+        clean, errors = validate_raise({**self.BODY, "restore": block}, NOW, 7)
         assert errors == []
         assert clean["restore"] == validate_move("restore", block)[0] == {
             "occurred_at": datetime(2026, 10, 20, 11, 0), "remark": None, "person_id": 4,
             "started_at": datetime(2026, 10, 20, 10, 30), "machine_stopped": None}
 
     def test_only_the_person_is_required(self):
-        clean, errors = validate_raise({**self.BODY, "restore": {"person_id": 4}}, NOW)
+        clean, errors = validate_raise({**self.BODY, "restore": {"person_id": 4}}, NOW, 7)
         assert errors == [] and clean["restore"]["occurred_at"] is None and clean["restore"]["started_at"] is None
 
     def test_refusals_are_prefixed(self):
-        _, errors = validate_raise({**self.BODY, "restore": {}}, NOW)
+        _, errors = validate_raise({**self.BODY, "restore": {}}, NOW, 7)
         assert errors == [{"field": "restore.person_id", "message": PERSON_NEEDED}]
         _, errors = validate_raise({**self.BODY, "restore": {"person_id": "4", "occurred_at": "noon",
-                                                            "started_at": "10:30"}}, NOW)
+                                                            "started_at": "10:30"}}, NOW, 7)
         assert _fields(errors) == ["restore.occurred_at", "restore.person_id", "restore.started_at"]
 
     def test_the_raises_own_occurred_at_keeps_its_name(self):
-        _, errors = validate_raise({**self.BODY, "occurred_at": "noon", "restore": {"person_id": 4}}, NOW)
+        _, errors = validate_raise({**self.BODY, "occurred_at": "noon", "restore": {"person_id": 4}}, NOW, 7)
         assert _fields(errors) == ["occurred_at"]
 
     @pytest.mark.parametrize("block", ["yes", 1, True, [4]])
     def test_not_an_object(self, block):
-        assert _fields(validate_raise({**self.BODY, "restore": block}, NOW)[1]) == ["restore"]
+        assert _fields(validate_raise({**self.BODY, "restore": block}, NOW, 7)[1]) == ["restore"]
 
 
 class TestDescriptionError:
@@ -338,17 +346,40 @@ class TestValidateEventTime:
     LAST = ("acknowledged", datetime(2026, 10, 20, 10, 4))
 
     def test_before_the_last_event_names_it(self):
-        message = validate_event_time(datetime(2026, 10, 20, 10, 0), self.LAST, NOW)
+        message = validate_event_time(datetime(2026, 10, 20, 10, 0), self.LAST, NOW, 7)
         assert message == "Must be at or after Acknowledged, 20-10-2026 10:04"
 
     def test_equal_to_the_last_event_is_accepted(self):
-        assert validate_event_time(datetime(2026, 10, 20, 10, 4), self.LAST, NOW) is None
+        assert validate_event_time(datetime(2026, 10, 20, 10, 4), self.LAST, NOW, 7) is None
 
     def test_future_and_back_dating_limits(self):
-        assert validate_event_time(NOW + timedelta(minutes=6), self.LAST, NOW) == EVENT_TIME_FUTURE
+        assert validate_event_time(NOW + timedelta(minutes=6), self.LAST, NOW, 7) == EVENT_TIME_FUTURE
         old = ("raised", NOW - timedelta(days=10))
-        assert validate_event_time(NOW - timedelta(days=8), old, NOW) == EVENT_TIME_TOO_OLD
-        assert validate_event_time(NOW - timedelta(days=7), old, NOW) is None
+        assert validate_event_time(NOW - timedelta(days=8), old, NOW, 7) == EVENT_TIME_TOO_OLD
+        assert validate_event_time(NOW - timedelta(days=7), old, NOW, 7) is None
+
+
+class TestBackdateWindow:
+    """S028: how far back an entered time may lie."""
+
+    def test_holder_of_the_key_gets_the_long_limit_always(self):
+        assert backdate_days(datetime(2026, 11, 30, 23, 59), True) == LONG_BACKDATE_DAYS == 1095
+        assert backdate_days(datetime(2026, 12, 1, 0, 0), True) == LONG_BACKDATE_DAYS
+
+    def test_everyone_gets_the_long_limit_until_the_last_day_of_the_window(self):
+        assert backdate_days(datetime(2026, 11, 30, 23, 59), False) == LONG_BACKDATE_DAYS
+
+    def test_after_the_window_others_get_seven_days(self):
+        assert backdate_days(datetime(2026, 12, 1, 0, 0), False) == MAX_BACKDATE_DAYS == 7
+
+    def test_too_old_message_follows_the_limit(self):
+        assert too_old_message(7) == EVENT_TIME_TOO_OLD
+        assert too_old_message(1095) == EVENT_TIME_TOO_OLD_LONG
+        assert "3 years" in too_old_message(1095)
+
+    def test_too_old_message_refuses_any_other_limit(self):
+        with pytest.raises(AssertionError):
+            too_old_message(30)
 
 
 class TestStartedAt:

@@ -103,7 +103,7 @@ from tickets_core import (
     format_ticket_serial, is_breakdown, is_overdue, is_repeat_candidate, latest_restoration, machine_and_component,
     machine_stopped_needed, planned_date_error, regrade_options,
     send_back_error, send_back_intensity, serial_scope, started_at_error, ticket_times, trade_error, validate_assignee,
-    validate_close, validate_edit, validate_event_time, validate_labour, validate_move, validate_raise,
+    backdate_days, validate_close, validate_edit, validate_event_time, validate_labour, validate_move, validate_raise,
     validate_note, validate_part, validate_regrade, validate_regrade_body,
 )
 
@@ -115,6 +115,7 @@ UNIQUE_KEY_ERRORS.update({
 
 READ_KEY = "ticket:read"
 RAISE_KEY = "ticket:raise"
+BACKDATE_KEY = "ticket:backdate"   # S028: times older than 7 days; held by admin only
 
 SCRAPPED_NO_TICKETS = "Scrapped equipment takes no tickets"
 TICKET_CLOSED = "This ticket is closed"
@@ -159,6 +160,11 @@ _TICKET_COLUMNS = (
 def _now():
     """The IST wall clock, naive, as every DATETIME is stored (base § Timezone policy)."""
     return datetime.now(IST).replace(tzinfo=None)
+
+
+def _max_back_days(now):
+    """How far back this user may enter a time today (S028)."""
+    return backdate_days(now, has_perm(BACKDATE_KEY))
 
 
 def _today():
@@ -726,7 +732,8 @@ def _recheck_repeat(cur, repeat_of_id):
 @require_perm(RAISE_KEY)
 def raise_ticket():
     now = _now()
-    clean = clean_body(lambda body, _creating: validate_raise(body, now), creating=True)
+    max_back_days = _max_back_days(now)
+    clean = clean_body(lambda body, _creating: validate_raise(body, now, max_back_days), creating=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         # (1) the node; 404 outside the user's units; 403 unless ticket:raise at its site
@@ -784,7 +791,7 @@ def raise_ticket():
             # S021 § 5.3: a breakdown alerts and escalates, a defect alerts quietly; *Already fixed*
             # sends nothing (nothing needs a response).  After the refusals above, so a refused
             # raise rolls the task rows back with it (BS1-09).
-            alerts.enqueue_alert(cur, ticket_id, raise_alert(clean["intensity"]), raised_event_id,
+            alerts.enqueue_alert(cur, ticket_id, raise_alert(clean["intensity"], now - clean["occurred_at"]), raised_event_id,
                                  current_person_id(cur), clean["reported_by_id"], now)
         # Read inside the transaction, as documents.py does: nothing after the commit can
         # turn this answer into an error
@@ -824,7 +831,7 @@ def _event_time(entered, last, now, field):
         return max(now, last[1])
     # The raise's own fixed-already times are shown beside the raise screen's fields, which have other names
     labels = RAISE_SCREEN_LABELS if field.startswith(RESTORE_FIELD_PREFIX) else EVENT_LABELS
-    message = validate_event_time(entered, last, now, labels)
+    message = validate_event_time(entered, last, now, _max_back_days(now), labels)
     if message:
         raise ApiError(message, 400, field)
     return entered
