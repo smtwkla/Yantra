@@ -19,15 +19,13 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
-import IntensityBadge from "../components/IntensityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
+import TicketRow from "../components/TicketRow.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPermissions, userPersonId } from "../stores/auth";
-import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
+import { ensureMyUnits, filterableUnits, myUnits, noUnits } from "../stores/equipment";
 import { ensureSites, ensureUnits, sites, units } from "../stores/masters";
-import {
-  ageText, firstName, INTENSITY_FILTERS, overdueBadge, planText, problemText, STATE_FILTERS, stateLabel,
-} from "../utils/ticketLabels";
+import { INTENSITY_FILTERS, STATE_FILTERS } from "../utils/ticketLabels";
 
 const PAGE_SIZE = 50; // the API default
 const DEFAULT_STATE = "open";
@@ -47,7 +45,6 @@ const query = computed(() => route.query);
 const state = computed(() => query.value.state ?? DEFAULT_STATE);
 const pageNumber = computed(() => Math.max(1, Number.parseInt(query.value.page, 10) || 1));
 const hasFilters = computed(() => Object.keys(query.value).some((k) => k !== "page"));
-const noUnits = computed(() => myUnits.value && !myUnits.value.all_units && myUnits.value.unit_ids.length === 0);
 
 /** Merge `changes` into the query; defaults and empty values are left out of the URL. */
 function update(changes) {
@@ -177,29 +174,7 @@ watch(() => route.fullPath, load);
     </div>
     <div v-else-if="page && page.items.length === 0" class="text-secondary">No tickets on this page.</div>
     <div v-else-if="page" class="list-group">
-      <router-link
-        v-for="t in page.items"
-        :key="t.id"
-        :to="`/tickets/${t.id}`"
-        class="list-group-item list-group-item-action"
-      >
-        <div class="d-flex flex-wrap align-items-center gap-2">
-          <IntensityBadge :intensity="t.intensity" />
-          <span class="fw-semibold">{{ t.serial }}</span>
-          <span v-if="t.overdue" class="badge text-bg-danger">{{ overdueBadge(t.planned_date) }}</span>
-          <span class="ms-auto small text-secondary" :title="t.is_breakdown ? 'Stopped for' : 'Reported'">
-            <i class="fa-regular fa-clock me-1"></i>{{ ageText(t.occurred_at, now) }}
-          </span>
-        </div>
-        <div class="mt-1 ticket-text">
-          {{ t.machine.code }} — {{ t.machine.name }}<span v-if="t.component" class="text-secondary"> · {{ t.component.code }}</span>
-        </div>
-        <div class="ticket-text">{{ problemText(t) }}</div>
-        <div class="small text-secondary">
-          {{ t.unit.site_code }}.{{ t.unit.code }} · {{ stateLabel(t) }}<template v-if="t.planned_date"> · {{ planText(t.planned_date, t.waiting_reason) }}</template><template v-if="t.not_a_fault"> · Not a fault</template>
-          <template v-if="t.assignees.length"> · <i class="fa-solid fa-user"></i> {{ t.assignees.map((a) => firstName(a.name)).join(", ") }}</template>
-        </div>
-      </router-link>
+      <TicketRow v-for="t in page.items" :key="t.id" :ticket="t" :now="now" />
     </div>
     <PagerBar
       v-if="page && !loadError"
@@ -210,9 +185,3 @@ watch(() => route.fullPath, load);
     />
   </div>
 </template>
-
-<style scoped>
-.ticket-text {
-  overflow-wrap: anywhere;
-}
-</style>

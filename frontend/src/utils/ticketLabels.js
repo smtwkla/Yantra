@@ -437,3 +437,32 @@ export const TICKET_FILTER_CHOICES = [
   ["down", "Down now"],
   ["open", "Any open ticket"],
 ];
+
+// --- S031: the Me page ---------------------------------------------------------------------
+
+export const REMARK_MAX = 120;
+
+/** The Me page's tab to open on: the work of a technician and above, else the user's reports. */
+export function defaultMeTab(permissions) {
+  return permissions.includes("ticket:work") ? "open" : "raised";
+}
+
+/** The third line of a My activity row (§ 5.3) from one item of the activity API; null when none. */
+export function activityDetail(item) {
+  if (["assigned", "unassigned", "started"].includes(item.event) && item.person) return item.person.name;
+  if (item.event === "regraded") return `Now ${INTENSITY_LABELS[item.intensity] ?? item.intensity}`;
+  if (["scheduled", "rescheduled"].includes(item.event)) return planText(item.planned_date, item.waiting_reason);
+  if (item.remark) {
+    return item.remark.length > REMARK_MAX ? `${item.remark.slice(0, REMARK_MAX)}…` : item.remark;
+  }
+  return null;
+}
+
+/**
+ * True when the line's own time is on an earlier IST day than the time it was recorded (a
+ * back-dated entry, S028). Both are "YYYY-MM-DDTHH:MM:SS+05:30", so the first ten characters
+ * are the IST date.
+ */
+export function isBackdated(item) {
+  return item.occurred_at.slice(0, 10) < item.created_at.slice(0, 10);
+}

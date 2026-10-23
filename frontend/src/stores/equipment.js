@@ -7,12 +7,15 @@
  * reload, and a save at a revoked unit gets the API's 403 beside the field.
  */
 
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { apiGet } from "../api";
 
 // {all_units: bool, unit_ids: [...], edit_unit_ids: [...] | null}: unit_ids are where the user
 // reads, edit_unit_ids where they may write (null = every unit), per their site roles (S011)
 export const myUnits = ref(null);
+
+/** True once loaded when the user reads no unit at all (the lists then show "no units assigned"). */
+export const noUnits = computed(() => myUnits.value && !myUnits.value.all_units && myUnits.value.unit_ids.length === 0);
 
 export async function ensureMyUnits() {
   if (myUnits.value === null) myUnits.value = await apiGet("/api/equipment/my-units");

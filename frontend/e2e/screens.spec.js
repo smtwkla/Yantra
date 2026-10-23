@@ -42,6 +42,8 @@ const screens = () => [
     shows: (page) => page.getByRole("heading", { name: `${seed.extruder.code} — ${seed.extruder.name}` }), who: EVERYONE,
   },
   { path: "/tickets", title: "Tickets", shows: (page) => page.getByRole("combobox", { name: "State" }), who: TICKET_ROLES },
+  // S031: the My activity tab is there for every role, whatever its default tab
+  { path: "/me", title: "Me", shows: (page) => page.getByRole("button", { name: "My activity", exact: true }), who: TICKET_ROLES },
   { path: "/tickets/new", title: "Raise ticket", shows: (page) => page.getByRole("heading", { name: "Raise ticket" }), who: TICKET_ROLES },
   {
     path: `/tickets/new?equipment=${seed.extruder.id}`, title: "Raise ticket",

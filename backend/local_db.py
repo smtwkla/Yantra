@@ -729,6 +729,16 @@ _MIGRATIONS = [
             ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model')
             NOT NULL""",
     ]),
+    # S031 — the Me page (docs/steps/S031-me-page/1-brief.md § 4): two indexes, no data change.
+    # *My activity* filters ticket_events on created_by and orders by created_at, id; *Raised by
+    # me* filters tickets on created_by OR reported_by_id (which has the FK index).  IF NOT EXISTS
+    # makes a re-run of a half-applied v26 a no-op.  No _PRECONDITIONS entry: an index cannot fail
+    # on any value the columns hold.  The previous release ignores the indexes, so a rollback
+    # needs no restore.
+    (26, "Indexes for the Me page (S031)", [
+        "CREATE INDEX IF NOT EXISTS ix_ticket_events_created_by ON ticket_events (created_by, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_tickets_created_by ON tickets (created_by)",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

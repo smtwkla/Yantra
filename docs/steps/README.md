@@ -307,6 +307,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S028 | [Back-dating window: admin and backlog entry](S028-backdating-window/1-brief.md) — entered ticket times up to 3 years back for admin (key `ticket:backdate`) and for everyone until 30-11-2026; 7 days otherwise | — | Done — committed 12a1238 (with S029); checks: 2 auto | 22-10-2026 |
 | S029 | [Ticket light on the equipment list](S029-equipment-ticket-light/1-brief.md) — a red / amber / green bulb per row (breakdown open = down; other open ticket; none) and a filter for equipment with tickets | 3 | Done — committed 12a1238; checks: 3 auto (light track) | 23-10-2026 |
 | S030 | [Equipment lifecycle](S030-equipment-lifecycle/1-brief.md) — the register field *Status* (in service / standby / out of use / scrapped) renamed *Lifecycle* in screens, API, code and DB (v25); *Status* reserved for down / working / degraded / PM due | 2 | Done — committed 6866fbd; checks: 1 auto (full track) | 23-10-2026 |
+| S031 | [Me: my open work, tickets I raised, my activity](S031-me-page/1-brief.md) — a *Me* nav item with three tabs: open tickets assigned to me, tickets I raised or reported, timeline lines I recorded; v26 two indexes | 3 | Committed; device check pending | 23-10-2026 |
 
 ## Queued (not yet briefed)
 

@@ -8,6 +8,7 @@
 export const navItems = [
   { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
   { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
+  { name: "me", path: "/me", icon: "fa-solid fa-user", label: "Me", perm: "ticket:read" },
   { name: "masters", path: "/masters", icon: "yi-icon yi-table-edit", label: "Masters", perm: "masters:read" },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];

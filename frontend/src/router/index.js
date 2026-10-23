@@ -5,6 +5,7 @@ import EquipmentView from "../views/EquipmentView.vue";
 import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
+import MeView from "../views/MeView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
 import NotificationsView from "../views/NotificationsView.vue";
 import RaiseTicketView from "../views/RaiseTicketView.vue";
@@ -54,6 +55,13 @@ const routes = [
     name: "ticket-detail",
     component: TicketDetailView,
     meta: { title: "Ticket" },
+  },
+  // Me (S031): my open work, tickets I raised, my activity; a nav item after Tickets
+  {
+    path: "/me",
+    name: "me",
+    component: MeView,
+    meta: { title: "Me" },
   },
   {
     path: "/labels",

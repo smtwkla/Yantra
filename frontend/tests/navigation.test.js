@@ -26,19 +26,20 @@ const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((
 
 describe("navigation permissions", () => {
   it("maint_operator sees Equipment, Tickets and Masters, and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["equipment", "tickets", "masters"]);
+    expect(visible(OPERATOR)).toEqual(["equipment", "tickets", "me", "masters"]);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
   });
 
   it("Equipment is first for every role; manager and IT admin also see Settings", () => {
-    expect(visible(ENGINEER)).toEqual(["equipment", "tickets", "masters"]);
-    expect(visible(MANAGER)).toEqual(["equipment", "tickets", "masters", "settings"]);
-    expect(visible(IT_ADMIN)).toEqual(["equipment", "tickets", "masters", "settings"]);
+    expect(visible(ENGINEER)).toEqual(["equipment", "tickets", "me", "masters"]);
+    expect(visible(MANAGER)).toEqual(["equipment", "tickets", "me", "masters", "settings"]);
+    expect(visible(IT_ADMIN)).toEqual(["equipment", "tickets", "me", "masters", "settings"]);
   });
 
   it("the storekeeper sees no Tickets and cannot open the list (S017 user decision 7)", () => {
     expect(visible(STOREKEEPER)).toEqual(["equipment", "masters"]);
     expect(canOpenRoute("tickets", STOREKEEPER)).toBe(false);
+    expect(canOpenRoute("me", STOREKEEPER)).toBe(false); // S031
   });
 
   it("everyone with a role lands on Equipment", () => {

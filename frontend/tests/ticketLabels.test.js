@@ -8,6 +8,7 @@ import {
   machineStoppedQuestion, overdueBadge, planChanges, planLine, stateLabel, STATE_FILTERS, WAITING_REASON_DELAYS,
   WAITING_REASON_LABELS, waitingSplit, waitingText,
 } from "../src/utils/ticketLabels.js";
+import { activityDetail, defaultMeTab, isBackdated, planText } from "../src/utils/ticketLabels.js";
 import { TICKET_FILTER_CHOICES, TICKET_LIGHT_LABELS } from "../src/utils/ticketLabels.js";
 import {
   DEFAULT_PART_KIND, matchingParts, PART_KIND_CHOICES, PART_KIND_SHORT, PART_UNITS, partText, quantityText,
@@ -313,5 +314,53 @@ describe("ticket light labels (S029)", () => {
 
   it("offers the filter choices with the URL values the API accepts", () => {
     expect(TICKET_FILTER_CHOICES).toEqual([["", "Any ticket status"], ["down", "Down now"], ["open", "Any open ticket"]]);
+  });
+});
+
+describe("the Me page (S031)", () => {
+  const line = (event, extra = {}) => ({
+    event, person: null, remark: null, intensity: null, planned_date: null, waiting_reason: null, ...extra,
+  });
+
+  it("activityDetail: the person on assigned, unassigned and started", () => {
+    for (const event of ["assigned", "unassigned", "started"]) {
+      expect(activityDetail(line(event, { person: { id: 3, name: "Ravi Kumar" } }))).toBe("Ravi Kumar");
+    }
+    expect(activityDetail(line("assigned"))).toBeNull();
+  });
+
+  it("activityDetail: the new intensity on regraded", () => {
+    expect(activityDetail(line("regraded", { intensity: "degraded" }))).toBe("Now Defect");
+    expect(activityDetail(line("regraded", { intensity: "critical" }))).toBe("Now Breakdown");
+  });
+
+  it("activityDetail: the plan on scheduled and rescheduled", () => {
+    const plan = { planned_date: "2026-10-25T00:00:00+05:30", waiting_reason: "parts" };
+    expect(activityDetail(line("scheduled", plan))).toBe(planText(plan.planned_date, "parts"));
+    expect(activityDetail(line("rescheduled", plan))).toBe(planText(plan.planned_date, "parts"));
+  });
+
+  it("activityDetail: the remark of a note, an edit and any other line, cut at 120", () => {
+    expect(activityDetail(line("note", { remark: "Belt loose" }))).toBe("Belt loose");
+    expect(activityDetail(line("edited", { remark: "Description" }))).toBe("Description");
+    expect(activityDetail(line("closed", { remark: "Done" }))).toBe("Done");
+    expect(activityDetail(line("note", { remark: "x".repeat(120) }))).toBe("x".repeat(120));
+    expect(activityDetail(line("note", { remark: "x".repeat(121) }))).toBe(`${"x".repeat(120)}…`);
+  });
+
+  it("activityDetail: null for a line with nothing to add", () => {
+    expect(activityDetail(line("acknowledged"))).toBeNull();
+    expect(activityDetail(line("raised"))).toBeNull();
+  });
+
+  it("isBackdated: the day before is, the same day at an earlier time is not", () => {
+    const at = (occurred, created) => ({ occurred_at: occurred, created_at: created });
+    expect(isBackdated(at("2026-10-22T23:50:00+05:30", "2026-10-23T00:10:00+05:30"))).toBe(true);
+    expect(isBackdated(at("2026-10-23T06:00:00+05:30", "2026-10-23T10:00:00+05:30"))).toBe(false);
+  });
+
+  it("defaultMeTab: open work with ticket:work, else the user's raises", () => {
+    expect(defaultMeTab(["ticket:read", "ticket:raise", "ticket:work"])).toBe("open");
+    expect(defaultMeTab(["ticket:read", "ticket:raise"])).toBe("raised");
   });
 });

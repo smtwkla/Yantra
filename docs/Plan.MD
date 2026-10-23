@@ -41,6 +41,7 @@ module before each is built.
 5. **Meter readings** — manual entry on the phone.
 6. **History and reports** — equipment history card, downtime, MTBF/MTTR, PM compliance.
 7. **Notifications** — web push, Telegram, email.
+8. **Me** (S031, 23-10-2026) — one page per person, a nav item after *Tickets*, three tabs: *Open work* (open tickets assigned to me), *Raised by me* (tickets I raised or that name me as the reporter) and *My activity* (timeline lines I recorded). Read-only. Not on it: time booked, another person's work (a team report, later), notifications (they stay under the bell). Not the landing page.
 
 ### Not in v1
 
@@ -736,7 +737,8 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
   with planned against reactive work (SMRP). **Printed from Yantra**, it replaces the
   electrical head's handwritten daily report; odd jobs and new installations are written by
   hand on the printout, not entered (§ 2, Not in v1). The report is generated from the
-  records, never written a second time.
+  records, never written a second time. The *Me* page's *My activity* tab (S031) is the
+  per-person on-screen view of the ticket part of this log; the printed report stays phase 5.
 - **Waiting versus repair:** downtime split by waiting reason (§ 4.2).
 - Export to Excel for each report.
 - Tickets closed as frivolous are excluded from downtime and MTBF/MTTR (Proposed — confirm before phase 5).
@@ -812,7 +814,7 @@ the base timezone policy. Dates are shown as DD-MM-YYYY.
 
 **Phone (operator, technician):**
 
-- Home: "my jobs" (assigned tickets and PM jobs due; CIL jobs for operators), "raise breakdown", "scan equipment".
+- *Me* (S031): open work assigned to me, tickets I raised, my activity; PM jobs due and CIL jobs join *Open work* in phase 4; the landing page stays Equipment (U1, 23-10-2026).
 - Equipment page (from QR): status, open tickets, due PMs; buttons "raise breakdown", "log reading", "start CIL" (before-use equipment).
 - Raise breakdown or defect: equipment, intensity (critical = breakdown, else defect), symptom, remark, photo — four taps for the common case.
 - Ticket: timeline, act on the next step, add photos, labour.

@@ -1,7 +1,8 @@
 """Tickets — raise and see (docs/steps/S017-raise-tickets/1-brief.md) and work them to the end
 (docs/steps/S018-work-tickets/1-brief.md): moves, re-grade, edit, assignment, labour, repeat;
 the parts used (docs/steps/S020-parts-used/1-brief.md); work notes
-(docs/steps/S027-work-notes/1-brief.md).
+(docs/steps/S027-work-notes/1-brief.md); the Me page's two reads, ``raised=me`` on the list and
+``GET /activity`` (docs/steps/S031-me-page/1-brief.md).
 
 Thin shell: tickets_core holds the rules (intensity, the event-time window, the serial, the
 description rule, machine and component from the node, the moves table, the send-back and
@@ -514,6 +515,7 @@ def list_tickets():
     state = enum_arg("state", STATE_FILTERS) or "open"
     intensity = enum_arg("intensity", tuple(INTENSITY_FILTERS))
     assigned = enum_arg("assigned", ("me",))
+    raised = enum_arg("raised", ("me",))
     site_id = int_arg("site_id", None, minimum=1)
     unit_id = int_arg("unit_id", None, minimum=1)
     equipment_id = int_arg("equipment_id", None, minimum=1)
@@ -551,6 +553,15 @@ def list_tickets():
             conditions.append("EXISTS (SELECT 1 FROM ticket_assignees a WHERE a.ticket_id = t.id"
                               " AND a.person_id = %s)")
             params.append(person_id)
+        if raised:
+            # Raised by me (S031 § 5.2): I pressed Raise, or someone raised it naming me the reporter
+            person_id = current_person_id(cur)
+            if person_id is None:
+                conditions.append("t.created_by = %s")
+                params.append(actor())
+            else:
+                conditions.append("(t.created_by = %s OR t.reported_by_id = %s)")
+                params.extend([actor(), person_id])
         if site_id is not None:
             conditions.append("s.id = %s")
             params.append(site_id)
@@ -583,6 +594,46 @@ def list_tickets():
         rows = cur.fetchall()
         assignees = _assignees(cur, [row["id"] for row in rows])
         items = [{**_ticket_out(row, today), "assignees": assignees[row["id"]]} for row in rows]
+    return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
+
+
+@tickets_bp.route("/activity")
+@require_perm(READ_KEY)
+def list_activity():
+    """My activity (S031 § 5.2): the timeline lines I recorded (``created_by`` is my login) on
+    tickets I may see, newest recorded first.  ``/<int:ticket_id>`` matches digits only, so the
+    two routes do not collide."""
+    page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
+    per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
+    with get_db().cursor() as cur:
+        visible = _visible_condition(cur)
+        if visible is None:
+            return jsonify({"items": [], "total": 0, "page": page, "per_page": per_page})
+        from_where = (" FROM ticket_events e JOIN tickets t ON t.id = e.ticket_id"
+                      " JOIN equipment m ON m.id = t.equipment_id"
+                      " LEFT JOIN people p ON p.id = e.person_id"
+                      f" WHERE e.created_by = %s AND {visible[0]}")
+        params = [actor(), *visible[1]]
+        total = count(cur, f"SELECT COUNT(*) AS n{from_where}", params)
+        cur.execute("SELECT e.id, e.event, e.occurred_at, e.created_at, e.intensity, e.remark, e.planned_date,"
+                    " e.waiting_reason, p.id AS person_id, p.name AS person_name, t.id AS ticket_id, t.serial,"
+                    " t.intensity AS ticket_intensity, t.state AS ticket_state,"
+                    " m.id AS m_id, m.code AS m_code, m.name AS m_name"
+                    f"{from_where}"
+                    " ORDER BY e.created_at DESC, e.id DESC LIMIT %s OFFSET %s",
+                    [*params, per_page, (page - 1) * per_page])
+        items = []
+        for row in rows_to_list(cur.fetchall()):
+            items.append({
+                "id": row["id"], "event": row["event"], "occurred_at": row["occurred_at"],
+                "created_at": row["created_at"], "intensity": row["intensity"], "remark": row["remark"],
+                "planned_date": row["planned_date"], "waiting_reason": row["waiting_reason"],
+                "person": ({"id": row["person_id"], "name": row["person_name"]}
+                           if row["person_id"] is not None else None),
+                "ticket": {"id": row["ticket_id"], "serial": row["serial"], "intensity": row["ticket_intensity"],
+                           "state": row["ticket_state"],
+                           "machine": {"id": row["m_id"], "code": row["m_code"], "name": row["m_name"]}},
+            })
     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
 
 
