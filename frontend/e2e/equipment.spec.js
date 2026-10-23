@@ -127,7 +127,7 @@ test("S029: the equipment list shows a red, amber and green bulb with a name eac
   await expect(rowOf(page, green).getByRole("img", { name: "No open ticket" })).toBeVisible();
 });
 
-test("S029: Down now lists only the red row and the URL carries it; All equipment clears it", async ({ page }, testInfo) => {
+test("S029: Down now lists only the red row and the URL carries it; Any ticket status clears it", async ({ page }, testInfo) => {
   const { prefix, red, amber, green } = await lightMachines(testInfo, "filter");
   await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
   await expect(rowOf(page, green)).toBeVisible();
@@ -136,7 +136,7 @@ test("S029: Down now lists only the red row and the URL carries it; All equipmen
   await expect(rowOf(page, red)).toBeVisible();
   await expect(rowOf(page, amber)).toHaveCount(0);
   await expect(rowOf(page, green)).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Tickets" }).selectOption({ label: "All equipment" });
+  await page.getByRole("combobox", { name: "Tickets" }).selectOption({ label: "Any ticket status" });
   await expect(page).not.toHaveURL(/tickets=/);
   await expect(rowOf(page, green)).toBeVisible();
 });

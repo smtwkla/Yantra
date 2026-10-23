@@ -305,7 +305,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S026 | [A refusal is always in view](S026-refusal-in-view/1-brief.md) — a refused save scrolls the dialog to the first message and puts the cursor in the field; every dialog checked; e2e message checks need on-screen (bug: Add labour, Time spent below the fold) | — | Committed 03ed528; row 12 (iPhone keyboard) left for IT Admin | 22-10-2026 |
 | S027 | [Work notes](S027-work-notes/1-brief.md) — *Add note* on an open ticket: what was found and tried, on the timeline (EN 13306 fault localisation and diagnosis); the raise's *What is wrong?* is the first note; engineers correct a note, the earlier text kept (v23) | 3 | Done — committed 03ed528; checks: 5 auto; row 13 (plain) for IT Admin | 22-10-2026 |
 | S028 | [Back-dating window: admin and backlog entry](S028-backdating-window/1-brief.md) — entered ticket times up to 3 years back for admin (key `ticket:backdate`) and for everyone until 30-11-2026; 7 days otherwise | — | Gate B (CR r1: 0 blocker, 0 major, 0 minor, 5 nits; approved 22-10-2026 by KLA) | 22-10-2026 |
-| S029 | [Ticket light on the equipment list](S029-equipment-ticket-light/1-brief.md) — a red / amber / green bulb per row (breakdown open = down; other open ticket; none) and a filter for equipment with tickets | 3 | In code review (light track) | 23-10-2026 |
+| S029 | [Ticket light on the equipment list](S029-equipment-ticket-light/1-brief.md) — a red / amber / green bulb per row (breakdown open = down; other open ticket; none) and a filter for equipment with tickets | 3 | Done — committed 12a1238; checks: 3 auto (light track) | 23-10-2026 |
 
 ## Queued (not yet briefed)
 

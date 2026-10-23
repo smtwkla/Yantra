@@ -433,7 +433,7 @@ export const TICKET_LIGHT_LABELS = {
 
 /** The list's Tickets filter: the value in the URL (`tickets=`) and its text; "" = no filter. */
 export const TICKET_FILTER_CHOICES = [
-  ["", "All equipment"],
+  ["", "Any ticket status"],
   ["down", "Down now"],
   ["open", "Any open ticket"],
 ];

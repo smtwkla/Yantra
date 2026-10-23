@@ -4,7 +4,7 @@ Author: Planner (Opus)
 Date: 23-10-2026 (revised 23-10-2026: brief-review r1)
 Track: light
 Baseline: d686fcd + uncommitted S028
-Status: In code review
+Status: Done (committed 12a1238; checks: 3 auto; approved 23-10-2026 by KLA, light track)
 
 # S029 — Ticket light on the equipment list
 

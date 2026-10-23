@@ -312,6 +312,6 @@ describe("ticket light labels (S029)", () => {
   });
 
   it("offers the filter choices with the URL values the API accepts", () => {
-    expect(TICKET_FILTER_CHOICES).toEqual([["", "All equipment"], ["down", "Down now"], ["open", "Any open ticket"]]);
+    expect(TICKET_FILTER_CHOICES).toEqual([["", "Any ticket status"], ["down", "Down now"], ["open", "Any open ticket"]]);
   });
 });
