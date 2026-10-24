@@ -79,3 +79,23 @@ Results (real numbers):
 - [auto] *In 14 days* fills the date (input `min` plus 14 days) and the save succeeds; the list filter reads *Deferred / Waiting* and lists the ticket — `frontend/e2e/tickets-work.spec.js::S034: In 14 days fills the date (the input's min plus 14 days) and the save succeeds; the list filter reads Deferred / Waiting`
 - [auto] The S019 flows with the new words (Defer, Put on hold, Deferred, On hold, "check by", Overdue · check by, no Defer for a technician) — `frontend/e2e/tickets-work.spec.js::S019: …` (five tests)
 - On a real device: none new. S019's open row 10 in `docs/steps/device-checks.md` now carries the new words.
+
+## Fix rounds
+
+### Round 1
+
+All five findings of `4-code-review-r1.md` are fixed. Nothing else changed.
+
+- **CR1-01 (minor) — Fixed.** `ScheduleFields.vue`: the three quick picks lost `btn-sm` and are now `btn btn-outline-secondary`. `flex-wrap` stays.
+- **CR1-02 (nit) — Fixed, frontend only.** `MoveDialog.vue` `missingField()` now checks the reason before the date, as the fields appear. The backend order (`tickets_core.py`) is unchanged, as the user asked.
+- **CR1-03 (nit) — Fixed.** `docs/Maintenance-Philosophy.md`: the sentence now reads "A breakdown (the machine is stopped) waits for resources, not by decision: the button reads *Put on hold* and the badge *Waiting*." The long sentence about the date is split into three short ones.
+- **CR1-04 (nit) — Fixed.** `docs/Plan.MD`: the S034 words left the S019 sentence. They now sit in the S034 bullet (button *Defer* or *Put on hold*; timeline and fallback *On hold*; filter *Deferred / Waiting*).
+- **CR1-05 (nit) — Fixed.** `ScheduleFields.vue`: one local helper `daysFromToday(days)` serves `pickDays` and `lastDay`.
+
+Red then green: not applicable. No finding adds or changes a test for a fault; the existing S034 e2e tests (quick pick, labels, reason above date) cover the touched code.
+
+Test results (Linux sandbox, run name `s034c2`, real numbers):
+- Backend, `test_ticket_work_api.py` + `test_tickets_core.py`: **415 passed**.
+- Frontend vitest: **122 passed** (14 files). `npx vite build`: built, no errors.
+- E2E, `E2E_LANES=4`, `tickets-work.spec.js` + `screens.spec.js`, `desktop-chromium` and `phone-chromium`: **58 passed** in 1.7 min. `phone-webkit` did not run (WebKit is not installed).
+- The full backend suite did not run again in this round: no backend file changed.

@@ -22,17 +22,16 @@ defineProps({
 const emit = defineEmits(["update:date", "update:reason"]);
 
 const today = computed(() => toLocalDateValue(new Date()));
-/** A quick pick: today plus `days`, in the phone's local date as the input's min. */
-function pickDays(days) {
+/** Today plus `days`, in the phone's local date, the same basis as the input's min. */
+function daysFromToday(days) {
   const day = new Date();
   day.setDate(day.getDate() + days);
-  emit("update:date", toLocalDateValue(day));
-}
-const lastDay = computed(() => {
-  const day = new Date();
-  day.setDate(day.getDate() + PLANNED_DATE_MAX_DAYS);
   return toLocalDateValue(day);
-});
+}
+function pickDays(days) {
+  emit("update:date", daysFromToday(days));
+}
+const lastDay = computed(() => daysFromToday(PLANNED_DATE_MAX_DAYS));
 </script>
 
 <template>
@@ -68,7 +67,7 @@ const lastDay = computed(() => {
         v-for="days in PLAN_QUICK_DAYS"
         :key="days"
         type="button"
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-outline-secondary"
         @click="pickDays(days)"
       >In {{ days }} days</button>
     </div>

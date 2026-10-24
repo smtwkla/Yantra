@@ -190,11 +190,11 @@ measure of a plant moving from firefighting to TPM; a ticket that went through
 *scheduled* stands in for SMRP's planned work until Yantra has job plans.
 
 The words follow the situation (S034, 24-10-2026). A defect is *deferred* by decision: the
-button reads *Defer* and the badge *Deferred*. A stopped machine waiting for parts is not a
-decision to delay but a logistic delay: the button reads *Put on hold* and the badge
-*Waiting*. The timeline line is the neutral *On hold*. The date is a commitment (*Planned
-for*) only for a production slot; for parts, a vendor, an expert, an approval or another
-reason it is a *Check again by* date, the day someone follows the wait up (SMRP: review the
+button reads *Defer* and the badge *Deferred*. A breakdown (the machine is stopped) waits
+for resources, not by decision: the button reads *Put on hold* and the badge *Waiting*.
+The timeline line is the neutral *On hold*. The date is a commitment (*Planned for*) only
+for a production slot. For parts, a vendor, an expert, an approval or another reason it is
+a *Check again by* date. That is the day someone follows the wait up (SMRP: review the
 not-ready backlog on a fixed cycle). Past the date the ticket reads *Overdue* either way.
 
 **Contamination control for hydraulics** (16-10-2026, pressing shop). Most hydraulic

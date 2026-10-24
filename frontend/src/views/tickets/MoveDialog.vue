@@ -136,8 +136,8 @@ async function open(entry) {
 /** The simple checks of what the dialog asks for; the API checks everything again. */
 function missingField() {
   const f = form.value;
-  if (isPlan.value && !f.planned_date) return ["planned_date", "Choose a date"];
   if (isPlan.value && !f.waiting_reason) return ["waiting_reason", "Choose why it waits"];
+  if (isPlan.value && !f.planned_date) return ["planned_date", "Choose a date"];
   if (remarkRequired.value && !f.remark.trim()) return ["remark", "Add a remark"];
   if (name.value === "restore" && !f.person_id) return ["person_id", "Who did the work? Pick a name"];
   if (asksStopped.value && f.machine_stopped === null) return ["machine_stopped", "Choose Yes or No"];
