@@ -3,8 +3,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026 (revised 24-10-2026: brief-review r1, r2)
 Track: full
-Baseline: — (set at approval from the last review's *Reviewed against*)
-Status: In review
+Baseline: 437d993 (stale check 24-10-2026: no code changed since)
+Status: Approved 24-10-2026 by KLA (split kept: S036 queued)
 
 # S035 — Equipment properties: master, classes and models
 
