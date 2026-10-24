@@ -507,10 +507,12 @@ test("S034: In 14 days fills the date (the input's min plus 14 days) and the sav
   await saveDialog(page, "Defer");
   await expect(stateBadge(page)).toHaveText("Deferred");
 
-  await page.goto("/tickets");
+  // q keeps other tests' tickets off the page; the row is found by serial, which is unique
+  // (a second project's run leaves another deferred "S034 test: quick pick" ticket)
+  await page.goto("/tickets?q=S034 test: quick pick");
   const filter = page.getByLabel("State");
   await expect(filter.locator("option", { hasText: "Deferred / Waiting" })).toHaveCount(1);
   await filter.selectOption("scheduled");
   await expect(page).toHaveURL(/state=scheduled/);
-  await expect(page.locator(".list-group-item").filter({ hasText: "S034 test: quick pick" })).toHaveCount(1);
+  await expect(page.locator(".list-group-item").filter({ hasText: ticket.serial })).toHaveCount(1);
 });
