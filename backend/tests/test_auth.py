@@ -12,10 +12,8 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-import access_control
 import auth_utils
 import config
-import db_helpers
 
 CLIENT_ID = config.KEYCLOAK_CLIENT_ID
 
@@ -57,14 +55,6 @@ def _validate(app, token):
     headers = _bearer(token) if token else {}
     with app.test_request_context("/api/auth/me", headers=headers):
         return auth_utils.validate_keycloak_token("https://sso.example/realms/R", CLIENT_ID)
-
-
-@pytest.fixture
-def db_down(monkeypatch):
-    """Every get_db() in the request raises DBUnavailable, as while the database is down; the
-    access-log hook's own ensure_schema reference answers "down" too (S013 BR2-03)."""
-    monkeypatch.setattr(db_helpers, "ensure_schema", lambda _config: "Can't connect (test)")
-    monkeypatch.setattr(access_control, "ensure_schema", lambda _config: "Can't connect (test)")
 
 
 class TestValidateToken:

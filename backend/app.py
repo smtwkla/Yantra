@@ -172,6 +172,10 @@ app.register_blueprint(tickets_bp, url_prefix="/api/tickets")
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")
 
+from properties import properties_bp
+# The property master and its class links and model values (S035), beside the masters
+app.register_blueprint(properties_bp, url_prefix="/api/masters")
+
 from settings import settings_bp
 app.register_blueprint(settings_bp, url_prefix="/api/settings")
 

@@ -4,7 +4,8 @@
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
-import { causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
+import { propertySetup, propertyTag } from "./support/properties.js";
+import { card, causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const PRESS_CLASS = "HP"; // Hydraulic press, from the dev seed's classes
 const GENERAL_MODES = 14; // the General modes v20 (S016's seed) fills in (S016 § 4.4)
@@ -178,5 +179,112 @@ test("S025: IT admin cannot deactivate a unit while it has open tickets; the ref
   } finally {
     // This test's own ticket is closed again, so the unit's count is as it was
     await moveByApi("engineer", ticket.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: "S025 test done" });
+  }
+});
+
+// Equipment properties (S035 § 8.4): the master, a class's table and picker, a model's values.
+const openSection = (page, name) => page.getByRole("button", { name, exact: true }).click();
+
+test("S035: engineer adds a choice property, adds two properties to a class at once and sets one on a model; the equipment page shows it", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const drain = `E2E drain ${tag}`;
+  const power = `E2E power ${tag}`;
+  const { cls, model, node } = await propertySetup(tag, {
+    properties: [{ name: power, data_type: "number", unit: "kW" }], link: false,
+  });
+  await asPerson(page, "engineer", "/masters");
+
+  await openSection(page, "Properties");
+  await page.getByRole("button", { name: "Add property", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Name").fill(drain);
+  await dialog.getByLabel("Data type").selectOption({ label: "Choice" });
+  await expect(dialog.getByLabel("Unit")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add option" }).click();
+  await dialog.getByLabel("Option 1").fill("Internal");
+  await dialog.getByRole("button", { name: "Add option" }).click();
+  await dialog.getByLabel("Option 2").fill("External");
+  await saveDialog(page, "Save");
+  await expect(rows(page).filter({ hasText: drain })).toContainText("Choice · 2 options");
+
+  await openSection(page, "Equip Class");
+  await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
+  await expect(page.getByText(`Properties of ${cls.code} — ${cls.name}`)).toBeVisible();
+  await expect(page.getByText("No properties on this class yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Add property…" }).click();
+  await expectDialogFits(page);
+  const picker = await openDialog(page);
+  await expect(picker.locator(".modal-title")).toHaveText(`Add properties to ${cls.code}`);
+  await picker.getByLabel("Search properties").fill(tag);
+  await expect(picker.locator(".form-check")).toHaveCount(2);
+  await picker.getByLabel(drain).check();
+  await picker.getByLabel(power).check();
+  await saveDialog(page, "Add properties");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).filter({ hasText: drain })).toContainText("Choice");
+  await expect(rows(page).filter({ hasText: power })).toContainText("kW");
+
+  await openSection(page, "Models");
+  await rows(page).filter({ hasText: model.label }).getByTitle("Properties").click();
+  await expectDialogFits(page);
+  const values = await openDialog(page);
+  await expect(values.locator(".modal-title")).toHaveText(`Properties of ${model.label}`);
+  await values.getByLabel(drain).selectOption({ label: "External" });
+  await saveDialog(page, "Save values");
+
+  await page.goto(`/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([drain, power]);
+  await expect(properties.locator("dd")).toHaveText(["External", "—"]);
+  await expect(properties).toContainText(`Values from model ${model.label}.`);
+});
+
+test("S035: Remove on a class's table takes the row away, and the picker lists the property again", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E removed ${tag}`;
+  const { cls } = await propertySetup(tag, { properties: [{ name, data_type: "text" }] });
+  await asPerson(page, "engineer", "/masters");
+  await openSection(page, "Equip Class");
+  await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
+  await expect(rows(page).filter({ hasText: name })).toContainText("Text");
+  await expect(page.getByText("Removing a property keeps the models' values. Add it again to show them.")).toBeVisible();
+  await rows(page).filter({ hasText: name }).getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByText("No properties on this class yet.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add property…" }).click();
+  const picker = await openDialog(page);
+  await picker.getByLabel("Search properties").fill(tag);
+  await expect(picker.getByLabel(name)).toBeVisible();
+});
+
+test("S035: a refused number shows Enter a number under its input", async ({ page, consoleWatch }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rating ${tag}`;
+  const { model } = await propertySetup(tag, { properties: [{ name, data_type: "number", unit: "kVA" }] });
+  consoleWatch.allowFailedRequest(`/api/masters/equipment-models/${model.id}/properties`, 400);
+  await asPerson(page, "engineer", "/masters");
+  await openSection(page, "Models");
+  await rows(page).filter({ hasText: model.label }).getByTitle("Properties").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel(name).fill("abc");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Enter a number");
+  await expect(dialog.getByLabel(name)).toBeFocused();
+  await expect(dialog).toBeVisible();
+});
+
+test("S035: an operator sees the Properties section read-only, and no Properties buttons on classes and models", async ({ page }) => {
+  await asPerson(page, "operator", "/masters");
+  await openSection(page, "Properties");
+  await expect(rows(page).filter({ hasText: "Power – design" })).toContainText("Number · kW");
+  await expect(page.getByRole("button", { name: "Add property" })).toHaveCount(0);
+  await expect(page.getByTitle("Edit")).toHaveCount(0);
+  await expectNoSidewaysScroll(page);
+  for (const section of ["Equip Class", "Models"]) {
+    await openSection(page, section);
+    await expect(rows(page).first()).toBeVisible();
+    await expect(page.getByTitle("Properties", { exact: true }).and(page.locator("td button"))).toHaveCount(0);
   }
 });

@@ -38,14 +38,6 @@ def networks_setting():
     access_control.clear_networks_cache()
 
 
-@pytest.fixture
-def db_down(monkeypatch):
-    """Every ensure_schema reference answers "down" (S013 BR2-03): get_db() raises
-    DBUnavailable, the ranges fall back, the access-log hook skips."""
-    monkeypatch.setattr(db_helpers, "ensure_schema", lambda _config: "Can't connect (test)")
-    monkeypatch.setattr(access_control, "ensure_schema", lambda _config: "Can't connect (test)")
-
-
 class TestGate:
 
     def test_external_it_admin_is_refused(self, role_client):

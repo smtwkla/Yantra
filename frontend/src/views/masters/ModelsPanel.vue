@@ -10,6 +10,9 @@
  * model's Documents and Photos cards, in this panel; Back brings the table back. Not a dialog,
  * because the cards open dialogs of their own. Model documents show on every machine of the
  * model, at every site.
+ *
+ * Properties (S035 § 7.3): a row's Properties button opens the model's values dialog, for the
+ * keepers of the masters (equipment:edit) only.
  */
 import { computed, onMounted, ref } from "vue";
 import ActiveToggle from "../../components/ActiveToggle.vue";
@@ -20,6 +23,7 @@ import {
   ensureEquipmentClasses, ensureEquipmentTypes, ensureManufacturers, ensureModels, equipmentClasses,
   equipmentModels, equipmentTypes, manufacturers,
 } from "../../stores/masters";
+import ModelPropertiesModal from "./ModelPropertiesModal.vue";
 import { useMasterForm } from "./useMasterForm";
 
 const canEdit = computed(() => userPermissions.value.includes("equipment:edit"));
@@ -29,6 +33,8 @@ const makerFilter = ref("");
 const loadError = ref("");
 const editingFixed = ref(""); // the edit dialog shows manufacturer, class and type as text: they cannot change
 const documentsFor = ref(null); // the model whose documents are shown instead of the table
+const propertiesModal = ref(null);
+const actionError = ref("");
 
 const rows = computed(() =>
   (equipmentModels.value ?? []).filter(
@@ -88,6 +94,16 @@ function editModel(m) {
   openEdit(m);
 }
 
+// The dialog fetches the stored values first; a failed fetch leaves it closed with the message here
+async function openProperties(m) {
+  actionError.value = "";
+  try {
+    await propertiesModal.value.open(m);
+  } catch (err) {
+    actionError.value = err.message;
+  }
+}
+
 onMounted(reload);
 </script>
 
@@ -128,6 +144,7 @@ onMounted(reload);
     </div>
     <div v-else class="card-body">
       <div v-if="loadError" class="alert alert-danger">{{ loadError }}</div>
+      <div v-if="actionError" class="alert alert-danger">{{ actionError }}</div>
       <div v-if="equipmentModels === null && !loadError" class="text-secondary">Loading…</div>
       <div v-else-if="rows.length === 0 && !loadError" class="text-secondary">No models yet.</div>
       <div v-else-if="rows.length" class="table-responsive">
@@ -145,6 +162,9 @@ onMounted(reload);
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Documents" @click="documentsFor = m">
                   <i class="fa-solid fa-paperclip"></i>
                 </button>
+                <button v-if="canEdit" class="btn btn-sm btn-outline-secondary me-1" title="Properties" @click="openProperties(m)">
+                  <i class="fa-solid fa-list-ul"></i>
+                </button>
                 <button v-if="canEdit" class="btn btn-sm btn-outline-secondary" title="Edit" @click="editModel(m)">
                   <i class="fa-solid fa-pen"></i>
                 </button>
@@ -155,6 +175,8 @@ onMounted(reload);
       </div>
     </div>
   </div>
+
+  <ModelPropertiesModal ref="propertiesModal" />
 
   <FormModal ref="modal" :title="editingId === null ? 'Add model' : 'Edit model'" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <template v-if="editingId !== null" #footer-left>

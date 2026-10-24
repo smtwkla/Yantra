@@ -2,17 +2,23 @@
 /**
  * Equipment classes — what a piece of equipment is (ISO 14224 equipment class).
  * The class code is also the equipment-code prefix. Edited by engineers and up.
+ *
+ * Properties (S035 § 7.2): a row's Properties button replaces the table with that class's
+ * properties, as Models shows a model's Documents; Back brings the table back. Shown to the
+ * keepers of the masters (equipment:edit) only (§ 8.4).
  */
 import { computed, onMounted, ref } from "vue";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import { userPermissions } from "../../stores/auth";
 import { ensureEquipmentClasses, equipmentClasses } from "../../stores/masters";
+import ClassPropertiesView from "./ClassPropertiesView.vue";
 import { useMasterForm } from "./useMasterForm";
 
 const canEdit = computed(() => userPermissions.value.includes("equipment:edit"));
 const showInactive = ref(false);
 const loadError = ref("");
+const propertiesFor = ref(null); // the class whose properties are shown instead of the table
 
 const rows = computed(() => (equipmentClasses.value ?? []).filter((c) => showInactive.value || c.active));
 
@@ -40,7 +46,8 @@ onMounted(reload);
 </script>
 
 <template>
-  <div class="card">
+  <ClassPropertiesView v-if="propertiesFor" :cls="propertiesFor" @back="propertiesFor = null" />
+  <div v-else class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span><i class="fa-solid fa-shapes me-2"></i>Equipment classes</span>
       <div class="d-flex align-items-center gap-3">
@@ -68,6 +75,9 @@ onMounted(reload);
               <td>{{ c.name }}</td>
               <td><span class="badge" :class="c.active ? 'text-bg-success' : 'text-bg-secondary'">{{ c.active ? "Active" : "Inactive" }}</span></td>
               <td v-if="canEdit" class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary me-1" title="Properties" @click="propertiesFor = c">
+                  <i class="fa-solid fa-list-ul"></i>
+                </button>
                 <button class="btn btn-sm btn-outline-secondary" title="Edit" @click="openEdit(c)">
                   <i class="fa-solid fa-pen"></i>
                 </button>
