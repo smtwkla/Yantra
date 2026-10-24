@@ -13,9 +13,10 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 - Both diagrams were generated from a database at **migration v27**
   (23-10-2026); the v28 change (`equipment.model_id` may be empty, S033),
   the v29 table `meter_types` (S037), the v30 tables `model_meters` and
-  `node_meters` with the three meter events (S038) and the migration v31
+  `node_meters` with the three meter events (S038), the migration v31
   tables `property_definitions`, `property_options`, `class_properties` and
-  `model_property_values` (S043) were added by hand on 24-10-2026.
+  `model_property_values` (S043) and the migration v32 table
+  `meter_readings` (S039) were added by hand on 24-10-2026.
 
 ## Conventions
 
@@ -39,9 +40,10 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required on equipment and components, optional on component-units, S033 v28 CHECK), `class_id` and `type_id` (copied from the model, S012; picked directly when a component-unit has no model, S033), lifecycle (S030), criticality |
 | `manufacturers` | Makers: name (unique without regard to case), active (S012). Generic and in-house makers are ordinary rows |
 | `equipment_models` | Manufacturer, designation (unique per maker), class, optional type of that class — all but the designation fixed after creation; active (S012) |
-| `meter_types` | The catalogue of meter types (S037, v29), edited in Masters: name (unique without regard to case), unit (NULL exactly when the kind is `yes_no`), kind (`counter` / `gauge` / `amount` (*Amount per period*) / `yes_no`), expected answer (`yes` / `no`, Yes / No types only), decimals 0–3, active. A CHECK keeps a Yes / No type without unit or decimals and with an expected answer, and every other kind with a unit and no expected answer. Eight seed rows, `created_by` `migration-v29`. Kind, unit, decimals and expected answer cannot change once a model meter or node meter uses the type (S038). Readings (S039) come later |
+| `meter_types` | The catalogue of meter types (S037, v29), edited in Masters: name (unique without regard to case), unit (NULL exactly when the kind is `yes_no`), kind (`counter` / `gauge` / `amount` (*Amount per period*) / `yes_no`), expected answer (`yes` / `no`, Yes / No types only), decimals 0–3, active. A CHECK keeps a Yes / No type without unit or decimals and with an expected answer, and every other kind with a unit and no expected answer. Eight seed rows, `created_by` `migration-v29`. Kind, unit, decimals and expected answer cannot change once a model meter or node meter uses the type (S038). Readings are in `meter_readings` (S039, v32) |
 | `model_meters` | A model's meters (S038, v30): model, meter type (one row per model and type, `uq_model_meters`), a gauge's default `min_value` / `max_value` (`DECIMAL(14,3)`, each optional, NULL on other kinds; a CHECK keeps min ≤ max), active (*Remove* sets it inactive; an add of the type brings the row back). Every equipment of the model has these meters, computed live, never copied |
 | `node_meters` | A node's own meter rows (S038, v30), one per node and meter type (`uq_node_meters`): `own` 1 = a meter added on this node (*This machine only*), `own` 0 = an override of its model meter's limits, kept only while it differs from the model; `min_value` / `max_value` as `model_meters`; active (an own meter removed: inactive, limits cleared). `own` never changes after insert |
+| `meter_readings` | A node's meter readings (S039, v32): node (`equipment_id`) and meter type (S038: a meter's identity is the pair), `value` (`DECIMAL(14,3)`; a Yes / No reading stores 1 for Yes and 0 for No, the API shows the words), `taken_at` (IST, to the minute; up to 7 days back), `is_reset` (a counter's *Meter reset*), `limit_state` (`low` / `high` for a gauge outside its limits, `not_ok` for an answer other than the expected one; stored at saving, so a later limit change never re-judges a reading), `source` (`manual` today; `pm`, `move`, `iiot` later), `note` (up to 200), who and when. Never deleted: a removal sets `removed_at` / `removed_by`, and the rules then ignore the reading. No unique key on the time (a removed reading may share its minute with its replacement); two active readings at one minute are refused in code. Index `ix_meter_readings_meter_time` (node, meter type, time). A link to a PM job's result row comes with PM (phase 4) |
 | `property_definitions` | The property master (S043, v31), edited in Masters › Properties: the technical data a class of equipment has (ISO 14224 Annex A). Name (unique without regard to case, `uq_property_definitions_name`), data type (`number` / `choice` / `text` / `yes_no`; fixed once it has an option or a value), unit (a number's only, `chk_property_unit`; fixed once a value exists), description, active (never deleted). 22 seed rows, `created_by` `migration-v31`, linked to no class |
 | `property_options` | A choice property's options (S043, v31): property, label (unique per property, `uq_property_options_label`), active (never deleted; an inactive one stays on the values that hold it). `uq_property_options_id_property` lets a value's option be checked against its property. The seed's five choices have their options |
 | `class_properties` | Class → property links (S043, v31), one row per pair (primary key). No active flag: *Remove* deletes the link, and the models' values of it stay |
@@ -80,7 +82,6 @@ step is briefed.
 
 | Table | Holds |
 |---|---|
-| `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
 | `pm_templates`, `pm_template_items` | Reusable PM work: items in the shared item shape (§ 4.3: type task / check / reading, unit and limits, optional meter, help text, reference photo, photo setting), triggers |
 | `pm_plans` | Equipment, title, kind (PM / CIL), performer (maintenance / operator), source template, triggers (calendar interval, meter + threshold, before use), default assignee |
 | `pm_plan_items` | Items of a plan, same shape as template items; CIL items carry their group (C / I / L) |
@@ -172,6 +173,11 @@ erDiagram
   meter_types {
     int id PK
     varchar name UK
+  }
+  meter_readings {
+    int id PK
+    int equipment_id FK
+    int meter_type_id FK
   }
   model_meters {
     int id PK
@@ -286,6 +292,8 @@ erDiagram
   meter_types ||--o{ model_meters : "meter_type_id"
   equipment ||--o{ node_meters : "equipment_id"
   meter_types ||--o{ node_meters : "meter_type_id"
+  equipment ||--o{ meter_readings : "equipment_id"
+  meter_types ||--o{ meter_readings : "meter_type_id"
   property_definitions ||--o{ property_options : "property_id"
   equipment_classes ||--o{ class_properties : "class_id"
   property_definitions ||--o{ class_properties : "property_id"

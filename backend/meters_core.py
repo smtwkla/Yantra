@@ -7,16 +7,28 @@
 - limits_text and tracked_meter_change: the one source of the limits wording, for the card
   and for the history line.
 
-Limits are numbers of the meter type's decimals, parsed with Decimal (never float) and
-returned as strings without trailing zeros.  Only a gauge has limits: a counter triggers PM
+Readings (S039, docs/steps/S039-meter-reading-entry/1-brief.md § 5): validate_reading, the
+time window (parse_taken_at, reading_time_error), the counter order against both neighbours
+(counter_error), a gauge's limits and a Yes / No meter's answer (limit_state, answer_state),
+and who may remove a reading (may_remove, reset_removal_error).
+
+Limits and readings are numbers of the meter type's decimals, parsed with Decimal (never
+float) and returned as strings without trailing zeros.  Only a gauge has limits: a counter triggers PM
 every N units, an amount is a quantity produced, and a Yes / No meter's good answer is fixed
 on its type (S037 decision 7).
 """
 
 import re
+from datetime import timedelta
 from decimal import Decimal
 
+# Pure to pure: tickets_core never imports this module (S039 BR1-10)
+from tickets_core import EVENT_TIME_FORMAT, EVENT_TIME_FUTURE, FUTURE_SKEW, parse_event_time
+
+COUNTER = "counter"
 GAUGE = "gauge"
+AMOUNT = "amount"
+YES_NO = "yes_no"
 LIMIT_FIELDS = ("min_value", "max_value")
 NO_LIMITS = (None, None)
 
@@ -48,9 +60,10 @@ def _decimals_message(decimals):
     return f"Enter a number with up to {decimals} decimal{'s' if decimals > 1 else ''}"
 
 
-def _parse_limit(raw, decimals):
-    """One limit: None, an int, or a decimal string → Decimal or None; ValueError with the
-    user's message otherwise.  A bool and a float are refused (a float is already rounded)."""
+def parse_number(raw, decimals):
+    """One number of a meter type (a limit, a reading): None, an int, or a decimal string →
+    Decimal or None; ValueError with the user's message otherwise.  A bool and a float are
+    refused (a float is already rounded)."""
     if raw is None:
         return None
     if isinstance(raw, bool) or not isinstance(raw, (int, str)):
@@ -84,7 +97,7 @@ def validate_limits(body, kind, decimals, stored):
     for field in LIMIT_FIELDS:
         if field in body:
             try:
-                merged[field] = _parse_limit(body[field], decimals)
+                merged[field] = parse_number(body[field], decimals)
             except ValueError as exc:
                 return stored, [{"field": field, "message": str(exc)}]
     low, high = merged["min_value"], merged["max_value"]
@@ -93,11 +106,11 @@ def validate_limits(body, kind, decimals, stored):
     return (low, high), []
 
 
-def parse_meter_type_id(body):
-    """The meter type of an add → ``(id, errors)``."""
+def parse_meter_type_id(body, message=PICK_A_METER_TYPE):
+    """The meter type of an add (or of a reading, S039: "Pick a meter") → ``(id, errors)``."""
     raw = body.get("meter_type_id")
     if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
-        return None, [{"field": "meter_type_id", "message": PICK_A_METER_TYPE}]
+        return None, [{"field": "meter_type_id", "message": message}]
     return raw, []
 
 
@@ -252,3 +265,204 @@ def in_force_pair(model_meter, node_row):
 def meter_type_of(row, prefix="t_"):
     """The ``meter_type`` dict from a joined row whose meter type columns carry ``prefix``."""
     return {field: row[f"{prefix}{field}"] for field in ("id", "name", "unit", "kind", "decimals", "expected_answer")}
+
+
+# ---------------------------------------------------------------------------
+# Readings (S039)
+# ---------------------------------------------------------------------------
+
+# A fixed window for every role, admin included: a departure from S028's backdate_days for
+# readings only (S039 decision 8, U2)
+READING_BACKDATE_DAYS = 7
+READING_TOO_OLD = f"When was it read? Up to {READING_BACKDATE_DAYS} days back"
+NOTE_MAX = 200
+
+PICK_A_METER = "Pick a meter"
+ENTER_THE_READING = "Enter the reading"
+PICK_YES_OR_NO = "Pick Yes or No"
+BELOW_ZERO = {
+    COUNTER: "A counter cannot be below zero",
+    AMOUNT: "An amount cannot be below zero",
+}
+ONLY_A_COUNTER_RESETS = "Only a counter can be reset"
+RESET_NOT_BOOL = "Meter reset must be true or false"
+NOTE_NOT_TEXT = "Note must be text"
+NOTE_TOO_LONG = f"Note must be at most {NOTE_MAX} characters"
+RESET_ABOVE_BEFORE = "A reset reads lower than the reading before it. Untick Meter reset."
+RESET_HAS_LATER = "This reading marks a meter reset. Remove the later readings first."
+
+# The refusal code by which a screen offers the Meter reset tick (S040; BR2-02)
+COUNTER_LOWER = "counter_lower"
+
+# A Yes / No reading is stored as 1 / 0, so one value column serves every kind (§ 4); the API
+# reads and writes the words.  This and answer_word are the one mapping (BR3-04).
+YES_NO_VALUES = {"yes": Decimal(1), "no": Decimal(0)}
+
+LOW, HIGH, NOT_OK = "low", "high", "not_ok"
+
+
+def answer_word(value):
+    """A stored Yes / No reading (1 / 0) → "yes" / "no"."""
+    return "yes" if Decimal(value) == YES_NO_VALUES["yes"] else "no"
+
+
+def _parse_value(raw, kind, decimals):
+    """``(Decimal, None)`` or ``(None, message)`` for the value of one reading (§ 5.1).  The
+    kind decides the rules: a Yes / No meter has "Pick Yes or No" alone (BR3-05)."""
+    if kind == YES_NO:
+        if isinstance(raw, str) and raw in YES_NO_VALUES:
+            return YES_NO_VALUES[raw], None
+        return None, PICK_YES_OR_NO
+    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+        return None, ENTER_THE_READING
+    try:
+        value = parse_number(raw, decimals)
+    except ValueError as exc:
+        return None, str(exc)
+    if value < 0 and kind in BELOW_ZERO:
+        return None, BELOW_ZERO[kind]
+    return value, None
+
+
+def validate_reading(value, kind, decimals, reset, note):
+    """One reading's value, Meter reset mark and note → ``(clean, errors)``, errors in the
+    masters_core shape, in the order of § 5.1.  ``clean`` holds ``value`` (a Decimal: 1 / 0 for
+    a Yes / No answer), ``is_reset`` (bool) and ``note`` (trimmed, None when empty)."""
+    clean, errors = {}, []
+    clean["value"], message = _parse_value(value, kind, decimals)
+    if message:
+        errors.append({"field": "value", "message": message})
+
+    if not isinstance(reset, bool):
+        errors.append({"field": "is_reset", "message": RESET_NOT_BOOL})
+    elif reset and kind != COUNTER:
+        errors.append({"field": "is_reset", "message": ONLY_A_COUNTER_RESETS})
+    else:
+        clean["is_reset"] = reset
+
+    if note is None:
+        clean["note"] = None
+    elif not isinstance(note, str):
+        errors.append({"field": "note", "message": NOTE_NOT_TEXT})
+    elif len(note.strip()) > NOTE_MAX:
+        errors.append({"field": "note", "message": NOTE_TOO_LONG})
+    else:
+        clean["note"] = note.strip() or None
+    return clean, errors
+
+
+def to_minute(moment):
+    """Readings are kept to the minute, as ticket event times (§ 4)."""
+    return moment.replace(second=0, microsecond=0)
+
+
+def reading_time_error(taken_at, now):
+    """The window a reading's time must fall in → the message, or None: at most FUTURE_SKEW
+    ahead of ``now``, at most READING_BACKDATE_DAYS back (exactly 7 days is allowed)."""
+    if taken_at > now + FUTURE_SKEW:
+        return EVENT_TIME_FUTURE
+    if taken_at < now - timedelta(days=READING_BACKDATE_DAYS):
+        return READING_TOO_OLD
+    return None
+
+
+def parse_taken_at(raw, now):
+    """``taken_at`` of a reading → ``(datetime, None)`` or ``(None, message)``.  Absent: ``now``
+    (the server's clock decides, so a phone a few minutes off is never refused, S040 BR1-09).
+    ``now`` is the IST wall clock to the minute; a time sent with seconds keeps its minute."""
+    if raw is None:
+        return now, None
+    taken_at, message = parse_event_time(raw)
+    if message:
+        return None, EVENT_TIME_FORMAT
+    taken_at = to_minute(taken_at)
+    message = reading_time_error(taken_at, now)
+    return (None, message) if message else (taken_at, None)
+
+
+def grouped_number(value, decimals):
+    """A number with the type's decimals and Indian grouping, as the screens show it
+    (``toLocaleString("en-IN")``, U4): 1234567.8 with 1 decimal → "12,34,567.8"."""
+    text = f"{Decimal(value):.{decimals}f}"
+    sign, text = ("-", text[1:]) if text.startswith("-") else ("", text)
+    whole, _, fraction = text.partition(".")
+    if len(whole) > 3:
+        head, groups = whole[:-3], [whole[-3:]]
+        while head:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        whole = ",".join(groups)
+    return sign + whole + (f".{fraction}" if fraction else "")
+
+
+def reading_text(value, meter_type):
+    """A reading as the screens show it: "12,345.6 h", "420 pcs", "Yes"."""
+    if meter_type["kind"] == YES_NO:
+        return answer_word(value).capitalize()
+    return f"{grouped_number(value, meter_type['decimals'])} {meter_type['unit']}"
+
+
+def _when(moment):
+    return moment.strftime("%d-%m-%Y %H:%M")
+
+
+def counter_error(value, is_reset, before, after, meter_type):
+    """A counter reading against the nearest active readings before and after its time (§ 5.2.4)
+    → ``(field, message, code)`` or None.  ``before`` / ``after`` are ``{value, taken_at,
+    is_reset}`` or None; ``meter_type`` gives the unit and decimals of the message.  Equal
+    values pass (a machine that did not run); a reset with no earlier reading passes, and so
+    does a reset equal to the one before (BR2-13).
+
+    Known gap (CR1-08, for the phase 5 usage sums): a back-dated reset placed before an existing
+    later reset is not checked against it ("unless that one is a reset"), and removing the reading
+    before a reset is not checked either, so a reset may end up higher than the reading before it."""
+    if before is not None:
+        if not is_reset and value < before["value"]:
+            shown = reading_text(before["value"], meter_type)
+            return ("value", f"Lower than the reading of {_when(before['taken_at'])} ({shown})."
+                             " Check the value, or tick Meter reset if the meter was reset.", COUNTER_LOWER)
+        if is_reset and value > before["value"]:
+            return "is_reset", RESET_ABOVE_BEFORE, None
+    if after is not None and not after["is_reset"] and value > after["value"]:
+        shown = reading_text(after["value"], meter_type)
+        return ("value", f"Higher than the later reading of {_when(after['taken_at'])} ({shown})."
+                         " Check the value and the time.", None)
+    return None
+
+
+def limit_state(value, low, high):
+    """A gauge reading against the limits in force → "low", "high" or None (a value equal to a
+    limit is inside).  Either limit may be None: no limit on that side."""
+    if low is not None and value < Decimal(low):
+        return LOW
+    if high is not None and value > Decimal(high):
+        return HIGH
+    return None
+
+
+def answer_state(answer, expected):
+    """A Yes / No answer ("yes" / "no") against the type's expected one → "not_ok" or None."""
+    return NOT_OK if answer != expected else None
+
+
+def may_remove(reading, can_edit):
+    """Who may remove a reading (U3): a holder of equipment:edit at the node's site (``can_edit``),
+    and only while the reading is active.  No author rule."""
+    return bool(can_edit) and reading["removed_at"] is None
+
+
+def reset_removal_error(reading, has_later):
+    """A reset reading with an active later reading cannot be removed (BR1-04): the later, lower
+    readings would be left with no reset, and no back-dated reading could fit between them."""
+    return RESET_HAS_LATER if reading["is_reset"] and has_later else None
+
+
+def parse_reading_request(body, now):
+    """What a reading POST names before its meter is known → ``({meter_type_id, taken_at},
+    errors)``.  The value, the reset mark and the note need the meter's kind: validate_reading,
+    once the meter is read."""
+    meter_type_id, errors = parse_meter_type_id(body, PICK_A_METER)
+    taken_at, message = parse_taken_at(body.get("taken_at"), now)
+    if message:
+        errors = [*errors, {"field": "taken_at", "message": message}]
+    return {"meter_type_id": meter_type_id, "taken_at": taken_at}, errors

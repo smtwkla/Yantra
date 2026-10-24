@@ -4,17 +4,19 @@ import { canOpenRoute, canSeeNavItem, homePath, isActivePath, landingNavItem, la
 // What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix.
 // From S011 a site role's keys come from its membership; the manager's breadth is "all units"
 // there, not equipment:read_all_units (IT admin's alone).  S017: ticket:read and ticket:raise
-// for every maintenance role, the supervisor and IT admin; not the storekeeper.
+// for every maintenance role, the supervisor and IT admin; not the storekeeper.  S039: reading:log
+// for the operator and up (so the supervisor), not IT admin.
 const TICKETS = ["ticket:read", "ticket:raise"];
-const OPERATOR = ["equipment:read", "masters:read", ...TICKETS];
+const OPERATOR = ["equipment:read", "masters:read", "reading:log", ...TICKETS];
 const STOREKEEPER = ["equipment:read", "masters:read"];
 const SUPERVISOR = OPERATOR;
 const ENGINEER = [
-  "equipment:read", "equipment:edit", "masters:read", "people:assign_technicians", "people:edit", ...TICKETS,
+  "equipment:read", "equipment:edit", "masters:read", "people:assign_technicians", "people:edit", "reading:log",
+  ...TICKETS,
 ];
 const MANAGER = [
   "equipment:edit", "equipment:purge_documents", "equipment:read", "masters:read", "people:assign_technicians",
-  "people:edit", "settings:read", ...TICKETS,
+  "people:edit", "reading:log", "settings:read", ...TICKETS,
 ];
 const IT_ADMIN = [
   "equipment:read", "equipment:read_all_units", "equipment:edit", "equipment:purge_documents", "masters:edit",

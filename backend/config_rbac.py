@@ -123,6 +123,12 @@ PERMISSIONS = {
     # A.5.15).  The holders equal ticket:close's today, but the two can drift.
     "ticket:edit_notes": ("maint_engineer", "it_admin"),
 
+    # Meter readings (S039): the operator logs the readings of the machines at the unit (TPM
+    # autonomous maintenance), so the supervisor and the maintenance ladder inherit it, as
+    # ticket:raise.  Not IT admin (U2): logging is plant work.  Removing a reading is a
+    # correction, held by equipment:edit (U3), so IT admin may remove but not log.
+    "reading:log": ("maint_operator",),
+
     # Masters — machine register, locations, codes
     "masters:read": ("*",),
     "masters:edit": ("it_admin",),
@@ -169,4 +175,5 @@ SITE_SCOPED = frozenset({
     "ticket:assign",
     "ticket:close",
     "ticket:edit_notes",
+    "reading:log",
 })

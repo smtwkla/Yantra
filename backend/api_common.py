@@ -1,7 +1,8 @@
 """Request-level pieces shared by the blueprints — the API error shape, the
 duplicate-key mapping, the acting user and body validation.
 
-Errors follow ``{error, field?}``.  Handlers are registered once at app level
+Errors follow ``{error, field?, code?}``; ``code`` names a refusal a screen acts on (S039
+BR2-02: ``counter_lower``).  Handlers are registered once at app level
 (register_error_handlers), so every blueprint gets the same mapping; each
 module adds the names of its UNIQUE keys to UNIQUE_KEY_ERRORS at import.
 """
@@ -30,19 +31,22 @@ _DUPLICATE_KEY_RE = re.compile(r"for key '(?:\w+\.)?(\w+)'$")
 
 
 class ApiError(Exception):
-    """A refusal the user can act on; becomes ``{error, field?}`` with ``status``."""
+    """A refusal the user can act on; becomes ``{error, field?, code?}`` with ``status``."""
 
-    def __init__(self, message, status, field=None):
+    def __init__(self, message, status, field=None, code=None):
         super().__init__(message)
         self.message = message
         self.status = status
         self.field = field
+        self.code = code
 
 
 def _error_response(exc):
     body = {"error": exc.message}
     if exc.field:
         body["field"] = exc.field
+    if exc.code:
+        body["code"] = exc.code
     return jsonify(body), exc.status
 
 

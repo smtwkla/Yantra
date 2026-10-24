@@ -1,13 +1,18 @@
-"""meters_core (S038 § 5.1, § 5.2, § 5.5): limits validation, a node's meters, the wording."""
+"""meters_core (S038 § 5.1, § 5.2, § 5.5): limits validation, a node's meters, the wording; the
+reading rules (S039 § 5.1, § 5.2)."""
 
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from meters_core import (
-    ACTION_LIMITS, ACTION_REMOVE, ACTION_USE_MODEL, NO_LIMITS, SOURCE_MODEL, SOURCE_NODE, effective_meters,
-    format_number, in_force_pair, limits_text, override_of, parse_change_action, parse_meter_type_id,
-    same_limits, tracked_meter_change, validate_limits,
+    ACTION_LIMITS, ACTION_REMOVE, ACTION_USE_MODEL, NO_LIMITS, SOURCE_MODEL, SOURCE_NODE, answer_state,
+    answer_word, counter_error, effective_meters, format_number, grouped_number, in_force_pair, limit_state,
+    limits_text, may_remove, override_of, parse_change_action, parse_meter_type_id, parse_reading_request,
+    parse_taken_at,
+    reading_text, reading_time_error, reset_removal_error, same_limits, to_minute, tracked_meter_change,
+    validate_limits, validate_reading,
 )
 
 D = Decimal
@@ -243,3 +248,217 @@ class TestInForce:
         assert override_of(_node(OIL, 0)) == NO_LIMITS
         assert override_of(_node(OIL, 1)) is None
         assert override_of(_node(OIL, 1, D("1"), None, active=0)) == (D("1"), None)
+
+
+# ---------------------------------------------------------------------------
+# Readings (S039 § 5.1, § 5.2)
+# ---------------------------------------------------------------------------
+
+NOW = datetime(2026, 10, 24, 18, 0)
+
+
+def _reading(value, kind="counter", decimals=1, reset=False, note=None):
+    return validate_reading(value, kind, decimals, reset, note)
+
+
+def _reading_error(value, **kw):
+    errors = _reading(value, **kw)[1]
+    assert len(errors) == 1, errors
+    return errors[0]["field"], errors[0]["message"]
+
+
+class TestValidateReading:
+    def test_a_counter_reading_is_a_decimal_and_the_note_is_trimmed(self):
+        clean, errors = _reading("12345.6", note="  after the shift ")
+        assert errors == []
+        assert clean == {"value": D("12345.6"), "is_reset": False, "note": "after the shift"}
+        assert _reading(42, decimals=0)[0]["value"] == D(42)
+
+    def test_an_empty_note_is_none(self):
+        assert _reading("1", note="   ")[0]["note"] is None
+
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    def test_a_missing_value(self, value):
+        assert _reading_error(value) == ("value", "Enter the reading")
+
+    @pytest.mark.parametrize("value, decimals, message", [
+        ("abc", 1, "Enter a number with up to 1 decimal"),
+        (True, 2, "Enter a number with up to 2 decimals"),
+        (12.5, 3, "Enter a number with up to 3 decimals"),
+        ("1.5", 0, "Enter a whole number"),
+        ("1.25", 1, "Enter a number with up to 1 decimal"),     # more decimals than the type's (BR1-11)
+        ("1e3", 1, "Enter a number with up to 1 decimal"),
+    ])
+    def test_not_a_number_of_the_types_decimals(self, value, decimals, message):
+        assert _reading_error(value, decimals=decimals) == ("value", message)
+
+    def test_beyond_the_column(self):
+        assert _reading_error("100000000000", decimals=0) == ("value", "Enter a smaller number")
+        assert _reading("99999999999.999", decimals=3)[1] == []
+
+    def test_below_zero(self):
+        assert _reading_error("-1") == ("value", "A counter cannot be below zero")
+        assert _reading_error("-1", kind="amount", decimals=0) == ("value", "An amount cannot be below zero")
+        assert _reading("-5.5", kind="gauge")[1] == []                 # a gauge may read below zero
+        assert _reading("0")[1] == []
+
+    def test_only_a_counter_is_reset(self):
+        assert _reading("5", reset=True)[0]["is_reset"] is True
+        for kind in ("gauge", "amount"):
+            assert _reading_error("5", kind=kind, reset=True) == ("is_reset", "Only a counter can be reset")
+        assert _reading_error("yes", kind="yes_no", decimals=0, reset=True) == (
+            "is_reset", "Only a counter can be reset")
+
+    @pytest.mark.parametrize("reset", [None, "true", 1])
+    def test_reset_must_be_a_bool(self, reset):
+        assert _reading_error("5", reset=reset) == ("is_reset", "Meter reset must be true or false")
+
+    def test_the_note(self):
+        assert _reading("5", note="x" * 200)[1] == []
+        assert _reading_error("5", note="x" * 201) == ("note", "Note must be at most 200 characters")
+        assert _reading_error("5", note=5) == ("note", "Note must be text")
+
+    def test_an_amount_has_no_order_and_no_reset(self):
+        assert _reading("420", kind="amount", decimals=0) == ({"value": D(420), "is_reset": False, "note": None}, [])
+
+    def test_a_yes_no_answer_is_stored_as_1_or_0(self):
+        """BR3-04: the word ↔ number mapping; no number rule fires on a Yes / No meter (BR3-05)."""
+        assert _reading("yes", kind="yes_no", decimals=0)[0]["value"] == D(1)
+        assert _reading("no", kind="yes_no", decimals=0)[0]["value"] == D(0)
+        assert (answer_word(D(1)), answer_word(D("0.000"))) == ("yes", "no")
+
+    @pytest.mark.parametrize("value", ["maybe", 1, True, "1", "Yes", None, ""])
+    def test_a_yes_no_meter_takes_only_the_words(self, value):
+        assert _reading_error(value, kind="yes_no", decimals=0) == ("value", "Pick Yes or No")
+
+
+class TestReadingTime:
+    def test_seven_days_back_exactly_is_allowed_and_a_minute_more_is_not(self):
+        assert reading_time_error(NOW - timedelta(days=7), NOW) is None
+        assert reading_time_error(NOW - timedelta(days=7, minutes=1), NOW) == "When was it read? Up to 7 days back"
+
+    def test_five_minutes_ahead_is_allowed_and_six_are_not(self):
+        assert reading_time_error(NOW + timedelta(minutes=5), NOW) is None
+        assert reading_time_error(NOW + timedelta(minutes=6), NOW) == "That time is in the future"
+
+    def test_absent_is_now(self):
+        assert parse_taken_at(None, NOW) == (NOW, None)
+
+    def test_a_time_is_kept_to_its_minute(self):
+        assert parse_taken_at("2026-10-24T17:30:45", NOW) == (datetime(2026, 10, 24, 17, 30), None)
+        assert parse_taken_at("2026-10-24 17:30", NOW) == (datetime(2026, 10, 24, 17, 30), None)
+
+    @pytest.mark.parametrize("raw", ["24-10-2026 17:30", "2026-10-24T17:30Z", "", 5])
+    def test_a_wrong_format(self, raw):
+        assert parse_taken_at(raw, NOW) == (None, "Enter the time as YYYY-MM-DD HH:MM")
+
+    def test_too_old_and_in_the_future(self):
+        assert parse_taken_at("2026-10-16T18:00", NOW) == (None, "When was it read? Up to 7 days back")
+        assert parse_taken_at("2026-10-24T19:00", NOW) == (None, "That time is in the future")
+
+    def test_to_minute(self):
+        assert to_minute(datetime(2026, 10, 24, 18, 0, 59, 999)) == NOW
+
+    def test_the_request_names_a_meter_and_a_time(self):
+        assert parse_reading_request({"meter_type_id": 3}, NOW) == ({"meter_type_id": 3, "taken_at": NOW}, [])
+        clean, errors = parse_reading_request({"meter_type_id": "3", "taken_at": "2026-10-24T19:00"}, NOW)
+        assert errors == [{"field": "meter_type_id", "message": "Pick a meter"},
+                          {"field": "taken_at", "message": "That time is in the future"}]
+
+
+def _at(value, hour, day=23, reset=False):
+    return {"value": D(value), "taken_at": datetime(2026, 10, day, hour, 0), "is_reset": reset}
+
+
+class TestCounterOrder:
+    def test_between_its_neighbours_and_equal_values_pass(self):
+        assert counter_error(D("150"), False, _at("100", 8), _at("200", 18), HOURS) is None
+        assert counter_error(D("100"), False, _at("100", 8), _at("100", 18), HOURS) is None
+
+    def test_no_neighbours(self):
+        assert counter_error(D("5"), False, None, None, HOURS) is None
+
+    def test_lower_than_the_one_before(self):
+        assert counter_error(D("12000"), False, _at("12345.6", 18), None, HOURS) == (
+            "value", "Lower than the reading of 23-10-2026 18:00 (12,345.6 h). Check the value, or tick Meter reset"
+                     " if the meter was reset.", "counter_lower")
+
+    def test_higher_than_the_one_after(self):
+        assert counter_error(D("12400"), False, None, _at("12350", 8, day=24), HOURS) == (
+            "value", "Higher than the later reading of 24-10-2026 08:00 (12,350.0 h). Check the value and the time.",
+            None)
+
+    def test_both_neighbours_the_earlier_one_is_named_first(self):
+        assert counter_error(D("50"), False, _at("100", 8), _at("40", 18), HOURS)[2] == "counter_lower"
+
+    def test_a_reset_lower_than_the_one_before_passes(self):
+        assert counter_error(D("3"), True, _at("12345.6", 8), None, HOURS) is None
+
+    def test_a_reset_equal_to_the_one_before_passes(self):
+        """BR2-13: a replaced meter that reads 0 after a reading of 0."""
+        assert counter_error(D("0"), True, _at("0", 8), None, HOURS) is None
+
+    def test_a_reset_higher_than_the_one_before_is_refused(self):
+        assert counter_error(D("200"), True, _at("100", 8), None, HOURS) == (
+            "is_reset", "A reset reads lower than the reading before it. Untick Meter reset.", None)
+
+    def test_a_reset_with_no_earlier_reading_passes(self):
+        assert counter_error(D("500"), True, None, None, HOURS) is None
+
+    def test_a_reset_with_a_later_reading_must_not_be_above_it(self):
+        """BR1-18: a reset is still checked against the one after."""
+        assert counter_error(D("3"), True, _at("100", 8), _at("10", 18), HOURS) is None
+        assert counter_error(D("30"), True, _at("100", 8), _at("10", 18), HOURS)[0] == "value"
+
+    def test_a_later_reset_does_not_bound_the_value(self):
+        """BR1-18: the reading after is a reset, so it may read lower."""
+        assert counter_error(D("150"), False, _at("100", 8), _at("2", 18, reset=True), HOURS) is None
+
+
+class TestLimitsAndAnswers:
+    @pytest.mark.parametrize("value, low, high, state", [
+        ("5", "10", None, "low"),
+        ("65", None, "60", "high"),
+        ("65", "10", "60", "high"),
+        ("5", "10", "60", "low"),
+        ("30", "10", "60", None),
+        ("60", "10", "60", None),            # equal to a limit is inside
+        ("10", "10", "60", None),
+        ("1000", None, None, None),
+    ])
+    def test_limit_state(self, value, low, high, state):
+        assert limit_state(D(value), low, high) == state
+
+    @pytest.mark.parametrize("answer, expected, state", [
+        ("yes", "yes", None), ("no", "yes", "not_ok"), ("no", "no", None), ("yes", "no", "not_ok"),
+    ])
+    def test_answer_state(self, answer, expected, state):
+        assert answer_state(answer, expected) == state
+
+
+class TestRemoval:
+    def test_may_remove_needs_equipment_edit_and_an_active_reading(self):
+        active, removed = {"removed_at": None}, {"removed_at": datetime(2026, 10, 24, 9, 0)}
+        assert may_remove(active, can_edit=True) is True
+        assert may_remove(active, can_edit=False) is False
+        assert may_remove(removed, can_edit=True) is False
+
+    def test_a_reset_with_a_later_reading_cannot_be_removed(self):
+        assert reset_removal_error({"is_reset": 1}, has_later=True) == (
+            "This reading marks a meter reset. Remove the later readings first.")
+        assert reset_removal_error({"is_reset": 1}, has_later=False) is None
+        assert reset_removal_error({"is_reset": 0}, has_later=True) is None
+
+
+class TestReadingWords:
+    @pytest.mark.parametrize("value, decimals, text", [
+        ("12345.6", 1, "12,345.6"), ("12350", 1, "12,350.0"), ("1234567.8", 1, "12,34,567.8"),
+        ("420", 0, "420"), ("-1234.5", 1, "-1,234.5"), ("0", 2, "0.00"),
+    ])
+    def test_indian_grouping_with_the_types_decimals(self, value, decimals, text):
+        assert grouped_number(D(value), decimals) == text
+
+    def test_reading_text(self):
+        assert reading_text(D("12345.6"), HOURS) == "12,345.6 h"
+        assert reading_text(D("420"), SHIFT) == "420 pcs"
+        assert reading_text(D("0"), OIL_OK) == "No"

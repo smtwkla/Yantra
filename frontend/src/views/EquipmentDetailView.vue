@@ -12,6 +12,8 @@
  * on equipment that is not scrapped. The storekeeper holds neither and sees neither.
  *
  * Meters (S038): the Meters card loads the node's meters itself; editing follows canEdit.
+ * Readings (S039): Log reading follows reading:log at the node's site (canLogReading), not on a
+ * scrapped node; History shows removed readings to equipment:edit holders there.
  *
  * Properties (S043 § 7.4): the class's active properties with the model's values, beside Details,
  * when the class has any. Edit model values opens the Masters model dialog (every item of the
@@ -66,6 +68,10 @@ const canEdit = computed(
 // Model documents are maintained in Masters by equipment:edit held at any site (S012 § 5.5), so
 // the "Managed in Masters" hint follows the global permissions, not this node's site
 const canEditModels = computed(() => userPermissions.value.includes("equipment:edit"));
+const canLogReading = computed(
+  () => (node.value?.permissions ?? []).includes("reading:log") && !scrapped.value && !loading.value
+);
+const canSeeRemovedReadings = computed(() => (node.value?.permissions ?? []).includes("equipment:edit"));
 const canReadTickets = computed(() => (node.value?.permissions ?? []).includes("ticket:read"));
 const canRaiseTicket = computed(
   () => (node.value?.permissions ?? []).includes("ticket:raise") && !scrapped.value && !loading.value
@@ -293,7 +299,7 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <MetersCard :node="node" :can-edit="canEdit" @changed="load" />
+      <MetersCard :node="node" :can-edit="canEdit" :can-log="canLogReading" :can-see-removed="canSeeRemovedReadings" @changed="load" />
 
       <div v-if="node.notes" class="card mt-3">
         <div class="card-header">Notes</div>

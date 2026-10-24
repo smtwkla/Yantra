@@ -117,6 +117,13 @@ class TestRoleSources:
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert key in SITE_SCOPED
 
+    def test_reading_log_holders(self):
+        """S039 § 3, U2: the operator and up (the supervisor and the maintenance ladder inherit
+        it); not IT admin, not the storekeeper.  Site-scoped, so checked at the node's site."""
+        holders = {role for role in ROLES if "reading:log" in compute_permissions([role])}
+        assert holders == {"maint_operator", "maint_supervisor", "maint_technician", "maint_engineer", "maint_manager"}
+        assert "reading:log" in SITE_SCOPED
+
     def test_ticket_backdate_is_held_by_admin_only_and_is_global(self):
         """S028: no role holds it; admin has it by the bypass; not site-scoped."""
         assert PERMISSIONS["ticket:backdate"] == ()
@@ -173,20 +180,23 @@ class TestComputePermissions:
         # the supervisor; IT admin too (user decision 7); never the storekeeper.  S018: restore to
         # the operator; work to the technician; assign and close to the engineer; all to IT admin.
         # S021: push:subscribe to every role ('*'): anyone may turn notifications on
-        ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore"}),
+        # S039: reading:log to the operator, so to the supervisor and the maintenance ladder; not IT admin
+        ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
+                               "reading:log"}),
         ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
-                               "ticket:work"}),
-        ("maint_supervisor",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore"}),
+                               "ticket:work", "reading:log"}),
+        ("maint_supervisor",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
+                               "reading:log"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "push:subscribe", "equipment:edit", "people:edit",
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
-                               "ticket:edit_notes"}),
+                               "ticket:edit_notes", "reading:log"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
                                "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
-                               "ticket:close", "ticket:edit_notes"}),
+                               "ticket:close", "ticket:edit_notes", "reading:log"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",

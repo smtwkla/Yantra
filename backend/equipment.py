@@ -56,7 +56,13 @@ A write with a model never locks a type: it comes from the model, whose type nev
   and a race shows a stale list until reload.  masters.py's model meters take (4) the model →
   (4b) the meter type → the model_meters row, and a meter type update takes (4b) alone, then
   share-locks the link rows, which only those two writes touch after their own (4b).  No path
-  takes (4b) and then (1) or (4), so no cycle.
+  takes (4b) and then (1) or (4), so no cycle.  A reading write (S039): (1), then plain reads;
+  the node lock is the first statement (load_node_for_user checks reading:log at the site to
+  log, equipment:edit to remove).  The link rows, the meter type, the neighbour readings and the
+  same-minute row are then read plainly, so two writers on one node serialise on (1) and the
+  second sees the first one's row; a removal then locks only its meter_readings row.  The insert
+  share-locks the node (held already) and the meter type through its FKs; a meter type update
+  counts link rows, never readings, so it never waits on a reading.  No cycle.
 - properties.py (S043) locks a class (5) or a model (4), never both, then only its own
   property and option rows, and never equipment; the detail reads its card plainly.  So it
   adds no lock cycle.

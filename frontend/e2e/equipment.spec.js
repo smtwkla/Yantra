@@ -6,8 +6,9 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
+import { logByApi, meterMachine } from "./support/meters.js";
 import { noModelPart, propertySetup, propertyTag } from "./support/properties.js";
-import { card, raiseByApi, saveDialog } from "./support/tickets.js";
+import { card, istLocal, raiseByApi, saveDialog, shownTime } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
 
@@ -251,45 +252,13 @@ async function createEquipment(name) {
   }
 }
 
-// S038: a node's meters are its model's plus its own.  Each test makes its own press model and
-// machine through the API (never the seed's SMTW-HYP-01 model, which S039's e2e set-up keeps;
-// S039 BR3-03), named after the project: the three projects share one database.
-async function meterMachine(testInfo, tag, { unit = "SMTW.MCC1", modelMeters = [], ownMeters = [] } = {}) {
-  const api = await apiAs("admin");
-  try {
-    const items = async (url) => (await (await api.get(url)).json()).items;
-    const created = async (url, data) => {
-      const res = await api.post(url, { data });
-      expect(res.status(), await res.text()).toBe(201);
-      return await res.json();
-    };
-    const [units, makers, classes, meterTypes] = await Promise.all([
-      items("/api/masters/units"), items("/api/masters/manufacturers"), items("/api/masters/equipment-classes"),
-      items("/api/masters/meter-types"),
-    ]);
-    const typeId = (name) => meterTypes.find((t) => t.name === name).id;
-    const name = `S038 press ${tag} ${testInfo.project.name}`;
-    const model = await created("/api/masters/equipment-models", {
-      manufacturer_id: makers.find((m) => m.name === "Generic").id,
-      designation: `${name} ${Date.now().toString(36)}`, class_id: classes.find((c) => c.code === "HP").id, type_id: null,
-    });
-    for (const [meter, limits] of modelMeters) {
-      await created(`/api/masters/equipment-models/${model.id}/meters`, { meter_type_id: typeId(meter), ...limits });
-    }
-    const machine = await created("/api/equipment", {
-      level: "equipment", unit_id: units.find((u) => u.full_code === unit).id, model_id: model.id, name,
-    });
-    for (const [meter, limits] of ownMeters) {
-      await created(`/api/equipment/${machine.id}/meters`, { meter_type_id: typeId(meter), ...limits });
-    }
-    return machine;
-  } finally {
-    await api.dispose();
-  }
-}
-
 const OIL_10_60 = ["Oil temperature", { min_value: "10", max_value: "60" }];
+const MIN_TOUCH_PX = 44; // a tap target on a floor screen (S039 CR1-03)
 const metersCard = (page) => card(page, "Meters");
+async function expectTouchTarget(locator) {
+  const box = await locator.boundingBox();
+  expect(box.height, "a tap target of 44 px or more").toBeGreaterThanOrEqual(MIN_TOUCH_PX);
+}
 const meterRow = (page, name) => metersCard(page).getByTestId("node-meter").filter({ hasText: name });
 
 test("S038: the press page shows its model's meters and an own meter", async ({ page }, testInfo) => {
@@ -364,7 +333,31 @@ test("S038: an operator sees the Meters card without edit buttons", async ({ pag
   await asPerson(page, "operator", `/equipment/${machine.id}`);
   await expect(meterRow(page, "Oil temperature")).toContainText("Limits: 10–60 °C");
   await expect(meterRow(page, "Run hours")).toBeVisible();
-  await expect(metersCard(page).getByRole("button")).toHaveCount(0);
+  // S039: the operator logs readings, but edits no meter
+  for (const name of ["Add meter", "Set limits", "Remove"]) {
+    await expect(metersCard(page).getByRole("button", { name })).toHaveCount(0);
+  }
+  await expect(metersCard(page).getByRole("button", { name: "Log reading" })).toHaveCount(2);
+});
+
+// S039 § 1.3: each meter's last reading, the tap target of its History
+test("S039: the Meters card shows the last reading, and its tap opens History", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "last", { unit: "SMTW.MCC2", ownMeters: [["Run hours", {}]] });
+  const at = istLocal(30);
+  await logByApi(machine, "Run hours", "12345.6", at, { note: "E2E last reading" });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  const last = meterRow(page, "Run hours").getByTestId("last-reading");
+  await expect(last).toHaveAccessibleName(`History: 12,345.6 h · ${shownTime(at)}`);
+  await expectTouchTarget(last);
+  await expectTouchTarget(meterRow(page, "Run hours").getByRole("button", { name: "Log reading" }));
+  await last.click();
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-title")).toHaveText("History · Run hours");
+  const row = dialog.getByTestId("reading-row");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("12,345.6 h");
+  await expect(row).toContainText("E2E last reading");
+  await expect(row.getByRole("button", { name: "Remove" })).toHaveCount(0); // the operator does not remove
 });
 
 // The Properties card (S043 § 7.4): the class's properties with the model's values

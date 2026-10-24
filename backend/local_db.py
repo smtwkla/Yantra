@@ -966,6 +966,35 @@ _MIGRATIONS = [
           )
           for label in labels),
     ]),
+    # S039 — meter readings (docs/steps/S039-meter-reading-entry/1-brief.md § 4): one row per
+    # reading of one meter (node + meter type, S038) at one minute.  A Yes / No reading stores
+    # value 1 / 0, so one column serves every kind.  limit_state is stored at saving, so a later
+    # limit change never re-judges old readings.  Rows are never deleted: a removal sets
+    # removed_at / removed_by (who and when kept, ISO 27001 A.8.15).  No unique key on the time:
+    # a removed reading may share its minute with its replacement; two active readings at one
+    # minute are refused in code.  No _PRECONDITIONS entry: a new table touches no existing row.
+    # IF NOT EXISTS makes a half-applied v32 re-run.  Rollback: the previous release ignores the
+    # table.
+    (32, "Meter readings (S039)", [
+        """CREATE TABLE IF NOT EXISTS meter_readings (
+            id             INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id   INT NOT NULL,
+            meter_type_id  INT NOT NULL,
+            value          DECIMAL(14,3) NOT NULL,
+            taken_at       DATETIME NOT NULL,
+            is_reset       TINYINT(1) NOT NULL DEFAULT 0,
+            limit_state    ENUM('low','high','not_ok') NULL,
+            source         ENUM('manual','pm','move','iiot') NOT NULL DEFAULT 'manual',
+            note           VARCHAR(200) NULL,
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by     VARCHAR(100) NOT NULL,
+            removed_at     DATETIME NULL,
+            removed_by     VARCHAR(100) NULL,
+            CONSTRAINT fk_meter_readings_node FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_meter_readings_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            INDEX ix_meter_readings_meter_time (equipment_id, meter_type_id, taken_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

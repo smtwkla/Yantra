@@ -73,7 +73,8 @@ class TestList:
             "meter_type": {"id": oil["id"], "name": oil["name"], "unit": "°C", "kind": "gauge", "decimals": 1,
                            "expected_answer": None},
             "source": "model", "min_value": "10", "max_value": "55", "model_min": "10", "model_max": "60",
-            "overridden": True, "limits_text": "Limits: 10–55 °C", "model_limits_text": "Limits: 10–60 °C"}
+            "overridden": True, "limits_text": "Limits: 10–55 °C", "model_limits_text": "Limits: 10–60 °C",
+            "last": None}   # no reading yet (S039)
         assert (meters[hours["id"]]["source"], meters[hours["id"]]["limits_text"]) == ("node", None)
 
     def test_a_yes_no_meter_carries_its_expected_answer(self, engineer, admin, node, make_meter_type):
