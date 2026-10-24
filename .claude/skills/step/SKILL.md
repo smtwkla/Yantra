@@ -21,6 +21,8 @@ Read it before starting.
 
 - `/step plan <topic>`: open a new step and run **phase 1**. Propose the track
   (below). `/step plan lite <topic>` or `/step plan full <topic>` forces it.
+- `/step fix <the bug>`: fix a small bug on the **fix lane** (§ Fix lane),
+  with no stop for the user before gate B.
 - `/step amend S00N <request>`: write amendment `A<n>` in § 10 of the brief.
   Run the brief reviewer on it only if the user asks. Then stop at gate A.
 - `/step implement S00N` (alias `/step code S00N`): the brief, or amendment,
@@ -45,8 +47,9 @@ files and its Status, and continue from there.
 
 ## Tracks
 
-Every step runs on one of two tracks (README § Tracks). The track is in the
-brief's header (`Track: light | full`) and in the index row.
+Every step runs on one of two tracks (README § Tracks), or a small bug on the
+fix lane (§ Fix lane). The track is in the
+brief's header (`Track: light | full | fix`) and in the index row.
 
 - **Choosing.** When planning, check the light criteria below and **propose**
   the track in one line with the reason ("Track: light — UI on the masters
@@ -79,6 +82,40 @@ brief's header (`Track: light | full`) and in the index row.
   step for a process question). It still switches the track as above, and the
   user may keep light at gate A. `blocker` and `major` stay for risks the brief
   leaves unhandled.
+
+## Fix lane
+
+A small bug is fixed without a brief review and without gate A (standing
+rule, 24-10-2026, by KLA). The user's request is the approval.
+
+- **The fix lane only if all hold** (otherwise propose light or full, and ask):
+  - it fixes behaviour against what a brief, Plan.MD or the docs already say,
+    and adds no feature;
+  - about **5 files or fewer**, tests included;
+  - no permissions: RBAC keys, roles, `SITE_SCOPED`, login, the network gate;
+  - no interface change: no API route's URL, body or response shape, no
+    migration or schema change, no setting;
+  - no security-sensitive code: uploads, file serving, secrets, push or email
+    addresses;
+  - no locking, transaction or concurrency change.
+- **Run it like this:**
+  1. Take the next free `S0NN`. Write a short `1-brief.md` with
+     `Track: fix`, `Status: Implementing (fix lane)` and `Baseline:` set to
+     HEAD. It holds the bug, the steps to see it, the cause with `file:line`
+     (checked in the code, never guessed), the fix, the files, and the test
+     that fails on the bug. Add the index row.
+  2. Ask the user only if the cause is unclear, or the bug has two fixes that
+     behave differently. Then the step leaves the fix lane.
+  3. Spawn `coder` (Sonnet) for the step. It writes the failing test first
+     (*red, then green*), runs the full suite, and runs the targeted e2e
+     specs when a screen changed.
+  4. One `code-reviewer` round (Opus). Every finding is fixed (§ Phase 2
+     step 3). A `blocker` or `major` gets the usual loop.
+  5. Gate B, short: the bug, its cause, the change, the tests, "ready to
+     commit with the `S0NN:` prefix".
+- **Leave the fix lane** as soon as the coder, the reviewer or you find that
+  a criterion fails. Stop, set the track to light or full, and bring the step
+  to gate A with a brief of that track.
 
 ## Phase 1: brief
 
@@ -257,19 +294,36 @@ brief's header (`Track: light | full`) and in the index row.
    - Spawn `code-reviewer` with the step ID and the round number. From
      round 2 on it verifies the fix round only (its *Round 2 and later* rule):
      name the findings the fix round addressed.
-   - If any `blocker` or `major` finding is open, spawn `coder` for that fix
+   - **Every finding is fixed, minors and nits included** (standing rule,
+     24-10-2026, by KLA: asking the user about each minor finding cost more
+     than fixing it). A fix round covers all open findings of the review.
+   - If any `blocker` or `major` finding is open, spawn `coder` for the fix
      round, then review again.
-   - Stop after **3 rounds** and ask the user.
-   - Minor findings and nits go to the user at gate B. The coder doesn't fix
-     them unasked.
-   - Before each fix round, check the findings yourself. A finding that
-     contradicts the approved brief, or needs a design decision, goes to the
-     user and not to the coder.
+   - If only `minor` findings and nits are open, spawn `coder` (Sonnet) for
+     one fix round, without asking the user. Review again (verify only) only
+     when the fix round changed production code. A fix that changes only
+     tests, code comments, docs or step files needs no new review: read its
+     impl-report section and check its suites are green.
+   - Stop after **3 rounds** and ask the user. The fix round for minors and
+     nits does not count toward the 3.
+   - Before each fix round, check the findings yourself. These go to the user
+     at gate B, not to the coder:
+     - a finding that contradicts the approved brief, or needs a design
+       decision;
+     - a finding whose fix changes behaviour the user approved;
+     - a finding the review itself calls optional, such as a phone check.
+
+     Tell the coder which findings it leaves out, and why.
 4. **Gate B: STOP.** Report:
    - the test result;
    - what was built;
    - any departures from the brief, with your view on each;
-   - the minor findings still open;
+   - the findings fixed without asking, in **one line**: the count by
+     severity and their IDs ("Fixed without asking: 2 minor, 3 nits —
+     CR1-02…CR1-06; details in the impl report"). Give no more detail unless
+     the user asks;
+   - each finding held back for the user (step 3), with the question it
+     raises;
    - the e2e result (`tooling/run-e2e-tests.bat`: which specs ran — targeted, or the full suite for shared code — and the result) and the `[auto]` checks as
      passed tests, each with its test;
    - the real-device checks: the **important** ones as the checklist from the

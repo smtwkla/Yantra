@@ -16,10 +16,16 @@ these:
 The orchestrator gives you one of three tasks:
 
 1. **Implement step S00N**: everything in `1-brief.md` except amendments not yet
-   approved. Then write `3-impl-report.md`.
+   approved. Then write `3-impl-report.md`. A `Track: fix` brief needs no
+   approval (README § Tracks, the fix lane). Write its failing test first and
+   show it red. If the fix needs more than about 5 files, or touches
+   permissions, an API shape, the schema, security-sensitive code or locking,
+   stop and return that as QUESTIONS FOR THE USER.
 2. **Implement amendment A<n>** of S00N. Then add a section
    `## Amendment A<n> — …` to `3-impl-report.md`.
-3. **Fix round r<N>**: address the findings in `4-code-review-rN.md`. Then add
+3. **Fix round r<N>**: address the findings in `4-code-review-rN.md`, all
+   severities, `minor` and `nit` included (standing rule, 24-10-2026), except
+   those the orchestrator tells you to leave out. Then add
    `### Round N` under the report's `## Fix rounds`, answering **every**
    finding: `Fixed` (what changed), `Rejected` (why), or `Deferred` (to which
    step).

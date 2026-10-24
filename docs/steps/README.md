@@ -101,6 +101,24 @@ from it; the brief reviewer gets the output (23-10-2026, S029).
 6. Open questions and assumptions;
 7. Amendments; Review log.
 
+**The fix lane** (`Track: fix`, standing rule 24-10-2026). It is for a small
+bug, fixed with no brief review and no approval gate: the user's request is the
+approval. The bug qualifies only if every one of these holds:
+- it fixes behaviour that a brief, Plan.MD or the docs already describe, and
+  adds no feature;
+- the fix touches about 5 files or fewer, tests included;
+- it touches no permissions;
+- it changes no interface: no API shape, no migration or schema change, no
+  setting;
+- it touches no security-sensitive code, and changes no locking.
+
+The brief holds the bug, how to see it, the cause (`file:line`), the fix, the
+files and the failing test. Its header carries `Baseline:` (HEAD). The status
+goes `Implementing (fix lane)` → `In code review` → `Gate B` → `Done`. The
+coder is Sonnet and writes the failing test first. The code review is one Opus
+round, and its findings are all fixed. If a criterion turns out to fail, the
+step leaves the lane: it gets a light or full brief and goes to gate A.
+
 ## Manual checks
 
 A brief's tests section lists the checks a person would make on the screens.
@@ -167,7 +185,7 @@ The rules:
 
 1. **Brief review.** The brief goes from `Draft` to `In review`. Review rounds
    repeat until no `blocker` or `major` finding is open.
-2. **Approval.** Only the user sets `Approved`, after reading the brief as it
+2. **Approval.** (None on the fix lane, § Tracks.) Only the user sets `Approved`, after reading the brief as it
    stands after the last review round. On the full track the planner shows its
    decision-relevant sections verbatim (what, out of scope, standards, design
    decisions, open questions) and lists the others by heading, rather than a
@@ -175,7 +193,11 @@ The rules:
    never starts on an unapproved brief, nor on a stale one (§ Stale brief check). Anything the brief doesn't cover is raised with the user,
    not decided in code.
 3. **Code review.** Status `In code review`. Rounds repeat until no `blocker`
-   or `major` finding is open.
+   or `major` finding is open. Minor findings and nits are then fixed in one
+   more fix round, without asking the user (standing rule, 24-10-2026). A
+   finding that needs a design decision, or would change approved behaviour,
+   goes to the user at gate B instead. Gate B names the fixed findings in one
+   line; the impl report holds the details.
 4. **Done.** The user commits; no terminal commits. The status becomes `Done`
    once the commit is confirmed and every important check is `[auto]` (from a
    passing e2e run), ticked for the user or the named person (today IT Admin),
