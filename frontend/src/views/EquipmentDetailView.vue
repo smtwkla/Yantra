@@ -12,6 +12,12 @@
  * on equipment that is not scrapped. The storekeeper holds neither and sees neither.
  *
  * Meters (S038): the Meters card loads the node's meters itself; editing follows canEdit.
+ *
+ * Properties (S043 § 7.4): the class's active properties with the model's values, beside Details,
+ * when the class has any. Edit model values opens the Masters model dialog (every item of the
+ * model changes), for equipment:edit at any site (canEditModels), on every lifecycle. A
+ * component-unit without a model (S033) lists its class's properties with "—", with no model
+ * line and no button (BS1-01).
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -25,6 +31,7 @@ import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
 import { labelsPath } from "../utils/labelSheets";
+import { valueText } from "../utils/propertyFormat";
 import { ageText, problemText, ticketRowClass } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
@@ -32,6 +39,7 @@ import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
 import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
 import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
+import ModelPropertiesModal from "./masters/ModelPropertiesModal.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -46,6 +54,8 @@ const formModal = ref(null);
 const moveModal = ref(null);
 const lifecycleModal = ref(null);
 const documentsCards = ref(null);
+const propertiesModal = ref(null);
+const propertiesError = ref("");
 
 const scrapped = computed(() => node.value?.lifecycle === "scrapped");
 // No actions while another node is loading: they would act on the node still on screen.
@@ -108,6 +118,16 @@ async function load() {
 
 // Vue Router reuses this component when only :id changes, so follow the route
 watch(() => route.params.id, load, { immediate: true });
+
+// The dialog fetches the model's stored values first; a failed fetch leaves it closed with the message
+async function editModelValues() {
+  propertiesError.value = "";
+  try {
+    await propertiesModal.value.open({ id: node.value.model_id, label: node.value.model_label, class_code: node.value.class_code });
+  } catch (err) {
+    propertiesError.value = err.message;
+  }
+}
 
 // A new tab, as from the list; anyone who may see the node may print its label (S014)
 function printLabel(withParts) {
@@ -246,6 +266,25 @@ function onSaved({ result, created }) {
             </div>
           </div>
         </div>
+        <div v-if="node.properties.length" class="col-lg-6">
+          <div class="card h-100">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <span>Properties</span>
+              <button v-if="canEditModels && node.model_id !== null" class="btn btn-sm btn-outline-primary" :disabled="loading" @click="editModelValues">
+                <i class="fa-solid fa-pen me-1"></i>Edit model values
+              </button>
+            </div>
+            <div class="card-body">
+              <div v-if="propertiesError" class="alert alert-danger py-2">{{ propertiesError }}</div>
+              <dl class="row mb-2">
+                <template v-for="p in node.properties" :key="p.property_id">
+                  <dt class="col-6">{{ p.name }}</dt><dd class="col-6">{{ valueText(p.display) }}</dd>
+                </template>
+              </dl>
+              <div v-if="node.model_id !== null" class="small text-secondary">Values from model {{ node.model_label }}.</div>
+            </div>
+          </div>
+        </div>
         <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header">Parts</div>
@@ -278,6 +317,7 @@ function onSaved({ result, created }) {
     <EquipmentFormModal ref="formModal" @saved="onSaved" />
     <EquipmentMoveModal ref="moveModal" @saved="load" />
     <EquipmentLifecycleModal ref="lifecycleModal" @saved="load" />
+    <ModelPropertiesModal ref="propertiesModal" @saved="load" />
   </div>
 </template>
 

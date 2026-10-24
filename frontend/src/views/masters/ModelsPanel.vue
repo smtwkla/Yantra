@@ -15,6 +15,9 @@
  * Add meter, Set limits (gauges) and Remove (asks first). Every machine of the model has them;
  * a machine may override a gauge's limits and add its own meters on its own page. An inactive
  * model keeps its button: it stays on its machines (BR2-03).
+ *
+ * Properties (S043 § 7.3): a row's Properties button opens the model's values dialog, for the
+ * keepers of the masters (equipment:edit) only.
  */
 import { computed, onMounted, ref } from "vue";
 import { apiGet, apiPut } from "../../api";
@@ -28,6 +31,7 @@ import {
 } from "../../stores/masters";
 import { goodReadingText, unitAndKind } from "../../utils/meterLabels";
 import ModelMeterFormModal from "./ModelMeterFormModal.vue";
+import ModelPropertiesModal from "./ModelPropertiesModal.vue";
 import { useMasterForm } from "./useMasterForm";
 
 const canEdit = computed(() => userPermissions.value.includes("equipment:edit"));
@@ -44,6 +48,8 @@ const confirmingRemoveId = ref(null);
 const removing = ref(false);
 const removeError = ref("");
 const meterModal = ref(null);
+const propertiesModal = ref(null);
+const actionError = ref("");
 
 const rows = computed(() =>
   (equipmentModels.value ?? []).filter(
@@ -136,6 +142,16 @@ function editModel(m) {
   openEdit(m);
 }
 
+// The dialog fetches the stored values first; a failed fetch leaves it closed with the message here
+async function openProperties(m) {
+  actionError.value = "";
+  try {
+    await propertiesModal.value.open(m);
+  } catch (err) {
+    actionError.value = err.message;
+  }
+}
+
 onMounted(reload);
 </script>
 
@@ -214,6 +230,7 @@ onMounted(reload);
     </div>
     <div v-else class="card-body">
       <div v-if="loadError" class="alert alert-danger">{{ loadError }}</div>
+      <div v-if="actionError" class="alert alert-danger">{{ actionError }}</div>
       <div v-if="equipmentModels === null && !loadError" class="text-secondary">Loading…</div>
       <div v-else-if="rows.length === 0 && !loadError" class="text-secondary">No models yet.</div>
       <div v-else-if="rows.length" class="table-responsive">
@@ -234,6 +251,9 @@ onMounted(reload);
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Meters" aria-label="Meters" @click="openMeters(m)">
                   <i class="fa-solid fa-gauge"></i>
                 </button>
+                <button v-if="canEdit" class="btn btn-sm btn-outline-secondary me-1" title="Properties" aria-label="Properties" @click="openProperties(m)">
+                  <i class="fa-solid fa-list-ul"></i>
+                </button>
                 <button v-if="canEdit" class="btn btn-sm btn-outline-secondary" title="Edit" @click="editModel(m)">
                   <i class="fa-solid fa-pen"></i>
                 </button>
@@ -246,6 +266,7 @@ onMounted(reload);
   </div>
 
   <ModelMeterFormModal ref="meterModal" @saved="loadMeters" />
+  <ModelPropertiesModal ref="propertiesModal" />
 
   <FormModal ref="modal" :title="editingId === null ? 'Add model' : 'Edit model'" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <template v-if="editingId !== null" #footer-left>

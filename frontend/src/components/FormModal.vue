@@ -30,6 +30,8 @@ const props = defineProps({
   saveLabel: { type: String, default: "Save" },
   // The form differs from how it was when the dialog opened (the parent compares)
   dirty: { type: Boolean, default: false },
+  // Nothing to save (S043: a class with no properties yet): the footer shows only Close
+  closeOnly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["save"]);
 
@@ -102,7 +104,7 @@ function focusAutofocusField() {
 }
 
 function onSubmit() {
-  if (!confirming.value) emit("save");
+  if (!confirming.value && !props.closeOnly) emit("save");
 }
 
 onMounted(() => {
@@ -172,6 +174,9 @@ defineExpose({
           <span class="me-auto fw-semibold" role="alert">Discard your changes?</span>
           <button ref="keepEditingButton" type="button" class="btn btn-primary" @click="keepEditing">Keep editing</button>
           <button type="button" class="btn btn-outline-danger" @click="hideNow">Discard</button>
+        </div>
+        <div v-else-if="closeOnly" class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         </div>
         <div v-else class="modal-footer">
           <div class="me-auto"><slot name="footer-left" /></div>

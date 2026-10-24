@@ -57,6 +57,9 @@ A write with a model never locks a type: it comes from the model, whose type nev
   (4b) the meter type → the model_meters row, and a meter type update takes (4b) alone, then
   share-locks the link rows, which only those two writes touch after their own (4b).  No path
   takes (4b) and then (1) or (4), so no cycle.
+- properties.py (S043) locks a class (5) or a model (4), never both, then only its own
+  property and option rows, and never equipment; the detail reads its card plainly.  So it
+  adds no lock cycle.
 - tickets.py (S017) raises a ticket under (1) the node raised on → (6) the serial counter
   (scope TK:YYYY-MM) → (7) the ticket row.  Ticket rows come last everywhere: nothing that
   holds one then takes an equipment, unit or counter lock.  The ticket insert takes shared
@@ -104,6 +107,7 @@ from equipment_core import (
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters import lock_type_of_class
 from masters_core import model_label
+from properties import equipment_properties
 from settings import label_base_url
 from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
 
@@ -291,6 +295,8 @@ def _detail(cur, node):
     cur.execute("SELECT id, event, old_value, new_value, created_at, created_by FROM equipment_events "
                 "WHERE equipment_id = %s ORDER BY created_at DESC, id DESC", (node["id"],))
     out["events"] = rows_to_list(cur.fetchall())
+    # The Properties card (S043 § 6.3): the class's active properties with the model's values
+    out["properties"] = equipment_properties(cur, node["class_id"], node["model_id"])
     return out
 
 

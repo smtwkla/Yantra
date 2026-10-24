@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
+import { noModelPart, propertySetup, propertyTag } from "./support/properties.js";
 import { card, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
@@ -364,4 +365,61 @@ test("S038: an operator sees the Meters card without edit buttons", async ({ pag
   await expect(meterRow(page, "Oil temperature")).toContainText("Limits: 10–60 °C");
   await expect(meterRow(page, "Run hours")).toBeVisible();
   await expect(metersCard(page).getByRole("button")).toHaveCount(0);
+});
+
+// The Properties card (S043 § 7.4): the class's properties with the model's values
+test("S043: a number value with its unit shows as 62.5 kVA on the card", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E generator rating ${tag}`;
+  const { model, node } = await propertySetup(tag, {
+    properties: [{ name, data_type: "number", unit: "kVA" }], values: { 0: "62.5" },
+  });
+  await asPerson(page, "technician", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([name]);
+  await expect(properties.locator("dd")).toHaveText(["62.5 kVA"]);
+  await expect(properties).toContainText(`Values from model ${model.label}.`);
+  // A technician does not keep the masters (no equipment:edit)
+  await expect(properties.getByRole("button", { name: "Edit model values" })).toHaveCount(0);
+});
+
+test("S043: Edit model values on the card opens the model dialog; after a save the card shows the new value", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E generator rating ${tag}`;
+  const { model, node } = await propertySetup(tag, {
+    properties: [{ name, data_type: "number", unit: "kVA" }], values: { 0: "62.5" },
+  });
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dd")).toHaveText(["62.5 kVA"]);
+  await properties.getByRole("button", { name: "Edit model values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-title")).toHaveText(`Properties of ${model.label}`);
+  await expect(dialog.getByLabel(name)).toHaveValue("62.5");
+  await dialog.getByLabel(name).fill("75");
+  await saveDialog(page, "Save values");
+  await expect(properties.locator("dd")).toHaveText(["75 kVA"]);
+});
+
+test("S043: the card is hidden when the class has no property", async ({ page }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await expect(card(page, "Details")).toBeVisible();
+  await expect(card(page, "Properties")).toHaveCount(0);
+});
+
+test("S043: a component-unit with No model shows its class's properties with —, no model line and no Edit model values", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E frame size ${tag}`;
+  const { cls, node } = await propertySetup(tag, { properties: [{ name, data_type: "text" }] });
+  const part = await noModelPart(node, cls, `E2E no-model part ${tag}`);
+  // The engineer keeps the masters, so a part with a model would show the button
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
+  await expect(card(page, "Details")).toContainText("No model");
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([name]);
+  await expect(properties.locator("dd")).toHaveText(["—"]);
+  await expect(properties).not.toContainText("Values from model");
+  await expect(properties.getByRole("button", { name: "Edit model values" })).toHaveCount(0);
 });

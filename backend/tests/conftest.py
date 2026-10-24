@@ -62,6 +62,7 @@ except pymysql.MySQLError as exc:   # reported by _clean_tables, so every test s
     _CREATE_ERROR = exc
 
 import access_control
+import db_helpers
 from app import app as flask_app
 from config_rbac import LOGIN_ROLE, SITE_ROLES
 from db_helpers import transaction
@@ -160,14 +161,17 @@ def _fresh_access_caches():
 # Tables emptied once per session so tests start from a known state, child tables first
 _TABLES = ("node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
-           "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
-           "units", "sites", "equipment_classes", "serial_counters")
+           "equipment_events", "equipment", "model_property_values", "equipment_models", "manufacturers",
+           "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes",
+           "serial_counters")
 
 # The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
-# Table -> the created_by of its seed rows (meter types: migration v29, S037)
+# Table -> the created_by of its seed rows (meter types: migration v29, S037; the property
+# master and its options: migration v31, S043)
 SEED_CREATOR = "migration-v11"  # the failure-code seeds' creator only, for test_migration_v11.py
 _SEEDED_TABLES = {"failure_modes": SEED_CREATOR, "failure_causes": SEED_CREATOR,
-                  "maintenance_actions": SEED_CREATOR, "meter_types": "migration-v29"}
+                  "maintenance_actions": SEED_CREATOR, "meter_types": "migration-v29",
+                  "property_definitions": "migration-v31", "property_options": "migration-v31"}
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -200,6 +204,15 @@ def _clean_tables():
 def _remove_data_dir():
     yield
     shutil.rmtree(TEST_DATA_DIR, ignore_errors=True)
+
+
+@pytest.fixture
+def db_down(monkeypatch):
+    """Every get_db() in the request raises DBUnavailable, as while the database is down; the
+    access-log hook's own ensure_schema reference answers "down" too (S013 BR2-03).  Shared by
+    the auth, network-gate and properties tests (S043 BR1-16)."""
+    monkeypatch.setattr(db_helpers, "ensure_schema", lambda _config: "Can't connect (test)")
+    monkeypatch.setattr(access_control, "ensure_schema", lambda _config: "Can't connect (test)")
 
 
 @pytest.fixture

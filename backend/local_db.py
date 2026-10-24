@@ -849,6 +849,123 @@ _MIGRATIONS = [
                  'meter_added','meter_removed','meter_limits')
             NOT NULL""",
     ]),
+    # S043 — equipment properties (docs/steps/S043-equipment-properties/1-brief.md § 4): technical
+    # data defined once (ISO 14224 Annex A equipment-specific data; IEC 61360: one definition with
+    # a data type and a unit, reused across classes), linked to classes, valued on models.
+    # One typed column per data type and exactly one filled (chk_model_property_one_value); which
+    # one must follow the property's data_type, which properties_core checks (a CHECK cannot read
+    # another table).  The option's composite FK makes "the option is this property's" a database
+    # rule, as fk_equipment_models_type does for a model's type.  No row = no value.
+    # No _PRECONDITIONS entry: new tables and seed rows only, no existing row changes.  IF NOT
+    # EXISTS and INSERT IGNORE (keyed on the unique name, created_by 'migration-v31'), so a
+    # half-applied v31 simply re-runs and a re-run keeps an engineer's edit of a seed row.
+    # Rollback: the previous release ignores the four tables.
+    (31, "Equipment properties: master, class links, model values (S043)", [
+        """CREATE TABLE IF NOT EXISTS property_definitions (
+            id           INT AUTO_INCREMENT PRIMARY KEY,
+            name         VARCHAR(80) NOT NULL,
+            data_type    ENUM('number','choice','text','yes_no') NOT NULL,
+            unit         VARCHAR(20) NULL,
+            description  VARCHAR(300) NULL,
+            active       TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_property_definitions_name UNIQUE (name),
+            CONSTRAINT chk_property_unit CHECK (data_type = 'number' OR unit IS NULL)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS property_options (
+            id           INT AUTO_INCREMENT PRIMARY KEY,
+            property_id  INT NOT NULL,
+            label        VARCHAR(60) NOT NULL,
+            active       TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_property_options_label UNIQUE (property_id, label),
+            CONSTRAINT uq_property_options_id_property UNIQUE (id, property_id),
+            CONSTRAINT fk_property_options_property FOREIGN KEY (property_id) REFERENCES property_definitions (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        # No active flag: removing a property from a class deletes the link; the values stay
+        """CREATE TABLE IF NOT EXISTS class_properties (
+            class_id     INT NOT NULL,
+            property_id  INT NOT NULL,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            PRIMARY KEY (class_id, property_id),
+            CONSTRAINT fk_class_properties_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id),
+            CONSTRAINT fk_class_properties_property FOREIGN KEY (property_id) REFERENCES property_definitions (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS model_property_values (
+            model_id      INT NOT NULL,
+            property_id   INT NOT NULL,
+            value_number  DECIMAL(16,4) NULL,
+            value_text    VARCHAR(100) NULL,
+            value_bool    TINYINT(1) NULL,
+            option_id     INT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            PRIMARY KEY (model_id, property_id),
+            CONSTRAINT fk_model_property_values_model FOREIGN KEY (model_id) REFERENCES equipment_models (id),
+            CONSTRAINT fk_model_property_values_property FOREIGN KEY (property_id)
+                REFERENCES property_definitions (id),
+            CONSTRAINT fk_model_property_values_option FOREIGN KEY (option_id, property_id)
+                REFERENCES property_options (id, property_id),
+            CONSTRAINT chk_model_property_one_value CHECK (
+                (value_number IS NOT NULL) + (value_text IS NOT NULL) + (value_bool IS NOT NULL)
+                + (option_id IS NOT NULL) = 1)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        # The seed (§ 4.6): ISO 14224 Annex A names where it has the class, plus common nameplate
+        # data.  No pump, motor, compressor or valve type and no execution: how equipment is built
+        # is its equipment type (S004), not a property.  Linked to no class: the plant's class
+        # codes are not known here.
+        """INSERT IGNORE INTO property_definitions (name, data_type, unit, description, created_by) VALUES
+            ('Power – design', 'number', 'kW', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Speed', 'number', 'rpm', 'The maker''s rating, from the nameplate or the data sheet.', 'migration-v31'),
+            ('Voltage', 'number', 'V', 'The maker''s rating, from the nameplate or the data sheet.', 'migration-v31'),
+            ('Rated current', 'number', 'A', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Frequency', 'number', 'Hz', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Suction pressure – design', 'number', 'bar',
+             'The maker''s rating, from the nameplate or the data sheet.', 'migration-v31'),
+            ('Discharge pressure – design', 'number', 'bar',
+             'The maker''s rating, from the nameplate or the data sheet.', 'migration-v31'),
+            ('Flow rate – design', 'number', 'L/min', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Free air delivery', 'number', 'm³/min', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Number of stages', 'number', NULL, 'From the data sheet.', 'migration-v31'),
+            ('Shaft sealing', 'choice', NULL, NULL, 'migration-v31'),
+            ('Shaft orientation', 'choice', NULL, NULL, 'migration-v31'),
+            ('Coupling', 'choice', NULL, NULL, 'migration-v31'),
+            ('Insulation class', 'choice', NULL, NULL, 'migration-v31'),
+            ('Degree of protection', 'text', NULL, 'The IP code on the nameplate, for example IP55.',
+             'migration-v31'),
+            ('Frame size', 'text', NULL, NULL, 'migration-v31'),
+            ('Mounting', 'text', NULL, 'The IM or B/V code, for example B3.', 'migration-v31'),
+            ('Variable speed drive', 'yes_no', NULL, NULL, 'migration-v31'),
+            ('Actuation', 'choice', NULL, NULL, 'migration-v31'),
+            ('Nominal size', 'number', 'mm', 'From the data sheet.', 'migration-v31'),
+            ('Generator rating', 'number', 'kVA', 'The maker''s rating, from the nameplate or the data sheet.',
+             'migration-v31'),
+            ('Fuel tank capacity', 'number', 'L', 'From the data sheet.', 'migration-v31')""",
+        # The options find their property by name at run time and are keyed on
+        # uq_property_options_label (BR1-06); one statement per option keeps the listed order
+        *(f"INSERT IGNORE INTO property_options (property_id, label, created_by) SELECT id, '{label}', "
+          f"'migration-v31' FROM property_definitions WHERE name = '{name}'"
+          for name, labels in (
+              ("Shaft sealing", ("Mechanical seal", "Packed gland", "Lip seal", "Seal-less")),
+              ("Shaft orientation", ("Horizontal", "Vertical")),
+              ("Coupling", ("Rigid", "Flexible", "Magnetic", "Direct")),
+              ("Insulation class", ("A", "B", "E", "F", "H")),
+              ("Actuation", ("Manual", "Solenoid", "Pneumatic", "Hydraulic", "Electric motor")),
+          )
+          for label in labels),
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

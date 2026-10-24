@@ -1515,3 +1515,52 @@ class TestNoModel:
         with pytest.raises(pymysql.err.OperationalError) as caught:
             _db("UPDATE equipment SET model_id = NULL WHERE id = %s", (node["id"],))
         assert "chk_equipment_model_level" in str(caught.value)
+
+
+class TestProperties:
+    """The detail's properties (S043 § 6.3): the class's active properties with the model's values."""
+
+    def test_model_values_on_the_detail(self, admin, make_model, make_equipment):
+        model = make_model()
+        cls = {"id": model["class_id"]}
+        rating = admin.post(f"{MASTERS}/properties", json={"name": "Eq generator rating", "data_type": "number",
+                                                           "unit": "kVA"}).get_json()
+        empty = admin.post(f"{MASTERS}/properties", json={"name": "Eq frame size", "data_type": "text"}).get_json()
+        unlinked = admin.post(f"{MASTERS}/properties", json={"name": "Eq unlinked", "data_type": "text"}).get_json()
+        retired = admin.post(f"{MASTERS}/properties", json={"name": "Eq retired", "data_type": "text"}).get_json()
+        res = admin.post(f"{MASTERS}/equipment-classes/{cls['id']}/properties",
+                         json={"property_ids": [rating["id"], empty["id"], retired["id"]]})
+        assert res.status_code == 200, res.get_json()
+        res = admin.put(f"{MASTERS}/equipment-models/{model['id']}/properties",
+                        json={"values": {str(rating["id"]): "62.5", str(retired["id"]): "x"}})
+        assert res.status_code == 200, res.get_json()
+        admin.put(f"{MASTERS}/properties/{retired['id']}", json={"active": False})
+        node = make_equipment(model=model)
+
+        detail = admin.get(f"{EQUIPMENT}/{node['id']}").get_json()
+        assert detail["properties"] == [
+            {"property_id": empty["id"], "name": "Eq frame size", "value": None, "unit": None, "display": None,
+             "source": None},
+            {"property_id": rating["id"], "name": "Eq generator rating", "value": "62.5", "unit": "kVA",
+             "display": "62.5 kVA", "source": "model"},
+        ]
+        assert unlinked["id"] not in [p["property_id"] for p in detail["properties"]]
+
+    def test_no_properties_is_an_empty_list(self, admin, make_equipment):
+        node = make_equipment()
+        assert admin.get(f"{EQUIPMENT}/{node['id']}").get_json()["properties"] == []
+
+    def test_a_component_unit_without_a_model_shows_its_class_s_properties_without_values(
+            self, admin, uniq, make_class, make_equipment):
+        """BS1-01: model_id None -> every property of the class, display and source None."""
+        cls = make_class()
+        rating = admin.post(f"{MASTERS}/properties", json={"name": f"Eq rating {uniq.designation()}", "data_type": "number",
+                                                           "unit": "kW"}).get_json()
+        res = admin.post(f"{MASTERS}/equipment-classes/{cls['id']}/properties", json={"property_ids": [rating["id"]]})
+        assert res.status_code == 200, res.get_json()
+        node = TestNoModel._create(admin, make_equipment(), cls).get_json()
+        detail = admin.get(f"{EQUIPMENT}/{node['id']}").get_json()
+        assert detail["model_id"] is None
+        assert detail["properties"] == [
+            {"property_id": rating["id"], "name": rating["name"], "value": None, "unit": "kW", "display": None,
+             "source": None}]

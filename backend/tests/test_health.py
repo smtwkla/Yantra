@@ -11,7 +11,7 @@ def test_schema_ready_on_the_test_database(client):
 
 def test_not_ready_is_still_200_with_no_reason(client, monkeypatch):
     # The session's schema is already up to date, so init_db would not run: the route's own
-    # reference is replaced, as test_auth's db_down does (BR2-06)
+    # reference is replaced, as conftest's db_down does (BR2-06)
     monkeypatch.setattr(app_module, "ensure_schema", lambda _config: "Drop the old equipment table first")
     res = client.get("/api/health")
     assert (res.status_code, res.get_json()) == (200, {"status": "ok", "schema_ready": False})
