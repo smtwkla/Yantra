@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 25-10-2026
 Track: light
 Status: Approved (25-10-2026 by KLA; open questions 1–5 as proposed, incl. 3: S045's guard skips on a native WebKit run); coded after S045
-Baseline: 967e888 + uncommitted S037, S038, S039, S040, S043 (and S045 in progress, test files only; it owns `frontend/e2e/support/test.js`)
+Baseline: refs/steps/S045 67a4b57 (stale check 25-10-2026: since the approved baseline, S045 made its guard in `frontend/e2e/support/test.js` skip with its message, as § Open questions 3 assumes; S040 A1 changed only readings and ticket screens; nothing this brief relies on changed, no staleness review needed)
 ```
 
 # S046 — iPhone browser tests in a Docker container

@@ -277,3 +277,58 @@ Run name `s040a1`. Frontend only: no backend change, no migration.
 - [auto] A full save makes the round read-only, *Saved* is disabled, and *Enter more readings* starts a fresh round — `frontend/e2e/readings.spec.js::S040 A1: a full save makes the round read-only, and Enter more readings starts a fresh one`
 - [auto] A partial save keeps the refused row editable and shows no *Enter more readings* — `frontend/e2e/readings.spec.js::S040 A1: a partial save keeps the refused row editable and offers no Enter more readings`
 - [auto] The same meter at the same minute is refused in the next round; another meter is not — `frontend/e2e/readings.spec.js::S040 A1: the same meter at the same minute is refused in the next round; another meter is not`
+
+### A1 fix round (CR r4)
+
+**CR4-01 (major) — Fixed.** The lock of the round is now an explicit state, not derived from the typed text.
+- `roundDone` in `frontend/src/views/ReadingsView.vue` is a `ref(false)`. `saveAll` sets it at the end, after `saving` is false: true only when no filled row is left unsaved and at least one row is saved (a full save). `undo` clears it when the delete succeeds. `resetStates` (called by every sheet load, so also by `enterMore` and a site switch) clears it.
+- A partial save leaves it false, so the refused rows stay editable and *Enter more readings* does not show (brief A1 item 3). Clearing or retyping a row no longer changes it.
+- Known side effect, as the review accepts: after a partial save, if the user empties the refused row and leaves it empty, nothing is pending, so *Save readings* is disabled and *Enter more readings* does not show until a value is typed. Typing a value returns to the normal state.
+
+**CR4-02 (nit) — Fixed.** New test "S040 A1: switching the site after a saved round asks nothing": manager saves a row at SMTW, picks BRICKS, the sheet changes and no `discard-confirm` shows.
+
+**Tests added** (`frontend/e2e/readings.spec.js`):
+- "S040 A1: emptying a refused row to retype it does not lock the round (CR4-01)": partial save, `fill("")` on the refused row, the row and *Change* stay unlocked, type 1100, save, the row reads *Saved* and *Enter more readings* shows.
+- "S040 A1: Undo after a full save of two rows opens the round, and the row can be cleared and retyped (CR4-01)": two rows saved, *Undo* on one, the round opens, clear and retype 45, save, *Saved*, *Enter more readings* shows.
+- Red, then green. Run on the old code (before the `ReadingsView.vue` edit), desktop-chromium, `-g "S040 A1"`: 2 failed, 4 passed. The failing ones were these two. For the Undo test the output was read: `expect(rowInput(oil)).not.toHaveAttribute("readonly", "")` failed after `fill("")` (the input was `readonly`). The first test failed the same way at its first lock assertion (I read only the failure list for it, not its message). With the fix, the first run of the new tests had one failure in my own test: it looked for `input[type=datetime-local]`, which exists only after *Change*; I replaced it with a check that *Change* stays visible. After that: 6 passed.
+
+**Files touched (2 code, 1 doc):**
+- `frontend/src/views/ReadingsView.vue`: `roundDone` as explicit state (set in `saveAll`, cleared in `undo` and `resetStates`).
+- `frontend/e2e/readings.spec.js`: three new tests.
+- `docs/steps/S040-readings-sheet/3-impl-report.md`: this section.
+- `EventFields.vue`, the backend and S045's uncommitted test files are untouched.
+
+**Test results:**
+- `YANTRA_TEST_RUN=s040c5 tooling/run-frontend-tests.bat`: PASSED, 168 passed.
+- `npx vite build`: built in 4.30 s (usual chunk-size warning only).
+- Backend: not run, no backend change.
+- E2E `tooling/run-e2e-tests.bat readings.spec.js screens.spec.js` (all three projects): 79 passed, 0 failed, 41 skipped (phone-webkit, skipped by S045's display-scale guard on this PC, plus the bottom-bar test that skips itself on desktop). `EventFields.vue` unchanged, so the tickets-* specs were not run.
+
+**Docs updated:** none, because the behaviour in `docs/Plan.MD` § 4.5 (A1 sentence) is unchanged: a full save locks, a partial save keeps refused rows editable. No other doc in CLAUDE.md § Docs to keep current is due.
+
+**Manual checks added:**
+- [auto] A partial save, clearing the refused row and retyping it, keeps the field editable — readings.spec.js::S040 A1: emptying a refused row to retype it does not lock the round (CR4-01)
+- [auto] Undo after a full save of two rows opens the round; the row can be cleared and retyped — readings.spec.js::S040 A1: Undo after a full save of two rows opens the round, and the row can be cleared and retyped (CR4-01)
+- [auto] Switching the site after a saved round asks nothing — readings.spec.js::S040 A1: switching the site after a saved round asks nothing
+
+### A1 fix round (CR r5)
+
+**Correction to the r4 section:** it says the side effect (an emptied refused row leaves no *Enter more readings*) is "as the review accepts". Review r4 did not discuss that state and did not accept it. The line was wrong. CR5-01 below removes the side effect.
+
+**CR5-01 (minor) — Fixed.** *Enter more readings* now shows when no filled row is pending, at least one row is saved and no save is running.
+- `frontend/src/views/ReadingsView.vue`: new `canEnterMore` computed (`!saving && pending === 0 && some row saved`); the *Enter more readings* button uses it. The lock (`locked` on rows and *Time taken*, the *Saved* button) stays tied to `roundDone`, which only a full save sets. So after a partial save, once the refused row is emptied, the button shows while the rows stay editable and *Save readings* stays (disabled, nothing pending). Tapping the button loses no typed value, because nothing is pending.
+- Test (red first): "S040 A1: after a partial save, giving up the refused row offers Enter more readings (CR5-01)": partial save, `fill("")` on the refused row, *Enter more readings* shows, the emptied row is not read-only, the saved row is read-only; click it, both rows are empty and editable. Without the fix (desktop-chromium, `E2E_LANES=1`, `-g "CR5-01"`): fails at `expect(enterMore(page)).toBeVisible()` (the button is absent). With the fix: passes.
+- The earlier partial-save test (button absent while a refused row still holds a value) still passes.
+
+**Files touched (2 code, 1 doc, plus the Plan):** `ReadingsView.vue`, `frontend/e2e/readings.spec.js`, this report, `docs/Plan.MD`.
+
+**Test results:**
+- `YANTRA_TEST_RUN=s040c6 tooling/run-frontend-tests.bat`: PASSED, 168 passed.
+- `npx vite build`: built in 4.34 s (usual warning only).
+- Backend: not run, no backend change.
+- E2E `tooling/run-e2e-tests.bat readings.spec.js screens.spec.js` (all projects): 81 passed, 0 failed, 42 skipped (phone-webkit by S045's display-scale guard on this PC, plus the bottom-bar test on desktop).
+
+**Docs updated:** `docs/Plan.MD` § 4.5: the A1 sentence now says *Enter more readings* also shows after a partial save once no filled row is left to retry. No other doc is due.
+
+**Manual checks added:**
+- [auto] After a partial save, emptying the refused row shows *Enter more readings*, which starts a fresh round — readings.spec.js::S040 A1: after a partial save, giving up the refused row offers Enter more readings (CR5-01)

@@ -83,15 +83,20 @@ const stateOf = (key) => states[key];
 function resetStates() {
   for (const key of Object.keys(states)) delete states[key];
   for (const row of rows.value) states[row.key] = blankState();
+  roundDone.value = false;
   unfolded.value = new Set();
 }
 
 const isFilled = (state) => String(state.value ?? "").trim() !== "";
 const filled = computed(() => rows.value.filter((r) => isFilled(states[r.key])).length);
 const pending = computed(() => rows.value.filter((r) => isFilled(states[r.key]) && states[r.key].phase !== "saved").length);
-// A saved round with no row left to retry is read-only; Enter more readings starts the next (A1).
-// Undo of a saved row makes it a pending row again, which opens the round.
-const roundDone = computed(() => !saving.value && pending.value === 0 && rows.value.some((r) => states[r.key].phase === "saved"));
+// A full save locks the round; Enter more readings starts the next (A1). It is set by the end of a
+// save, not derived from the typed text: emptying a row to retype it must not lock the sheet (CR4-01).
+// Undo and a reload of the sheet open the round again.
+const roundDone = ref(false);
+// Enter more readings shows once nothing is left to retry (A1 item 3, CR5-01): also after a partial save
+// whose refused row was emptied. It locks nothing, so it may show while the round is still open.
+const canEnterMore = computed(() => !saving.value && pending.value === 0 && rows.value.some((r) => states[r.key].phase === "saved"));
 // A row saved this session counts too, by the time it was taken
 const readToday = computed(() => rows.value.filter((r) => {
   const state = states[r.key];
@@ -271,6 +276,7 @@ async function saveAll() {
   } finally {
     saving.value = false;
   }
+  roundDone.value = pending.value === 0 && rows.value.some((r) => states[r.key].phase === "saved");
   // A refusal is always in view (S026): the first one may be rows above the Save button
   await nextTick();
   const target = timeError.value ? root.value?.querySelector(".invalid-feedback") : root.value?.querySelector('[role="alert"]');
@@ -292,6 +298,7 @@ async function undo(row) {
     await apiDelete(`/api/equipment/${row.nodeId}/readings/${state.reading.id}`);
     // Editable again, the value kept (§ 1.6)
     state.phase = "idle";
+    roundDone.value = false;
     state.reading = null;
     state.message = "";
     state.notOk = false;
@@ -394,7 +401,7 @@ async function undo(row) {
             <span class="small text-secondary flex-grow-1" data-testid="filled-count">{{ filled }} of {{ rows.length }} filled</span>
             <button v-if="roundDone" type="button" class="btn btn-primary" disabled>Saved</button>
             <button v-else type="button" class="btn btn-primary" :disabled="saving || pending === 0" @click="saveAll">Save readings</button>
-            <button v-if="roundDone" type="button" class="btn btn-primary enter-more" :disabled="loading" @click="enterMore">Enter more readings</button>
+            <button v-if="canEnterMore" type="button" class="btn btn-primary enter-more" :disabled="loading" @click="enterMore">Enter more readings</button>
           </div>
           <div v-if="askEngineer" class="small text-secondary mt-1">A wrong reading is removed by an engineer. Ask one.</div>
         </div>
