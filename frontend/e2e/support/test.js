@@ -7,7 +7,7 @@ export const test = base.extend({
   // Auto: a WebKit window must be as wide as its device (S045).  With Windows display scaling
   // above 100 %, Playwright's WebKit makes the window narrower (125 % gives 312 px, not the
   // iPhone 14's 390), and a focus scroll then puts a dialog's buttons off screen, which a real
-  // phone cannot do.  Such a run proves nothing, so stop it with the reason.
+  // phone cannot do.  Such a run proves nothing, so skip it with the reason.
   windowWidthGuard: [
     async ({ page, browserName }, use, testInfo) => {
       const expected = testInfo.project.use.viewport?.width;
@@ -16,9 +16,10 @@ export const test = base.extend({
         await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1">');
         const actual = await page.evaluate(() => window.innerWidth);
         if (actual !== expected) {
-          throw new Error(
-            `The ${testInfo.project.name} window is ${actual} px wide, not ${expected}. `
-            + "Set Windows display scale to 100 % and sign in again.");
+          testInfo.skip(true,
+            `The ${testInfo.project.name} window is ${actual} px wide, not ${expected}, `
+            + "because Windows display scale is above 100 %. "
+            + "Set it to 100 %, then sign out of Windows and sign in again.");
         }
       }
       await use();

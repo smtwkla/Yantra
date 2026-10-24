@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: fix
-Status: Paused (CR r1: 0 blocker, 3 major, 1 minor, 3 nits — not yet answered; CR1-01, CR1-02: #2 and #3 to be marked not fixed and their changes undone; CR1-03 settled 25-10-2026 by the user via S046 Q3: the guard skips with its message on a native WebKit run)
+Status: Gate B (fix round 1: CR1-01…CR1-07 answered, test-only, no new review needed; suites green; e2e full 296 passed, 154 skipped, 0 failed; CR1-04 open box for KLA at 100 % scale, not blocking)
 Baseline: refs/steps/S039 + S040 (working tree, gate B pending)
 ```
 
@@ -51,4 +51,12 @@ None.
 
 ## Review log
 
-None (fix lane).
+No brief review (fix lane). Code review r1 answers, decided by KLA on 25-10-2026:
+
+| Finding | Answer |
+|---|---|
+| CR1-01 major: #2's cause is wrong, the fix is a no-op | Accepted: undo the change, mark #2 not fixed, cause unknown (assumed: WebKit draws no frames under the 6-lane load) |
+| CR1-02 major: #3's fresh locator is the same locator | Accepted: undo the change, mark #3 not fixed, with the same assumption |
+| CR1-03 major: the guard fails every phone-webkit test | Accepted: the guard skips with its message (the user's answer to S046 Q3) |
+| CR1-04 minor: the guard never seen to pass at 100 % | Accepted, option A: an open box in the impl report's Manual checks, for KLA at 100 % display scale; the step does not wait for it |
+| CR1-05…CR1-07 nits | Accepted |

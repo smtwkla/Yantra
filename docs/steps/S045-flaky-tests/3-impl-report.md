@@ -3,7 +3,6 @@ Step: S045 — The known flaky tests made steady
 Doc: impl report
 Author: Coder
 Date: 25-10-2026
-Track: fix
 ```
 
 # S045 — Impl report
@@ -61,6 +60,32 @@ For a WebKit project with a `viewport` width, the fixture sets a page with a `wi
 - The 4 skipped tests are not from this step.
 - `readings.spec.js:362` also uses `scrollIntoViewIfNeeded`; left alone (not in the brief, S040's file).
 
+## Fix rounds
+
+### Round 1 (code review r1)
+
+Result: all seven findings answered. #2 and #3 are no longer fixed: both changes are undone and the tests are as before S045 (open flakes, cause unknown). The guard now skips instead of failing.
+
+- **CR1-01 — Fixed (by undoing).** `tickets-raise.spec.js` is back to `scrollIntoViewIfNeeded()` as in 8c26411; the smooth-scroll comment is gone. Item #2 is now **not fixed, cause unknown**. Assumption, not shown: under the 6-lane load WebKit draws no frames for a long time, and Playwright's "stable" check needs frames (`requestAnimationFrame`). On the next failure, read the retained trace first.
+- **CR1-02 — Fixed (by undoing).** `tickets-parts.spec.js` is back to `line.getByRole("button", { name: "Yes", exact: true }).click()`. Item #3 is **not fixed, cause unknown**, same assumption as #2.
+- **CR1-03 — Fixed.** `e2e/support/test.js`: the guard calls `testInfo.skip(true, <message>)` instead of throwing. A run on a host above 100 % scale is green, with phone-webkit skipped and the reason on each test.
+- **CR1-04 — Fixed.** Unticked box added under `## Manual checks`.
+- **CR1-05 — Fixed.** The message now reads: "The phone-webkit window is 312 px wide, not 390, because Windows display scale is above 100 %. Set it to 100 %, then sign out of Windows and sign in again." (numbers come from the variables).
+- **CR1-06 — Fixed.** `masters.spec.js`: the first `openDialog` (before *Deactivate*) is now `page.locator(".modal.show .modal-dialog")`; the one before *Reactivate* stays.
+- **CR1-07 — Fixed.** `Track: fix` removed from the header.
+- Red/green: no finding adds a test for a fault, so no red run applies. CR1-03 changes the guard itself; it was seen on this PC (see the e2e run below).
+
+Files touched in this round: `frontend/e2e/support/test.js`, `frontend/e2e/masters.spec.js`, `frontend/e2e/tickets-raise.spec.js`, `frontend/e2e/tickets-parts.spec.js`, this report.
+
+Corrections to sections above: the table rows #2 and #3 and the "Proof" lines for #2 and #3 no longer apply (changes undone). The guard text in section 2 is replaced by the message above, and it skips, not fails. Files list: `tickets-raise.spec.js` and `tickets-parts.spec.js` now carry no S045 change.
+
+Tests:
+- `YANTRA_TEST_RUN=s045c2 tooling/run-tests.bat`: backend 2964 passed, frontend 168 passed, deps 42 passed, tooling 115 passed. All green.
+- Full e2e suite (6 lanes, 450 tests): 296 passed, 154 skipped, 0 failed. The skips are phone-webkit, stopped by the guard at 125 % scale (plus the tests skipped before this step). phone-chromium and desktop-chromium: all green. No known flaky test failed. Log: `scratch/s045c2-e2e-full.log`.
+- An earlier run of this round failed at load (a syntax error from my own edit of `tickets-parts.spec.js`); fixed and rerun, and the result above is the rerun.
+
+Docs updated: none, because the change is test-only (no doc in CLAUDE.md § Docs to keep current is due).
+
 ## Docs updated
 
 None, because the change is test-only.
@@ -69,3 +94,4 @@ None, because the change is test-only.
 
 None in the brief.
 - Not a check of the brief, for the user: run the full e2e suite once on a host at 100 % display scale to see phone-webkit pass.
+- [ ] Run one phone-webkit spec (for example `e2e/screens.spec.js` with `E2E_LANES=1`) on a host at 100 % Windows display scale and check that the guard lets it through. Account/where: KLA, his laptop at 100 % scale. Not blocking for this fix round.

@@ -164,10 +164,7 @@ test("S020: technician adds a part line the short way, fitted to a component; ch
   // Remove asks first
   await line.getByTitle("Remove").click();
   await expect(line.getByText("Remove?")).toBeVisible();
-  // Locate Yes afresh once the confirm shows (the line re-renders), then click (S045)
-  const yes = partsCard(page).locator("li", { hasText: description }).getByRole("button", { name: "Yes", exact: true });
-  await expect(yes).toBeVisible();
-  await yes.click();
+  await line.getByRole("button", { name: "Yes", exact: true }).click();
   await expect(partsCard(page)).toContainText("No parts recorded");
 });
 

@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 25-10-2026 (revised 25-10-2026: brief-review r1, r2)
 Track: full
 Status: Approved (25-10-2026 by KLA; open questions 1–6 accepted as proposed)
-Baseline: 967e888 + uncommitted S037, S038, S039, S040, S043 (and S045 in progress, test files only)
+Baseline: 5731712 (stale check 25-10-2026: since the approved baseline, only S040 A1 and S045 changed code; of the files this brief names, `frontend/e2e/masters.spec.js` changed in S045's deactivate test and `docs/Plan.MD` in S040's line, neither used by S044; no staleness review needed)
 ```
 
 # S044 — Property overrides on equipment items

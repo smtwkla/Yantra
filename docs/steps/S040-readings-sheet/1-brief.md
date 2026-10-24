@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Committed c6e74a1 (base, 25-10-2026); checks: 19 auto; important check pending: row 33 of device-checks.md; open for the user: CR1-10; A1 in code review, not committed (A1 coded 25-10-2026, review pending — run the tickets-* e2e specs too: A1 changed the shared EventFields.vue)
+Status: Committed c6e74a1 (base, 25-10-2026); checks: 19 auto; important check pending: row 33 of device-checks.md; open for the user: CR1-10; A1 committed in 5731712 (partial); A1 CR r4: 1 major (CR4-01), 1 nit — fix round queued after S045's
 Baseline: ff9ddb3 + snapshots refs/steps/S038, refs/steps/S043 + S039 (working tree, at gate B); stale check s1 done 24-10-2026
 ```
 

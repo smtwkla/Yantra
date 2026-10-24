@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Committed 984761a (25-10-2026); checks: 8 auto; important check pending: row 32 of device-checks.md (keypad and Yes / No on real phones); open for the user: card order and CR1-06; CR2-01 to be re-checked by S040 A1's review
+Status: Committed 984761a (25-10-2026); checks: 8 auto; important check pending: row 32 of device-checks.md (keypad and Yes / No on real phones); open for the user: card order and CR1-06
 Baseline: ff9ddb3 + snapshot refs/steps/S038 (S037, S038) + S043 (port, working tree); stale check s1 done 24-10-2026
 ```
 

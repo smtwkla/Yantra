@@ -157,10 +157,7 @@ test("S018 A1: Already fixed with a start time; the fields fit and the ticket is
   await page.getByLabel("Start date").fill(started.slice(0, 10));
   await page.locator("#raise-restore-started-time").fill(started.slice(11));
   await expectNoSidewaysScroll(page);
-  // Bootstrap sets `scroll-behavior: smooth` on the page, so each fill's scroll animates and the
-  // button moves for a while; scrollIntoViewIfNeeded waits for it to stand still and timed out on
-  // WebKit under load (S045).  Jump there at once: it ends any running scroll animation.
-  await saveButton(page).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  await saveButton(page).scrollIntoViewIfNeeded();
   await expect(saveButton(page)).toBeInViewport();
   await saveButton(page).click();
 

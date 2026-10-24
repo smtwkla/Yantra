@@ -66,7 +66,7 @@ test("engineer: a deactivated mode is hidden unless Show inactive, and comes bac
   await mode.getByTitle("Edit").click();
   await expectDialogFits(page);
   // Click inside the open dialog, and wait for the inline confirm before its Yes (S045)
-  let dialog = await openDialog(page);
+  let dialog = page.locator(".modal.show .modal-dialog");
   await dialog.getByRole("button", { name: "Deactivate" }).click();
   const yes = dialog.getByRole("button", { name: "Yes", exact: true });
   await expect(yes).toBeVisible();
