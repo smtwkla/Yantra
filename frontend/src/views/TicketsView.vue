@@ -12,7 +12,7 @@
  * S018: *Assigned to me* (shown to a user with a Team record), the assignees' first names on
  * each row, and *Not a fault* on a ticket closed as such.
  *
- * S019: the *Scheduled* and *Overdue* filters (ordered by planned date by the server); a
+ * S019: the *Deferred / Waiting* (S034) and *Overdue* filters (ordered by planned date by the server); a
  * scheduled row shows its plan, an overdue one a red "Overdue since 25-10" badge. In *Open*
  * the server puts scheduled rows after the actionable ones of the same intensity.
  */

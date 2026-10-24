@@ -21,8 +21,9 @@
  * and `regrade_to`, so a user never sees a button that ends in a 403. Each write answers with
  * the ticket's detail, which replaces the page's copy.
  *
- * S019 (deferred work): the state badge reads Scheduled, Waiting (a scheduled breakdown) or
- * Overdue, with the plan on a line under the header; Schedule and Change plan sit in outline
+ * S019 (deferred work): the state badge reads Deferred, Waiting (a scheduled breakdown) or
+ * Overdue, with the plan on a line under the header ("check by" or "for", by reason, S034);
+ * Defer / Put on hold and Change plan sit in outline
  * beside Change severity; the times card adds the waiting split and the planned stop; the
  * timeline shows each plan, a change with "(was …)".
  *

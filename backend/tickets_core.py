@@ -294,7 +294,7 @@ EVENT_LABELS = {
     CLOSED_EVENT: "Closed",
     NOT_A_FAULT_EVENT: "Closed as not a fault",
     REGRADED_EVENT: "Severity changed",
-    SCHEDULED_EVENT: "Scheduled",
+    SCHEDULED_EVENT: "On hold",
     RESCHEDULED_EVENT: "Plan changed",
 }
 
@@ -356,9 +356,9 @@ TRADE_NEEDED = "Choose the trade worked"
 NOTHING_TO_CHANGE = "Nothing to change"
 NOTE_NEEDED = "Enter a note"
 # S019 § 5.1–5.3
-PLANNED_DATE_NEEDED = "Choose the planned date"
-PLANNED_DATE_PAST = "The planned date cannot be before today"
-PLANNED_DATE_TOO_FAR = "Plan within a year"
+PLANNED_DATE_NEEDED = "Choose a date"
+PLANNED_DATE_PAST = "The date cannot be before today"
+PLANNED_DATE_TOO_FAR = "Choose a date within a year"
 WAITING_REASON_NEEDED = "Choose why it waits"
 MACHINE_STOPPED_NEEDED = "Choose Yes or No"
 

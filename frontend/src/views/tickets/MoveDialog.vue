@@ -14,9 +14,9 @@
  * - send back: "Machine down again?" as two choice buttons, then the required remark;
  * - close: symptom, cause and action; not a fault: cause (5.1 No cause found suggested) and
  *   the required remark;
- * - S019 schedule / change plan: the planned date and the reason (ScheduleFields). Schedule
- *   opens with the date empty; Change plan opens with the current plan and the remark open
- *   and required ("Why did the plan change?"). The reason Other opens the remark and makes it
+ * - S019 schedule / change plan (S034: Defer on a defect, Put on hold on a breakdown): the
+ *   reason, then the date (ScheduleFields). Defer / Put on hold opens with the date empty;
+ *   Change plan opens with the current plan and the remark open and required ("Why did the plan change?"). The reason Other opens the remark and makes it
  *   required ("What does it wait for?");
  * - S019 start / back in service from scheduled on a defect (`asks_machine_stopped`): "Is / Was
  *   the machine stopped for this work?" as two choice buttons; on back in service only once a
@@ -136,7 +136,7 @@ async function open(entry) {
 /** The simple checks of what the dialog asks for; the API checks everything again. */
 function missingField() {
   const f = form.value;
-  if (isPlan.value && !f.planned_date) return ["planned_date", "Choose the planned date"];
+  if (isPlan.value && !f.planned_date) return ["planned_date", "Choose a date"];
   if (isPlan.value && !f.waiting_reason) return ["waiting_reason", "Choose why it waits"];
   if (remarkRequired.value && !f.remark.trim()) return ["remark", "Add a remark"];
   if (name.value === "restore" && !f.person_id) return ["person_id", "Who did the work? Pick a name"];

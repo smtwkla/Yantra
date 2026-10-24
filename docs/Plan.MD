@@ -374,8 +374,8 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   found: a touchscreen to replace, worn scrapers, a liner "good for another 1,000 hours", a
   filter the AMC vendor asked for. EN 13306 calls this *deferred corrective maintenance*;
   SMRP measures planned against reactive work. Decided in S019 (21-10-2026):
-  - one **scheduled** state between acknowledged and in progress, shown as *Scheduled* on a
-    defect and *Waiting* on a critical ticket. It carries a **required planned date** (today
+  - one **scheduled** state between acknowledged and in progress, shown as *Deferred* on a
+    defect and *Waiting* on a critical ticket (S034: the button reads *Defer* or *Put on hold*; the timeline line and the fallback label read *On hold*; the list filter *Deferred / Waiting*). It carries a **required planned date** (today
     or later, within 365 days) and a **waiting reason**. The engineer (`ticket:assign`)
     schedules from raised or acknowledged and changes the plan; a technician (`ticket:work`)
     may schedule from in progress, when work stops for a part. Every slip is an event with a
@@ -388,6 +388,9 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   - the stop taken for a scheduled job is **planned downtime**, by the technician's answer
     at *Start* ("Is the machine stopped for this work?"), reported apart from breakdown
     downtime (EN 13306, SMRP; OEE treats them differently);
+  - S034 (24-10-2026): the date means **planned** for a production slot and **check again by**
+    for every other reason (someone outside maintenance controls the wait). The date stays
+    required; the dialog asks the reason first and offers *In 7 / 14 / 30 days*;
   - *later*, with the PM engine (phase 4): a target **by meter value** as well as by date
     ("at 1,000 run hours from now"), reusing the meter-trigger machinery of PM plans.
 - **Fleet defects** (20-10-2026, fleet use case): each defect found on a vehicle is a ticket of

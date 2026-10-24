@@ -189,6 +189,14 @@ splits into active repair and waiting. SMRP's planned-versus-reactive ratio is t
 measure of a plant moving from firefighting to TPM; a ticket that went through
 *scheduled* stands in for SMRP's planned work until Yantra has job plans.
 
+The words follow the situation (S034, 24-10-2026). A defect is *deferred* by decision: the
+button reads *Defer* and the badge *Deferred*. A stopped machine waiting for parts is not a
+decision to delay but a logistic delay: the button reads *Put on hold* and the badge
+*Waiting*. The timeline line is the neutral *On hold*. The date is a commitment (*Planned
+for*) only for a production slot; for parts, a vendor, an expert, an approval or another
+reason it is a *Check again by* date, the day someone follows the wait up (SMRP: review the
+not-ready backlog on a fixed cycle). Past the date the ticket reads *Overdue* either way.
+
 **Contamination control for hydraulics** (16-10-2026, pressing shop). Most hydraulic
 failures trace to fluid contamination; the presses' sticking valves, worn pump elements,
 scored cylinders and transducer trouble are the pattern. The standard is **ISO 4406**, a
