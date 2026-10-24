@@ -19,13 +19,10 @@ import { apiPost } from "../../api";
 import FormModal from "../../components/FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
 import { formatDateTime } from "../../utils/datetime";
-import { formatReading } from "../../utils/meterLabels";
+import { formatReading, notSavedOr } from "../../utils/meterLabels";
 import EventFields from "../tickets/EventFields.vue";
 
 const NOTE_MAX = 200; // meters_core.NOTE_MAX
-const NOT_SAVED = "Not saved. Try again in a minute.";
-// 502 to 504: Nginx or the backend is down or restarting; 503 is also the database being down
-const UNAVAILABLE = [502, 503, 504];
 
 const emit = defineEmits(["saved"]);
 
@@ -57,15 +54,6 @@ function open(target, targetMeter) {
   node.value = target;
   meter.value = targetMeter;
   openCreate();
-}
-
-// 502-504: the server or its database did not answer; no status: the request never reached it (no
-// network).  The same true words for all (BR1-05, CR1-05)
-function notSavedOr(err) {
-  if (err.status === undefined || UNAVAILABLE.includes(err.status)) {
-    return Object.assign(new Error(NOT_SAVED), { status: err.status, field: null });
-  }
-  return err;
 }
 
 function save() {

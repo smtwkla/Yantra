@@ -955,7 +955,7 @@ class TestMyUnits:
         res = engineer.get(f"{EQUIPMENT}/my-units")
         assert res.status_code == 200
         ids = sorted([unit_a["id"], unit_b["id"]])
-        assert res.get_json() == {"all_units": False, "unit_ids": ids, "edit_unit_ids": ids}
+        assert res.get_json() == {"all_units": False, "unit_ids": ids, "edit_unit_ids": ids, "reading_unit_ids": ids}
 
     def test_inactive_units_are_left_out(self, admin, user_with_units, make_unit):
         active, inactive = make_unit(), make_unit()
@@ -967,8 +967,10 @@ class TestMyUnits:
     def test_token_roles_get_all_units(self, user_with_units, make_unit, role):
         """S011: only IT admin (token) and admin see every unit; managers see their sites'."""
         client = user_with_units(role, [make_unit()])
-        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": True, "unit_ids": [],
-                                                                   "edit_unit_ids": None}
+        # admin logs readings at every unit; IT admin does not log readings at all (S039)
+        reading = None if role == "admin" else []
+        assert client.get(f"{EQUIPMENT}/my-units").get_json() == {
+            "all_units": True, "unit_ids": [], "edit_unit_ids": None, "reading_unit_ids": reading}
 
     def test_a_manager_with_all_units_of_a_site_gets_its_active_units(self, admin, user_at_sites, make_site,
                                                                         make_unit):
@@ -978,7 +980,7 @@ class TestMyUnits:
         manager, _ = user_at_sites([(site, "maint_manager", "all")])
         body = manager.get(f"{EQUIPMENT}/my-units").get_json()
         assert body["all_units"] is False
-        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]]) == body["edit_unit_ids"]
+        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]]) == body["edit_unit_ids"] == body["reading_unit_ids"]
 
     def test_edit_units_are_where_edit_is_held(self, user_at_sites, make_site, make_unit):
         site_a, site_b = make_site(), make_site()
@@ -988,10 +990,19 @@ class TestMyUnits:
         assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]])
         assert body["edit_unit_ids"] == [unit_a["id"]]
 
+    def test_reading_units_are_where_reading_log_is_held(self, user_at_sites, make_site, make_unit):
+        """S040 BR1-01: the readings sheet's sites come from here; a storekeeper logs nowhere."""
+        site_a, site_b = make_site(), make_site()
+        unit_a, unit_b = make_unit(site_a), make_unit(site_b)
+        client, _ = user_at_sites([(site_a, "maint_operator", [unit_a]), (site_b, "maint_storekeeper", [unit_b])])
+        body = client.get(f"{EQUIPMENT}/my-units").get_json()
+        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]])
+        assert body["reading_unit_ids"] == [unit_a["id"]]
+
     def test_a_user_with_no_rows_gets_an_empty_list(self, role_client, uniq):
         client = role_client("maint_engineer", uniq.username())
         assert client.get(f"{EQUIPMENT}/my-units").get_json() == {"all_units": False, "unit_ids": [],
-                                                                   "edit_unit_ids": []}
+                                                                   "edit_unit_ids": [], "reading_unit_ids": []}
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_engineer", "maint_manager",
                                       "it_admin", "maint_storekeeper"])

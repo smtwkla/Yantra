@@ -27,15 +27,27 @@ const IT_ADMIN = [
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
 describe("navigation permissions", () => {
-  it("maint_operator sees Me, Equipment, Tickets and Masters, and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["me", "equipment", "tickets", "masters"]);
+  it("maint_operator sees Me, Equipment, Tickets, Readings and Masters, and cannot open Settings", () => {
+    expect(visible(OPERATOR)).toEqual(["me", "equipment", "tickets", "readings", "masters"]);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
   });
 
   it("Me is first for every role with ticket:read; manager and IT admin also see Settings (S035)", () => {
-    expect(visible(ENGINEER)).toEqual(["me", "equipment", "tickets", "masters"]);
-    expect(visible(MANAGER)).toEqual(["me", "equipment", "tickets", "masters", "settings"]);
+    expect(visible(ENGINEER)).toEqual(["me", "equipment", "tickets", "readings", "masters"]);
+    expect(visible(MANAGER)).toEqual(["me", "equipment", "tickets", "readings", "masters", "settings"]);
     expect(visible(IT_ADMIN)).toEqual(["me", "equipment", "tickets", "masters", "settings"]);
+  });
+
+  it("Readings follows Tickets for the reading roles; the storekeeper and IT admin do not see it (S040)", () => {
+    for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER]) {
+      const names = visible(perms);
+      expect(names.indexOf("readings")).toBe(names.indexOf("tickets") + 1);
+      expect(canOpenRoute("readings", perms)).toBe(true);
+    }
+    for (const perms of [STOREKEEPER, IT_ADMIN]) {
+      expect(visible(perms)).not.toContain("readings");
+      expect(canOpenRoute("readings", perms)).toBe(false);
+    }
   });
 
   it("the storekeeper sees no Tickets and cannot open the list (S017 user decision 7)", () => {

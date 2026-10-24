@@ -38,9 +38,9 @@ from flask import Blueprint, jsonify, request
 from api_common import MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, int_arg
 from auth_utils import has_perm_at, require_perm
 from db_helpers import count, get_db, insert_row, row_to_dict, transaction, update_row
-from equipment import IST, SCRAPPED_MESSAGE, load_node_for_user, write_events
+from equipment import IST, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, write_events
 from equipment_core import SCRAPPED
-from masters import checked_limits, lock_meter_type, read_model_meters
+from masters import checked_limits, lock_meter_type, read_model_meters, read_models_meters
 from masters_core import model_label
 from meters_core import (
     ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, NO_LIMITS, PICK_A_METER, YES_NO, answer_state, answer_word,
@@ -65,17 +65,28 @@ UNIQUE_KEY_ERRORS.update({
 })
 
 _NODE_METER_SELECT = (
-    "SELECT nm.id, nm.own, nm.min_value, nm.max_value, nm.active,"
+    "SELECT nm.id, nm.equipment_id, nm.own, nm.min_value, nm.max_value, nm.active,"
     " t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
     " t.expected_answer AS t_expected_answer"
     " FROM node_meters nm JOIN meter_types t ON t.id = nm.meter_type_id"
 )
 
 
+def _nodes_rows(cur, node_ids):
+    """The node_meters rows of several nodes in one query -> {node_id: [row, ...]}."""
+    out = {node_id: [] for node_id in node_ids}
+    if not out:
+        return out
+    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id IN ({_marks(out)})", list(out))
+    for row in cur.fetchall():
+        out[row["equipment_id"]].append({
+            "id": row["id"], "own": row["own"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
+            "max_value": row["max_value"], "active": row["active"]})
+    return out
+
+
 def _node_rows(cur, node_id):
-    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id = %s", (node_id,))
-    return [{"id": row["id"], "own": row["own"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
-             "max_value": row["max_value"], "active": row["active"]} for row in cur.fetchall()]
+    return _nodes_rows(cur, [node_id])[node_id]
 
 
 def _meters_of(cur, node_id, model_id):
@@ -89,12 +100,16 @@ def _meters_out(cur, node_id, model_id):
     """The node's meters as the card shows them: each with ``last``, its newest active reading
     ``{value, taken_at, limit_state}``, or None before any reading (§ 6)."""
     meters = _meters_of(cur, node_id, model_id)
-    last = _last_readings(cur, node_id)
+    _add_last(meters, _last_readings(cur, [node_id]), node_id)
+    return meters
+
+
+def _add_last(meters, last, node_id):
+    """Put ``last`` on each of the node's meters, from ``_last_readings``' {(node, type): row}."""
     for meter in meters:
-        row = last.get(meter["meter_type"]["id"])
+        row = last.get((node_id, meter["meter_type"]["id"]))
         meter["last"] = None if row is None else {
             key: reading_out(row, meter["meter_type"]["kind"])[key] for key in ("value", "taken_at", "limit_state")}
-    return meters
 
 
 def _model_meter(cur, model_id, meter_type_id):
@@ -248,16 +263,19 @@ def reading_out(row, kind):
     return out
 
 
-def _last_readings(cur, node_id):
-    """The newest active reading of each of the node's meters → {meter_type_id: row}; newest by
-    (taken_at, id), the history's order."""
+def _last_readings(cur, node_ids):
+    """The newest active reading of each meter of the nodes → {(node_id, meter_type_id): row};
+    newest by (taken_at, id), the history's order.  One query for any number of nodes."""
+    if not node_ids:
+        return {}
     cur.execute(
-        "SELECT r.meter_type_id, r.value, r.taken_at, r.is_reset, r.limit_state FROM meter_readings r"
-        " WHERE r.equipment_id = %s AND r.removed_at IS NULL AND NOT EXISTS ("
+        "SELECT r.equipment_id, r.meter_type_id, r.value, r.taken_at, r.is_reset, r.limit_state"
+        " FROM meter_readings r"
+        f" WHERE r.equipment_id IN ({_marks(node_ids)}) AND r.removed_at IS NULL AND NOT EXISTS ("
         "  SELECT 1 FROM meter_readings n WHERE n.equipment_id = r.equipment_id"
         "  AND n.meter_type_id = r.meter_type_id AND n.removed_at IS NULL"
-        "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", (node_id,))
-    return {row["meter_type_id"]: row for row in cur.fetchall()}
+        "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", list(node_ids))
+    return {(row["equipment_id"], row["meter_type_id"]): row for row in cur.fetchall()}
 
 
 def _newest_active_id(cur, node_id, meter_type_id):
@@ -382,3 +400,95 @@ def remove_reading(node_id, reading_id):
         cur.execute("UPDATE meter_readings SET removed_at = NOW(), removed_by = %s WHERE id = %s",
                     (actor(), reading_id))
     return "", 204
+
+
+# ---------------------------------------------------------------------------
+# The end-of-day sheet (S040)
+# ---------------------------------------------------------------------------
+
+PICK_A_SITE = "Pick a site"
+
+
+def _sheet_site_id():
+    raw = request.args.get("site_id")
+    if raw is None or not (raw.isascii() and raw.isdigit()) or int(raw) < 1:
+        raise ApiError(PICK_A_SITE, 400, "site_id")
+    return int(raw)
+
+
+def _sheet_units(cur, site_id):
+    """The site and its active units where the user logs readings -> (site, units); 404 when the
+    site is unknown, inactive or has no such unit (admin too: its set is None, so ``active`` is
+    checked here, BR1-17)."""
+    cur.execute("SELECT id, code, name FROM sites WHERE id = %s AND active = 1", (site_id,))
+    site = cur.fetchone()
+    allowed = accessible_unit_ids(cur, "reading:log")
+    if site is None or allowed == set():
+        raise ApiError("Not found", 404)
+    cur.execute("SELECT id, code, name FROM units WHERE site_id = %s AND active = 1 ORDER BY code", (site_id,))
+    units = [u for u in cur.fetchall() if allowed is None or u["id"] in allowed]
+    if not units:
+        raise ApiError("Not found", 404)
+    return site, units
+
+
+def _marks(ids):
+    return ", ".join(["%s"] * len(ids))
+
+
+def _sheet_nodes(cur, unit_ids):
+    """The machines of the units and their parts (two levels), scrapped ones left out, by code ->
+    ([machine rows], {parent_id: [part rows]}); a scrapped part's own parts go with it."""
+    def rows(column, ids):
+        if not ids:
+            return []
+        cur.execute("SELECT id, code, name, level, parent_id, unit_id, model_id, lifecycle FROM equipment"
+                    f" WHERE {column} IN ({_marks(ids)}) AND lifecycle <> %s ORDER BY code", (*ids, SCRAPPED))
+        return cur.fetchall()
+
+    machines = rows("unit_id", unit_ids)
+    children = rows("parent_id", [m["id"] for m in machines])
+    grandchildren = rows("parent_id", [c["id"] for c in children])
+    parts = {}
+    for part in [*children, *grandchildren]:
+        parts.setdefault(part["parent_id"], []).append(part)
+    return machines, parts
+
+
+@meters_bp.route("/readings/sheet")
+@require_perm("reading:log")
+def readings_sheet():
+    """Every meter in force at one site, grouped by unit (S040 § 5.1, § 6): the units where the
+    user logs, their machines (and parts) that have meters, each meter with its last reading.  A
+    few queries for the whole site, none per node."""
+    site_id = _sheet_site_id()
+    with get_db().cursor() as cur:
+        site, units = _sheet_units(cur, site_id)
+        machines, parts = _sheet_nodes(cur, [u["id"] for u in units])
+        nodes = [*machines, *(p for group in parts.values() for p in group)]
+        models = read_models_meters(cur, sorted({n["model_id"] for n in nodes if n["model_id"] is not None}))
+        node_rows = _nodes_rows(cur, [n["id"] for n in nodes])
+        last = _last_readings(cur, [n["id"] for n in nodes])
+
+    def meters_of(node):
+        meters = effective_meters(models.get(node["model_id"], []), node_rows[node["id"]])
+        _add_last(meters, last, node["id"])
+        return meters
+
+    out_units = []
+    for unit in units:
+        out_machines = []
+        for machine in (m for m in machines if m["unit_id"] == unit["id"]):
+            part_rows = []
+            for child in parts.get(machine["id"], []):
+                part_rows.append(child)
+                part_rows.extend(parts.get(child["id"], []))
+            out_parts = [{"id": p["id"], "code": p["code"], "name": p["name"], "level": p["level"],
+                          "meters": part_meters} for p in part_rows if (part_meters := meters_of(p))]
+            own = meters_of(machine)
+            if own or out_parts:
+                out_machines.append({"id": machine["id"], "code": machine["code"], "name": machine["name"],
+                                     "lifecycle": machine["lifecycle"], "meters": own, "parts": out_parts})
+        if out_machines:
+            out_units.append({"id": unit["id"], "code": unit["code"], "name": unit["name"], "machines": out_machines})
+    return jsonify({"site": site, "units": out_units})

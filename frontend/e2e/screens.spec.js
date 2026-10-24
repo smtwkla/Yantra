@@ -9,6 +9,8 @@ const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager",
 // ticket:read and ticket:raise: every site role but the storekeeper, and IT admin (config_rbac)
 const TICKET_ROLES = EVERYONE.filter((key) => key !== "storekeeper");
 const SETTINGS_ROLES = ["manager", "it_admin"];
+// reading:log (S039): the operator and up; not the storekeeper or IT admin
+const READING_ROLES = EVERYONE.filter((key) => !["storekeeper", "it_admin"].includes(key));
 
 let seed;
 let ticket;
@@ -29,7 +31,7 @@ function topbarTitle(page) {
   return page.locator(".topbar-center").filter({ visible: true });
 }
 
-// path, title in the top bar, what else must show, who may open it
+// path, title in the top bar, what else must show (given the page and the role), who may open it
 const screens = () => [
   { path: "/equipment", title: "Equipment", shows: (page) => page.getByRole("button", { name: /Print asset list/ }), who: EVERYONE },
   {
@@ -43,6 +45,14 @@ const screens = () => [
   },
   { path: "/tickets", title: "Tickets", shows: (page) => page.getByRole("combobox", { name: "State" }), who: TICKET_ROLES },
   // S031: the My activity tab is there for every role, whatever its default tab
+  // S040: the site heading (code first) for a one-site user, the site picker for the manager; both hold with
+  // no meters in the lane's database (empty state, BR1-12)
+  {
+    path: "/readings", title: "Readings", who: READING_ROLES,
+    shows: (page, key) => (key === "manager"
+      ? page.getByLabel("Site", { exact: true })
+      : page.getByTestId("sheet-heading").filter({ hasText: "SMTW — " })),
+  },
   { path: "/me", title: "Me", shows: (page) => page.getByRole("button", { name: "My activity", exact: true }), who: TICKET_ROLES },
   { path: "/tickets/new", title: "Raise ticket", shows: (page) => page.getByRole("heading", { name: "Raise ticket" }), who: TICKET_ROLES },
   {
@@ -72,7 +82,7 @@ for (const key of EVERYONE) {
       await test.step(screen.path, async () => {
         await page.goto(screen.path);
         await expect(topbarTitle(page)).toHaveText(screen.title);
-        await expect(screen.shows(page)).toBeVisible();
+        await expect(screen.shows(page, key)).toBeVisible();
         await expect(page.locator("main.app-content")).not.toBeEmpty();
       });
     }
@@ -87,4 +97,20 @@ test("a request that lost its test headers gets no access, never admin", async (
   expect(me.permissions).toEqual([]);
   expect(me.roles).toEqual([]);
   await expect(page.getByText("You have no access yet")).toBeVisible();
+});
+
+// S040 (S039 BR1-14): the manager has six nav items; on a phone the bottom bar shows them all, inside the screen
+test("S040: the manager's bottom bar shows all six items without sideways scroll", async ({ page }) => {
+  await asPerson(page, "manager");
+  const nav = page.locator(".app-bottom-nav");
+  test.skip(!(await nav.isVisible()), "the bottom bar is a phone screen");
+  const items = nav.locator(".bottom-nav-item");
+  await expect(items).toHaveText(["Me", "Equipment", "Tickets", "Readings", "Masters", "Settings"]);
+  const viewport = page.viewportSize();
+  for (const box of await Promise.all((await items.all()).map((item) => item.boundingBox()))) {
+    expect(box.x, "an item starts left of the screen").toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, "an item ends right of the screen").toBeLessThanOrEqual(viewport.width + 1);
+  }
+  const overflow = await nav.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow, "the bottom bar scrolls sideways").toBeLessThanOrEqual(1);
 });

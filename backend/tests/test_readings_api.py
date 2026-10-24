@@ -360,3 +360,147 @@ class TestRemove:
         reading = _log(operator, node, oil, "30", 10)
         _ok(admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": "scrapped"}))
         assert _refusal(engineer.delete(_readings(node, reading))) == (409, None, SCRAPPED)
+
+
+# ---------------------------------------------------------------------------
+# The end-of-day sheet (S040 § 5.1, § 6)
+# ---------------------------------------------------------------------------
+
+SHEET = "/api/readings/sheet"
+
+
+def _sheet(client, site, expect=200):
+    return _ok(client.get(f"{SHEET}?site_id={site['id']}"), expect)
+
+
+def _codes(machines):
+    return [m["code"] for m in machines]
+
+
+class TestSheet:
+
+    def test_lists_the_machines_with_meters_in_tree_order_with_parts_nested(
+            self, admin, operator, unit, make_equipment, make_meter_type):
+        hours = make_meter_type(kind="counter", unit="h", decimals=1)
+        shift = make_meter_type(kind="amount", unit="pcs", decimals=0)
+        yes_no = make_meter_type(kind="yes_no", expected_answer="yes")
+        press = make_equipment(unit=unit)
+        other = make_equipment(unit=unit)
+        bare = make_equipment(unit=unit)                       # no meters: not listed
+        pump = make_equipment(parent=press)                    # a part with a meter
+        make_equipment(parent=press)                           # a part without: not listed
+        gauge = make_equipment(parent=pump, level="component")
+        _add_own(admin, press, hours)
+        _add_own(admin, press, shift)
+        _add_own(admin, pump, yes_no)
+        _add_own(admin, gauge, make_meter_type(unit="bar"), max_value="9")
+        _add_own(admin, other, hours)
+        _log(operator, press, hours, "500", 30)
+
+        body = _sheet(operator, {"id": unit["site_id"]})
+
+        assert set(body["site"]) == {"id", "code", "name"} and body["site"]["id"] == unit["site_id"]
+        (unit_out,) = body["units"]
+        assert (unit_out["id"], unit_out["code"]) == (unit["id"], unit["code"])
+        assert _codes(unit_out["machines"]) == sorted([press["code"], other["code"]])
+        assert bare["code"] not in _codes(unit_out["machines"])
+        press_out = next(m for m in unit_out["machines"] if m["id"] == press["id"])
+        assert press_out["lifecycle"] == "in_service"
+        by_type = {m["meter_type"]["id"]: m for m in press_out["meters"]}
+        assert by_type[hours["id"]]["meter_type"]["kind"] == "counter"
+        assert by_type[hours["id"]]["last"]["value"] == "500" and by_type[hours["id"]]["last"]["limit_state"] is None
+        assert by_type[shift["id"]]["last"] is None
+        assert [(p["id"], p["level"]) for p in press_out["parts"]] == [(pump["id"], "component_unit"),
+                                                                       (gauge["id"], "component")]
+        assert set(press_out["parts"][0]) == {"id", "code", "name", "level", "meters"}
+        assert press_out["parts"][0]["meters"][0]["meter_type"]["kind"] == "yes_no"
+
+    def test_model_meters_and_own_meters_both_appear(self, admin, operator, unit, make_equipment, make_model,
+                                                     make_meter_type):
+        model = make_model()
+        from_model = make_meter_type(kind="counter", unit="h", decimals=1)
+        own = make_meter_type(kind="counter", unit="kWh", decimals=0)
+        _ok(admin.post(f"/api/masters/equipment-models/{model['id']}/meters", json={"meter_type_id": from_model["id"]}),
+            201)
+        machine = make_equipment(unit=unit, model=model)
+        _add_own(admin, machine, own)
+        (unit_out,) = _sheet(operator, {"id": unit["site_id"]})["units"]
+        (machine_out,) = unit_out["machines"]
+        assert {(m["meter_type"]["id"], m["source"]) for m in machine_out["meters"]} == {
+            (from_model["id"], "model"), (own["id"], "node")}
+
+    def test_a_machine_with_meters_only_on_a_part_is_listed(self, admin, operator, unit, make_equipment,
+                                                            make_meter_type):
+        machine = make_equipment(unit=unit)
+        pump = make_equipment(parent=machine)
+        _add_own(admin, pump, make_meter_type(kind="counter", unit="h", decimals=1))
+        (machine_out,) = _sheet(operator, {"id": unit["site_id"]})["units"][0]["machines"]
+        assert machine_out["meters"] == [] and [p["id"] for p in machine_out["parts"]] == [pump["id"]]
+
+    def test_scrapped_nodes_and_removed_readings_are_left_out(self, admin, operator, engineer, unit, make_equipment,
+                                                              make_meter_type):
+        hours = make_meter_type(kind="counter", unit="h", decimals=1)
+        live, scrapped, scrapped_part_machine = (make_equipment(unit=unit) for _ in range(3))
+        part = make_equipment(parent=scrapped_part_machine)
+        for node in (live, scrapped, part):
+            _add_own(admin, node, hours)
+        _log(operator, live, hours, "10", 60)
+        wrong = _log(operator, live, hours, "99999", 30)
+        _ok(engineer.delete(_readings(live, wrong)), 204)
+        for node in (scrapped, part):
+            _ok(admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": "scrapped"}))
+        (unit_out,) = _sheet(operator, {"id": unit["site_id"]})["units"]
+        assert _codes(unit_out["machines"]) == [live["code"]]       # the third machine has no live meter
+        assert unit_out["machines"][0]["meters"][0]["last"]["value"] == "10"
+
+    def test_out_of_use_and_standby_machines_are_listed_with_their_lifecycle(self, admin, operator, unit,
+                                                                              make_equipment, make_meter_type):
+        hours = make_meter_type(kind="counter", unit="h", decimals=1)
+        idle, spare = make_equipment(unit=unit), make_equipment(unit=unit)
+        for node, lifecycle in ((idle, "out_of_use"), (spare, "standby")):
+            _add_own(admin, node, hours)
+            _ok(admin.put(f"{EQUIPMENT}/{node['id']}", json={"lifecycle": lifecycle}))
+        machines = _sheet(operator, {"id": unit["site_id"]})["units"][0]["machines"]
+        assert {m["id"]: m["lifecycle"] for m in machines} == {idle["id"]: "out_of_use", spare["id"]: "standby"}
+
+    def test_a_supervisor_gets_both_units_an_operator_only_theirs(self, admin, user_at_sites, make_site, make_unit,
+                                                                  make_equipment, make_meter_type):
+        site = make_site()
+        unit_a, unit_b, empty = make_unit(site, code="A1"), make_unit(site, code="B1"), make_unit(site, code="C1")
+        hours = make_meter_type(kind="counter", unit="h", decimals=1)
+        for unit in (unit_a, unit_b):
+            _add_own(admin, make_equipment(unit=unit), hours)
+        make_equipment(unit=empty)                                  # a machine without meters: unit not listed
+        supervisor, _ = user_at_sites([(site, "maint_supervisor", "all")])
+        operator, _ = user_at_sites([(site, "maint_operator", [unit_b])])
+        assert [u["code"] for u in _sheet(supervisor, site)["units"]] == ["A1", "B1"]
+        assert [u["code"] for u in _sheet(operator, site)["units"]] == ["B1"]
+
+    def test_a_site_without_a_unit_of_the_user_is_404(self, user_at_sites, make_site, make_unit):
+        mine, other = make_site(), make_site()
+        make_unit(other)
+        client, _ = user_at_sites([(mine, "maint_operator", "all")])
+        assert _sheet(client, other, 404) == {"error": "Not found"}
+        assert _sheet(client, {"id": 999999999}, 404) == {"error": "Not found"}
+
+    def test_an_inactive_site_or_a_site_with_only_inactive_units_is_404_for_admin_too(self, admin, role_client,
+                                                                                      make_site, make_unit):
+        boss = role_client("admin")                                 # the `admin` fixture is IT admin: no reading:log
+        site, dead_site = make_site(), make_site()
+        dead_unit = make_unit(dead_site)
+        _ok(admin.put(f"/api/masters/units/{dead_unit['id']}", json={"active": False}))
+        _ok(admin.put(f"/api/masters/sites/{dead_site['id']}", json={"active": False}))
+        unit = make_unit(site)
+        assert _sheet(boss, site)["units"] == []                    # an active unit: the site is there, no meters
+        _ok(admin.put(f"/api/masters/units/{unit['id']}", json={"active": False}))
+        for gone in (site, dead_site):
+            assert _sheet(boss, gone, 404) == {"error": "Not found"}
+
+    def test_a_role_without_reading_log_is_refused(self, at_unit, unit):
+        """The storekeeper and IT admin hold no reading:log (S039): the key 403, as on every route."""
+        for client in (at_unit("maint_storekeeper"), at_unit("it_admin")):
+            assert client.get(f"{SHEET}?site_id={unit['site_id']}").status_code == 403
+
+    @pytest.mark.parametrize("query", ["", "?site_id=", "?site_id=abc", "?site_id=0", "?site_id=-1", "?site_id=1.5"])
+    def test_a_missing_or_bad_site_id_is_400(self, operator, query):
+        assert _refusal(operator.get(f"{SHEET}{query}")) == (400, "site_id", "Pick a site")

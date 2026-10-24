@@ -99,3 +99,37 @@ export function savedMessage(meter, reading) {
   if (reading.limit_state === "not_ok") return `Saved. Not OK: the expected answer is ${YES_NO_WORDS[expected]}.`;
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// The readings screens (S039, S040)
+// ---------------------------------------------------------------------------
+
+export const NOT_SAVED = "Not saved. Try again in a minute.";
+// 502 to 504: Nginx or the backend is down or restarting; 503 is also the database being down
+const UNAVAILABLE = [502, 503, 504];
+
+/** The server or its database did not answer (502-504), or the request never reached it (no status). */
+export function isUnavailable(err) {
+  return err.status === undefined || UNAVAILABLE.includes(err.status);
+}
+
+/**
+ * A failed reading save as the screens say it (S039 BR1-05, CR1-05; shared with the sheet, S040
+ * BS1-02): the same true words whether the server is down or the phone has no network; any
+ * other refusal passes through with its field.
+ */
+export function notSavedOr(err) {
+  if (!isUnavailable(err)) return err;
+  return Object.assign(new Error(NOT_SAVED), { status: err.status, field: null });
+}
+
+/**
+ * Whether a reading's time is today: the API's date (IST, sent as +05:30) against the IST date
+ * of `now`, so a browser in another time zone still counts the plant's day (S040 CR2-03).
+ */
+const IST_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
+
+export function isToday(takenAt, now) {
+  if (typeof takenAt !== "string") return false;
+  return takenAt.slice(0, 10) === IST_DATE.format(now);
+}

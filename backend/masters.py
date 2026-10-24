@@ -856,11 +856,23 @@ def _model_meter_row(row):
             "max_value": row["max_value"], "active": row["active"]}
 
 
+def read_models_meters(cur, model_ids, include_inactive=False):
+    """Plain read of several models' meters in one query -> {model_id: [meter, ...]}, each list by
+    meter type name, in the shape meters_core takes (S040: the readings sheet reads a whole site)."""
+    out = {model_id: [] for model_id in model_ids}
+    if not out:
+        return out
+    where = "" if include_inactive else " AND mm.active = 1"
+    marks = ", ".join(["%s"] * len(out))
+    cur.execute(f"{_MODEL_METER_SELECT} WHERE mm.model_id IN ({marks}){where} ORDER BY t.name, t.id", list(out))
+    for row in cur.fetchall():
+        out[row["model_id"]].append(_model_meter_row(row))
+    return out
+
+
 def read_model_meters(cur, model_id, include_inactive=False):
     """Plain read of a model's meters, by meter type name, in the shape meters_core takes."""
-    where = "" if include_inactive else " AND mm.active = 1"
-    cur.execute(f"{_MODEL_METER_SELECT} WHERE mm.model_id = %s{where} ORDER BY t.name, t.id", (model_id,))
-    return [_model_meter_row(row) for row in cur.fetchall()]
+    return read_models_meters(cur, [model_id], include_inactive)[model_id]
 
 
 def _model_meter_out(row):

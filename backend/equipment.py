@@ -591,15 +591,18 @@ def list_equipment():
 def my_units():
     """The units the screens may offer this user.  all_units true = every unit (unit_ids is
     then empty); otherwise the user's active units.  edit_unit_ids: where equipment:edit is
-    held (null = every unit), for the write pickers.  Lets the pickers avoid choices the
-    write endpoints would refuse with 403."""
+    held (null = every unit), for the write pickers.  reading_unit_ids: where reading:log is
+    held (null = every unit), for the readings sheet's site picker (S040).  Lets the pickers
+    avoid choices the write endpoints would refuse with 403."""
     with get_db().cursor() as cur:
         unit_ids = accessible_unit_ids(cur)
         edit_ids = accessible_unit_ids(cur, "equipment:edit")
+        reading_ids = accessible_unit_ids(cur, "reading:log")
     return jsonify({
         "all_units": unit_ids is None,
         "unit_ids": [] if unit_ids is None else sorted(unit_ids),
         "edit_unit_ids": None if edit_ids is None else sorted(edit_ids),
+        "reading_unit_ids": None if reading_ids is None else sorted(reading_ids),
     })
 
 

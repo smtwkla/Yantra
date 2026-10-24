@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  expectedAnswerText, formatReading, goodReadingText, KIND_LABELS, limitsBody, meterTypeOption, readingBadges,
-  savedMessage, SOURCE_LABELS, unitAndKind,
+  expectedAnswerText, formatReading, goodReadingText, isToday, isUnavailable, KIND_LABELS, limitsBody, meterTypeOption,
+  NOT_SAVED, notSavedOr, readingBadges, savedMessage, SOURCE_LABELS, unitAndKind,
 } from "../src/utils/meterLabels.js";
 
 const OIL = { id: 6, name: "Oil temperature", unit: "°C", kind: "gauge", decimals: 1, expected_answer: null };
@@ -76,5 +76,45 @@ describe("readings (S039)", () => {
     const noMin = { meter_type: OIL, min_value: null, max_value: "60" };
     expect(savedMessage(noMax, { limit_state: "high" })).toBe("Saved. Above the limit.");
     expect(savedMessage(noMin, { limit_state: "low" })).toBe("Saved. Below the limit.");
+  });
+});
+
+describe("the readings sheet's shared helpers (S040)", () => {
+  const status = (code) => Object.assign(new Error("x"), { status: code, field: "value" });
+
+  it("a reading is not saved when the server or the network does not answer (BS1-02)", () => {
+    for (const code of [502, 503, 504, undefined]) {
+      expect(isUnavailable(status(code))).toBe(true);
+      const err = notSavedOr(status(code));
+      expect([err.message, err.field, err.status]).toEqual([NOT_SAVED, null, code]);
+    }
+  });
+
+  it("a refusal is passed on as it is", () => {
+    for (const code of [400, 403, 404, 409, 500]) {
+      const err = status(code);
+      expect(isUnavailable(err)).toBe(false);
+      expect(notSavedOr(err)).toBe(err);
+    }
+  });
+
+  it("isToday counts the IST day whatever the browser's time zone is (CR2-03)", () => {
+    const now = new Date("2026-10-24T20:00:00Z"); // 25-10-2026 01:30 in IST, still 24-10 in UTC and the Americas
+    expect(isToday("2026-10-25T01:00:00+05:30", now)).toBe(true);
+    expect(isToday("2026-10-24T23:00:00+05:30", now)).toBe(false);
+  });
+
+  it("isToday compares the API's IST date with the IST date of now (BS1-07)", () => {
+    const now = new Date("2026-10-24T18:29:00Z"); // 24-10-2026 23:59 in IST, a minute before midnight
+    expect(isToday("2026-10-24T00:00:00+05:30", now)).toBe(true);
+    expect(isToday("2026-10-24T17:50:00+05:30", now)).toBe(true);
+    expect(isToday("2026-10-23T23:59:00+05:30", now)).toBe(false);
+    expect(isToday("2026-10-25T00:00:00+05:30", now)).toBe(false);
+    expect(isToday(null, now)).toBe(false);
+    expect(isToday(undefined, now)).toBe(false);
+  });
+
+  it("isToday pads one-digit months and days", () => {
+    expect(isToday("2026-01-05T08:00:00+05:30", new Date("2026-01-05T03:30:00Z"))).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import MastersView from "../views/MastersView.vue";
 import MeView from "../views/MeView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
 import NotificationsView from "../views/NotificationsView.vue";
+import ReadingsView from "../views/ReadingsView.vue";
 import RaiseTicketView from "../views/RaiseTicketView.vue";
 import SettingsView from "../views/SettingsView.vue";
 import TicketDetailView from "../views/TicketDetailView.vue";
@@ -57,6 +58,13 @@ const routes = [
     name: "ticket-detail",
     component: TicketDetailView,
     meta: { title: "Ticket" },
+  },
+  // The end-of-day readings sheet (S040): a nav item, for reading:log holders
+  {
+    path: "/readings",
+    name: "readings",
+    component: ReadingsView,
+    meta: { title: "Readings" },
   },
   // Me (S031): my open work, tickets I raised, my activity; the first nav item (S035)
   {
