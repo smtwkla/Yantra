@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Implementing (approved 24-10-2026 by KLA)
+Status: Gate B (CR r2: 0 blocker, 0 major; r1–r2 findings fixed; CR1-01 kept as built by the user, U5)
 Baseline: e451c33 + uncommitted S035, S036, S041, S042, S037 (coded, gate B; built with no departure from its brief — stale check 24-10-2026: S038 holds)
 ```
 
@@ -25,7 +25,7 @@ User answers (U2, 24-10-2026, after round 1): **every level** of the tree may
 carry meters (§ 9.1 settled).
 
 Built on e451c33 plus S037 (v29, `meter_types`), which is approved and coded
-before this step. This step's migration is **v30**; S039 (v31) depends on it.
+before this step. This step's migration is **v30**; S039 (v32; v31 went to S043, 24-10-2026) depends on it.
 
 ## 1. What will be built
 
@@ -612,3 +612,7 @@ From S037's review: S037 BR1-13 (`meter_types` in `_SEEDED_TABLES`, not
 
 From S039's review round 3: S039 BR3-03 — this step's e2e tests keep off the
 `SMTW-HYP-01` model (§ 8).
+
+### U5 — gate B answer, 24-10-2026
+
+- CR1-01 (an own meter added over a stale override deletes the override): the user said "ignore it". Kept as built; no change to code or docs.

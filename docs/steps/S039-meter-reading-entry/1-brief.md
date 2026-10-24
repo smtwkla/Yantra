@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Approved (24-10-2026 by KLA)
-Baseline: e451c33 + uncommitted S035, S036, S041, S042; builds on S037 (v29) and S038 (v30), coded first
+Status: Gate B (CR r2: 0 blocker, 0 major; r1–r2 findings fixed; CR2-01 to be re-checked by S040's review; card order and CR1-06 for the user)
+Baseline: ff9ddb3 + snapshot refs/steps/S038 (S037, S038) + S043 (port, working tree); stale check s1 done 24-10-2026
 ```
 
 # S039 — Meter reading entry
@@ -26,7 +26,7 @@ User answers (U2, 24-10-2026, after round 1):
   a stated departure from S028's `backdate_days` (decision 8).
 
 Built on e451c33 plus S037 (v29) and S038 (v30), both approved and coded
-before this step. This step's migration is **v31**.
+before this step. This step's migration is **v32**.
 
 ## 1. What will be built
 
@@ -82,8 +82,14 @@ before this step. This step's migration is **v31**.
      a *Not OK* badge when it was not the expected answer;
    - **History**: a dialog with the last 30 readings, newest first: time,
      value, *High* / *Low* / *Not OK* / *Reset* badges (BR3-06), who (the login, `created_by`, as
-     the equipment page's *Created by*, `EquipmentDetailView.vue:239`; no join
+     the equipment page's *Created by* row in `EquipmentDetailView.vue`; no join
      to `people`; BR2-10), note; and *Show more* (the next page, § 6).
+   - **Where the card sits** (BS1-04): the *Meters* card stays where S038
+     put it, after the Details / Properties (S043) / Parts row and before
+     Notes. On a phone *Log reading* is then about two screens down the page;
+     the daily path for the press supervisors and the genset round is S040's
+     sheet, so the order is kept. For the user at gate B: the alternative is
+     the card above Details for `reading:log` holders.
 4. **Remove a reading** (a typo blocks every later counter entry): from the
    *History* dialog, only by a holder of `equipment:edit` at the node's site
    (engineer, manager, IT admin; U3). The author who is not one asks an
@@ -153,12 +159,14 @@ before this step. This step's migration is **v31**.
 
 ### Backend
 
-- `backend/local_db.py`: migration v31 (§ 4).
+- `backend/local_db.py`: migration v32 (§ 4).
 - `backend/config_rbac.py`: `reading:log` → `("maint_operator",)` (the
   supervisor and the maintenance ladder inherit it, as `ticket:raise`); added to
   `SITE_SCOPED` (its comment: "every later … reading … key joins this list",
   line 159). Not IT admin (U2; Plan.MD § 3 matrix: no ✓ for it_admin).
-- `backend/meters_core.py` (from S038): `validate_reading(value, kind,
+- `backend/meters_core.py` (from S038): `_parse_limit` renamed `parse_number`
+  and reused by `validate_reading` for every number row of § 5.1, with its
+  messages from `_decimals_message` (BS1-01); `validate_reading(value, kind,
   decimals, reset, note)` (BR3-05: the kind decides the rules; for a Yes / No
   meter the value rule is "Pick Yes or No" alone, and the number rows of § 5.1
   do not apply; it returns `Decimal(1)` for `"yes"` and `Decimal(0)` for
@@ -173,7 +181,12 @@ before this step. This step's migration is **v31**.
   `meters_core`'s own: `READING_BACKDATE_DAYS = 7`,
   "When was it read? Up to 7 days back". `backdate_days` is not used
   (decision 8).
-- `backend/meters.py` (from S038): the reading routes (§ 6), and one row
+- `backend/meters.py` (from S038): `_lock_node` gains a `key` parameter
+  (`reading:log` for a reading write, `equipment:edit` for a remove;
+  today it hard-codes `equipment:edit`), not a second helper (BS1-06); the
+  in-force check of § 5.2.1 is `_meters_of(cur, node_id, model_id)`, which
+  calls `effective_meters` (BS1-10); its own docstring's *Locks* paragraph
+  gains the reading line. The reading routes (§ 6), and one row
   builder, `reading_out(row, kind)`, that turns a Yes / No meter's stored 1 / 0
   back into `"yes"` / `"no"` for the history GET, the POST's answer and
   `last` (BR3-04): the word ↔ number mapping lives in these two places only.
@@ -181,8 +194,9 @@ before this step. This step's migration is **v31**.
   `{error, field, code}` when set (BR2-02); `api.js:25` already reads
   `err.code` (the network gate's JSON, `access_control.py:152`). No other
   error changes shape.
-- `backend/equipment.py`: the LOCK ORDER docstring names the reading write
-  under (1), with plain reads after it (§ 5.3).
+- `backend/equipment.py`: the LOCK ORDER docstring's existing `meters.py`
+  bullet gains the reading write under (1), with plain reads after it
+  (§ 5.3); no new bullet (BS1-06).
 
 ### Frontend
 
@@ -198,33 +212,37 @@ before this step. This step's migration is **v31**.
 ### Tests
 
 - `backend/tests/test_meters_core.py`, `backend/tests/test_readings_api.py`
-  (new), `backend/tests/test_migration_v31.py` (new), `backend/tests/test_rbac.py`
+  (new), `backend/tests/test_migration_v32.py` (new), `backend/tests/test_rbac.py`
   (the matrix gains `reading:log` for operator, supervisor, technician,
   engineer, manager), `backend/tests/conftest.py` (`meter_readings` in
   `_TABLES`, first).
 - `frontend/tests/meterLabels.test.js`.
 - `frontend/e2e/readings.spec.js` (new), `frontend/e2e/equipment.spec.js`,
-  `frontend/e2e/support/` (`createEquipment(name, unit, model)` moved there
-  with a unit and a model argument, § 8; BR2-04, BR3-03).
+  `frontend/e2e/support/meters.js` (S038's `meterMachine` moved there from
+  `equipment.spec.js` and exported; `equipment.spec.js` imports it;
+  `createEquipment` stays where it is, unchanged; § 8; BS1-03).
 - `frontend/tests/navigation.test.js`: the role lists mirror `test_rbac.py`
-  (its comment, line 4), so this step adds `reading:log` to OPERATOR,
-  SUPERVISOR, ENGINEER and MANAGER there; the `visible(...)` expectations
+  (its comment, line 4), so this step adds `reading:log` to OPERATOR
+  (SUPERVISOR is `OPERATOR`, line 11), ENGINEER and MANAGER there, three
+  edits (BS1-07); the `visible(...)` expectations
   do not change until S040 adds the nav item (S040 BR1-15).
 
 ### Docs (housekeeping, by the coder)
 
 The docs pass (`.claude/CLAUDE.md` § Docs to keep current), in this step:
 
-- `docs/schema.md` and `docs/schema.html`: `meter_readings` (v31), by hand
+- `docs/schema.md` and `docs/schema.html`: `meter_readings` (v32), by hand
   from the migration text: the table row, the Mermaid overview, the Equipment
-  tab, the links to `equipment` and `meter_types`, and the "migration v31"
-  line.
+  tab, the links to `equipment` and `meter_types`, and the "migration v32"
+  line. `docs/schema.md`'s planned `meter_readings` row ("result-row link …")
+  is replaced by the built row; `schema.html`'s meta line becomes v32, 37
+  tables, 53 links (BS1-09).
 - `docs/Plan.MD` § 4.5 (the reading rules as built) and § 3 (the `reading:log`
   row, as built). The gate A decisions are already recorded there.
 - `.claude/CLAUDE.md` § SMTW-Review: the point of § 9.6 (accepted, U4).
 - `docs/steps/device-checks.md`: the row of § 8 *On a real device*.
 
-## 4. Data model (migration v31)
+## 4. Data model (migration v32)
 
 ```sql
 CREATE TABLE IF NOT EXISTS meter_readings (
@@ -264,8 +282,8 @@ CREATE TABLE IF NOT EXISTS meter_readings (
 | Input | Result |
 |---|---|
 | `value` missing, empty | 400 "Enter the reading" (`value`) |
-| `value` a bool, a float, or a string that is not a decimal number | 400 "Enter a number" (`value`) |
-| more decimals than the meter type's | 400 "Use up to 1 decimal" / "Use up to 2 decimals" / "Use up to 3 decimals" (`value`); 0 → "Enter a whole number" (BR1-11) |
+| `value` a bool, a float, or a string that is not a decimal number | 400 "Enter a number with up to 1 decimal" / "… up to 2 decimals" / "… up to 3 decimals"; 0 decimals → "Enter a whole number" (`value`; S038's `parse_number` messages, BS1-01) |
+| more decimals than the meter type's | the same message: "Enter a number with up to N decimal(s)" / "Enter a whole number" (BR1-11, BS1-01) |
 | beyond ±99,999,999,999.999 | 400 "Enter a smaller number" (`value`) |
 | a counter below 0 | 400 "A counter cannot be below zero" (`value`) |
 | an amount below 0 (U3) | 400 "An amount cannot be below zero" (`value`) |
@@ -278,7 +296,7 @@ CREATE TABLE IF NOT EXISTS meter_readings (
 | `taken_at` more than 7 days back, for every role (decision 8) | 400 "When was it read? Up to 7 days back" (`taken_at`) |
 | `note` over 200 characters | 400 "Note must be at most 200 characters" (`note`); trimmed; empty → NULL |
 | `meter_type_id` missing, not an id | 400 "Pick a meter" (`meter_type_id`) |
-| Numbers | accepted as a decimal string or an integer; parsed with `Decimal(str(value))`, never `float`; returned as strings |
+| Numbers | accepted as a decimal string or an integer; parsed by S038's `meters_core.parse_number(raw, decimals)` (today `_parse_limit`, made public in this step; `validate_limits` keeps using it), never `float`; returned as strings (`format_number`) (BS1-01) |
 
 ### 5.2 Checks against the database
 
@@ -325,14 +343,14 @@ CREATE TABLE IF NOT EXISTS meter_readings (
   readings and the same-minute row are all read **plainly** → insert
   (BR1-01). Every reading write of a node waits on (1), so two writers on one
   node serialise. The snapshot is taken by the first plain read, after the
-  lock was granted (the rule `equipment.py:447` already states for
+  lock was granted (the rule `equipment.py` already states for
   `_check_no_open_tickets`), so the second writer sees the first one's row.
   No locking range read: a `LOCK IN SHARE MODE` range on
   `ix_meter_readings_meter_time` would take gap locks, and two inserts on
   adjacent (node, meter) keys could then deadlock (1213).
 - **Remove a reading:** (1) the node row (`load_node_for_user`, `for_update`,
   key **`equipment:edit`** at the node's site: 403 for anyone else,
-  `equipment.py:317`; U3, which replaces BR2-01's `equipment:read` key, needed
+  `load_node_for_user`'s `require_perm_at`; U3, which replaces BR2-01's `equipment:read` key, needed
   only while the author could remove) → the reading row `FOR UPDATE` → the
   later-reading check for a reset (plain, after (1)) → `may_remove(reading,
   can_edit=True)` → update. `reading:log` is not the key: IT admin lacks it and
@@ -342,8 +360,9 @@ CREATE TABLE IF NOT EXISTS meter_readings (
   links, not readings, so it never waits on a reading; a reading insert's FK lock
   waits for that update to commit. No cycle.
 - Shared with tickets: a ticket raise also takes (1); both are short.
-- The LOCK ORDER docstring of `equipment.py` gains: "a reading write: (1), then
-  plain reads; the node lock is the first statement".
+- The `meters.py` bullet of `equipment.py`'s LOCK ORDER docstring, and the
+  *Locks* paragraph of `meters.py`'s own docstring, gain: "a reading write:
+  (1), then plain reads; the node lock is the first statement" (BS1-06).
 
 ### 5.4 Reads
 
@@ -361,14 +380,15 @@ CREATE TABLE IF NOT EXISTS meter_readings (
 
 Two failures, one true wording (BR1-05):
 - a 503 (`DBUnavailable`: the server answered, its database did not), and
-- a failed fetch (the phone has no network; `api.js:20` gives `HTTP …` or the
+- a failed fetch (the phone has no network; `api.js`'s fallback gives `HTTP …` or the
   status text).
 
 *Log reading* keeps the typed values on either failure and shows "Not saved.
-Try again in a minute." in the dialog. The card's load failure reads "Meters
-could not be loaded. Try again in a minute." (S038, the equipment page's
-pattern, `EquipmentDetailView.vue:197`); the *History* dialog's reads
-"Readings could not be loaded. Try again in a minute."
+Try again in a minute." in the dialog. The load failures follow the page's
+built pattern (BS1-02): S038's card reads "Meters could not be loaded:
+<message>" (`MetersCard.vue`, as the page's "Tickets could not be loaded:
+…") and is not changed; the *History* dialog reads "Readings could not be
+loaded: <message>" (the API's error text, or `api.js`'s `HTTP …`).
 
 ## 6. API
 
@@ -463,25 +483,23 @@ S038's `GET /api/equipment/<id>/meters` gains `last` per meter:
   the node lock, then sees the first; the threading pattern of
   `test_ticket_work_api.py:814`).
 - `test_rbac.py`: `reading:log` per role; in `SITE_SCOPED`.
-- `test_migration_v31.py`: from v30; a re-run.
+- `test_migration_v32.py`: from v31 (S043 sits between), on the pattern of
+  `test_migration_v31.py`; a re-run (BS1-08).
 
 ### Automated (e2e)
 
 Set-up (BR1-09, BR2-04): the three projects share one database, so no test
 reads or writes a seed node. `readings.spec.js`'s `beforeAll` creates its
 **own machine per project** at **SMTW.MCC2** (the unit `e2e_operator` holds,
-`seed_e2e.py:38`), named with `testInfo.project.name`, on the model
-**`SMTW-HYP-01`** (the hydraulic press model, `seed_dev.MODELS`), which no
-other e2e test gives meters to (S038 § 8 keeps its tests off it; BR3-03). It
-uses `createEquipment(name, unit, model)`: the helper of
-`equipment.spec.js:238` moved to `e2e/support/` with a unit and a model
-argument (today it makes machines at MCC1 on the GA37, which the operator
-cannot see and S038's tests may give meters to). It then adds a counter (Run hours) and
-a gauge with a max (Oil temperature, up to 60 °C), an amount (Shift
-production) and a Yes / No meter of a type the `beforeAll` creates by S037's
-API (named with the project, expected *Yes*; no Yes / No seed, S037 decision
-8; U3) to that machine through
-S038's API (`apiAs("engineer")`, the `screens.spec.js` pattern). Every S039
+`seed_e2e.py:38`), through S038's `meterMachine(testInfo, tag, { unit:
+"SMTW.MCC2", ownMeters })`, moved to `e2e/support/meters.js` (BS1-03). It makes
+a model of its own, so no seed model is touched (`SMTW-HYP-01` stays free, as
+the comments in `equipment.spec.js` and `masters.spec.js` keep it). The own
+meters: a counter (Run hours), a gauge with a max (Oil temperature, up to
+60 °C), an amount (Shift production) and a Yes / No meter of a type the
+`beforeAll` first creates by S037's API (named with the project, expected
+*Yes*; no Yes / No seed, S037 decision 8; U3), added by meter type name
+through S038's API (`apiAs("engineer")`, the `screens.spec.js` pattern). Every S039
 test, and `equipment.spec.js`'s last-reading check, uses that machine. No
 change to `seed_e2e.py`.
 
@@ -627,3 +645,19 @@ None.
 | BR3-03 minor — the set-up machine's model | Accepted (a): `createEquipment(name, unit, model)` with `SMTW-HYP-01`; S038 § 8 keeps its tests off it; § 3, § 8 |
 | BR3-04 minor — no owner of the word ↔ 1/0 mapping; no API test | Accepted (a): `validate_reading` returns `Decimal(1)` / `Decimal(0)`; `reading_out` gives the word back; five API cases; § 3, § 8 |
 | BR3-05…BR3-10 nits | All accepted. BR3-05: `validate_reading` takes the kind; the Yes / No value rule alone. BR3-06: *Not OK* badge in history; the confirm bracket from `formatReading`. BR3-07: *Yes* / *No* as answers, a stated departure. BR3-08: EN 13306 inspection in § 2. BR3-09: remove on a scrapped node → 409. BR3-10: the Yes / No case in Acceptance. |
+
+### U5 — renumbered, 24-10-2026
+
+- The migration is **v32**, not v31: the user put the ported properties step S043 (v31) before this one. Every v31 in this brief was renamed v32.
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 24-10-2026
+
+0 blocker, 0 major, 4 minor, 6 nits. Reviewed against ff9ddb3 + uncommitted S037, S038, S043 (S037 and S038 now coded, snapshot `refs/steps/S038`).
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor — § 5.1 duplicates S038's number parser, with other words | Accepted (a): `_parse_limit` made public as `parse_number`, reused by `validate_reading`; § 5.1 takes the built words ("Enter a number with up to N decimal(s)", "Enter a whole number", "Enter a smaller number"); § 3 |
+| BS1-02 minor — the card's load text was not built as the brief says | Accepted (a): the built pattern "… could not be loaded: <message>"; the History dialog follows it; `MetersCard.vue`'s text unchanged; § 5.5 |
+| BS1-03 minor — S038's `meterMachine` already does the e2e set-up | Accepted (a): moved to `e2e/support/meters.js` and exported, called with `unit: "SMTW.MCC2"`; `createEquipment` unchanged; § 3, § 8 |
+| BS1-04 minor — the Meters card's place below Properties (judgement call) | Accepted (a): the order kept and recorded in § 1.3 (S040's sheet is the daily path); for the user at gate B |
+| BS1-05…BS1-10 nits | All accepted. BS1-05: moved line numbers replaced by names. BS1-06: the reading line in the existing `meters.py` LOCK ORDER bullet and `meters.py`'s *Locks* paragraph; `_lock_node` gains a `key` parameter. BS1-07: three `navigation.test.js` edits. BS1-08: `test_migration_v32.py` from v31. BS1-09: `schema.md`'s planned row replaced; `schema.html` v32, 37 tables, 53 links. BS1-10: `meters.py._meters_of` named as the in-force check. |

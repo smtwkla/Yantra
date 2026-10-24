@@ -311,6 +311,11 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      - Tell the coder this in every spawn prompt. Before gate B, check the
        impl report's `## Docs updated` against the diff yourself.
 3. **Code-review loop.**
+   - **Browser runs are not repeated** (standing rule, 25-10-2026, by KLA).
+     The coder runs the e2e specs the step needs (targeted, or the full suite
+     for shared code) and records the exact counts in the impl report. The
+     reviewer relies on that run and re-runs only the specs a finding of its
+     own needs checked; tell it so in the spawn prompt.
    - Spawn `code-reviewer` with the step ID and the round number. From
      round 2 on it verifies the fix round only (its *Round 2 and later* rule):
      name the findings the fix round addressed.
@@ -320,10 +325,20 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    - If any `blocker` or `major` finding is open, spawn `coder` for the fix
      round, then review again.
    - If only `minor` findings and nits are open, spawn `coder` (Sonnet) for
-     one fix round, without asking the user. Review again (verify only) only
-     when the fix round changed production code. A fix that changes only
-     tests, code comments, docs or step files needs no new review: read its
+     one fix round, without asking the user. A fix that changes only tests,
+     code comments, docs or step files needs no new review: read its
      impl-report section and check its suites are green.
+   - **Async verify review** (standing rule, 25-10-2026, by KLA). When that
+     minor-only fix round changed production code, the verify review does
+     not block: set the step to gate B, snapshot it, and start the next
+     step's coder; spawn the verify review at the same time (it only reads
+     code). Tell the reviewer the snapshot to diff against (the step's own
+     `refs/steps/S00N` and its parent). If it finds a `blocker` or `major`,
+     stop the next step's coder at its next hand-back and fix it first. Its
+     minor findings and nits are fixed in the next fix round on the tree,
+     land in the next step's snapshot, and are answered in the older step's
+     impl report (its snapshot is not replaced). Gate B names the review as
+     still running, or its result.
    - Stop after **3 rounds** and ask the user. The fix round for minors and
      nits does not count toward the 3.
    - Before each fix round, check the findings yourself. These go to the user
@@ -353,7 +368,12 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      (today IT Admin). The user decides which checks are which and may skip
      any.
 
-   The user checks, then **commits** (with the `S00N:` prefix). Set the status to
+   **Snapshot at gate B** (§ Snapshots): when the step reaches gate B, run
+   `tooling/step-snapshot.bat snapshot S00N "S00N: <commit message>;"` and
+   give the user its line. The next step may start at once.
+
+   The user checks, then **commits** (with the `S00N:` prefix), or adopts the
+   snapshot (`tooling/step-snapshot.bat adopt S00N`). Set the status to
    `Done` only when the user says it is committed **and** every important check
    is `[auto]` (a passing e2e run), ticked by the user or for the named person,
    or explicitly skipped by the user. A named person's result comes back through
@@ -362,6 +382,88 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    `[skipped] <reason>` in the user's words. Record the count in the status,
    e.g. `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped —
    iPhone)`. Never tick a check yourself.
+
+## Snapshots
+
+Standing rule (24-10-2026, by KLA): each step gets its own commit, while the
+next step's coder carries on in the same working tree.
+
+- **At gate B**, `tooling/step-snapshot.bat snapshot S00N "<message>"` writes
+  the whole working tree (untracked files too, `.gitignore` respected) as a
+  commit under `refs/steps/S00N`, whose parent is the previous unadopted
+  snapshot or `HEAD`. It never moves `HEAD` or a branch, never touches the
+  user's index or files, and is never pushed. The message is the step's
+  commit message (one line, the `S00N:` prefix, then a blank line and the
+  attribution trailers; write each line break as the two characters `\n`,
+  since a `.bat` argument holds none). From the Bash tool, call
+  `uv run --no-project python tooling/steps/step_snapshot.py …` directly:
+  `cmd //c` garbles a quoted message on its way to the `.bat`.
+  A fix after gate B re-runs `snapshot` for the same step; only the newest
+  snapshot can be replaced.
+- **One coder writes at a time.** A snapshot holds whatever is in the tree,
+  so two coders writing at once mix their steps. Reviews and brief work are
+  read-only for code and may overlap. Don't start a coder while another is
+  writing, unless the user says so, or the second one works in its own
+  worktree (§ Parallel steps).
+- **The user's own edits** (IDE reformatting included) land in the next
+  snapshot. Say so at gate B when `git status` shows files no step claims.
+- **Adopting:** the user runs `tooling/step-snapshot.bat adopt S00N`, oldest
+  first. It checks that the snapshot builds on `HEAD` and that nothing is
+  staged, then moves the branch to it and sets the index to its files; the
+  working files stay. `git merge --ff-only` would refuse, because the step's
+  new files are still untracked. If `HEAD` moved another way (the user
+  committed by hand), the old snapshots are *stale*: re-snapshot the steps
+  still open.
+- **Committing for the user:** only when the user asks in the current
+  request ("commit this", "adopt S037"). Then adopt the snapshots in order,
+  or stage each step's own files and commit them one step at a time; never
+  push.
+- `/step ls` lists the snapshots not yet adopted, and any stale ones.
+
+## Parallel steps
+
+An option (24-10-2026, by KLA), not the default: a second coder works at the
+same time in its own git worktree, so two long steps don't wait on each other.
+
+- **When it pays.** Both steps would take a coder 30 minutes or more, and
+  their *Where* lists share no file. Short fix-lane steps run one after the
+  other instead: the join below costs about what they would save.
+- **Never in parallel:**
+  - two steps that both add a migration (`local_db.py` and the schema docs
+    always conflict);
+  - two steps that touch the same screen or shared frontend code (the
+    router, the nav, `FormModal.vue`, `api.js`, `e2e/support/`), or the same
+    entries of `conftest.py`;
+  - a step that builds on the other's code.
+- **Proposing it.** When planning or listing, name the pairs that qualify,
+  with the reason ("no shared files"). Start the second coder in a worktree
+  only when the user says so.
+- **Setting it up.** Create the worktree from the newest snapshot (or
+  `HEAD`), e.g. `git worktree add ../<repo>-S0NN -b step/S0NN refs/steps/S0MM`,
+  or spawn the coder with `isolation: "worktree"` when its base is `HEAD`.
+  Tell the coder its folder; it runs every command there. It needs its own
+  test run name (as always) and the repo's dependency set-up (see the repo's
+  `CLAUDE.md`; e.g. `uv sync`, and `node_modules` linked by a junction).
+  Browser tests still take turns: the e2e lock is per machine.
+- **Shared step docs.** In a worktree the coder edits no shared step doc:
+  not the README index, not `device-checks.md`. It writes the changes it
+  needs, word for word, in its impl report under `## Shared docs`; the
+  orchestrator applies them after the join, so row numbers never clash.
+  The docs-pass docs (plan doc, schema doc, domain docs, `CLAUDE.md`) stay
+  with the coder, in its worktree, reviewed with the code.
+- **The join** (at the step's gate B):
+  1. the step's result is one commit on its branch (the gate B snapshot of a
+     worktree step);
+  2. put it on top of the current chain (the newest snapshot, or `HEAD`)
+     with `git cherry-pick` in a temporary worktree, never in the user's;
+  3. a conflict: resolve it when both sides can be kept; bring it to the
+     user when the two steps disagree on behaviour;
+  4. **test the joined code**: the backend suite and the targeted e2e specs
+     of both steps (they were never tested together). Red is a blocker of
+     the joined step;
+  5. snapshot the result as `refs/steps/S0NN`, apply the `## Shared docs`
+     changes, then remove the worktree and its branch (`git worktree remove`,
+     `git branch -D`), only after the snapshot exists.
 
 ## Listing
 
@@ -373,7 +475,8 @@ index title and folder, the brief's `Status:` line, the latest review with its
 verdict paragraph, the commits whose subject names the step, whether an impl
 report exists, and the working-tree changes in the step's folder (and, for an
 uncommitted step, among the files its impl report names); then the queued
-items with a step ID, the shared docs changed (README, `device-checks.md`), and
+items with a step ID, the shared docs changed (README, `device-checks.md`), the
+snapshots not yet adopted (`refs/steps/`), and
 the working-tree changes no step claims. It judges nothing: the bulb, the
 stage, the next action and the notes below the table are yours. Open a file
 only when the facts leave a question (a verdict cut short, a mismatch to
@@ -449,10 +552,29 @@ review file).
 ## Rules
 
 - **Never commit, push, build, deploy or release.** The subagents don't either.
+  Two exceptions, both by the user's decision of 24-10-2026: the gate B
+  snapshot under `refs/steps/` (§ Snapshots; no branch moves, nothing is
+  pushed), and committing or adopting when the user asks for it in the
+  current request.
 - **Subagents can't ask the user anything.** Any question they raise comes back
   to you, and you put it to the user.
 - **Never edit a review file**, and never fabricate a subagent's result. Wait
   for its completion notice.
+- **Recommend clearing the context** (standing rule, 25-10-2026, by KLA).
+  The step files are the whole hand-over, so a fresh session loses nothing
+  that matters, and a long one costs more and drifts. Recommend `/clear`, in
+  one line at the end of the message, when **all** of these hold:
+  - no subagent is running (they report back to this session only);
+  - every user answer and decision of the session is recorded in a brief,
+    an impl report or Plan.MD, and every gate shown is in the step files;
+  - the work just reached a natural break: a series of steps at gate B and
+    snapshotted, a brief approved before a long coding run, a release, or
+    the user switching to another topic;
+  - the session is long: several steps, or many hours of agent work.
+
+  Say what the fresh session starts with ("After `/clear`, run `/step ls`;
+  S044 is at gate A"). Never clear or compact by yourself. When agents are
+  still running, say instead when a break will come ("after S045's review").
 - **Keep the user informed.** Between rounds, one or two lines are enough:
   "BR round 2: 0 major, 3 minor — answering", or "Coder (Sonnet) done, tests
   green — starting code review r1".

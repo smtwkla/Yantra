@@ -8,12 +8,14 @@ of reading every step file one call at a time.
 Per step: the index title and folder, the brief's Status line, the latest review and its
 verdict paragraph, the commits whose subject names the step, whether an impl report exists,
 and the working-tree changes in the step's folder or among the files its impl report names.
-Then the shared docs changed and the working-tree changes no step claims.  It judges
+Then the shared docs changed, the step snapshots not yet adopted (refs/steps/), and the
+working-tree changes no step claims.  It judges
 nothing: no bulb, no next action."""
 
 import sys
 
-from step_facts import SHARED_DOCS, gather, latest_review, verdict_line
+import step_snapshot
+from step_facts import ROOT, SHARED_DOCS, gather, latest_review, verdict_line
 
 
 def main(argv):
@@ -34,6 +36,14 @@ def main(argv):
     print("shared step docs changed: " + (", ".join(shared) or "none"))
     for step_id, idea in facts.queued:
         print(f"{step_id} | queued | {idea}")
+    try:
+        snaps = step_snapshot.listing(ROOT)
+        print("snapshots not adopted (refs/steps/, oldest first): "
+              + (", ".join(f"{i} {s[:7]}" for i, s, _ in snaps["unmerged"]) or "none"))
+        if snaps["stale"]:
+            print("  stale (HEAD moved another way): " + ", ".join(i for i, _, _ in snaps["stale"]))
+    except step_snapshot.SnapshotError as error:
+        print(f"snapshots: could not read ({error})")
     print("unclaimed working-tree changes:" + ("" if facts.unclaimed else " none"))
     for path in facts.unclaimed:
         print(f"  {facts.changed[path]} {path}")

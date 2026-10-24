@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Approved (24-10-2026 by KLA)
-Baseline: e451c33 + uncommitted S035, S036, S041, S042; builds on S037 (v29), S038 (v30) and S039 (v31), coded first
+Status: Gate B (CR r3 async verify: 0 findings; r1–r2 findings fixed; CR1-10 for the user)
+Baseline: ff9ddb3 + snapshots refs/steps/S038, refs/steps/S043 + S039 (working tree, at gate B); stale check s1 done 24-10-2026
 ```
 
 # S040 — End-of-day readings sheet
@@ -29,7 +29,7 @@ User answers:
   `equipment:edit` holders (S039), so *Undo* is theirs; a third meter kind,
   *Amount per period* (S037), e.g. *Shift production*.
 
-Built on e451c33 plus S037 (v29), S038 (v30) and S039 (v31), all approved and
+Built on e451c33 plus S037 (v29), S038 (v30) and S039 (v32), all approved and
 coded before this step.
 
 ## 1. What will be built
@@ -44,7 +44,7 @@ coded before this step.
    `reading_unit_ids` (every active site with an active unit when it is
    `null`), built by `readingSites(allUnits, allSites, mine)` over the
    masters' units list (`ensureUnits()`, rows with `site_id`,
-   `masters.py:78`) and the sites list (`ensureSites()`, with the site's name
+   `_UNIT_SELECT` in `masters.py`) and the sites list (`ensureSites()`, with the site's name
    and `active`), as the Tickets filters are built (`TicketsView.vue:61`,
    `:144`; BR1-01, BR2-01). The picker shows the site **code**, as the Tickets
    site filter; the sheet's heading shows "SMTW — Main factory,
@@ -105,7 +105,10 @@ coded before this step.
      with a tick, and its input stays empty but can still be typed in. The
      header counts "9 of 48 read today" (the same 48 meter rows as the save
      bar's count; BR2-05). The day test is on
-     the frontend, with the IST helpers of `utils/ticketLabels.js`.
+     the frontend: a small tested `isToday(takenAt, now)` in `meterLabels.js`
+     compares the API's IST date (`taken_at.slice(0, 10)`, sent as `+05:30`)
+     with the phone's date, as the rest of the frontend treats the phone as
+     IST (BS1-07).
 5. **The *Meter reset* tick is hidden** (S039 BR1-06 item 2): it shows on a
    counter row only after that row's refusal carries `code:
    "counter_lower"` (S039 § 5.2.4, S039 BR2-02; BR1-02), the "Lower than
@@ -140,13 +143,19 @@ coded before this step.
    - Empty rows are skipped. A second press saves only the rows not yet
      saved.
 7. **Failures** (S039 BR1-05, the sheet's parts):
-   - a row's save fails with a 503 or a failed fetch: the loop **stops**;
+   - a row's save fails with a 502, 503 or 504, or gets no answer at all
+     (no network): the loop **stops** (BS1-02, the same set as S039's dialog,
+     S039 CR1-05);
      that row and every row after it read "Not saved. Try again in a
      minute.", with their typed values kept (BR1-11). A 400 or 409 on a row
      does not stop the loop: that row shows its refusal and the others go
      on;
    - the sheet's load fails: "Readings could not be loaded. Try again in a
      minute.", with *Try again*.
+   - The "not saved" set (502, 503, 504, no status) lives in one place: the
+     coder lifts S039's `notSavedOr` (or its list) out of
+     `ReadingFormModal.vue` into `meterLabels.js` or `api.js`, and both
+     screens use it (BS1-02).
 8. **Empty states:** a site with no meters in force: "No machine at this site
    has meters. Engineers add meters in Masters › Models or on a machine's
    page.", with *Time taken* and *Save readings* hidden (BR1-12); the site
@@ -193,11 +202,12 @@ coded before this step.
   model and node meter rows with their types (`effective_meters` per node,
   S038), and the last reading per (node, meter type). Placed here, not in
   S039, because only the sheet uses it.
-- `backend/equipment.py`: `GET /api/equipment/my-units` (line 565) gains
+- `backend/equipment.py`: `GET /api/equipment/my-units` (`my_units`) gains
   `reading_unit_ids` (`null` = every unit, else the ids where `reading:log`
   is held), one more `accessible_unit_ids(cur, "reading:log")` call beside
-  `edit_unit_ids` (BR1-01). The comment at `equipment.py:286` ("only these
-  helpers, the list, /my-units … touch accessible_unit_ids") stays true.
+  `edit_unit_ids` (BR1-01). The comment above `accessible_unit_ids` ("only
+  these helpers, the list, /my-units … touch accessible_unit_ids") stays
+  true.
 
 ### Frontend
 
@@ -209,7 +219,12 @@ coded before this step.
   with an active unit in `reading_unit_ids`, or every active site with an
   active unit when it is `null`), beside `filterableUnits` / `pickableUnits`
   (BR1-01, BR2-01, U3); `noUnits` reused.
-- `frontend/src/utils/meterLabels.js` (S038/S039): reused, `formatReading`.
+- `frontend/src/utils/meterLabels.js` (S038/S039): reused as built:
+  `formatReading`, `readingBadges`, `savedMessage` and `LIMIT_STATE_LABELS`
+  (BS1-06). A row saved outside its limits reads as the card does, e.g.
+  "Saved. Above the limit of 60 °C."; a Yes / No row "Saved. Not OK: the
+  expected answer is Yes." Gains `isToday` (BS1-07) and the shared "not
+  saved" check (BS1-02).
 
 ### Tests
 
@@ -219,7 +234,10 @@ coded before this step.
   see it (S039 BR1-15). S039 has already added `reading:log` to the role
   lists (BR1-15).
 - `backend/tests/test_equipment_api.py` (the file that tests
-  `my-units`): `reading_unit_ids` per role (BR1-01).
+  `my-units`): `reading_unit_ids` per role (BR1-01). Three existing
+  assertions compare the whole `my-units` dict (two units; token roles; no
+  rows) and are extended with `reading_unit_ids`, not only joined by a new
+  test (BS1-03).
 - `frontend/e2e/readings.spec.js` (S039): the sheet tests (§ 8).
 - `frontend/e2e/screens.spec.js`: `/readings` for the reading roles; the
   bottom bar (S039 BR1-14).
@@ -231,6 +249,8 @@ The docs pass (`.claude/CLAUDE.md` § Docs to keep current), in this step:
 - `docs/Plan.MD` § 4.5 (the sheet as built) and § 6 (the *Readings* screen and
   the nav order). The gate A decisions are already recorded there.
 - `docs/steps/device-checks.md`: the row of § 8 *On a real device*.
+- `.claude/CLAUDE.md` § SMTW-Review: the spec-to-step map, `readings` S039 →
+  S039/S040 (BS1-08).
 - No migration, so no schema doc change.
 
 ## 4. Data model
@@ -242,7 +262,7 @@ None. No migration.
 ### 5.1 The sheet read
 
 - `GET /api/readings/sheet?site_id=` (U3) lists the site's **active** units
-  that are in `accessible_unit_ids(cur, "reading:log")` (`equipment.py:290`;
+  that are in `accessible_unit_ids(cur, "reading:log")` (`accessible_unit_ids` in `equipment.py`;
   `None` for admin = every active unit of the site). `reading:log` is
   site-scoped, so that set holds the units of the sites where the person may
   log.
@@ -263,15 +283,16 @@ None. No migration.
 
 ### 5.3 The database down
 
-The page shows the load message (§ 1.7) on a 503 or a failed fetch; the rows'
-failures are per row (§ 1.7).
+The page shows the load message (§ 1.7) on a 502, 503 or 504, or no answer
+at all (BS1-02); the rows' failures are per row (§ 1.7), and the same set
+stops the save loop.
 
 ## 6. API
 
 | Method | Path | Key | Query | Response |
 |---|---|---|---|---|
 | GET | `/api/equipment/my-units` (existing) | `equipment:read` | — | gains `reading_unit_ids` (BR1-01) |
-| GET | `/api/readings/sheet` | `reading:log` at the site (its units in `accessible_unit_ids`) | `site_id` | `{site: {id, code, name}, units: [{id, code, name, machines: [{id, code, name, lifecycle, meters: [{meter_type, last}], parts: [{id, code, name, level, meters: [...]}]}]}]}` (U3: grouped by unit; `units` holds only units with at least one machine with meters in force, BR2-02; `meter_type` carries `kind`; BR1-07: parts nested, two levels at most, as the subtree read, `equipment.py:258`; `last` as S039: `{value, taken_at, limit_state}` or `null`) |
+| GET | `/api/readings/sheet` | `reading:log` at the site (its units in `accessible_unit_ids`) | `site_id` | `{site: {id, code, name}, units: [{id, code, name, machines: [{id, code, name, lifecycle, meters: [the `_meters_out` dict: `effective_meters`' fields plus `last` (BS1-06)], parts: [{id, code, name, level, meters: [...]}]}]}]}` (U3: grouped by unit; `units` holds only units with at least one machine with meters in force, BR2-02; `meter_type` carries `kind`; BR1-07: parts nested, two levels at most, as the subtree read, `equipment.py:258`; `last` as S039: `{value, taken_at, limit_state}` or `null`) |
 
 ## 7. Design decisions
 
@@ -317,29 +338,42 @@ failures are per row (§ 1.7).
 - `test_readings_api.py`: the sheet lists the site's units where the user
   logs, each with its machines with meters in force (on the machine or a
   part), in tree order, parts nested, without scrapped ones, with the last
-  reading, the lifecycle and the meter's kind; the supervisor at SMTW gets
-  MCC1 and MCC2, the operator MCC2 only; another site (404); an inactive
-  site, and a site whose units are all inactive, admin too (404); the
-  storekeeper (404, no reading unit); `site_id` missing (400) (U3).
+  reading, the lifecycle and the meter's kind; a supervisor at two units of
+  one site gets both, an operator at one of them only that one; another site
+  (404); an inactive site, and a site whose units are all inactive, admin
+  too (404); a storekeeper role (no `reading:log`: 404); `site_id` missing
+  (400) (U3). The cases build their own sites and units (`user_at_sites`,
+  `make_site`, `make_unit`, `role_client`), as `test_equipment_api.py` and
+  `test_readings_api.py` do, not the e2e seed (BS1-10).
 - `my-units`: `reading_unit_ids` is the units where the user holds
   `reading:log`, `null` for admin, empty for a user whose only unit was
   deactivated.
 
 ### Frontend (vitest)
 
-- `navigation.test.js`: *Readings* after *Tickets* for operator, supervisor,
-  technician, engineer, manager; not for the storekeeper or IT admin.
+- `navigation.test.js`: *Readings* after *Tickets* for operator (=
+  supervisor), engineer, manager; not for the storekeeper or IT admin. The
+  file has no technician list (BS1-09).
 
 ### Automated (e2e)
 
-Set-up as S039 (S039 § 8, BR2-04, BR3-03): an own machine per project at
-SMTW.MCC2 on the `SMTW-HYP-01` model, with its meters, through S038's API; no
-test touches a seed node. S040's `beforeAll` adds (BR2-02, BR2-08):
-- a **second machine per project at SMTW.MCC1** with one counter, so the
-  supervisor's sheet shows both units;
-- its **own readings** through S039's POST (a counter reading for the
-  too-low case, one reading taken today for *Today*), so `--grep S040` passes
-  alone, without S039's tests running first.
+Set-up as S039 coded it (S039 *Decisions taken* 12, CR1-02; BS1-01):
+- each S040 test makes **its own machine(s)** with `meterMachine(testInfo,
+  tag, {unit, modelMeters, ownMeters})` from `e2e/support/meters.js`, which
+  makes a press model of its own (never `SMTW-HYP-01`): `unit: "SMTW.MCC2"`
+  for the operator's cases, and a second machine at `SMTW.MCC1` for the
+  supervisor's two-units case;
+- its **own readings** with `logByApi(machine, name, value, takenAt,
+  extra)`, which posts as the operator, so only on an MCC2 machine (a
+  counter reading for the too-low case, one taken today for *Today*);
+  `--grep S040` passes alone, without S039's tests first;
+- the Yes / No meter type made once per project in `beforeAll`, as
+  `readings.spec.js` does;
+- the sheet lists every machine at SMTW with meters, from every test and
+  project in the lane: each assertion is **scoped to the test's own card**
+  (found by its machine's name, `S038 press <tag> <project>`), and the header
+  counts ("9 of 48 read today", "3 of 48 filled") are asserted as a pattern
+  or a difference, never as literal numbers. No test touches a seed node.
 
 - `readings.spec.js`:
   - **Important.** "S040: the end-of-day sheet saves the filled rows and shows
@@ -478,3 +512,13 @@ bottom bar), BR1-15 (the nav check as a vitest case) and BR1-17 (the
 
 From S039's review round 3: S039's Yes / No dialog now picks, then saves (S039
 decision 11), so decision 9 and § 1.4 compare the two screens as alike.
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 24-10-2026
+
+0 blocker, 0 major, 2 minor, 8 nits, against ff9ddb3 + S037, S038, S039, S043. The design holds; all accepted.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor — the e2e set-up is not what S039 built | Accepted (a): a machine per test with `meterMachine` (own press model, `SMTW.MCC2`; a second at `SMTW.MCC1` for the supervisor), readings by `logByApi` on the MCC2 machine, the Yes / No type per project in `beforeAll`, assertions scoped to the test's own card and counts as a pattern; `SMTW-HYP-01` dropped; § 8 |
+| BS1-02 minor — the failure set is 502, 503, 504 or no status | Accepted (a): § 1.7 and § 5.3 name the set; S039's `notSavedOr` lifted into one shared helper used by both screens |
+| BS1-03…BS1-10 nits | All accepted. BS1-03: the three whole-dict `my-units` assertions extended. BS1-04: line numbers replaced by names (`my_units`, `accessible_unit_ids`, `_UNIT_SELECT`). BS1-05: Baseline names S043 (v31). BS1-06: `savedMessage` and the rest reused; sheet meters carry the `_meters_out` dict. BS1-07: `isToday` in `meterLabels.js`. BS1-08: the CLAUDE.md spec map in the docs pass. BS1-09: no technician list in `navigation.test.js`. BS1-10: pytest cases build their own sites and units. |

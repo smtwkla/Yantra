@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: fix
-Status: Gate B (CR r3: 0 findings; r1–r2 findings all fixed; full e2e on the combined tree 296 passed, 1 flaky)
+Status: Done (committed 3b3fb41; checks: 1 auto, no device check)
 Baseline: e451c33
 ```
 

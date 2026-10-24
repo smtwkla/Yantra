@@ -296,6 +296,12 @@ compliance window, e.g. ±10 % of the interval — **Proposed**); shutdown / ann
 - **Gauge** meters are levels (temperature, vibration, clearance, wear in mm) and
   trigger on crossing limits. Also an ISO 4406 oil cleanliness code and the day's
   maximum oil temperature (16-10-2026).
+- **Amount per period** meters hold a quantity for the period just ended, such as a
+  shift's production (24-10-2026, S037). They do not run on from the last value and have
+  no limits; totals over a day or a month are the sum of the amounts.
+- **Yes / No** meters record a check with two answers, such as *Oil level above min*, and
+  carry the expected answer, the one that means all is well (24-10-2026, S037). It is the
+  OK / Not OK judgement of a checklist item, kept as a meter.
 - **Energy** (16-10-2026): a kWh counter per press, so kWh per stroke can be reported
   later — ISO 50001's energy performance indicator, and the cost of a press that is
   waiting with its power pack running.
@@ -410,6 +416,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 
 | Term | Meaning |
 |---|---|
+| Property | A technical datum of a class of equipment (ISO 14224 Annex A *equipment-specific data*), with a data type and a unit, defined in *Masters › Properties* (S043). The model holds the maker's rating; an item holds its own only where its nameplate differs (S044). How the equipment is built is its *type*, not a property; values that change in service are readings |
 | TPM | Total Productive Maintenance — the framework this document follows |
 | OEE | Overall Equipment Effectiveness = Availability × Performance × Quality |
 | CIL | Clean, Inspect, Lubricate — the operator's routine care of a piece of equipment |
@@ -438,7 +445,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | PM template | Reusable work definition applied to many equipment |
 | PM plan | The recurring task for one equipment: checklist, readings, triggers, performer |
 | PM job | One occurrence of a PM plan, generated when due |
-| Meter | A tracked quantity on a piece of equipment — counter or gauge |
+| Meter | A tracked quantity on a piece of equipment — a counter, a gauge, an amount per period or a yes / no check (its *meter type*, from the Masters catalogue, names the quantity and says which kind) |
 | Criticality | A / B / C grade of an equipment's importance |
 | Lifecycle | Where a piece of equipment is in its life: in service, standby, out of use, scrapped (ISO 55000 life cycle). Set by hand on the equipment page (S030; called *status* before) |
 | Status | Whether a machine can run now: working, degraded, down, PM due (EN 13306 up / down state). Derived from tickets and PM, never typed by hand; S029's ticket light is its first form (decided 23-10-2026, S030) |

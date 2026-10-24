@@ -3,7 +3,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: light
-Status: Gate B (CR r2: 0 blocker, 0 major, 1 nit — fixed; r1 findings all fixed)
+Status: Done (committed 15b06e0; checks: 1 auto; row 31, not important, open)
 Baseline: e451c33 + uncommitted S035
 
 # S036 — Ticket tint by intensity

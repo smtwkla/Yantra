@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: fix
-Status: Gate B (CR r1: 0 blocker, 0 major, 1 nit — fixed: index row)
+Status: Done (committed d6b305b; no checks)
 Baseline: e451c33 + uncommitted S035, S036, S041
 ```
 

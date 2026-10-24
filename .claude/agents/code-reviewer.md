@@ -42,7 +42,12 @@ review file there.
 - **Run the tests yourself.** Run `tooling/run-tests.bat`, and `npx vite build`
   in `frontend/` if the frontend changed. Record the real result. A red suite is
   a `blocker`.
-- **Run the browser tests** (S024) when the frontend or an API the screens use
+- **Rely on the coder's browser run** (standing rule, 25-10-2026). The coder
+  runs the e2e specs and records the counts in the impl report. Don't repeat
+  that run: check the report names the right specs (rule below) and the real
+  counts, and re-run only the specs one of your own findings needs, in the
+  background. A missing or red coder run is still a `blocker`.
+- **Which browser tests a step needs** (S024), when the frontend or an API the screens use
   changed: `tooling/run-e2e-tests.bat`, the **targeted** specs only, never the whole suite unasked
   (22-10-2026, user): the spec files of the screens and APIs the step
   changed (the spec-to-step map in `.claude/CLAUDE.md` § SMTW-Review) plus

@@ -47,6 +47,10 @@ The orchestrator gives you one of three tasks:
   repo's schema doc. Never edit a file marked "synced from" or "generated"
   by hand. List each doc under `## Docs updated` in the impl report, or
   write "none, because …".
+- **In a worktree** (the orchestrator names the folder): run every command
+  there, edit no shared step doc (the README index, `device-checks.md`), and
+  write the changes those need, word for word, under `## Shared docs` in the
+  impl report. The docs-pass docs are yours as usual.
 - **Approval first.** Work only from a brief, or amendment, whose status is
   `Approved … by <user>`. If it isn't approved, stop and say so.
 - **Stay in scope.** Build exactly what the brief says.
