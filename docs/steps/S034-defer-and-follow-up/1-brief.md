@@ -3,8 +3,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026 (revised 24-10-2026: brief-review r1)
 Track: light
-Baseline: cbe8f02
-Status: In review
+Baseline: 7a5b726 (code as cbe8f02)
+Status: Approved 24-10-2026 by KLA
 
 # S034 — Defer, hold and follow-up date
 
