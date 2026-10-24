@@ -9,6 +9,7 @@ import {
   WAITING_REASON_LABELS, waitingSplit, waitingText,
 } from "../src/utils/ticketLabels.js";
 import { activityDetail, defaultMeTab, isBackdated, planText } from "../src/utils/ticketLabels.js";
+import { ticketRowClass, ticketTint } from "../src/utils/ticketLabels.js";
 import { TICKET_FILTER_CHOICES, TICKET_LIGHT_LABELS } from "../src/utils/ticketLabels.js";
 import {
   DEFAULT_PART_KIND, matchingParts, PART_KIND_CHOICES, PART_KIND_SHORT, PART_UNITS, partText, quantityText,
@@ -398,5 +399,30 @@ describe("the Me page (S031)", () => {
   it("defaultMeTab: open work with ticket:work, else the user's raises", () => {
     expect(defaultMeTab(["ticket:read", "ticket:raise", "ticket:work"])).toBe("open");
     expect(defaultMeTab(["ticket:read", "ticket:raise"])).toBe("raised");
+  });
+});
+
+describe("ticket tint (S036)", () => {
+  it("tints an open ticket by intensity, with the badge's colour names", () => {
+    expect(ticketTint({ intensity: "critical", state: "raised" })).toBe("danger");
+    expect(ticketTint({ intensity: "degraded", state: "in_progress" })).toBe("warning");
+    expect(ticketTint({ intensity: "initial", state: "scheduled" })).toBe("secondary");
+  });
+
+  it("tints back in service, not closed", () => {
+    expect(ticketTint({ intensity: "critical", state: "back_in_service" })).toBe("danger");
+    for (const intensity of ["critical", "degraded", "initial"]) {
+      expect(ticketTint({ intensity, state: "closed" })).toBeNull();
+    }
+  });
+
+  it("gives none for an unknown intensity", () => {
+    expect(ticketTint({ intensity: "other", state: "raised" })).toBeNull();
+  });
+
+  it("builds the row class from the tint, and none for a closed ticket", () => {
+    expect(ticketRowClass({ intensity: "critical", state: "raised" })).toEqual(["list-group-item-danger", "ticket-tinted"]);
+    expect(ticketRowClass({ intensity: "initial", state: "raised" })).toEqual(["list-group-item-secondary", "ticket-tinted"]);
+    expect(ticketRowClass({ intensity: "critical", state: "closed" })).toBeNull();
   });
 });

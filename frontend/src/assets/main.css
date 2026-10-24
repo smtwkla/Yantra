@@ -137,3 +137,6 @@ body {
   .app-main { margin-left: 0 !important; }
   .app-content { overflow: visible !important; padding: 0 !important; }
 }
+
+/* S036: grey helper text on a tinted ticket row; #6c757d is below 4.5:1 on the pink, yellow and grey tints */
+.ticket-tinted .text-secondary { color: var(--bs-secondary-text-emphasis) !important; }

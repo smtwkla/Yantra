@@ -23,7 +23,7 @@ import { ensureEquipmentClasses, equipmentClasses } from "../stores/masters";
 import { formatDateTime } from "../utils/datetime";
 import { LEVEL_LABELS } from "../utils/equipmentLabels";
 import { labelsPath } from "../utils/labelSheets";
-import { ageText, problemText } from "../utils/ticketLabels";
+import { ageText, problemText, ticketRowClass } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
@@ -203,6 +203,7 @@ function onSaved({ result, created }) {
             :key="t.id"
             :to="`/tickets/${t.id}`"
             class="list-group-item list-group-item-action"
+            :class="ticketRowClass(t)"
           >
             <div class="d-flex flex-wrap align-items-center gap-2">
               <IntensityBadge :intensity="t.intensity" />

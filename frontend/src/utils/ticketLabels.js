@@ -21,6 +21,27 @@ export const INTENSITY_BADGE_CLASS = {
   initial: "text-bg-secondary",
 };
 
+/**
+ * S036: the Bootstrap colour name of an open ticket's tint (the same colours as the badges, in
+ * their mild "subtle" form). A closed ticket has none: past work must not look current.
+ */
+export const INTENSITY_TINT = {
+  critical: "danger",
+  degraded: "warning",
+  initial: "secondary",
+};
+
+export function ticketTint(ticket) {
+  if (ticket.state === "closed") return null;
+  return INTENSITY_TINT[ticket.intensity] ?? null;
+}
+
+/** The classes of an open-ticket row on a list: the tint and the text-contrast hook (main.css); null when untinted. */
+export function ticketRowClass(ticket) {
+  const tint = ticketTint(ticket);
+  return tint && [`list-group-item-${tint}`, "ticket-tinted"];
+}
+
 /** The raise screen's three buttons: what the operator sees, in plain words. */
 export const INTENSITY_CHOICES = [
   { value: "critical", label: "Stopped", hint: "Breakdown: it cannot run" },

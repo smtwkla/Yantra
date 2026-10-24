@@ -4,7 +4,7 @@
  * page's two ticket tabs, S031). `now` is the list's clock, for the age.
  */
 import IntensityBadge from "./IntensityBadge.vue";
-import { ageText, firstName, overdueBadge, planText, problemText, stateLabel } from "../utils/ticketLabels";
+import { ageText, firstName, overdueBadge, planText, problemText, stateLabel, ticketRowClass } from "../utils/ticketLabels";
 
 defineProps({
   ticket: { type: Object, required: true },
@@ -13,7 +13,11 @@ defineProps({
 </script>
 
 <template>
-  <router-link :to="`/tickets/${ticket.id}`" class="list-group-item list-group-item-action">
+  <router-link
+    :to="`/tickets/${ticket.id}`"
+    class="list-group-item list-group-item-action"
+    :class="ticketRowClass(ticket)"
+  >
     <div class="d-flex flex-wrap align-items-center gap-2">
       <IntensityBadge :intensity="ticket.intensity" />
       <span class="fw-semibold">{{ ticket.serial }}</span>

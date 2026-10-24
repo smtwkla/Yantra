@@ -46,7 +46,7 @@ import { userPersonId } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
 import {
   ageText, EVENT_LABELS, intensityChanges, minutesText, moveLabel, PLAN_MOVES, planChanges, planLine, SIGNIFICANT_MOVES,
-  stateLabel, waitingSplit,
+  stateLabel, ticketTint, waitingSplit,
 } from "../utils/ticketLabels";
 import AssignDialog from "./tickets/AssignDialog.vue";
 import EditTicketDialog from "./tickets/EditTicketDialog.vue";
@@ -209,7 +209,11 @@ watch(() => route.params.id, load, { immediate: true });
     </div>
 
     <template v-if="ticket && !notFound && !forbidden">
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div
+        data-testid="ticket-title"
+        class="d-flex flex-wrap align-items-center gap-2 mb-3"
+        :class="ticketTint(ticket) && `bg-${ticketTint(ticket)}-subtle border border-${ticketTint(ticket)}-subtle rounded px-2 py-1`"
+      >
         <h4 class="mb-0 me-2">{{ ticket.serial }}</h4>
         <IntensityBadge :intensity="ticket.intensity" />
         <span class="badge state-badge" :class="ticket.overdue ? 'text-bg-danger' : 'text-bg-light border'">{{ stateLabel(ticket) }}</span>

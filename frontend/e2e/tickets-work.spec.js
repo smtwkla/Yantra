@@ -5,7 +5,7 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { asPerson, personId, seedIds } from "./support/people.js";
 import {
-  card, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
+  card, causeId, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
   stateBadge, thisMinute, timeline, timeValue,
 } from "./support/tickets.js";
 
@@ -515,4 +515,29 @@ test("S034: In 14 days fills the date (the input's min plus 14 days) and the sav
   await filter.selectOption("scheduled");
   await expect(page).toHaveURL(/state=scheduled/);
   await expect(page.locator(".list-group-item").filter({ hasText: ticket.serial })).toHaveCount(1);
+});
+
+test("S036: open tickets are tinted by intensity (pink, yellow); a closed ticket and its page are plain", async ({ page }) => {
+  const breakdown = await raiseBreakdown(thisMinute(), 5, "S036 tint: breakdown");
+  const defect = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S036 tint: defect",
+  });
+  const closed = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "critical", description: "S036 tint: closed",
+  });
+  await moveByApi("engineer", closed.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: "S036 test: nothing wrong" });
+
+  await asPerson(page, "engineer", "/tickets?state=all&q=S036 tint");
+  // by serial, which is unique; q keeps other tests' tickets (and a second project's run) off the page
+  const rowOf = (ticket) => page.locator(".list-group-item").filter({ hasText: ticket.serial });
+  await expect(rowOf(breakdown)).toHaveCSS("background-color", "rgb(248, 215, 218)");
+  await expect(rowOf(defect)).toHaveCSS("background-color", "rgb(255, 243, 205)");
+  await expect(rowOf(closed)).toHaveCSS("background-color", "rgb(255, 255, 255)");
+
+  const titleOf = () => page.getByTestId("ticket-title");
+  await page.goto(`/tickets/${breakdown.id}`);
+  await expect(titleOf()).toHaveCSS("background-color", "rgb(248, 215, 218)");
+  await page.goto(`/tickets/${closed.id}`);
+  await expect(stateBadge(page)).toHaveText("Closed");
+  await expect(titleOf()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
