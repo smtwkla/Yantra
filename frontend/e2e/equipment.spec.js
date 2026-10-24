@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
-import { apiAs, asPerson, seedIds } from "./support/people.js";
+import { apiAs, asPerson } from "./support/people.js";
 import { raiseByApi, saveDialog } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
@@ -195,8 +195,9 @@ test("S029: a bookmarked tickets=down shows the plain list to a storekeeper, who
 // S033: a component-unit may have no model; its class and type are then picked directly
 test("S033: engineer adds a component-unit with No model; its page and the list show no model", async ({ page }, testInfo) => {
   const name = `E2E no model ${testInfo.project.name}`;
-  const { extruder } = await seedIds();
-  await asPerson(page, "engineer", `/equipment/${extruder.id}`);
+  // Its own machine: a part added under the shared seed extruder would change the label counts of labels.spec.js and screens.spec.js
+  const machine = await createEquipment(`E2E no-model parent ${testInfo.project.name}`);
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
   await page.getByRole("button", { name: "Add part" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
