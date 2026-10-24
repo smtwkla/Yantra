@@ -10,8 +10,14 @@
  * model's Documents and Photos cards, in this panel; Back brings the table back. Not a dialog,
  * because the cards open dialogs of their own. Model documents show on every machine of the
  * model, at every site.
+ *
+ * Meters (S038): the Meters button shows the model's meters in this panel the same way, with
+ * Add meter, Set limits (gauges) and Remove (asks first). Every machine of the model has them;
+ * a machine may override a gauge's limits and add its own meters on its own page. An inactive
+ * model keeps its button: it stays on its machines (BR2-03).
  */
 import { computed, onMounted, ref } from "vue";
+import { apiGet, apiPut } from "../../api";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import DocumentsCards from "../../components/documents/DocumentsCards.vue";
@@ -20,6 +26,8 @@ import {
   ensureEquipmentClasses, ensureEquipmentTypes, ensureManufacturers, ensureModels, equipmentClasses,
   equipmentModels, equipmentTypes, manufacturers,
 } from "../../stores/masters";
+import { goodReadingText, unitAndKind } from "../../utils/meterLabels";
+import ModelMeterFormModal from "./ModelMeterFormModal.vue";
 import { useMasterForm } from "./useMasterForm";
 
 const canEdit = computed(() => userPermissions.value.includes("equipment:edit"));
@@ -29,6 +37,13 @@ const makerFilter = ref("");
 const loadError = ref("");
 const editingFixed = ref(""); // the edit dialog shows manufacturer, class and type as text: they cannot change
 const documentsFor = ref(null); // the model whose documents are shown instead of the table
+const metersFor = ref(null); // the model whose meters are shown instead of the table
+const modelMeters = ref(null); // its meters; null while loading
+const metersError = ref("");
+const confirmingRemoveId = ref(null);
+const removing = ref(false);
+const removeError = ref("");
+const meterModal = ref(null);
 
 const rows = computed(() =>
   (equipmentModels.value ?? []).filter(
@@ -83,6 +98,39 @@ const {
     reload,
   });
 
+async function loadMeters() {
+  const model = metersFor.value;
+  metersError.value = "";
+  try {
+    const rows = await apiGet(`/api/masters/equipment-models/${model.id}/meters`);
+    if (metersFor.value === model) modelMeters.value = rows;
+  } catch (err) {
+    if (metersFor.value === model) metersError.value = err.message;
+  }
+}
+
+function openMeters(m) {
+  metersFor.value = m;
+  modelMeters.value = null;
+  confirmingRemoveId.value = null;
+  removeError.value = "";
+  loadMeters();
+}
+
+async function removeMeter(meter) {
+  removing.value = true;
+  removeError.value = "";
+  try {
+    await apiPut(`/api/masters/model-meters/${meter.id}`, { active: false });
+    confirmingRemoveId.value = null;
+    await loadMeters();
+  } catch (err) {
+    removeError.value = err.message;
+  } finally {
+    removing.value = false;
+  }
+}
+
 function editModel(m) {
   editingFixed.value = `${m.manufacturer_name} · ${m.class_code} — ${m.class_name} · ${m.type_name ?? "no type"}`;
   openEdit(m);
@@ -98,6 +146,17 @@ onMounted(reload);
         <i class="fa-solid fa-arrow-left me-1"></i>Models
       </button>
       <span>· {{ documentsFor.label }} · Documents</span>
+    </div>
+    <div v-else-if="metersFor" class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div class="d-flex flex-wrap align-items-center gap-1">
+        <button class="btn btn-sm btn-link p-0 text-decoration-none" @click="metersFor = null">
+          <i class="fa-solid fa-arrow-left me-1"></i>Models
+        </button>
+        <span>· {{ metersFor.label }} · Meters</span>
+      </div>
+      <button v-if="canEdit" class="btn btn-sm btn-primary" :disabled="modelMeters === null" @click="meterModal.openAdd(metersFor, modelMeters)">
+        <i class="fa-solid fa-plus me-1"></i>Add meter
+      </button>
     </div>
     <div v-else class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><i class="fa-solid fa-tag me-2"></i>Models</span>
@@ -126,6 +185,33 @@ onMounted(reload);
         every-site="model"
       />
     </div>
+    <div v-else-if="metersFor" class="card-body">
+      <p class="small text-secondary">Every machine of this model has these meters. A machine may change a gauge's limits and add its own meters on its page.</p>
+      <div v-if="metersError" class="alert alert-danger">Meters could not be loaded: {{ metersError }}</div>
+      <div v-else-if="modelMeters === null" class="text-secondary">Loading…</div>
+      <div v-else-if="modelMeters.length === 0" class="text-secondary">No meters.</div>
+      <ul v-else class="list-group">
+        <li v-for="meter in modelMeters" :key="meter.id" class="list-group-item" data-testid="model-meter">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="fw-semibold">{{ meter.meter_type.name }}</span>
+            <span class="text-secondary small">{{ unitAndKind(meter.meter_type) }}</span>
+            <span v-if="goodReadingText(meter)" class="small">{{ goodReadingText(meter) }}</span>
+            <span v-if="canEdit && confirmingRemoveId !== meter.id" class="ms-auto text-nowrap">
+              <button v-if="meter.meter_type.kind === 'gauge'" class="btn btn-sm btn-outline-secondary me-1" @click="meterModal.openLimits(metersFor, meter)">
+                Set limits
+              </button>
+              <button class="btn btn-sm btn-outline-danger" @click="confirmingRemoveId = meter.id; removeError = ''">Remove</button>
+            </span>
+          </div>
+          <div v-if="confirmingRemoveId === meter.id" class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-2">
+            <span>Remove {{ meter.meter_type.name }} from {{ metersFor.label }}? Every machine of this model loses it. Readings stay in history.</span>
+            <button class="btn btn-sm btn-danger" :disabled="removing" @click="removeMeter(meter)">Remove</button>
+            <button class="btn btn-sm btn-outline-secondary" @click="confirmingRemoveId = null">Keep</button>
+          </div>
+          <div v-if="confirmingRemoveId === meter.id && removeError" class="text-danger small mt-1">{{ removeError }}</div>
+        </li>
+      </ul>
+    </div>
     <div v-else class="card-body">
       <div v-if="loadError" class="alert alert-danger">{{ loadError }}</div>
       <div v-if="equipmentModels === null && !loadError" class="text-secondary">Loading…</div>
@@ -145,6 +231,9 @@ onMounted(reload);
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Documents" @click="documentsFor = m">
                   <i class="fa-solid fa-paperclip"></i>
                 </button>
+                <button class="btn btn-sm btn-outline-secondary me-1" title="Meters" aria-label="Meters" @click="openMeters(m)">
+                  <i class="fa-solid fa-gauge"></i>
+                </button>
                 <button v-if="canEdit" class="btn btn-sm btn-outline-secondary" title="Edit" @click="editModel(m)">
                   <i class="fa-solid fa-pen"></i>
                 </button>
@@ -155,6 +244,8 @@ onMounted(reload);
       </div>
     </div>
   </div>
+
+  <ModelMeterFormModal ref="meterModal" @saved="loadMeters" />
 
   <FormModal ref="modal" :title="editingId === null ? 'Add model' : 'Edit model'" :saving="saving" :dirty="dirty" :error="modalError" @save="save">
     <template v-if="editingId !== null" #footer-left>

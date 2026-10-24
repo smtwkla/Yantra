@@ -10,6 +10,8 @@
  * on that part) and a Raise ticket button, each from the node detail's `permissions` (the
  * user's keys at the node's site): the section with ticket:read, the button with ticket:raise
  * on equipment that is not scrapped. The storekeeper holds neither and sees neither.
+ *
+ * Meters (S038): the Meters card loads the node's meters itself; editing follows canEdit.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -28,6 +30,7 @@ import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
 import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
+import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
 
 const route = useRoute();
@@ -250,6 +253,8 @@ function onSaved({ result, created }) {
           </div>
         </div>
       </div>
+
+      <MetersCard :node="node" :can-edit="canEdit" @changed="load" />
 
       <div v-if="node.notes" class="card mt-3">
         <div class="card-header">Notes</div>

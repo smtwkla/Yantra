@@ -176,6 +176,10 @@ from documents import documents_bp
 # (three owners, S012, S017); Flask matches the longer rule, so no clash with tickets_bp
 app.register_blueprint(documents_bp, url_prefix="/api")
 
+from meters import meters_bp
+# Node meters under /equipment/<id>/meters (S038), beside equipment_bp as documents_bp is
+app.register_blueprint(meters_bp, url_prefix="/api")
+
 from tickets import tickets_bp
 app.register_blueprint(tickets_bp, url_prefix="/api/tickets")
 

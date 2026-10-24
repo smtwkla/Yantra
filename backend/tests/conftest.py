@@ -158,14 +158,16 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
+_TABLES = ("node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment", "equipment_models", "manufacturers", "equipment_types", "user_units",
            "units", "sites", "equipment_classes", "serial_counters")
 
 # The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
-_SEEDED_TABLES = ("failure_modes", "failure_causes", "maintenance_actions")
-SEED_CREATOR = "migration-v11"
+# Table -> the created_by of its seed rows (meter types: migration v29, S037)
+SEED_CREATOR = "migration-v11"  # the failure-code seeds' creator only, for test_migration_v11.py
+_SEEDED_TABLES = {"failure_modes": SEED_CREATOR, "failure_causes": SEED_CREATOR,
+                  "maintenance_actions": SEED_CREATOR, "meter_types": "migration-v29"}
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -184,8 +186,8 @@ def _clean_tables():
             cur.execute("SET FOREIGN_KEY_CHECKS = 0")
             try:
                 with transaction(conn):
-                    for table in _SEEDED_TABLES:
-                        cur.execute(f"DELETE FROM {table} WHERE created_by <> %s", (SEED_CREATOR,))
+                    for table, creator in _SEEDED_TABLES.items():
+                        cur.execute(f"DELETE FROM {table} WHERE created_by <> %s", (creator,))
                     for table in _TABLES:
                         cur.execute(f"DELETE FROM {table}")
             finally:
@@ -312,6 +314,9 @@ class Uniq:
     def failure_label(self):
         return f"Test label {self._next():04d}"
 
+    def meter_type_name(self):
+        return f"Test meter {self._next():04d}"
+
 
 @pytest.fixture(scope="session")
 def uniq():
@@ -429,6 +434,20 @@ def make_type(admin, uniq, make_class):
     def make(cls=None, **overrides):
         body = {"class_id": (cls or make_class())["id"], "name": uniq.type_name(), **overrides}
         res = admin.post(f"{MASTERS}/equipment-types", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_meter_type(admin, uniq):
+    """make_meter_type() -> a fresh gauge (unit °C, 1 decimal); make_meter_type(kind=..., ...) to
+    choose.  Tests make their own types; the v29 seed rows are never changed (S037)."""
+    def make(**overrides):
+        body = {"name": uniq.meter_type_name(), "unit": "°C", "kind": "gauge", "decimals": 1, **overrides}
+        if body["kind"] == "yes_no":
+            body = {"expected_answer": "yes", **body, "unit": None, "decimals": 0}
+        res = admin.post(f"{MASTERS}/meter-types", json=body)
         assert res.status_code == 201, res.get_json()
         return res.get_json()
     return make

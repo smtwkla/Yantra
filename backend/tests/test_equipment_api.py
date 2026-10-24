@@ -98,7 +98,7 @@ class TestCodes:
 
         def fail(*args):
             raise RuntimeError("forced")
-        monkeypatch.setattr(equipment, "_write_events", fail)
+        monkeypatch.setattr(equipment, "write_events", fail)
         # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": unit["id"],
                                            "model_id": make_model(cls=cls)["id"], "name": "x"})
@@ -513,12 +513,12 @@ class TestEvents:
 
     def test_a_forced_rollback_leaves_no_event_and_no_change(self, admin, make_equipment, monkeypatch):
         mill = make_equipment()
-        real = equipment._write_events
+        real = equipment.write_events
 
         def write_then_fail(cur, equipment_id, changes):
             real(cur, equipment_id, changes)
             raise RuntimeError("forced after the events were written")
-        monkeypatch.setattr(equipment, "_write_events", write_then_fail)
+        monkeypatch.setattr(equipment, "write_events", write_then_fail)
         # The 500 is JSON (S025 § 1.3); the rollback after it is what this tests
         assert server_error(_put(admin, mill, lifecycle="standby")) == SERVER_ERROR
         monkeypatch.undo()

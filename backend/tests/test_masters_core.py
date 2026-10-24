@@ -5,9 +5,9 @@ import pytest
 from masters_core import (
     CAUSE_GROUPS, NO_LOGIN_ROLE_MESSAGE, model_label, no_login_role_error, normalise_username, technician_only,
     validate_equipment_class, validate_equipment_model, validate_failure_cause, validate_failure_mode,
-    validate_maintenance_action, validate_equipment_type, validate_manufacturer,
+    validate_maintenance_action, validate_equipment_type, validate_manufacturer, validate_meter_type,
     validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
-    validate_unit_ids, validate_username,
+    optional_text_parser, validate_unit_ids, validate_username,
 )
 
 
@@ -285,6 +285,137 @@ class TestUnitIds:
     def test_invalid(self, raw):
         _, errors = validate_unit_ids(raw)
         assert _fields(errors) == ["unit_ids"]
+
+
+class TestOptionalTextParser:
+    def test_default_only_strips_so_inner_spaces_stay(self):
+        assert optional_text_parser("Note", 20)("  a   b ") == "a   b"
+
+    def test_collapse_joins_inner_runs_of_spaces(self):
+        assert optional_text_parser("Note", 20, collapse=True)("  a   b ") == "a b"
+
+    def test_collapse_keeps_empty_null_text_and_length_rules(self):
+        parse = optional_text_parser("Note", 3, collapse=True)
+        assert parse("   ") is None and parse(None) is None
+        assert parse("a  b") == "a b"
+        with pytest.raises(ValueError, match="Note must be text"):
+            parse(5)
+        with pytest.raises(ValueError, match="Note must be at most 3 characters"):
+            parse("abcd")
+
+
+class TestMeterType:
+
+    @staticmethod
+    def _gauge(**overrides):
+        return {"name": "Oil temperature", "unit": "°C", "kind": "gauge", **overrides}
+
+    @staticmethod
+    def _yes_no(**overrides):
+        return {"name": "Oil level above min", "kind": "yes_no", "expected_answer": "yes", **overrides}
+
+    @pytest.mark.parametrize("kind", ["counter", "gauge", "amount"])
+    def test_measured_kinds_need_a_unit(self, kind):
+        clean, errors = validate_meter_type({"name": "X", "unit": "h", "kind": kind}, creating=True)
+        assert errors == [] and clean == {"name": "X", "unit": "h", "kind": kind}
+
+    def test_decimals_absent_on_create_is_left_out(self):
+        clean, errors = validate_meter_type(self._gauge(), creating=True)
+        assert errors == [] and "decimals" not in clean
+
+    def test_name_and_unit_are_trimmed_collapsed_and_keep_their_case(self):
+        clean, errors = validate_meter_type(self._gauge(name="  Oil   temperature ", unit=" kWh "), creating=True)
+        assert errors == [] and (clean["name"], clean["unit"]) == ("Oil temperature", "kWh")
+
+    @pytest.mark.parametrize("name, ok", [("a" * 60, True), ("a" * 61, False), ("", False), ("   ", False)])
+    def test_name_boundaries(self, name, ok):
+        _, errors = validate_meter_type(self._gauge(name=name), creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert _fields(errors) == ["name"]
+
+    def test_name_missing_on_create(self):
+        _, errors = validate_meter_type({"unit": "h", "kind": "counter"}, creating=True)
+        assert errors == [{"field": "name", "message": "Name is required"}]
+
+    @pytest.mark.parametrize("unit, ok", [("u" * 20, True), ("u" * 21, False)])
+    def test_unit_boundaries(self, unit, ok):
+        _, errors = validate_meter_type(self._gauge(unit=unit), creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert errors == [{"field": "unit", "message": "Unit must be at most 20 characters"}]
+
+    @pytest.mark.parametrize("unit", [None, "", "   "])
+    def test_unit_missing_or_empty_for_a_measured_kind(self, unit):
+        _, errors = validate_meter_type(self._gauge(unit=unit), creating=True)
+        assert errors == [{"field": "unit", "message": "Unit is required"}]
+
+    def test_unit_absent_on_create_for_a_measured_kind(self):
+        _, errors = validate_meter_type({"name": "X", "kind": "gauge"}, creating=True)
+        assert errors == [{"field": "unit", "message": "Unit is required"}]
+
+    def test_kind_missing_on_create_and_unknown(self):
+        assert validate_meter_type({"name": "X", "unit": "h"}, creating=True)[1] == [
+            {"field": "kind", "message": "Kind is required"}]
+        assert validate_meter_type(self._gauge(kind="dial"), creating=True)[1] == [
+            {"field": "kind", "message": "Kind must be one of: counter, gauge, amount, yes_no"}]
+
+    def test_a_yes_no_type_has_an_expected_answer_and_no_unit_or_decimals(self):
+        clean, errors = validate_meter_type(self._yes_no(unit=None, decimals=0), creating=True)
+        assert errors == [] and clean["expected_answer"] == "yes" and clean["unit"] is None
+
+    @pytest.mark.parametrize("overrides, field, message", [
+        ({"unit": "h"}, "unit", "A Yes / No meter type has no unit"),
+        ({"expected_answer": None}, "expected_answer", "Expected answer is required"),
+        ({"expected_answer": ""}, "expected_answer", "Expected answer is required"),
+        ({"expected_answer": "maybe"}, "expected_answer", "Expected answer must be one of: yes, no"),
+        ({"decimals": 1}, "decimals", "A Yes / No meter type has no decimals"),
+    ])
+    def test_yes_no_refusals(self, overrides, field, message):
+        _, errors = validate_meter_type(self._yes_no(**overrides), creating=True)
+        assert errors == [{"field": field, "message": message}]
+
+    def test_an_expected_answer_on_a_gauge_is_refused(self):
+        _, errors = validate_meter_type(self._gauge(expected_answer="yes"), creating=True)
+        assert errors == [{"field": "expected_answer", "message": "Only a Yes / No meter type has an expected answer"}]
+
+    @pytest.mark.parametrize("raw", [True, 1.0, "1", -1, 4, None])
+    def test_decimals_must_be_a_whole_number_from_0_to_3(self, raw):
+        _, errors = validate_meter_type(self._gauge(decimals=raw), creating=True)
+        assert errors == [{"field": "decimals", "message": "Decimals must be a whole number from 0 to 3"}]
+
+    @pytest.mark.parametrize("raw", [0, 1, 2, 3])
+    def test_decimals_accepted(self, raw):
+        assert validate_meter_type(self._gauge(decimals=raw), creating=True)[0]["decimals"] == raw
+
+    def test_active_must_be_a_bool(self):
+        assert _fields(validate_meter_type(self._gauge(active="yes"), creating=True)[1]) == ["active"]
+
+    def test_unknown_keys_are_ignored(self):
+        clean, _ = validate_meter_type(self._gauge(colour="red"), creating=True)
+        assert "colour" not in clean
+
+    GAUGE_ROW = {"name": "Oil temperature", "unit": "°C", "kind": "gauge", "expected_answer": None, "decimals": 1}
+
+    def test_put_without_a_field_leaves_it_alone(self):
+        assert validate_meter_type({"active": 0}, creating=False, stored=self.GAUGE_ROW) == ({"active": 0}, [])
+
+    def test_put_gauge_to_yes_no_without_the_expected_answer_is_refused(self):
+        # The stored unit and decimals are still there, so those are refused too; the first
+        # error the route reports is the unit
+        _, errors = validate_meter_type({"kind": "yes_no"}, creating=False, stored=self.GAUGE_ROW)
+        assert _fields(errors) == ["unit", "expected_answer", "decimals"]
+
+    def test_put_gauge_to_yes_no_with_the_whole_shape_is_accepted(self):
+        body = {"kind": "yes_no", "unit": None, "expected_answer": "no", "decimals": 0}
+        assert validate_meter_type(body, creating=False, stored=self.GAUGE_ROW)[1] == []
+
+    def test_put_yes_no_to_gauge_needs_a_unit_and_drops_the_answer(self):
+        stored = {"name": "Q", "unit": None, "kind": "yes_no", "expected_answer": "yes", "decimals": 0}
+        _, errors = validate_meter_type({"kind": "gauge"}, creating=False, stored=stored)
+        assert _fields(errors) == ["unit", "expected_answer"]
+        body = {"kind": "gauge", "unit": "°C", "expected_answer": None}
+        assert validate_meter_type(body, creating=False, stored=stored)[1] == []
 
 
 class TestTrade:

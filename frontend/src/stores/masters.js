@@ -1,6 +1,6 @@
 /**
  * Masters cache — sites, units, equipment classes and types, manufacturers and equipment
- * models (S012), trades, failure modes, causes and maintenance actions (S016), fetched once
+ * models (S012), trades, meter types (S037), failure modes, causes and maintenance actions (S016), fetched once
  * and shared.
  *
  * Lists include inactive records (consumers filter on `active`). Pickers (the equipment
@@ -21,6 +21,7 @@ export const equipmentTypes = ref(null);
 export const manufacturers = ref(null);
 export const equipmentModels = ref(null);
 export const trades = ref(null);
+export const meterTypes = ref(null);
 export const failureModes = ref(null);
 export const failureCauses = ref(null);
 export const maintenanceActions = ref(null);
@@ -63,6 +64,10 @@ export function ensureTrades({ refresh = false } = {}) {
   return ensure(trades, "trades", refresh);
 }
 
+export function ensureMeterTypes({ refresh = false } = {}) {
+  return ensure(meterTypes, "meter-types", refresh);
+}
+
 export function ensureFailureModes({ refresh = false } = {}) {
   return ensure(failureModes, "failure-modes", refresh);
 }
@@ -88,6 +93,7 @@ export function resetMasters() {
   manufacturers.value = null;
   equipmentModels.value = null;
   trades.value = null;
+  meterTypes.value = null;
   failureModes.value = null;
   failureCauses.value = null;
   maintenanceActions.value = null;

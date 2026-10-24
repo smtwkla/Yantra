@@ -241,3 +241,136 @@ class TestPermissions:
                                             "class_id": make_class()["id"]})
         assert model.status_code == 201
         assert engineer.put(f"{MODELS}/{model.get_json()['id']}", json={"designation": "GA55"}).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Model meters (S038 § 5.3, § 6)
+# ---------------------------------------------------------------------------
+
+MODEL_METERS = f"{BASE}/model-meters"
+
+
+def _meters_url(model):
+    return f"{MODELS}/{model['id']}/meters"
+
+
+def _add(client, model, meter_type, **limits):
+    return client.post(_meters_url(model), json={"meter_type_id": meter_type["id"], **limits})
+
+
+def _refusal(res):
+    body = res.get_json()
+    return res.status_code, body.get("field"), body["error"]
+
+
+class TestModelMeters:
+
+    def test_add_with_limits_then_list(self, engineer, make_model, make_meter_type):
+        model, oil = make_model(), make_meter_type()
+        res = _add(engineer, model, oil, min_value="10", max_value=60)
+        assert res.status_code == 201, res.get_json()
+        row = res.get_json()
+        assert (row["min_value"], row["max_value"], row["limits_text"], row["active"]) == (
+            "10", "60", "Limits: 10–60 °C", 1)
+        assert row["meter_type"] == {"id": oil["id"], "name": oil["name"], "unit": "°C", "kind": "gauge",
+                                     "decimals": 1, "expected_answer": None}
+        listed = engineer.get(_meters_url(model))
+        assert listed.status_code == 200 and listed.get_json() == [row]
+
+    def test_the_list_is_by_name_and_a_non_gauge_has_no_limits_text(self, engineer, make_model, make_meter_type):
+        model = make_model()
+        types = [make_meter_type(kind="yes_no", expected_answer="no"), make_meter_type(kind="counter", unit="h")]
+        for meter_type in types:
+            assert _add(engineer, model, meter_type).status_code == 201
+        rows = engineer.get(_meters_url(model)).get_json()
+        assert [r["meter_type"]["name"] for r in rows] == sorted(t["name"] for t in types)
+        assert {r["limits_text"] for r in rows} == {None}
+        assert {r["meter_type"]["expected_answer"] for r in rows} == {"no", None}
+
+    def test_set_limits_one_side_keeps_the_other(self, engineer, make_model, make_meter_type):
+        model = make_model()
+        row = _add(engineer, model, make_meter_type(), min_value="10", max_value="60").get_json()
+        res = engineer.put(f"{MODEL_METERS}/{row['id']}", json={"max_value": "55.5"})
+        assert res.status_code == 200, res.get_json()
+        assert (res.get_json()["min_value"], res.get_json()["max_value"]) == ("10", "55.5")
+        res = engineer.put(f"{MODEL_METERS}/{row['id']}", json={"min_value": None})
+        assert res.get_json()["limits_text"] == "Limits: up to 55.5 °C"
+        engineer.put(f"{MODEL_METERS}/{row['id']}", json={"min_value": "10"})
+        assert _refusal(engineer.put(f"{MODEL_METERS}/{row['id']}", json={"min_value": "60"})) == (
+            400, "max_value", "Min must not be above Max")
+
+    def test_remove_then_add_again_reactivates_the_row_with_the_sent_limits(self, engineer, make_model,
+                                                                             make_meter_type):
+        model, oil = make_model(), make_meter_type()
+        row = _add(engineer, model, oil, min_value="10", max_value="60").get_json()
+        res = engineer.put(f"{MODEL_METERS}/{row['id']}", json={"active": False})
+        assert res.status_code == 200 and res.get_json()["active"] == 0
+        assert engineer.get(_meters_url(model)).get_json() == []
+        assert [r["id"] for r in engineer.get(f"{_meters_url(model)}?include_inactive=1").get_json()] == [row["id"]]
+        # A removed row is not changed by PUT; an add brings it back
+        assert engineer.put(f"{MODEL_METERS}/{row['id']}", json={"max_value": "5"}).status_code == 404
+        back = _add(engineer, model, oil, max_value="70")
+        assert back.status_code == 201
+        assert (back.get_json()["id"], back.get_json()["min_value"], back.get_json()["max_value"],
+                back.get_json()["active"]) == (row["id"], None, "70", 1)
+
+    def test_a_put_cannot_reactivate_or_use_the_model_s_limits(self, engineer, make_model, make_meter_type):
+        row = _add(engineer, make_model(), make_meter_type()).get_json()
+        assert _refusal(engineer.put(f"{MODEL_METERS}/{row['id']}", json={"active": True}))[:2] == (400, "active")
+        assert engineer.put(f"{MODEL_METERS}/{row['id']}", json={"use_model_limits": True}).status_code == 400
+
+    @pytest.mark.parametrize("kind, message", [
+        ("counter", "A counter has no limits"),
+        ("amount", "An amount per period has no limits"),
+        ("yes_no", "A Yes / No meter has no limits"),
+    ])
+    def test_limits_on_a_non_gauge_are_refused(self, engineer, make_model, make_meter_type, kind, message):
+        meter_type = make_meter_type(kind=kind, unit="pcs")
+        assert _refusal(_add(engineer, make_model(), meter_type, max_value="5")) == (400, "max_value", message)
+        # explicit nulls pass (a form that posts every field)
+        assert _add(engineer, make_model(), meter_type, min_value=None, max_value=None).status_code == 201
+
+    def test_a_number_with_too_many_decimals_is_refused(self, engineer, make_model, make_meter_type):
+        assert _refusal(_add(engineer, make_model(), make_meter_type(), max_value="62.55")) == (
+            400, "max_value", "Enter a number with up to 1 decimal")
+        assert _refusal(_add(engineer, make_model(), make_meter_type(decimals=0), max_value=62.0)) == (
+            400, "max_value", "Enter a whole number")
+
+    def test_refusals(self, engineer, admin, make_model, make_meter_type):
+        model, oil = make_model(), make_meter_type()
+        assert _refusal(engineer.post(_meters_url(model), json={})) == (400, "meter_type_id", "Pick a meter type")
+        assert _refusal(engineer.post(_meters_url(model), json={"meter_type_id": 99999999}))[:2] == (
+            400, "meter_type_id")
+        assert _add(engineer, model, oil).status_code == 201
+        assert _refusal(_add(engineer, model, oil)) == (409, "meter_type_id", "This model already has this meter")
+        inactive = make_meter_type()
+        admin.put(f"{BASE}/meter-types/{inactive['id']}", json={"active": False})
+        assert _refusal(_add(engineer, model, inactive)) == (409, "meter_type_id", "This meter type is inactive. Pick another meter type.")
+        assert engineer.post(f"{MODELS}/99999999/meters", json={"meter_type_id": oil["id"]}).status_code == 404
+        assert engineer.get(f"{MODELS}/99999999/meters").status_code == 404
+        assert engineer.put(f"{MODEL_METERS}/99999999", json={"active": False}).status_code == 404
+
+    def test_a_deactivated_meter_type_stays_and_its_limits_still_change(self, engineer, admin, make_model,
+                                                                         make_meter_type):
+        model, oil = make_model(), make_meter_type()
+        row = _add(engineer, model, oil).get_json()
+        admin.put(f"{BASE}/meter-types/{oil['id']}", json={"active": False})
+        assert [r["id"] for r in engineer.get(_meters_url(model)).get_json()] == [row["id"]]
+        assert engineer.put(f"{MODEL_METERS}/{row['id']}", json={"max_value": "5"}).status_code == 200
+
+    def test_an_inactive_model_may_gain_change_and_lose_meters(self, engineer, make_model, make_meter_type):
+        model = make_model()
+        assert engineer.put(f"{MODELS}/{model['id']}", json={"active": False}).status_code == 200
+        row = _add(engineer, model, make_meter_type(), max_value="60")
+        assert row.status_code == 201
+        row_id = row.get_json()["id"]
+        assert engineer.put(f"{MODEL_METERS}/{row_id}", json={"max_value": "50"}).status_code == 200
+        assert engineer.put(f"{MODEL_METERS}/{row_id}", json={"active": False}).status_code == 200
+
+    def test_an_operator_reads_but_cannot_write(self, role_client, engineer, make_model, make_meter_type):
+        operator = role_client("maint_operator")
+        model, oil = make_model(), make_meter_type()
+        row = _add(engineer, model, oil).get_json()
+        assert operator.get(_meters_url(model)).status_code == 200
+        assert _add(operator, model, make_meter_type()).status_code == 403
+        assert operator.put(f"{MODEL_METERS}/{row['id']}", json={"active": False}).status_code == 403

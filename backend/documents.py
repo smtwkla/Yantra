@@ -61,7 +61,7 @@ from documents_core import (
     detect_file_type, kind_accepts, make_thumbnail, safe_download_name, stored_name, thumb_name,
     validate_document, validate_title,
 )
-from equipment import NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path
+from equipment import NODE_JOINS, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, node_path
 from equipment_core import SCRAPPED
 from masters_core import model_label
 from settings import upload_max_mb
@@ -82,7 +82,6 @@ STORED_TOKEN_BYTES = 16   # 32 hex characters
 
 CACHE_MAX_AGE_S = 3600
 
-SCRAPPED_MESSAGE = "This record is scrapped and cannot be changed"
 STORAGE_UNAVAILABLE = "File storage is unavailable — try again later"
 FILE_LEFT_BEHIND = ("The record is deleted, but its file could not be removed from storage. "
                     "Ask IT to remove it; the path is in the server log.")

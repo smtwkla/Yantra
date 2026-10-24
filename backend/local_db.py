@@ -762,6 +762,93 @@ _MIGRATIONS = [
         """ALTER TABLE equipment ADD CONSTRAINT IF NOT EXISTS chk_equipment_model_level
             CHECK (model_id IS NOT NULL OR level = 'component_unit')""",
     ]),
+    # S037 — meter types, the catalogue a model or a machine can later carry (docs/steps/
+    # S037-meters-master/1-brief.md § 4).  No _PRECONDITIONS entry: a new table touches no
+    # existing row.  IF NOT EXISTS and INSERT IGNORE (name is unique) make a half-applied v29
+    # re-run.  The CHECK keeps a Yes / No type's shape (no unit, no decimals, an expected
+    # answer) a database rule; the code reports it first, with a field.  Rollback: the previous
+    # release ignores the table.
+    (29, "Meter types (S037)", [
+        """CREATE TABLE IF NOT EXISTS meter_types (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(60) NOT NULL,
+            unit        VARCHAR(20) NULL,
+            kind        ENUM('counter','gauge','amount','yes_no') NOT NULL,
+            expected_answer ENUM('yes','no') NULL,
+            decimals    TINYINT NOT NULL DEFAULT 0,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_meter_types_name UNIQUE (name),
+            CONSTRAINT chk_meter_types_decimals CHECK (decimals BETWEEN 0 AND 3),
+            CONSTRAINT chk_meter_types_yes_no CHECK (
+                (kind = 'yes_no' AND unit IS NULL AND expected_answer IS NOT NULL AND decimals = 0)
+                OR (kind <> 'yes_no' AND unit IS NOT NULL AND expected_answer IS NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """INSERT IGNORE INTO meter_types (name, unit, kind, decimals, created_by) VALUES
+            ('Run hours', 'h', 'counter', 1, 'migration-v29'),
+            ('Strokes', 'strokes', 'counter', 0, 'migration-v29'),
+            ('Production count', 'pcs', 'counter', 0, 'migration-v29'),
+            ('Energy', 'kWh', 'counter', 1, 'migration-v29'),
+            ('Odometer', 'km', 'counter', 0, 'migration-v29'),
+            ('Oil temperature', '°C', 'gauge', 1, 'migration-v29'),
+            ('Fuel level', '%', 'gauge', 0, 'migration-v29'),
+            ('Shift production', 'pcs', 'amount', 0, 'migration-v29')""",
+    ]),
+    # S038 — meters on models and equipment (docs/steps/S038-meters-on-models-equipment/
+    # 1-brief.md § 4).  A model lists its meters with default gauge limits; a node's meters are
+    # its model's (computed live, never copied) plus its own rows in node_meters.  node_meters
+    # holds both a node's own meters (own = 1) and its overrides of a model meter's limits
+    # (own = 0); own never changes after insert.  Limits stay NULL on a counter, an amount and a
+    # Yes / No meter: a code rule, since the kind is on meter_types.  Rows are never deleted,
+    # only set inactive, except an own = 0 override that equals the model again.  The ENUM gains
+    # three values at its end, so no row changes.  No _PRECONDITIONS entry: two new tables and a
+    # widened ENUM touch no existing value.  IF NOT EXISTS and a MODIFY to the same list make a
+    # half-applied v30 re-run.  Rollback: the previous release ignores both tables; an event row
+    # with a new value shows as its raw name.
+    (30, "Meters on models and equipment (S038)", [
+        """CREATE TABLE IF NOT EXISTS model_meters (
+            id             INT AUTO_INCREMENT PRIMARY KEY,
+            model_id       INT NOT NULL,
+            meter_type_id  INT NOT NULL,
+            min_value      DECIMAL(14,3) NULL,
+            max_value      DECIMAL(14,3) NULL,
+            active         TINYINT(1) NOT NULL DEFAULT 1,
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by     VARCHAR(100) NOT NULL,
+            updated_at     DATETIME NULL,
+            updated_by     VARCHAR(100) NULL,
+            CONSTRAINT uq_model_meters UNIQUE (model_id, meter_type_id),
+            CONSTRAINT fk_model_meters_model FOREIGN KEY (model_id) REFERENCES equipment_models (id),
+            CONSTRAINT fk_model_meters_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT chk_model_meters_limits
+                CHECK (min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS node_meters (
+            id             INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id   INT NOT NULL,
+            meter_type_id  INT NOT NULL,
+            own            TINYINT(1) NOT NULL,
+            min_value      DECIMAL(14,3) NULL,
+            max_value      DECIMAL(14,3) NULL,
+            active         TINYINT(1) NOT NULL DEFAULT 1,
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by     VARCHAR(100) NOT NULL,
+            updated_at     DATETIME NULL,
+            updated_by     VARCHAR(100) NULL,
+            CONSTRAINT uq_node_meters UNIQUE (equipment_id, meter_type_id),
+            CONSTRAINT fk_node_meters_node FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_node_meters_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT chk_node_meters_limits
+                CHECK (min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model',
+                 'meter_added','meter_removed','meter_limits')
+            NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

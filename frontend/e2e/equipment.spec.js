@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
-import { raiseByApi, saveDialog } from "./support/tickets.js";
+import { card, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
 
@@ -249,3 +249,119 @@ async function createEquipment(name) {
     await api.dispose();
   }
 }
+
+// S038: a node's meters are its model's plus its own.  Each test makes its own press model and
+// machine through the API (never the seed's SMTW-HYP-01 model, which S039's e2e set-up keeps;
+// S039 BR3-03), named after the project: the three projects share one database.
+async function meterMachine(testInfo, tag, { unit = "SMTW.MCC1", modelMeters = [], ownMeters = [] } = {}) {
+  const api = await apiAs("admin");
+  try {
+    const items = async (url) => (await (await api.get(url)).json()).items;
+    const created = async (url, data) => {
+      const res = await api.post(url, { data });
+      expect(res.status(), await res.text()).toBe(201);
+      return await res.json();
+    };
+    const [units, makers, classes, meterTypes] = await Promise.all([
+      items("/api/masters/units"), items("/api/masters/manufacturers"), items("/api/masters/equipment-classes"),
+      items("/api/masters/meter-types"),
+    ]);
+    const typeId = (name) => meterTypes.find((t) => t.name === name).id;
+    const name = `S038 press ${tag} ${testInfo.project.name}`;
+    const model = await created("/api/masters/equipment-models", {
+      manufacturer_id: makers.find((m) => m.name === "Generic").id,
+      designation: `${name} ${Date.now().toString(36)}`, class_id: classes.find((c) => c.code === "HP").id, type_id: null,
+    });
+    for (const [meter, limits] of modelMeters) {
+      await created(`/api/masters/equipment-models/${model.id}/meters`, { meter_type_id: typeId(meter), ...limits });
+    }
+    const machine = await created("/api/equipment", {
+      level: "equipment", unit_id: units.find((u) => u.full_code === unit).id, model_id: model.id, name,
+    });
+    for (const [meter, limits] of ownMeters) {
+      await created(`/api/equipment/${machine.id}/meters`, { meter_type_id: typeId(meter), ...limits });
+    }
+    return machine;
+  } finally {
+    await api.dispose();
+  }
+}
+
+const OIL_10_60 = ["Oil temperature", { min_value: "10", max_value: "60" }];
+const metersCard = (page) => card(page, "Meters");
+const meterRow = (page, name) => metersCard(page).getByTestId("node-meter").filter({ hasText: name });
+
+test("S038: the press page shows its model's meters and an own meter", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "list", { modelMeters: [OIL_10_60], ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
+  const oil = meterRow(page, "Oil temperature");
+  await expect(oil).toContainText("From the model");
+  await expect(oil).toContainText("°C · Gauge");
+  await expect(oil).toContainText("Limits: 10–60 °C");
+  const hours = meterRow(page, "Run hours");
+  await expect(hours).toContainText("This machine only");
+  await expect(hours).toContainText("h · Counter");
+  await expect(hours).not.toContainText("Limits");
+  await expect(hours.getByRole("button", { name: "Set limits" })).toHaveCount(0); // a counter has no limits
+});
+
+test("S038: engineer overrides a limit and the history shows it", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "override", { modelMeters: [OIL_10_60] });
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
+  await meterRow(page, "Oil temperature").getByRole("button", { name: "Set limits" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog).toContainText("Model default — Limits: 10–60 °C");
+  await expect(dialog.getByRole("button", { name: "Use the model's limits" })).toHaveCount(0); // not overridden yet
+  await dialog.getByLabel("Max", { exact: true }).fill("55");
+  const listCalls = [];
+  page.on("request", (req) => { if (req.method() === "GET" && req.url().endsWith(`/api/equipment/${machine.id}/meters`)) listCalls.push(req.url()); });
+  await saveDialog(page, "Save");
+
+  await expect(meterRow(page, "Oil temperature")).toContainText("Limits: 10–55 °C · set on this machine");
+  // The page reloads the node after the save; the card must not fetch its list again (CR1-02)
+  await expect(card(page, "History")).toContainText("Meter limits: Oil temperature: 10–60 °C → 10–55 °C");
+  expect(listCalls).toHaveLength(0);
+
+  // Use the model's limits clears the override
+  await meterRow(page, "Oil temperature").getByRole("button", { name: "Set limits" }).click();
+  const again = await openDialog(page);
+  await again.getByRole("button", { name: "Use the model's limits" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  await expect(meterRow(page, "Oil temperature")).toContainText("Limits: 10–60 °C");
+  await expect(meterRow(page, "Oil temperature")).not.toContainText("set on this machine");
+  await expect(card(page, "History")).toContainText("Meter limits: Oil temperature: 10–55 °C → 10–60 °C");
+});
+
+test("S038: removing an own meter asks first", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "remove", { modelMeters: [OIL_10_60], ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
+  const hours = meterRow(page, "Run hours");
+  await hours.getByRole("button", { name: "Remove" }).click();
+  await expect(hours).toContainText("Remove Run hours from this machine? Readings stay in history.");
+  await hours.getByRole("button", { name: "Keep" }).click();
+  await expect(hours).not.toContainText("Readings stay in history");
+
+  // A model meter has no Remove here: the card says where it is removed
+  const oil = meterRow(page, "Oil temperature");
+  await expect(oil.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await expect(oil).toContainText("Comes from the model");
+  await expect(oil).toContainText("Remove it in Masters › Models, or change this machine's model.");
+
+  await hours.getByRole("button", { name: "Remove" }).click();
+  await hours.getByRole("button", { name: "Remove" }).click();
+  await expect(meterRow(page, "Run hours")).toHaveCount(0);
+  await expect(meterRow(page, "Oil temperature")).toBeVisible();
+  await expect(card(page, "History")).toContainText("Meter removed: Run hours");
+});
+
+test("S038: an operator sees the Meters card without edit buttons", async ({ page }, testInfo) => {
+  // MCC2: the operator's unit
+  const machine = await meterMachine(testInfo, "operator", {
+    unit: "SMTW.MCC2", modelMeters: [OIL_10_60], ownMeters: [["Run hours", {}]],
+  });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  await expect(meterRow(page, "Oil temperature")).toContainText("Limits: 10–60 °C");
+  await expect(meterRow(page, "Run hours")).toBeVisible();
+  await expect(metersCard(page).getByRole("button")).toHaveCount(0);
+});

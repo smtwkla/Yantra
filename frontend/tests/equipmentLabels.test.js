@@ -63,6 +63,13 @@ describe("describeEvent", () => {
       .toBe("Model: Atlas Copco GA37 → Atlas Copco GA55");
   });
 
+  it("the meter events name the meter, and limits show both sides (S038)", () => {
+    expect(describeEvent(ev("meter_added", null, "Oil temperature"))).toBe("Meter added: Oil temperature");
+    expect(describeEvent(ev("meter_removed", "Oil temperature", null))).toBe("Meter removed: Oil temperature");
+    expect(describeEvent(ev("meter_limits", "Oil temperature: 10–60 °C", "Oil temperature: up to 55 °C")))
+      .toBe("Meter limits: Oil temperature: 10–60 °C → up to 55 °C");
+  });
+
   it("an unknown event is shown by name", () => {
     expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
   });

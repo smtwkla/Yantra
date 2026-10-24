@@ -13,6 +13,7 @@ only when the write needs it:
     (2) the target parent equipment row
     (3) the unit row
     (4) the equipment model row (only when a write newly picks it)
+    (4b) the meter type row (meters.py and masters.py's model meters, S038)
     (5) the class row: the model's, or a model-less component unit's directly picked one
         (S033) — on create always (its code is the prefix), on update only when newly picked
     (5a) the type row, only when a write without a model newly picks a type (S033)
@@ -48,6 +49,14 @@ A write with a model never locks a type: it comes from the model, whose type nev
   node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4) or a ticket row
   (7, below), never two; then it touches only equipment_documents rows, which nothing else
   locks.  So it adds no lock cycle.
+- meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
+  checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
+  type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the
+  model's meters plainly, never locking the model: they change only under the model's lock,
+  and a race shows a stale list until reload.  masters.py's model meters take (4) the model →
+  (4b) the meter type → the model_meters row, and a meter type update takes (4b) alone, then
+  share-locks the link rows, which only those two writes touch after their own (4b).  No path
+  takes (4b) and then (1) or (4), so no cycle.
 - tickets.py (S017) raises a ticket under (1) the node raised on → (6) the serial counter
   (scope TK:YYYY-MM) → (7) the ticket row.  Ticket rows come last everywhere: nothing that
   holds one then takes an equipment, unit or counter lock.  The ticket insert takes shared
@@ -105,6 +114,9 @@ UNIQUE_KEY_ERRORS.update({
 })
 
 IST = timezone(timedelta(hours=5, minutes=30))
+
+# A scrapped node is read-only (S017); documents.py and meters.py refuse with the same words
+SCRAPPED_MESSAGE = "This record is scrapped and cannot be changed"
 
 # The root equipment's grade at every depth.  A CASE that picks the root row rather
 # than a COALESCE over the levels: if an equipment's grade were ever NULL, a COALESCE
@@ -418,7 +430,7 @@ def _next_code(cur, prefix):
     return format_equipment_code(prefix, next_counter(cur, f"EQ:{prefix}"))
 
 
-def _write_events(cur, equipment_id, changes):
+def write_events(cur, equipment_id, changes):
     for event, old, new in changes:
         cur.execute("INSERT INTO equipment_events (equipment_id, event, old_value, new_value, created_by) "
                     "VALUES (%s, %s, %s, %s, %s)", (equipment_id, event, old, new, actor()))
@@ -740,7 +752,7 @@ def create_equipment():
         code = _next_code(cur, equipment_class["code"])                  # (6)
         node_id = insert_row(cur, "equipment", {"code": code, **clean}, actor())
         created = _written_state(cur, node_id, unit, equipment_class, equipment_model)
-        _write_events(cur, node_id, [("created", None, created["full_path"])])
+        write_events(cur, node_id, [("created", None, created["full_path"])])
     with conn.cursor() as cur:
         # Committed already: a retry would duplicate the record, so the message says reload
         return jsonify(_detail(cur, _reread(cur, node_id, SAVED_BUT_UNREADABLE))), 201
@@ -755,7 +767,7 @@ def update_equipment(node_id):
         # re-parent is checked at the target's site too, below)
         locked, node = load_node_for_user(cur, node_id, for_update=True, key="equipment:edit")
         if locked["lifecycle"] == SCRAPPED:
-            raise ApiError("This record is scrapped and cannot be changed", 409)
+            raise ApiError(SCRAPPED_MESSAGE, 409)
         this_year = _this_year()
         stored = {"code": node["code"], "level": locked["level"], "model_id": locked["model_id"],
                   "class_id": locked["class_id"], "type_id": locked["type_id"]}
@@ -781,7 +793,7 @@ def update_equipment(node_id):
         before = _tracked_state(node)
         update_row(cur, "equipment", node_id, clean, actor())
         after = _written_state(cur, node_id, unit, equipment_class, equipment_model)
-        _write_events(cur, node_id, tracked_changes(before, after))
+        write_events(cur, node_id, tracked_changes(before, after))
     with conn.cursor() as cur:
         # Committed already: "try again" would mislead, so the message says reload
         return jsonify(_detail(cur, _reread(cur, node_id, SAVED_BUT_UNREADABLE)))

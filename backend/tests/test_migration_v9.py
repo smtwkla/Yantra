@@ -32,9 +32,10 @@ def test_the_shape_holds():
     assert "make" not in equipment and "model" not in equipment
     assert equipment["model_id"]["IS_NULLABLE"] == "YES"   # v28: a component unit may have no model (S033)
     assert _columns("equipment_documents")["equipment_id"]["IS_NULLABLE"] == "YES"
-    # 'status' is 'lifecycle' since v25 (S030)
+    # 'status' is 'lifecycle' since v25 (S030); the three meter events since v30 (S038)
     assert _columns("equipment_events")["event"]["COLUMN_TYPE"] == (
-        "enum('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model')")
+        "enum('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model',"
+        "'meter_added','meter_removed','meter_limits')")
 
 
 def test_an_equipment_row_with_a_null_model_is_refused(make_equipment):

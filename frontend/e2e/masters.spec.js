@@ -116,6 +116,7 @@ for (const section of [
   { button: "Equip Class", add: "Add class", api: "/api/masters/equipment-classes", person: "engineer" },
   { button: "Equip Type", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
   { button: "Trades", add: "Add trade", api: "/api/masters/trades", person: "engineer", message: "Name is required" },
+  { button: "Meter types", add: "Add meter type", api: "/api/masters/meter-types", person: "engineer", message: "Name is required" },
 ]) {
   test(`${section.person}: the ${section.button} section opens, and an empty ${section.add.toLowerCase()} is refused beside its field`, async ({ page, consoleWatch }) => {
     consoleWatch.allowFailedRequest(section.api, 400);
@@ -202,4 +203,117 @@ test("S032: IT admin sees the manager's email from Keycloak in the Team dialog; 
   const asEngineer = await openPersonDialog(page, "engineer", "Arun (manager)");
   await expect(asEngineer.getByText("Has a Yantra login: yes")).toBeVisible();
   await expect(asEngineer.getByText(/Email \(from Keycloak\)/)).toHaveCount(0);
+});
+
+// Masters › Meter types (S037)
+const openMeterTypes = async (page, person) => {
+  await asPerson(page, person, "/masters");
+  await page.getByRole("button", { name: "Meter types", exact: true }).click();
+};
+
+test("S037: engineer adds a meter type and sees it in the list", async ({ page }, testInfo) => {
+  await openMeterTypes(page, "engineer");
+  // The eight seed types are there (S037 § 1.3)
+  await expect(rows(page).filter({ hasText: "Shift production" })).toContainText("Amount per period");
+  await expect(rows(page).filter({ hasText: "Run hours" })).toContainText("Counter");
+
+  // A name of this project's own: the three projects share one database
+  const name = `S037 Pressure (${testInfo.project.name})`;
+  await page.getByRole("button", { name: "Add meter type" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel("Counter", { exact: true })).toBeChecked(); // the common case is preselected
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByLabel("Unit").fill("bar");
+  await dialog.getByLabel("Gauge", { exact: true }).check();
+  await dialog.getByLabel("Decimals").selectOption("1");
+  await saveDialog(page, "Save");
+  const row = rows(page).filter({ hasText: name });
+  await expect(row).toContainText("bar");
+  await expect(row).toContainText("Gauge");
+  await expect(row).toContainText("Active");
+});
+
+test("S037: an operator sees meter types but no Add button", async ({ page }) => {
+  await openMeterTypes(page, "operator");
+  await expect(rows(page).filter({ hasText: "Run hours" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add meter type" })).toHaveCount(0);
+  await expect(page.getByTitle("Edit")).toHaveCount(0);
+});
+
+test("S037: a Yes / No type hides Unit and Decimals and asks for the expected answer", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/api/masters/meter-types", 400);
+  await openMeterTypes(page, "engineer");
+  const name = `S037 Oil level above min (${testInfo.project.name})`;
+  await page.getByRole("button", { name: "Add meter type" }).click();
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel("Unit")).toBeVisible();
+  await dialog.getByLabel("Yes / No", { exact: true }).check();
+  await expect(dialog.getByLabel("Unit")).toHaveCount(0);
+  await expect(dialog.getByLabel("Decimals")).toHaveCount(0);
+  await expect(dialog.getByText("The answer that means all is well.")).toBeVisible();
+  await expectDialogFits(page);
+
+  // No expected answer picked: refused beside the field
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Expected answer is required");
+
+  await dialog.getByLabel("Yes", { exact: true }).check();
+  await saveDialog(page, "Save");
+  const row = rows(page).filter({ hasText: name });
+  await expect(row).toContainText("Yes / No, expects Yes");
+  await expect(row.locator("td").nth(1)).toHaveText("—"); // unit
+  await expect(row.locator("td").nth(3)).toHaveText("—"); // decimals
+});
+
+// Masters › Models › Meters (S038).  The test makes its own model (never SMTW-HYP-01, which
+// S039's e2e set-up keeps for its machines; S039 BR3-03), named after the project: the three
+// projects share one database.
+async function makeModel(testInfo, tag) {
+  const api = await apiAs("admin");
+  try {
+    const items = async (url) => (await (await api.get(url)).json()).items;
+    const [makers, classes] = await Promise.all([items("/api/masters/manufacturers"), items("/api/masters/equipment-classes")]);
+    const designation = `S038 ${tag} ${testInfo.project.name} ${Date.now().toString(36)}`;
+    const res = await api.post("/api/masters/equipment-models", {
+      data: { manufacturer_id: makers.find((m) => m.name === "Generic").id, designation,
+              class_id: classes.find((c) => c.code === PRESS_CLASS).id, type_id: null },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+test("S038: engineer adds Oil temperature with limits to a model", async ({ page }, testInfo) => {
+  const model = await makeModel(testInfo, "model");
+  await asPerson(page, "engineer", "/masters");
+  await page.getByRole("button", { name: "Models", exact: true }).click();
+  await page.getByRole("row", { name: new RegExp(model.designation) }).getByTitle("Meters").click();
+
+  // The in-panel view, in place of the table
+  const header = page.locator(".card-header").filter({ hasText: "· Meters" });
+  await expect(header).toContainText(model.label);
+  await expect(page.getByText("No meters.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add model" })).toHaveCount(0);
+
+  await header.getByRole("button", { name: "Add meter" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Meter type").selectOption({ label: "Oil temperature (°C, Gauge)" });
+  await dialog.getByLabel("Min", { exact: true }).fill("10");
+  await dialog.getByLabel("Max", { exact: true }).fill("60");
+  await saveDialog(page, "Save");
+
+  const meter = page.getByTestId("model-meter").filter({ hasText: "Oil temperature" });
+  await expect(meter).toContainText("°C · Gauge");
+  await expect(meter).toContainText("Limits: 10–60 °C");
+  await expect(meter.getByRole("button", { name: "Set limits" })).toBeVisible();
+
+  // "← Models" brings the table back
+  await header.getByRole("button", { name: "Models" }).click();
+  await expect(page.getByRole("button", { name: "Add model" })).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(model.designation) })).toBeVisible();
 });

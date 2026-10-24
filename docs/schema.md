@@ -11,8 +11,10 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   System), with zoom. The overview is also below, as Mermaid text (PyCharm's
   Markdown preview and GitHub draw it).
 - Both diagrams were generated from a database at **migration v27**
-  (23-10-2026); the one v28 change (`equipment.model_id` may be empty, S033)
-  was added by hand on 24-10-2026.
+  (23-10-2026); the v28 change (`equipment.model_id` may be empty, S033),
+  the v29 table `meter_types` (S037) and the v30 tables `model_meters` and
+  `node_meters` with the three meter events (S038) were added by hand on
+  24-10-2026.
 
 ## Conventions
 
@@ -36,7 +38,10 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required on equipment and components, optional on component-units, S033 v28 CHECK), `class_id` and `type_id` (copied from the model, S012; picked directly when a component-unit has no model, S033), lifecycle (S030), criticality |
 | `manufacturers` | Makers: name (unique without regard to case), active (S012). Generic and in-house makers are ordinary rows |
 | `equipment_models` | Manufacturer, designation (unique per maker), class, optional type of that class — all but the designation fixed after creation; active (S012) |
-| `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002) |
+| `meter_types` | The catalogue of meter types (S037, v29), edited in Masters: name (unique without regard to case), unit (NULL exactly when the kind is `yes_no`), kind (`counter` / `gauge` / `amount` (*Amount per period*) / `yes_no`), expected answer (`yes` / `no`, Yes / No types only), decimals 0–3, active. A CHECK keeps a Yes / No type without unit or decimals and with an expected answer, and every other kind with a unit and no expected answer. Eight seed rows, `created_by` `migration-v29`. Kind, unit, decimals and expected answer cannot change once a model meter or node meter uses the type (S038). Readings (S039) come later |
+| `model_meters` | A model's meters (S038, v30): model, meter type (one row per model and type, `uq_model_meters`), a gauge's default `min_value` / `max_value` (`DECIMAL(14,3)`, each optional, NULL on other kinds; a CHECK keeps min ≤ max), active (*Remove* sets it inactive; an add of the type brings the row back). Every equipment of the model has these meters, computed live, never copied |
+| `node_meters` | A node's own meter rows (S038, v30), one per node and meter type (`uq_node_meters`): `own` 1 = a meter added on this node (*This machine only*), `own` 0 = an override of its model meter's limits, kept only while it differs from the model; `min_value` / `max_value` as `model_meters`; active (an own meter removed: inactive, limits cleared). `own` never changes after insert |
+| `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002); since v30 also `meter_added`, `meter_removed` and `meter_limits` (the limits in force on both sides, S038) |
 | `equipment_documents` | Files attached to equipment, an equipment model (S012) or a ticket (photos, S017) — exactly one owner: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1); email, copied from the Keycloak login token at each login, never typed, shown only to IT admin and its owner (S032, v27) |
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
@@ -70,7 +75,6 @@ step is briefed.
 
 | Table | Holds |
 |---|---|
-| `meters` | Per equipment: name, unit of measure, type (counter/gauge), limits |
 | `meter_readings` | Value, time, who, source (`manual`/`pm`/`move`/`iiot`), result-row link when taken on a job or ticket step (§ 4.3 item types) |
 | `pm_templates`, `pm_template_items` | Reusable PM work: items in the shared item shape (§ 4.3: type task / check / reading, unit and limits, optional meter, help text, reference photo, photo setting), triggers |
 | `pm_plans` | Equipment, title, kind (PM / CIL), performer (maintenance / operator), source template, triggers (calendar interval, meter + threshold, before use), default assignee |
@@ -155,6 +159,20 @@ erDiagram
   memberships {
     int person_id PK,FK
     int site_id PK,FK
+  }
+  meter_types {
+    int id PK
+    varchar name UK
+  }
+  model_meters {
+    int id PK
+    int model_id FK
+    int meter_type_id FK
+  }
+  node_meters {
+    int id PK
+    int equipment_id FK
+    int meter_type_id FK
   }
   people {
     int id PK
@@ -242,6 +260,10 @@ erDiagram
   equipment_models o|--o{ equipment_documents : "model_id"
   tickets o|--o{ equipment_documents : "ticket_id"
   equipment ||--o{ equipment_events : "equipment_id"
+  equipment_models ||--o{ model_meters : "model_id"
+  meter_types ||--o{ model_meters : "meter_type_id"
+  equipment ||--o{ node_meters : "equipment_id"
+  meter_types ||--o{ node_meters : "meter_type_id"
   equipment_classes ||--o{ equipment_models : "class_id"
   manufacturers ||--o{ equipment_models : "manufacturer_id"
   equipment_types o|--o{ equipment_models : "type_id"

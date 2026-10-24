@@ -1,7 +1,7 @@
 /**
  * Display labels for the equipment register — one vocabulary for every screen
  * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004; model events:
- * S012). Pure: no imports.
+ * S012; meter events: S038). Pure: no imports.
  */
 
 export const LEVEL_LABELS = {
@@ -51,6 +51,12 @@ const label = (map, value) => map[value] ?? String(value);
 const criticalityText = (value) => (value === INHERIT ? "Inherited" : label(CRITICALITY_LABELS, value));
 const typeText = (value) => (value === NO_TYPE ? "None" : value);
 const change = (name, from, to) => `${name}: ${from} → ${to}`;
+// After "Oil temperature: 10–60 °C", "Oil temperature: up to 55 °C" reads "up to 55 °C": the meter is named once
+function limitsOnly(from, to) {
+  const cut = from.indexOf(": ");
+  const prefix = cut < 0 ? null : from.slice(0, cut + 2);
+  return prefix && to.startsWith(prefix) ? to.slice(prefix.length) : to;
+}
 
 /** One history event ({event, old_value, new_value}) in plain words. */
 export function describeEvent(event) {
@@ -72,6 +78,13 @@ export function describeEvent(event) {
     case "model":
       // A side without a model reads "No model", as the backend writes it (S033 § 5.4)
       return change("Model", oldValue, newValue);
+    // Meters (S038 § 5.5): the backend writes "<meter>" or "<meter>: <limits>" on each side
+    case "meter_added":
+      return `Meter added: ${newValue}`;
+    case "meter_removed":
+      return `Meter removed: ${oldValue}`;
+    case "meter_limits":
+      return change("Meter limits", oldValue, limitsOnly(oldValue, newValue));
     default:
       return String(event.event);
   }

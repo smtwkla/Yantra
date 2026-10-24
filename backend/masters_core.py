@@ -99,14 +99,15 @@ def _parse_type_name(raw):
     return name
 
 
-def optional_text_parser(label, max_len, upper=False):
-    """Stripped text; empty becomes None.  Not upper-cased unless asked."""
+def optional_text_parser(label, max_len, upper=False, collapse=False):
+    """Stripped text; empty becomes None.  Not upper-cased unless asked; inner runs of spaces
+    become one space when `collapse` is set."""
     def parse(raw):
         if raw is None:
             return None
         if not isinstance(raw, str):
             raise ValueError(f"{label} must be text")
-        text = raw.strip()
+        text = _collapsed(raw) if collapse else raw.strip()
         if upper:
             text = text.upper()
         if len(text) > max_len:
@@ -317,6 +318,79 @@ def validate_equipment_model(data, creating):
 
 def validate_trade(data, creating):
     return _validate(data, _TRADE_FIELDS, creating)
+
+
+# Meter types (S037 § 5.1).  Kind and unit are what the catalogue is for; Yes / No types have
+# no unit and no decimals but an expected answer, the answer that means all is well.
+METER_KINDS = ("counter", "gauge", "amount", "yes_no")
+MAX_DECIMALS = 3
+METER_NAME_MAX = 60
+METER_UNIT_MAX = 20
+EXPECTED_ANSWERS = ("yes", "no")
+
+
+def _parse_meter_name(raw):
+    return _parse_bounded_name(_collapsed(raw), METER_NAME_MAX)
+
+
+_parse_meter_unit = optional_text_parser("Unit", METER_UNIT_MAX, collapse=True)
+
+
+def _parse_meter_kind(raw):
+    if raw not in METER_KINDS:
+        raise ValueError(f"Kind must be one of: {', '.join(METER_KINDS)}")
+    return raw
+
+
+def _parse_expected_answer(raw):
+    """yes or no; empty or null is None (the kind rules decide whether that is allowed)."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    if raw not in EXPECTED_ANSWERS:
+        raise ValueError(f"Expected answer must be one of: {', '.join(EXPECTED_ANSWERS)}")
+    return raw
+
+
+def _parse_decimals(raw):
+    # bool is an int in Python: refuse it first, as _parse_id does
+    if isinstance(raw, bool) or not isinstance(raw, int) or not 0 <= raw <= MAX_DECIMALS:
+        raise ValueError(f"Decimals must be a whole number from 0 to {MAX_DECIMALS}")
+    return raw
+
+
+_METER_TYPE_FIELDS = {
+    "name": (_parse_meter_name, True),
+    "unit": (_parse_meter_unit, False),
+    "kind": (_parse_meter_kind, True),
+    "expected_answer": (_parse_expected_answer, False),
+    "decimals": (_parse_decimals, False),
+    "active": (_parse_active, False),
+}
+_METER_TYPE_DEFAULTS = {"unit": None, "expected_answer": None, "decimals": 0}
+
+
+def validate_meter_type(data, creating, stored=None):
+    """Two passes (S037 BR2-01): each field alone, then the kind rules on the merged row
+    (defaults, then the stored row, then the body), so a PUT that changes the kind is judged
+    as the row it would make.  ``stored`` is the locked row on a PUT, nothing on a POST."""
+    clean, errors = _validate(data, _METER_TYPE_FIELDS, creating)
+    if errors:
+        return clean, errors
+    row = {**_METER_TYPE_DEFAULTS, **(stored or {}), **clean}
+    if row["kind"] == "yes_no":
+        if row["unit"] is not None:
+            errors.append({"field": "unit", "message": "A Yes / No meter type has no unit"})
+        if row["expected_answer"] is None:
+            errors.append({"field": "expected_answer", "message": "Expected answer is required"})
+        if row["decimals"] != 0:
+            errors.append({"field": "decimals", "message": "A Yes / No meter type has no decimals"})
+    else:
+        if row["unit"] is None:
+            errors.append({"field": "unit", "message": "Unit is required"})
+        if row["expected_answer"] is not None:
+            errors.append({"field": "expected_answer",
+                           "message": "Only a Yes / No meter type has an expected answer"})
+    return clean, errors
 
 
 def validate_person(data, creating):

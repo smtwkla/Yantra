@@ -2,7 +2,7 @@
 models, trades, the Team register of people and their roles per site, failure codes
 (docs/steps/S001-basic-masters/1-brief.md; equipment types: S004; trades and Team: S010 A1;
 site roles: S011 A1; manufacturers and models: S012; failure modes, causes and maintenance
-actions: S016).
+actions: S016; meter types: S037).
 
 Thin shell: masters_core validates input, this module fetches, checks the
 rules that need the database, and stores.  Pooled connections are autocommit,
@@ -22,6 +22,11 @@ follows (model (4), class (5)):
   create or reactivate waits on the class lock).
 People lock person → trades → the person's memberships and person_units rows → units; the
 membership insert then takes its site row through the FK (unit → site, as update_unit).
+Model meters (S038 § 5.4) lock model → meter type → the model_meters row: (4) → (4b) of
+equipment.py's order; no model meter write takes a manufacturer, class or type.  A meter
+type update locks the meter type alone, then counts its model_meters and node_meters rows
+LOCK IN SHARE MODE (the freeze, S038 § 5.3): link rows are touched only by link writes,
+which hold the meter type's lock first, so the share locks join no cycle.
 """
 
 import logging
@@ -32,12 +37,16 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import has_perm, has_perm_at, require_perm, require_perm_at
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from equipment_core import check_type_class
+from meters_core import (
+    ACTION_REMOVE, NO_LIMITS, format_number, limits_text, meter_type_of, parse_change_action, parse_meter_type_id,
+    validate_limits,
+)
 from tickets_core import CLOSED, close_tickets_first
 from masters_core import (
     model_label, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
     validate_equipment_model, validate_equipment_type, validate_failure_cause, validate_failure_mode,
     validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
-    validate_site_rows, validate_trade, validate_unit,
+    validate_meter_type, validate_site_rows, validate_trade, validate_unit,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +64,10 @@ UNIQUE_KEY_ERRORS.update({
     "uq_equipment_types_class_name": ("name", "A type with this name already exists in this class"),
     # Migration v7 (S010, amendment A1)
     "uq_trades_name": ("name", "A trade with this name exists"),
+    # Migration v29 (S037)
+    "uq_meter_types_name": ("name", "A meter type with this name exists"),
+    # Migration v30 (S038)
+    "uq_model_meters": ("meter_type_id", "This model already has this meter"),
     "uq_people_username": ("username", "Another person already has this login (it may be an inactive one)"),
     # Migration v9 (S012)
     "uq_manufacturers_name": ("name", "A manufacturer with this name exists"),
@@ -765,6 +778,189 @@ def update_trade(trade_id):
         update_row(cur, "trades", trade_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(fetch_one(cur, "SELECT * FROM trades WHERE id = %s", (trade_id,)))
+
+
+# ---------------------------------------------------------------------------
+# Meter types (S037) — the catalogue of quantities a model or a machine can carry.  Edited with
+# equipment:edit like models; a meter type is not at a site.  Update locks the row alone.
+# ---------------------------------------------------------------------------
+
+@masters_bp.route("/meter-types")
+@require_perm("masters:read")
+def list_meter_types():
+    where = "" if _include_inactive() else "WHERE active = 1 "
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"SELECT * FROM meter_types {where}ORDER BY name")
+
+
+@masters_bp.route("/meter-types", methods=["POST"])
+@require_perm("equipment:edit")
+def create_meter_type():
+    clean = clean_body(validate_meter_type, creating=True)
+    with get_db().cursor() as cur:
+        meter_type_id = insert_row(cur, "meter_types", clean, actor())
+        return jsonify(fetch_one(cur, "SELECT * FROM meter_types WHERE id = %s", (meter_type_id,))), 201
+
+
+@masters_bp.route("/meter-types/<int:meter_type_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_meter_type(meter_type_id):
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        stored = _lock_row(cur, "meter_types", meter_type_id)
+        clean = clean_body(lambda data, creating: validate_meter_type(data, creating, stored), creating=False)
+        _check_meter_type_frozen(cur, clean, stored)
+        update_row(cur, "meter_types", meter_type_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(fetch_one(cur, "SELECT * FROM meter_types WHERE id = %s", (meter_type_id,)))
+
+
+# What a meter type's readings mean: frozen once a model or a node uses the type (S038 § 1.5)
+_FROZEN_WHEN_USED = ("kind", "unit", "decimals", "expected_answer")
+METER_TYPE_IN_USE = ("This meter type is in use. Its kind, unit, decimals and expected answer cannot change. "
+                     "Make a new meter type.")
+
+
+def _check_meter_type_frozen(cur, clean, locked):
+    """A change of kind, unit, decimals or expected answer on a meter type that any model meter
+    or node meter uses, active or not -> 409.  A change is a value that differs from the stored
+    one, as _check_code_frozen decides, so the edit dialog re-sending them passes.  Under the
+    type's lock, and the counts are locking reads: a plain snapshot could miss a link committed
+    while this request waited for the lock (S038 § 5.4)."""
+    changed = [field for field in _FROZEN_WHEN_USED if field in clean and clean[field] != locked[field]]
+    if not changed:
+        return
+    for table in ("model_meters", "node_meters"):
+        if count(cur, f"SELECT COUNT(*) AS n FROM {table} WHERE meter_type_id = %s LOCK IN SHARE MODE",
+                 (locked["id"],)):
+            raise ApiError(METER_TYPE_IN_USE, 409, changed[0])
+
+
+# ---------------------------------------------------------------------------
+# Model meters (S038) — the meters every machine of a model carries, with a gauge's default
+# limits.  Read with masters:read, edited with equipment:edit (as models).  Remove sets the
+# row inactive, so readings (S039) keep their meaning; an add of a removed type brings the
+# row back.  An inactive model may gain and lose meters: it stays on its machines (BR2-03).
+# ---------------------------------------------------------------------------
+
+_MODEL_METER_SELECT = (
+    "SELECT mm.id, mm.model_id, mm.min_value, mm.max_value, mm.active,"
+    " t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
+    " t.expected_answer AS t_expected_answer"
+    " FROM model_meters mm JOIN meter_types t ON t.id = mm.meter_type_id"
+)
+
+
+def _model_meter_row(row):
+    return {"id": row["id"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
+            "max_value": row["max_value"], "active": row["active"]}
+
+
+def read_model_meters(cur, model_id, include_inactive=False):
+    """Plain read of a model's meters, by meter type name, in the shape meters_core takes."""
+    where = "" if include_inactive else " AND mm.active = 1"
+    cur.execute(f"{_MODEL_METER_SELECT} WHERE mm.model_id = %s{where} ORDER BY t.name, t.id", (model_id,))
+    return [_model_meter_row(row) for row in cur.fetchall()]
+
+
+def _model_meter_out(row):
+    pair = (row["min_value"], row["max_value"])
+    return {"id": row["id"], "meter_type": row["meter_type"], "min_value": format_number(pair[0]),
+            "max_value": format_number(pair[1]), "limits_text": limits_text(row["meter_type"], pair),
+            "active": row["active"]}
+
+
+def _fetch_model_meter(cur, model_meter_id):
+    cur.execute(f"{_MODEL_METER_SELECT} WHERE mm.id = %s", (model_meter_id,))
+    return _model_meter_out(_model_meter_row(cur.fetchone()))
+
+
+def lock_meter_type(cur, meter_type_id, adding):
+    """Lock the meter type of a link write ((4b) of equipment.py's order).  An add needs a known
+    (400) and active (409) type; a change of an existing link takes the type as it is: a
+    deactivated type stays in force where it is linked (S037 § 1.1)."""
+    cur.execute("SELECT id, name, unit, kind, decimals, expected_answer, active FROM meter_types"
+                " WHERE id = %s FOR UPDATE", (meter_type_id,))
+    meter_type = cur.fetchone()
+    if meter_type is None:
+        if adding:
+            raise ApiError("Unknown meter type", 400, "meter_type_id")
+        raise ApiError("Not found", 404)
+    if adding and not meter_type["active"]:
+        raise ApiError("This meter type is inactive. Pick another meter type.", 409, "meter_type_id")
+    return meter_type
+
+
+def checked_limits(body, meter_type, stored):
+    """validate_limits for the locked meter type, its first error a 400."""
+    pair, errors = validate_limits(body, meter_type["kind"], meter_type["decimals"], stored)
+    if errors:
+        raise ApiError(errors[0]["message"], 400, errors[0]["field"])
+    return pair
+
+
+@masters_bp.route("/equipment-models/<int:model_id>/meters")
+@require_perm("masters:read")
+def list_model_meters(model_id):
+    with get_db().cursor() as cur:
+        if fetch_one(cur, "SELECT id FROM equipment_models WHERE id = %s", (model_id,)) is None:
+            raise ApiError("Not found", 404)
+        return jsonify([_model_meter_out(row) for row in read_model_meters(cur, model_id, _include_inactive())])
+
+
+@masters_bp.route("/equipment-models/<int:model_id>/meters", methods=["POST"])
+@require_perm("equipment:edit")
+def add_model_meter(model_id):
+    """Add a meter type to a model, or bring a removed one back with the sent limits (BR1-18)."""
+    meter_type_id = clean_body(lambda body, _creating: parse_meter_type_id(body), creating=True)
+    body = request.get_json(silent=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_row(cur, "equipment_models", model_id)                       # (4); 404
+        meter_type = lock_meter_type(cur, meter_type_id, adding=True)      # (4b)
+        cur.execute("SELECT id, active FROM model_meters WHERE model_id = %s AND meter_type_id = %s FOR UPDATE",
+                    (model_id, meter_type_id))
+        existing = cur.fetchone()
+        if existing is not None and existing["active"]:
+            raise ApiError("This model already has this meter", 409, "meter_type_id")
+        low, high = checked_limits(body, meter_type, NO_LIMITS)
+        values = {"min_value": low, "max_value": high}
+        if existing is not None:
+            update_row(cur, "model_meters", existing["id"], {**values, "active": 1}, actor())
+            model_meter_id = existing["id"]
+        else:
+            model_meter_id = insert_row(cur, "model_meters",
+                                        {"model_id": model_id, "meter_type_id": meter_type_id, **values}, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_model_meter(cur, model_meter_id)), 201
+
+
+@masters_bp.route("/model-meters/<int:model_meter_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_model_meter(model_meter_id):
+    """Set a model meter's limits, or remove it (``active: false``).  A removed row is not
+    found here: an add brings it back."""
+    action = clean_body(lambda body, _creating: parse_change_action(body, allow_use_model=False), creating=False)
+    body = request.get_json(silent=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        # The model and type ids never change, so a plain read lets the locks run model ->
+        # meter type -> row
+        ids = fetch_one(cur, "SELECT model_id, meter_type_id FROM model_meters WHERE id = %s", (model_meter_id,))
+        if ids is None:
+            raise ApiError("Not found", 404)
+        _lock_row(cur, "equipment_models", ids["model_id"])                         # (4)
+        meter_type = lock_meter_type(cur, ids["meter_type_id"], adding=False)       # (4b)
+        row = _lock_row(cur, "model_meters", model_meter_id)
+        if not row["active"]:
+            raise ApiError("Not found", 404)
+        if action == ACTION_REMOVE:
+            update_row(cur, "model_meters", model_meter_id, {"active": 0}, actor())
+        else:
+            low, high = checked_limits(body, meter_type, (row["min_value"], row["max_value"]))
+            update_row(cur, "model_meters", model_meter_id, {"min_value": low, "max_value": high}, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_model_meter(cur, model_meter_id))
 
 
 # ---------------------------------------------------------------------------
