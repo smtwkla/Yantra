@@ -33,6 +33,12 @@ review file there.
   gives it; else the step, your role and round). Each run name gets its own
   test databases, so you never collide with another agent, a second window or
   a release (`release`). Never use `dev` or `release`.
+- **The docs pass** (standing rule, 24-10-2026). Check the impl report's
+  `## Docs updated` against the diff and against the repo's `CLAUDE.md`
+  § Docs to keep current. A migration whose tables, columns, ENUM values,
+  indexes or links are missing from the repo's schema doc, or whose version
+  the doc does not name, is a `major` finding. Any other listed doc the
+  change makes wrong, left as it was, is a `minor` finding.
 - **Run the tests yourself.** Run `tooling/run-tests.bat`, and `npx vite build`
   in `frontend/` if the frontend changed. Record the real result. A red suite is
   a `blocker`.

@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 23-10-2026
 Track: full
-Status: Committed; device check pending (row 26 of device-checks.md, the user checks later)
+Status: Done (committed 33c3a4b; checks: 8 auto; row 26 of device-checks.md, not important, still open for the user)
 Baseline: aad833a
 ```
 

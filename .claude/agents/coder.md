@@ -39,6 +39,14 @@ The orchestrator gives you one of three tasks:
 
 ## Rules
 
+- **Housekeeping: the docs pass** (standing rule, 24-10-2026). As the last
+  part of every implementation and fix round, update the docs your change
+  touches. The repo's `CLAUDE.md` section **Docs to keep current** lists
+  them and what makes each one due; the brief's *Docs (housekeeping, by
+  the coder)* names the ones for this step. A migration always updates the
+  repo's schema doc. Never edit a file marked "synced from" or "generated"
+  by hand. List each doc under `## Docs updated` in the impl report, or
+  write "none, because …".
 - **Approval first.** Work only from a brief, or amendment, whose status is
   `Approved … by <user>`. If it isn't approved, stop and say so.
 - **Stay in scope.** Build exactly what the brief says.

@@ -4,7 +4,7 @@ Author: Planner (Opus)
 Date: 24-10-2026 (revised 24-10-2026: brief-review r1)
 Track: light
 Baseline: 7a5b726 (code as cbe8f02)
-Status: Gate B (CR r1: 0 blocker, 0 major, 1 minor, 4 nits — all fixed; approved 24-10-2026 by KLA)
+Status: Done (committed 06e16e4, merged in aa81a69; checks: 5 auto; CR r1 findings all fixed; approved 24-10-2026 by KLA)
 
 # S034 — Defer, hold and follow-up date
 

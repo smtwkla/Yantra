@@ -197,7 +197,10 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
         rules.
      10. **Migrations**: every column, ENUM and index the feature writes;
          `_PRECONDITIONS` against production's real rows; the settings dicts
-         and routes a new setting touches.
+         and routes a new setting touches. The brief's *Where* lists
+         the schema doc, and every other doc the change touches (the repo's
+         `CLAUDE.md` § Docs to keep current), under *Docs (housekeeping, by
+         the coder)* (§ Phase 2, the docs pass).
      11. **The database down and the worker** (CLAUDE.md): what each new hook,
          route and task does when the DB is unreachable. For a worker task,
          what is stored on success, on retry-later and on no-retry, and which
@@ -290,6 +293,23 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    - If it returns **QUESTIONS FOR THE USER**, stop and ask them.
    - After the answers, record any design-level ones in the brief as an
      amendment that the user approves, then resume the coder.
+   - **Housekeeping: the docs pass** (standing rule, 24-10-2026, by KLA).
+     Every step updates the docs its change touches, in the same step, so
+     the docs are reviewed and committed with the code. The coder does it as
+     the last part of the implementation and of every fix round, and lists
+     each doc in the impl report's `## Docs updated` (or "none, because …").
+     - **Which docs:** the repo's `CLAUDE.md` section **Docs to keep
+       current** lists them, each with the change that makes it due (e.g.
+       "a migration → the schema doc"). Read it when planning and when
+       spawning the coder. A repo without that section: ask the user once
+       to add it, and until then use the docs the repo's `CLAUDE.md` names.
+     - **Schema docs** are the hard rule: a step whose migration is not in
+       the repo's schema doc does not pass gate B.
+     - The brief's *Where* lists the due docs under **Docs (housekeeping,
+       by the coder)**. The planner edits no doc at approval, except the
+       decisions recorded in the plan doc at gate A.
+     - Tell the coder this in every spawn prompt. Before gate B, check the
+       impl report's `## Docs updated` against the diff yourself.
 3. **Code-review loop.**
    - Spawn `code-reviewer` with the step ID and the round number. From
      round 2 on it verifies the fix round only (its *Round 2 and later* rule):
@@ -318,6 +338,7 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    - the test result;
    - what was built;
    - any departures from the brief, with your view on each;
+   - the docs updated (the impl report's `## Docs updated`), in one line;
    - the findings fixed without asking, in **one line**: the count by
      severity and their IDs ("Fixed without asking: 2 minor, 3 nits —
      CR1-02…CR1-06; details in the impl report"). Give no more detail unless
