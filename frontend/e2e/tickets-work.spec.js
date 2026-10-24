@@ -3,7 +3,7 @@
 // (openAction calls expectDialogFits).
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
-import { asPerson, personId, seedIds } from "./support/people.js";
+import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
 import {
   card, causeId, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
   stateBadge, thisMinute, timeline, timeValue,
@@ -418,14 +418,28 @@ test("S019: technician schedules a breakdown in progress for parts; the times ca
 });
 
 test("S019: the Overdue filter shows a ticket planned in the past, with the red badge", async ({ page }) => {
+  // The seed wrote "yesterday" when the e2e database was built; a run after midnight sees an older
+  // day.  Expect the date the API holds, not a date computed now (S045).
+  const api = await apiAs("engineer");
+  let planned;
+  try {
+    const res = await api.get("/api/tickets", { params: { state: "overdue", q: "E2E seed: overdue for parts" } });
+    expect(res.ok(), await res.text()).toBe(true);
+    const found = (await res.json()).items.filter((t) => t.description === "E2E seed: overdue for parts");
+    expect(found).toHaveLength(1);
+    planned = found[0].planned_date;
+  } finally {
+    await api.dispose();
+  }
+  expect(planned < istDay(0), `the seeded ticket is planned in the past (${planned})`).toBe(true); // ISO dates compare as text
   await asPerson(page, "engineer", "/tickets");
   await page.getByLabel("State").selectOption("overdue");
   await expect(page).toHaveURL(/state=overdue/);
   const row = page.locator(".list-group-item").filter({ hasText: "E2E seed: overdue for parts" });
   await expect(row).toHaveCount(1);
   const badge = row.locator(".badge.text-bg-danger");
-  await expect(badge).toHaveText(`Overdue since ${shownDay(istDay(-1)).slice(0, 5)}`);
-  await expect(row).toContainText(`Overdue · check by ${shownDay(istDay(-1))} · waiting for parts`);
+  await expect(badge).toHaveText(`Overdue since ${shownDay(planned).slice(0, 5)}`);
+  await expect(row).toContainText(`Overdue · check by ${shownDay(planned)} · waiting for parts`);
 });
 
 test("S019: a technician gets no Defer button on an acknowledged ticket", async ({ page }) => {

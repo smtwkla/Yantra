@@ -10,6 +10,7 @@
  *   refusal shows on its row and the loop goes on; a server or network failure stops the loop
  *   and the rest read "Not saved" with their values kept. A saved row is read-only; Undo (S039's
  *   remove route) shows only for equipment:edit holders at the row's unit.
+ * - After a full save the round is read-only and "Enter more readings" starts a new one (A1).
  * - The rules are the server's (S039): this screen only collects, posts and shows.
  *
  * Time taken is one field for the sheet ("Now" sends no taken_at, so the server's clock decides).
@@ -88,6 +89,9 @@ function resetStates() {
 const isFilled = (state) => String(state.value ?? "").trim() !== "";
 const filled = computed(() => rows.value.filter((r) => isFilled(states[r.key])).length);
 const pending = computed(() => rows.value.filter((r) => isFilled(states[r.key]) && states[r.key].phase !== "saved").length);
+// A saved round with no row left to retry is read-only; Enter more readings starts the next (A1).
+// Undo of a saved row makes it a pending row again, which opens the round.
+const roundDone = computed(() => !saving.value && pending.value === 0 && rows.value.some((r) => states[r.key].phase === "saved"));
 // A row saved this session counts too, by the time it was taken
 const readToday = computed(() => rows.value.filter((r) => {
   const state = states[r.key];
@@ -273,6 +277,13 @@ async function saveAll() {
   target?.scrollIntoView({ block: "center" });
 }
 
+/** A new round: every row empty, Time taken back to now, the last readings reloaded (A1). */
+function enterMore() {
+  takenAt.value = null;
+  timeError.value = "";
+  loadSheet(siteId.value);
+}
+
 async function undo(row) {
   const state = states[row.key];
   state.undoing = true;
@@ -327,7 +338,7 @@ async function undo(row) {
       <template v-else-if="sheet">
         <div class="card mb-3">
           <div class="card-body pb-1">
-            <EventFields v-model:time="takenAt" :with-remark="false" time-label="Time taken" :time-error="timeError" id-prefix="sheet" />
+            <EventFields v-model:time="takenAt" :with-remark="false" time-label="Time taken" :time-error="timeError" :locked="roundDone" id-prefix="sheet" />
           </div>
         </div>
         <div class="small text-secondary mb-2" data-testid="read-today-count">{{ readToday }} of {{ rows.length }} read today</div>
@@ -348,6 +359,7 @@ async function undo(row) {
                   :state="stateOf(rowKey(machine.id, meter))"
                   :can-undo="canUndoAt(unit.id)"
                   :busy="saving"
+                  :locked="roundDone"
                   :now="now"
                   :id-prefix="`sheet-${rowKey(machine.id, meter)}`"
                   @undo="undo({ key: rowKey(machine.id, meter), nodeId: machine.id })"
@@ -363,6 +375,7 @@ async function undo(row) {
                     :state="stateOf(rowKey(part.id, meter))"
                     :can-undo="canUndoAt(unit.id)"
                     :busy="saving"
+                    :locked="roundDone"
                     :now="now"
                     :id-prefix="`sheet-${rowKey(part.id, meter)}`"
                     @undo="undo({ key: rowKey(part.id, meter), nodeId: part.id })"
@@ -379,7 +392,9 @@ async function undo(row) {
         <div class="save-bar" data-testid="save-bar">
           <div class="d-flex align-items-center gap-3">
             <span class="small text-secondary flex-grow-1" data-testid="filled-count">{{ filled }} of {{ rows.length }} filled</span>
-            <button type="button" class="btn btn-primary" :disabled="saving || pending === 0" @click="saveAll">Save readings</button>
+            <button v-if="roundDone" type="button" class="btn btn-primary" disabled>Saved</button>
+            <button v-else type="button" class="btn btn-primary" :disabled="saving || pending === 0" @click="saveAll">Save readings</button>
+            <button v-if="roundDone" type="button" class="btn btn-primary enter-more" :disabled="loading" @click="enterMore">Enter more readings</button>
           </div>
           <div v-if="askEngineer" class="small text-secondary mt-1">A wrong reading is removed by an engineer. Ask one.</div>
         </div>
@@ -400,6 +415,11 @@ async function undo(row) {
 
 /* A tap target of at least 44 px on a floor screen (CR1-09) */
 .show-idle {
+  min-height: 44px;
+}
+
+/* A tap target of at least 44 px (A1) */
+.enter-more {
   min-height: 44px;
 }
 

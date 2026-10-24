@@ -5,7 +5,7 @@ Date: 24-10-2026 (revised 24-10-2026: brief-review r1, r2)
 Track: full
 Ported: 24-10-2026 from branch `claude/component-unit-hierarchy-tfa3gg` (step S035, migration v26, code ffb144c, base 06e16e4). Renumbered S043 / v31 on `main` (S035 and v26 were taken); its follow-up S036 is S044. The review files and the impl report are the branch's, unchanged.
 Baseline: ff9ddb3 + snapshot refs/steps/S038 (S037, S038) — stale check s1 done 24-10-2026 (2-brief-review-s1.md, answered below)
-Status: Gate B (CR r2 on the port: 0 blocker, 0 major, 1 minor, 2 nits — all fixed; branch CR1-01…05 fixed in the port)
+Status: Done (committed f8998ab, 25-10-2026; checks: 15 auto)
 
 # S043 — Equipment properties: master, classes and models
 

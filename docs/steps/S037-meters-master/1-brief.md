@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Gate B (CR r2: 0 findings; r1: 2 minor, 4 nits — all fixed)
+Status: Done (committed c2c802f, 25-10-2026, with S038; checks: 4 auto)
 Baseline: e451c33 + uncommitted S035, S036, S041, S042
 ```
 

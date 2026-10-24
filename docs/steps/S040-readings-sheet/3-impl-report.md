@@ -217,3 +217,63 @@ None, because the round changes wording of a question and a date rule only. `doc
 The list above stays. The picker test is now:
 - [auto] The site picker asks before discarding typed readings, Keep editing first — `frontend/e2e/readings.spec.js::S040: the site picker asks before it discards typed readings, and waits during a save (CR1-02)`
 - [auto] Clearing the typed readings closes the question — `frontend/e2e/readings.spec.js::S040: clearing the typed readings closes the picker's question (CR2-02)`
+
+## Amendment A1 — Enter more readings after a save
+
+Run name `s040a1`. Frontend only: no backend change, no migration.
+
+### What was built
+
+- After a save that leaves no row to retry, the round is read-only: every row (empty ones too) and *Time taken*. The save button reads *Saved* and is disabled.
+- A button **Enter more readings** (`btn-primary`, 44 px minimum) sits beside it. It starts a new round: every row empty and editable, *Time taken* back to Now, the sheet reloaded so the saved round shows as each row's last reading, and the old round's *Undo* gone.
+- A partial save keeps today's behaviour: the refused rows stay editable, *Save readings* stays enabled, and *Enter more readings* does not show.
+- The server already refuses one meter at one minute. A browser test now proves it on the sheet.
+
+### How it works
+
+- `ReadingsView.vue`: `roundDone` is true when no save runs, no filled row is unsaved (`pending === 0`) and at least one row is saved. It passes `locked` to every row and to *Time taken*, and swaps the button. `enterMore()` sets `takenAt` to null, clears the time error and calls `loadSheet(siteId)`, which rebuilds the row states.
+- Undo on a saved row makes it a pending row again, so `roundDone` turns false and the round opens at once.
+- Switching the site or leaving the page asks nothing after a saved round, because the discard question counts only typed, unsaved rows (`pending`).
+- `ReadingSheetRow.vue`: new prop `locked`; the input is `readonly`, the Yes / No buttons are disabled and the *Meter reset* tick is hidden when the row is saved or locked.
+- `EventFields.vue`: new prop `locked` (default false): *Change* and *Now* are hidden and the input is `readonly`.
+
+### Files touched (6)
+
+- `frontend/src/views/ReadingsView.vue`: `roundDone`, `enterMore`, the two buttons.
+- `frontend/src/views/readings/ReadingSheetRow.vue`: `locked`.
+- `frontend/src/views/tickets/EventFields.vue`: `locked`.
+- `frontend/e2e/readings.spec.js`: three new tests.
+- `docs/Plan.MD`: § 4.5 S040 bullet.
+- `docs/steps/S040-readings-sheet/3-impl-report.md`: this section.
+
+### Decisions taken
+
+1. **`locked` on the shared `EventFields.vue`** (a small additive prop, default false, so the ticket dialogs are unchanged), rather than a copy of the time field on the sheet. The brief names only the two sheet files; this is a forced choice to avoid a near-copy.
+2. **Undo stays available in a read-only round** (for `equipment:edit` holders). A1 says "every row is read-only" and the existing S040 Undo test and § 1.6 need Undo; Undo is how a wrong round is corrected.
+3. **If the reload of *Enter more readings* fails**, the sheet shows the usual "Readings could not be loaded. Try again in a minute." with *Try again*, and the old round is gone (it was saved). I did not keep the old view under the error.
+4. **A saved round at "Now" and the next round at "Now" in the same minute** are refused by the server (`SAME_MINUTE`), as the user's question expects. The test sets the first round's time back 30 minutes so the second round, at Now, is another minute.
+5. After a round saved at "Now", *Time taken* still reads "Now" while locked (it is not turned into a clock time).
+
+### Not done
+
+- phone-webkit: not counted. This PC's display scale (125 %) is blocked by S045's guard.
+- No vitest case: no pure logic changed.
+- I did not run `tickets-*.spec.js` although `EventFields.vue` is shared with the ticket dialogs; the prop defaults to off and S045's files stay untouched. Say if you want a run.
+
+### Docs updated
+
+- `docs/Plan.MD` § 4.5: one sentence on the read-only round and *Enter more readings*.
+- Others: none, because there is no migration, role, secret, plant fact or maintenance rule. `docs/steps/device-checks.md` row 33 is unchanged (no new real-device check in A1).
+
+### Tests run
+
+- Red first: the three new tests, `E2E_LANES=1`, desktop-chromium, `-g "S040 A1"`, before the change: 3 failed (the button *Enter more readings* was not found). After the change: 3 passed. One of my tests then needed a fix (the second round at Now fell in the first round's minute and got the 409; see decision 4).
+- `YANTRA_TEST_RUN=s040a1 tooling/run-tests.bat`: ALL SUITES PASSED. Backend 2964, frontend 168, deps 42, tooling 115.
+- `npx vite build`: built in 4.24 s, the usual chunk-size warning only.
+- E2E `readings.spec.js` and `screens.spec.js` on desktop-chromium and phone-chromium (6 lanes): 73 passed, 1 skipped (the bottom-bar test, which skips itself on desktop), 0 failed. No full suite: no shared file in the `FormModal`/`api.js`/router/auth/`support` list changed.
+
+### Manual checks (A1)
+
+- [auto] A full save makes the round read-only, *Saved* is disabled, and *Enter more readings* starts a fresh round — `frontend/e2e/readings.spec.js::S040 A1: a full save makes the round read-only, and Enter more readings starts a fresh one`
+- [auto] A partial save keeps the refused row editable and shows no *Enter more readings* — `frontend/e2e/readings.spec.js::S040 A1: a partial save keeps the refused row editable and offers no Enter more readings`
+- [auto] The same meter at the same minute is refused in the next round; another meter is not — `frontend/e2e/readings.spec.js::S040 A1: the same meter at the same minute is refused in the next round; another meter is not`

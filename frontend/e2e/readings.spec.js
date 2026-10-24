@@ -644,3 +644,95 @@ test("S040: a 404 with no site left shows the no-units message, not an empty pic
   await expect(page.getByText("This site is no longer available.")).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), SITE_KEY)).toBeNull();
 });
+
+// ---------------------------------------------------------------------------
+// S040 A1: Enter more readings after a save.
+// ---------------------------------------------------------------------------
+
+const enterMore = (page) => page.getByRole("button", { name: "Enter more readings" });
+
+test("S040 A1: a full save makes the round read-only, and Enter more readings starts a fresh one", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s40a1new", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  await openSheet(page, "engineer");
+  const hours = sheetRow(sheetCard(page, machine), "Run hours");
+  const oil = sheetRow(sheetCard(page, machine), "Oil temperature");
+  await expect(enterMore(page)).toHaveCount(0); // nothing saved yet
+  await setEventTime(page, istLocal(30)); // so the next round, at now, is another minute
+  await rowInput(hours).fill("100");
+  await saveReadings(page).click();
+
+  // The whole round is read-only; the button reads Saved and is disabled
+  await expect(hours.getByRole("status")).toHaveText("Saved");
+  await expect(rowInput(hours)).toHaveAttribute("readonly", "");
+  await expect(rowInput(oil)).toHaveAttribute("readonly", ""); // an empty row is locked too
+  await expect(page.locator("input[type=datetime-local]")).toHaveAttribute("readonly", ""); // Time taken is locked
+  await expect(page.getByRole("button", { name: "Change", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
+  await expect(saveReadings(page)).toHaveCount(0);
+  await expect(enterMore(page)).toBeVisible();
+  expect((await enterMore(page).boundingBox()).height).toBeGreaterThanOrEqual(44);
+  await expectNoSidewaysScroll(page);
+
+  await enterMore(page).click();
+  await expect(enterMore(page)).toHaveCount(0);
+  await expect(rowInput(hours)).toHaveValue("");
+  await expect(rowInput(hours)).not.toHaveAttribute("readonly", "");
+  await expect(rowInput(oil)).not.toHaveAttribute("readonly", ""); // editable again
+  await expect(hours.getByRole("status")).toHaveCount(0);
+  await expect(hours.getByRole("button", { name: "Undo" })).toHaveCount(0); // no Undo of the old round
+  await expect(page.getByRole("button", { name: "Change", exact: true })).toBeVisible(); // Time taken is back to Now
+  await expect(hours.getByTestId("sheet-last")).toContainText("100.0 h"); // the round just saved is the last reading
+  await expect(saveReadings(page)).toBeDisabled(); // nothing typed yet
+
+  await rowInput(hours).fill("110");
+  await saveReadings(page).click();
+  await expect(hours.getByRole("status")).toHaveText("Saved");
+});
+
+test("S040 A1: a partial save keeps the refused row editable and offers no Enter more readings", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/readings", 400);
+  const machine = await meterMachine(testInfo, "s40a1part", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  await logByApi(machine, "Run hours", "1000", istLocal(60));
+  await openSheet(page, "engineer");
+  const hours = sheetRow(sheetCard(page, machine), "Run hours");
+  const oil = sheetRow(sheetCard(page, machine), "Oil temperature");
+  await rowInput(hours).fill("900"); // lower than the last: refused
+  await rowInput(oil).fill("40");
+  await saveReadings(page).click();
+  await expect(oil.getByRole("status")).toHaveText("Saved");
+  await expect(hours.getByRole("alert")).toBeVisible();
+  await expect(rowInput(hours)).not.toHaveAttribute("readonly", "");
+  await expect(rowInput(oil)).toHaveAttribute("readonly", "");
+  await expect(saveReadings(page)).toBeEnabled();
+  await expect(enterMore(page)).toHaveCount(0);
+
+  // The retry saves the refused row; only then is the round done
+  await hours.getByLabel("Meter reset").check();
+  await saveReadings(page).click();
+  await expect(hours.getByRole("status")).toHaveText("Saved");
+  await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
+  await expect(enterMore(page)).toBeVisible();
+});
+
+test("S040 A1: the same meter at the same minute is refused in the next round; another meter is not", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/readings", 409);
+  const machine = await meterMachine(testInfo, "s40a1same", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  const taken = istLocal(30);
+  await openSheet(page, "engineer");
+  const hours = sheetRow(sheetCard(page, machine), "Run hours");
+  const oil = sheetRow(sheetCard(page, machine), "Oil temperature");
+  await setEventTime(page, taken);
+  await rowInput(hours).fill("100");
+  await saveReadings(page).click();
+  await expect(hours.getByRole("status")).toHaveText("Saved");
+
+  await enterMore(page).click();
+  await setEventTime(page, taken); // back to the same minute
+  await rowInput(hours).fill("110");
+  await rowInput(oil).fill("40");
+  await saveReadings(page).click();
+  await expect(oil.getByRole("status")).toHaveText("Saved"); // another meter is not blocked
+  await expect(hours.getByRole("alert")).toHaveText(SAME_MINUTE);
+  await expect(rowInput(hours)).toHaveValue("110"); // kept, editable
+  await expect(enterMore(page)).toHaveCount(0); // a row is left to retry
+});

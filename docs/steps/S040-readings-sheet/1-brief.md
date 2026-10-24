@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Gate B (CR r3 async verify: 0 findings; r1–r2 findings fixed; CR1-10 for the user)
+Status: Committed c6e74a1 (base, 25-10-2026); checks: 19 auto; important check pending: row 33 of device-checks.md; open for the user: CR1-10; A1 in code review, not committed (A1 coded 25-10-2026, review pending — run the tickets-* e2e specs too: A1 changed the shared EventFields.vue)
 Baseline: ff9ddb3 + snapshots refs/steps/S038, refs/steps/S043 + S039 (working tree, at gate B); stale check s1 done 24-10-2026
 ```
 
@@ -441,7 +441,51 @@ remove a wrong reading.
 
 ## 10. Amendments
 
-None.
+### A1 — Enter more readings after a save
+
+```
+Requested: KLA, 25-10-2026 (testing S040 on the dev instance)
+Status: Approved 25-10-2026 by KLA (the user's own design, given in answer to the orchestrator's question)
+```
+
+**The fault seen.** After *Save readings* the rows show *Saved*, and the sheet
+offers no way to enter another round at another time: the user must leave the
+page and come back.
+
+**What changes (the user's design):**
+1. After a save that leaves no row to retry, the whole round is **read-only**:
+   every row, and the sheet's *Time taken*. The save button stays where it is,
+   **disabled, and reads *Saved***.
+2. Beside it, a separate button **Enter more readings** (`btn-primary`, at
+   least 44 px tall) starts a new round: every row empty and editable again,
+   *Time taken* back to now, each row's last reading and read-today mark taken
+   from a reload of the sheet (so the round just saved shows as the last
+   reading), the saved round's *Undo* gone.
+3. A partial save (some rows refused or not saved) keeps today's behaviour:
+   the refused rows stay editable, *Save readings* stays enabled for them, and
+   *Enter more readings* shows only once nothing is left to retry.
+4. Leaving the page, or switching the site, with a saved round and nothing
+   typed asks nothing (nothing would be lost).
+5. **Same meter, same minute** (the user's question): the server already
+   refuses a second reading of one meter on one machine at one minute
+   (`meters.py`, `SAME_MINUTE`, 409 on `taken_at`). A1 adds the browser test
+   that proves it on the sheet: save a round at time T, *Enter more readings*,
+   set *Time taken* back to T, type the same meter, save, and see the row's
+   "A reading at this time exists. Pick another time, or remove that reading
+   first." Other meters of the same round are not blocked by it.
+
+**Where:** `frontend/src/views/ReadingsView.vue`,
+`frontend/src/views/readings/ReadingSheetRow.vue` (read-only state),
+`frontend/e2e/readings.spec.js` (the new round; the same-minute refusal; the
+read-only state and the disabled *Saved* button). No backend change; no
+migration. Docs: none expected (Plan.MD § 4.5 says "saved row by row", which
+still holds).
+
+**Tests:** red first where a test covers the fault (today *Enter more
+readings* is missing); targeted e2e `readings.spec.js` and `screens.spec.js`.
+
+**Out of scope:** S045's open iPhone-browser guard question (the user decides
+later).
 
 ## Review log
 

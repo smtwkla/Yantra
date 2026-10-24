@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: fix
-Status: Implementing (fix lane)
+Status: Paused (CR r1: 0 blocker, 3 major, 1 minor, 3 nits — not yet answered; CR1-01, CR1-02: #2 and #3 to be marked not fixed and their changes undone; CR1-03 settled 25-10-2026 by the user via S046 Q3: the guard skips with its message on a native WebKit run)
 Baseline: refs/steps/S039 + S040 (working tree, gate B pending)
 ```
 

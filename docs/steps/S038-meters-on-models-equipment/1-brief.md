@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Gate B (CR r2: 0 blocker, 0 major; r1–r2 findings fixed; CR1-01 kept as built by the user, U5)
+Status: Done (committed c2c802f, 25-10-2026, with S037; checks: 6 auto; CR1-01 kept as built by the user, U5)
 Baseline: e451c33 + uncommitted S035, S036, S041, S042, S037 (coded, gate B; built with no departure from its brief — stale check 24-10-2026: S038 holds)
 ```
 

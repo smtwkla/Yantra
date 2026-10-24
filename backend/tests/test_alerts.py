@@ -516,6 +516,9 @@ class TestSendOutcomes:
         the address check allowed."""
         class Redirecting(http.server.BaseHTTPRequestHandler):
             def do_POST(self):
+                # Read the body first: on Windows, answering while the client still sends makes
+                # the socket abort (WinError 10053) before the client sees the 307.
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 self.send_response(307)
                 self.send_header("Location", "http://127.0.0.1:1/elsewhere")
                 self.end_headers()

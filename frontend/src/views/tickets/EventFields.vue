@@ -24,6 +24,8 @@ const props = defineProps({
   timeError: { type: String, default: "" },
   remarkError: { type: String, default: "" },
   idPrefix: { type: String, required: true },
+  // The time is shown but cannot be changed (the readings sheet after a full save, S040 A1)
+  locked: { type: Boolean, default: false },
 });
 const emit = defineEmits(["update:time", "update:remark"]);
 
@@ -61,7 +63,7 @@ function onInput(event) {
     <label class="form-label" :for="`${idPrefix}-time`">{{ timeLabel }}</label>
     <div v-if="!changing" class="d-flex align-items-center gap-2">
       <span class="fw-semibold">Now</span>
-      <button type="button" class="btn btn-link p-0" @click="change">Change</button>
+      <button v-if="!locked" type="button" class="btn btn-link p-0" @click="change">Change</button>
     </div>
     <div v-else class="d-flex align-items-center gap-2">
       <input
@@ -70,9 +72,10 @@ function onInput(event) {
         class="form-control"
         :class="{ 'is-invalid': timeError }"
         type="datetime-local"
+        :readonly="locked"
         @input="onInput"
       />
-      <button type="button" class="btn btn-link p-0" @click="backToNow">Now</button>
+      <button v-if="!locked" type="button" class="btn btn-link p-0" @click="backToNow">Now</button>
     </div>
     <div v-if="timeError" class="invalid-feedback d-block">{{ timeError }}</div>
     <div v-if="changing && daysAgoHint(draft, new Date())" class="form-text">{{ daysAgoHint(draft, new Date()) }}</div>

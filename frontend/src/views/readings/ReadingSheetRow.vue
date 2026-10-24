@@ -10,6 +10,7 @@
  * - Meter reset shows only on a counter row after the server refused it as "Lower than ..."
  *   (BR1-02): the parent sets state.showReset.
  * - A saved row is read-only; Undo shows only where the parent says the user may remove readings.
+ * - `locked`: the whole round is saved, so every row is read-only, empty ones too (S040 A1).
  *
  * The state (value, is_reset, phase, message, error, showReset) is the parent's object. The row
  * writes the user's input into it (value through v-model and pick(), is_reset through its tick)
@@ -26,6 +27,7 @@ const props = defineProps({
   // A save is running: Undo waits, the inputs of rows not yet posted stay editable (BR1-10)
   busy: { type: Boolean, default: false },
   now: { type: Date, required: true },
+  locked: { type: Boolean, default: false },
   idPrefix: { type: String, required: true },
 });
 const emit = defineEmits(["undo"]);
@@ -33,6 +35,7 @@ const emit = defineEmits(["undo"]);
 const meterType = computed(() => props.meter.meter_type);
 const kind = computed(() => meterType.value.kind);
 const saved = computed(() => props.state.phase === "saved");
+const readOnly = computed(() => saved.value || props.locked);
 const lastToday = computed(() => !!props.meter.last && isToday(props.meter.last.taken_at, props.now));
 const inputId = computed(() => `${props.idPrefix}-value`);
 
@@ -73,7 +76,7 @@ function pick(answer) {
         class="btn btn-lg flex-fill answer-button"
         :class="state.value === answer ? 'btn-primary' : 'btn-outline-primary'"
         :aria-pressed="state.value === answer"
-        :disabled="saved"
+        :disabled="readOnly"
         @click="pick(answer)"
       >
         {{ answer === "yes" ? "Yes" : "No" }}
@@ -87,12 +90,12 @@ function pick(answer) {
         :class="{ 'is-invalid': state.error }"
         inputmode="decimal"
         autocomplete="off"
-        :readonly="saved"
+        :readonly="readOnly"
       />
       <span class="input-group-text">{{ meterType.unit }}</span>
     </div>
 
-    <div v-if="state.showReset && !saved" class="form-check mt-2">
+    <div v-if="state.showReset && !readOnly" class="form-check mt-2">
       <input :id="`${idPrefix}-reset`" v-model="state.is_reset" class="form-check-input" type="checkbox" />
       <label class="form-check-label" :for="`${idPrefix}-reset`">Meter reset</label>
       <div class="form-text mt-0">Tick this only when the meter was replaced or set back to zero</div>

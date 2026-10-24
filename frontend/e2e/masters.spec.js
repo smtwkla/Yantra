@@ -65,15 +65,20 @@ test("engineer: a deactivated mode is hidden unless Show inactive, and comes bac
   const mode = rows(page).filter({ hasText: "Stops by itself" });
   await mode.getByTitle("Edit").click();
   await expectDialogFits(page);
-  await page.getByRole("button", { name: "Deactivate" }).click();
-  await page.locator(".modal.show").getByRole("button", { name: "Yes", exact: true }).click();
+  // Click inside the open dialog, and wait for the inline confirm before its Yes (S045)
+  let dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Deactivate" }).click();
+  const yes = dialog.getByRole("button", { name: "Yes", exact: true });
+  await expect(yes).toBeVisible();
+  await yes.click();
   await expect(page.locator(".modal.show")).toHaveCount(0);
   await expect(mode).toHaveCount(0);
 
   await page.getByLabel("Show inactive").check();
   await expect(mode).toContainText("Inactive");
   await mode.getByTitle("Edit").click();
-  await page.getByRole("button", { name: "Reactivate" }).click();
+  dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Reactivate" }).click();
   await expect(page.locator(".modal.show")).toHaveCount(0);
   await page.getByLabel("Show inactive").uncheck();
   await expect(mode).toContainText("Active");
