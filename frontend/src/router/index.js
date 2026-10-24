@@ -13,10 +13,12 @@ import SettingsView from "../views/SettingsView.vue";
 import TicketDetailView from "../views/TicketDetailView.vue";
 import TicketsView from "../views/TicketsView.vue";
 import { authenticated, userPermissions } from "../stores/auth";
-import { canOpenRoute, landingPath } from "../stores/navigation";
+import { canOpenRoute, homePath, landingPath } from "../stores/navigation";
 
 const routes = [
-  { path: "/", redirect: () => landingPath(userPermissions.value) ?? "/equipment" },
+  // "/" shows nothing and is sent to the landing page by the guard below, or by App.vue once the
+  // permissions arrive: a redirect decided here would run before login, with no permissions.
+  { path: "/", name: "home", component: { render: () => null } },
   {
     path: "/equipment",
     name: "equipment",
@@ -56,7 +58,7 @@ const routes = [
     component: TicketDetailView,
     meta: { title: "Ticket" },
   },
-  // Me (S031): my open work, tickets I raised, my activity; a nav item after Tickets
+  // Me (S031): my open work, tickets I raised, my activity; the first nav item (S035)
   {
     path: "/me",
     name: "me",
@@ -108,6 +110,7 @@ const router = createRouter({
 // the first page they may see. Before login completes nothing renders;
 // App.vue re-checks once permissions arrive.
 router.beforeEach((to) => {
+  if (to.name === "home" && authenticated.value) return homePath(userPermissions.value);
   if (!authenticated.value || canOpenRoute(to.name, userPermissions.value)) return true;
   const landing = landingPath(userPermissions.value);
   return landing && landing !== to.path ? landing : true;

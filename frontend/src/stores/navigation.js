@@ -6,9 +6,9 @@
  */
 
 export const navItems = [
+  { name: "me", path: "/me", icon: "fa-solid fa-user", label: "Me", perm: "ticket:read" },
   { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
   { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
-  { name: "me", path: "/me", icon: "fa-solid fa-user", label: "Me", perm: "ticket:read" },
   { name: "masters", path: "/masters", icon: "yi-icon yi-table-edit", label: "Masters", perm: "masters:read" },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];
@@ -37,6 +37,11 @@ export function landingNavItem(permissions) {
 /** Path of the landing page; null when the user has none. */
 export function landingPath(permissions) {
   return landingNavItem(permissions)?.path ?? null;
+}
+
+/** Where "/" goes after login: the landing page, or Equipment (its "no access" screen shows there) when none. */
+export function homePath(permissions) {
+  return landingPath(permissions) ?? "/equipment";
 }
 
 /** Whether a nav item is the current page — also true on its sub-pages (/equipment/5 → Equipment). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canOpenRoute, canSeeNavItem, isActivePath, landingNavItem, landingPath, navItems } from "../src/stores/navigation.js";
+import { canOpenRoute, canSeeNavItem, homePath, isActivePath, landingNavItem, landingPath, navItems } from "../src/stores/navigation.js";
 
 // What /api/auth/me returns per role — kept equal to backend/tests/test_rbac.py's role matrix.
 // From S011 a site role's keys come from its membership; the manager's breadth is "all units"
@@ -25,15 +25,15 @@ const IT_ADMIN = [
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
 describe("navigation permissions", () => {
-  it("maint_operator sees Equipment, Tickets and Masters, and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["equipment", "tickets", "me", "masters"]);
+  it("maint_operator sees Me, Equipment, Tickets and Masters, and cannot open Settings", () => {
+    expect(visible(OPERATOR)).toEqual(["me", "equipment", "tickets", "masters"]);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
   });
 
-  it("Equipment is first for every role; manager and IT admin also see Settings", () => {
-    expect(visible(ENGINEER)).toEqual(["equipment", "tickets", "me", "masters"]);
-    expect(visible(MANAGER)).toEqual(["equipment", "tickets", "me", "masters", "settings"]);
-    expect(visible(IT_ADMIN)).toEqual(["equipment", "tickets", "me", "masters", "settings"]);
+  it("Me is first for every role with ticket:read; manager and IT admin also see Settings (S035)", () => {
+    expect(visible(ENGINEER)).toEqual(["me", "equipment", "tickets", "masters"]);
+    expect(visible(MANAGER)).toEqual(["me", "equipment", "tickets", "masters", "settings"]);
+    expect(visible(IT_ADMIN)).toEqual(["me", "equipment", "tickets", "masters", "settings"]);
   });
 
   it("the storekeeper sees no Tickets and cannot open the list (S017 user decision 7)", () => {
@@ -42,10 +42,11 @@ describe("navigation permissions", () => {
     expect(canOpenRoute("me", STOREKEEPER)).toBe(false); // S031
   });
 
-  it("everyone with a role lands on Equipment", () => {
+  it("everyone with ticket:read lands on Me; the storekeeper lands on Equipment (S035)", () => {
     for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER, IT_ADMIN]) {
-      expect(landingPath(perms)).toBe("/equipment");
+      expect(landingPath(perms)).toBe("/me");
     }
+    expect(landingPath(STOREKEEPER)).toBe("/equipment");
   });
 
   it("an item stays active on its sub-pages, but not on a path that merely starts the same", () => {
@@ -64,11 +65,18 @@ describe("navigation permissions", () => {
     expect(landingNavItem([])).toBeNull();
   });
 
-  it("the landing nav item is Equipment for every role", () => {
+  it("the home path is the landing page, or Equipment when the user has none (S035)", () => {
+    expect(homePath(OPERATOR)).toBe("/me");
+    expect(homePath(STOREKEEPER)).toBe("/equipment");
+    expect(homePath([])).toBe("/equipment");
+  });
+
+  it("the landing nav item is Me for roles with ticket:read, Equipment for the storekeeper", () => {
     for (const perms of [OPERATOR, SUPERVISOR, ENGINEER, MANAGER, IT_ADMIN]) {
       expect(landingNavItem(perms)).toBe(navItems[0]);
-      expect(landingNavItem(perms).label).toBe("Equipment");
+      expect(landingNavItem(perms).label).toBe("Me");
     }
+    expect(landingNavItem(STOREKEEPER).label).toBe("Equipment");
   });
 
   it("the not-found route opens for every role, and for none", () => {

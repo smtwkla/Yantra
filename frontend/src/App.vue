@@ -6,7 +6,7 @@ import AppTopbar from "./components/layout/AppTopbar.vue";
 import AppBottomNav from "./components/layout/AppBottomNav.vue";
 import UpdateToast from "./components/layout/UpdateToast.vue";
 import { authenticated, authError, logout, networkDenied, userPermissions, userPersonId } from "./stores/auth";
-import { canOpenRoute, landingPath } from "./stores/navigation";
+import { canOpenRoute, homePath, landingPath } from "./stores/navigation";
 import { startVersionChecks, stopVersionChecks } from "./stores/appVersion";
 import { loadNotifications } from "./stores/notifications";
 import NoAccessView from "./views/NoAccessView.vue";
@@ -23,6 +23,10 @@ onUnmounted(stopVersionChecks);
 const route = useRoute();
 const router = useRouter();
 watch(userPermissions, (perms) => {
+  if (authenticated.value && route.name === "home") {
+    router.replace(homePath(perms));
+    return;
+  }
   if (!authenticated.value || canOpenRoute(route.name, perms)) return;
   const landing = landingPath(perms);
   if (landing && landing !== route.path) router.replace(landing);

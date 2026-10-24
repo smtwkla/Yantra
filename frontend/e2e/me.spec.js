@@ -120,6 +120,14 @@ test("S031: IT admin has no Team record: Open work says so, and the own raise sh
   await expect(rowOf(page, ticket.serial)).toBeVisible();
 });
 
+test("S035: a technician opening / lands on Me, and Me is the first nav item", async ({ page }) => {
+  await asPerson(page, "technician", "/");
+  await expect(page).toHaveURL(/\/me(\?|$)/);
+  // Bottom bar on a phone, sidebar on desktop: only one of them is visible.
+  const firstItem = page.locator(".sidebar-nav .sidebar-btn:visible, .app-bottom-nav .bottom-nav-item:visible").first();
+  await expect(firstItem).toHaveAccessibleName("Me");
+});
+
 test("S031: the storekeeper has no Me item, and /me lands on Equipment", async ({ page }) => {
   await asPerson(page, "storekeeper", "/equipment");
   await expect(page.getByRole("button", { name: "Me", exact: true })).toHaveCount(0);
