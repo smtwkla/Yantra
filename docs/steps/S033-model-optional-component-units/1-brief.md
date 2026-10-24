@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 23-10-2026
 Track: full
-Status: In code review (approved 24-10-2026 by KLA; open questions 1–3 accepted as written)
+Status: Done (committed c9234ce; checks: 3 auto; approved 24-10-2026 by KLA; open questions 1–3 accepted as written)
 Baseline: 6ab6af0 (nothing of a step uncommitted; stale check 24-10-2026: no change since)
 ```
 
