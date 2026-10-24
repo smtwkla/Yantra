@@ -5,7 +5,7 @@ import {
   raiseSaveLabel, restoreTimeLabel, sendBackChoices, sendBackQuestion, STATE_LABELS, toLocalDateValue, toLocalInputValue,
 } from "../src/utils/ticketLabels.js";
 import {
-  machineStoppedQuestion, overdueBadge, planChanges, planLine, stateLabel, STATE_FILTERS, WAITING_REASON_DELAYS,
+  machineStoppedQuestion, overdueBadge, PLAN_DATE_HELP, PLAN_QUICK_DAYS, planChanges, planDateKind, planDateLabel, planLine, planText, stateLabel, STATE_FILTERS, WAITING_REASON_DELAYS,
   WAITING_REASON_LABELS, waitingSplit, waitingText,
 } from "../src/utils/ticketLabels.js";
 import { activityDetail, defaultMeTab, isBackdated, planText } from "../src/utils/ticketLabels.js";
@@ -178,8 +178,10 @@ describe("deferred work (S019)", () => {
     expect(waitingText("other")).toBe("other reason");
   });
 
-  it("the badge: Scheduled on a defect, Waiting on a breakdown, Overdue past the date", () => {
-    expect(stateLabel({ state: "scheduled", intensity: "degraded", overdue: false })).toBe("Scheduled");
+  it("the badge: Deferred on a defect, Waiting on a breakdown, Overdue past the date", () => {
+    expect(stateLabel({ state: "scheduled", intensity: "degraded", overdue: false })).toBe("Deferred");
+    expect(stateLabel({ state: "scheduled", intensity: "initial", overdue: false })).toBe("Deferred");
+    expect(stateLabel({ state: "scheduled", intensity: "degraded", overdue: true })).toBe("Overdue");
     expect(stateLabel({ state: "scheduled", intensity: "critical", overdue: false })).toBe("Waiting");
     expect(stateLabel({ state: "scheduled", intensity: "critical", overdue: true })).toBe("Overdue");
     expect(stateLabel({ state: "in_progress", intensity: "critical", overdue: false })).toBe("In progress");
@@ -187,15 +189,20 @@ describe("deferred work (S019)", () => {
 
   it("the line under the header and the list's badge", () => {
     const ticket = { state: "scheduled", planned_date: "2026-10-25", waiting_reason: "parts", overdue: false };
-    expect(planLine(ticket)).toBe("for 25-10-2026 · waiting for parts");
+    expect(planLine(ticket)).toBe("check by 25-10-2026 · waiting for parts");
+    expect(planLine({ ...ticket, waiting_reason: "slot" })).toBe("for 25-10-2026 · waiting for a production slot or shutdown");
     expect(planLine({ ...ticket, overdue: true })).toBe("Overdue since 25-10-2026 · waiting for parts");
+    expect(planLine({ ...ticket, waiting_reason: "slot", overdue: true }))
+      .toBe("Overdue since 25-10-2026 · waiting for a production slot or shutdown");
     expect(planLine({ ...ticket, state: "in_progress" })).toBe("");
     expect(overdueBadge("2026-10-25")).toBe("Overdue since 25-10");
   });
 
   it("the filters", () => {
     expect(STATE_FILTERS.map(([value]) => value)).toEqual(["open", "scheduled", "overdue", "closed", "all"]);
-    expect(EVENT_LABELS.scheduled).toBe("Scheduled");
+    expect(STATE_FILTERS.find(([value]) => value === "scheduled")[1]).toBe("Deferred / Waiting");
+    expect(STATE_LABELS.scheduled).toBe("On hold");
+    expect(EVENT_LABELS.scheduled).toBe("On hold");
     expect(EVENT_LABELS.rescheduled).toBe("Plan changed");
   });
 
@@ -208,7 +215,7 @@ describe("deferred work (S019)", () => {
     ];
     expect(planChanges(events)).toEqual([
       "",
-      "for 25-10-2026 · waiting for parts",
+      "check by 25-10-2026 · waiting for parts",
       "for 02-11-2026 · waiting for a production slot or shutdown (was 25-10-2026 · waiting for parts)",
       "",
     ]);
@@ -232,8 +239,37 @@ describe("deferred work (S019)", () => {
     expect(machineStoppedQuestion("restore")).toBe("Was the machine stopped for this work?");
   });
 
+  it("S034: the date means planned or check, by reason; all six codes pick a kind", () => {
+    const kinds = Object.keys(WAITING_REASON_LABELS).map((code) => [code, planDateKind(code)]);
+    expect(kinds).toEqual([
+      ["parts", "check"], ["vendor", "check"], ["expert", "check"], ["slot", "planned"], ["approval", "check"],
+      ["other", "check"],
+    ]);
+    expect(planDateKind("")).toBeNull();
+    expect(planDateLabel("slot")).toBe("Planned for");
+    expect(planDateLabel("parts")).toBe("Check again by");
+    expect(planDateLabel("")).toBe("Date");
+    expect(PLAN_DATE_HELP).toContain("follow this up");
+    expect(PLAN_QUICK_DAYS).toEqual([7, 14, 30]);
+  });
+
+  it("S034: the plan text says for or check by", () => {
+    expect(planText("2026-10-25", "slot")).toBe("for 25-10-2026 · waiting for a production slot or shutdown");
+    expect(planText("2026-10-25", "vendor")).toBe("check by 25-10-2026 · at or waiting for a vendor, garage or maker");
+    expect(planText("2026-10-25", "other")).toBe("check by 25-10-2026 · other reason");
+  });
+
+  it("S034: Defer on a defect, Put on hold on a breakdown", () => {
+    for (const intensity of ["degraded", "initial"]) {
+      expect(moveLabel("schedule", intensity)).toBe("Defer");
+      expect(moveSaveLabel("schedule", intensity)).toBe("Defer");
+    }
+    expect(moveSaveLabel("schedule", "critical")).toBe("Put on hold");
+    expect(moveLabel("reschedule", "critical")).toBe("Change plan");
+  });
+
   it("the plan moves' buttons", () => {
-    expect(moveLabel("schedule", "critical")).toBe("Schedule");
+    expect(moveLabel("schedule", "critical")).toBe("Put on hold");
     expect(moveSaveLabel("reschedule", "degraded")).toBe("Change plan");
   });
 });

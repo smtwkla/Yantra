@@ -310,6 +310,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S031 | [Me: my open work, tickets I raised, my activity](S031-me-page/1-brief.md) — a *Me* nav item with three tabs: open tickets assigned to me, tickets I raised or reported, timeline lines I recorded; v26 two indexes | 3 | Committed; device check pending | 23-10-2026 |
 | S032 | [Email to managers when a ticket is closed](S032-closed-ticket-email/1-brief.md) — email as a second alert channel (Mailgun over SMTP, addresses from Keycloak at login); *Ticket closed* to the site's managers; v27 `people.email` | 3 | Committed; device checks pending (rows 27-30 of device-checks.md) | 23-10-2026 |
 | S033 | [Model optional on component-units](S033-model-optional-component-units/1-brief.md) — a component-unit may have no model; its class (required) and type (optional) are then picked directly; v28 `equipment.model_id` NULL with a level CHECK | 3 | In code review | 23-10-2026 |
+| S034 | [Defer, hold and follow-up date](S034-defer-and-follow-up/1-brief.md) — *Schedule* reads *Defer* on a defect and *Put on hold* on a breakdown; the date reads *Check again by* when the wait is outside maintenance's control (parts, vendor, expert, approval), with +7 / +14 / +30 days | 3 | Gate B (CR r1: 1 minor, 4 nits — all fixed; light track) | 24-10-2026 |
 
 ## Queued (not yet briefed)
 

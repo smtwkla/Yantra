@@ -320,8 +320,8 @@ test("S019: engineer schedules a defect for a date and reason, then changes the 
   });
   await asPerson(page, "engineer", `/tickets/${ticket.id}`);
 
-  let dialog = await openAction(page, "Schedule");
-  // The planned date opens empty: the engineer must choose one
+  let dialog = await openAction(page, "Defer");
+  // The date opens empty: the engineer must choose one
   await expect(dialog.locator("#move-schedule-date")).toHaveValue("");
   // Other opens the remark, required
   await dialog.locator("#move-schedule-reason").selectOption("other");
@@ -331,11 +331,11 @@ test("S019: engineer schedules a defect for a date and reason, then changes the 
   await dialog.locator(".modal-footer button[type=submit]").click();
   await expectFieldMessage(dialog, "Add a remark");
   await dialog.locator("#move-schedule-reason").selectOption("slot");
-  await saveDialog(page, "Schedule");
+  await saveDialog(page, "Defer");
 
-  await expect(stateBadge(page)).toHaveText("Scheduled");
+  await expect(stateBadge(page)).toHaveText("Deferred");
   await expect(page.locator(".plan-line")).toHaveText(`for ${shownDay(planned)} · ${SLOT}`);
-  await expect(timeline(page).filter({ hasText: /^\s*Scheduled/ })).toContainText(`for ${shownDay(planned)} · ${SLOT}`);
+  await expect(timeline(page).filter({ hasText: /^\s*On hold/ })).toContainText(`for ${shownDay(planned)} · ${SLOT}`);
 
   dialog = await openAction(page, "Change plan");
   // Opens with the current plan, the remark open and required
@@ -365,7 +365,7 @@ test("S019: technician starts a scheduled defect with the machine stopped; the t
     planned_date: istDay(0), waiting_reason: "slot", occurred_at: istLocal(110, base),
   });
   await asPerson(page, "technician", `/tickets/${ticket.id}`);
-  await expect(stateBadge(page)).toHaveText("Scheduled");
+  await expect(stateBadge(page)).toHaveText("Deferred");
   // Change plan is the engineer's
   await expect(page.getByRole("button", { name: "Change plan" })).toHaveCount(0);
 
@@ -392,14 +392,14 @@ test("S019: technician schedules a breakdown in progress for parts; the times ca
   await asPerson(page, "technician", `/tickets/${ticket.id}`);
 
   // U1: work stops, waiting for parts — the technician records it from in progress
-  let dialog = await openAction(page, "Schedule");
+  let dialog = await openAction(page, "Put on hold");
   const expected = istDay(2);
   await dialog.locator("#move-schedule-date").fill(expected);
   await dialog.locator("#move-schedule-reason").selectOption("parts");
   await setEventTime(dialog, istLocal(150, base));
-  await saveDialog(page, "Schedule");
+  await saveDialog(page, "Put on hold");
   await expect(stateBadge(page)).toHaveText("Waiting");
-  await expect(page.locator(".plan-line")).toHaveText(`for ${shownDay(expected)} · waiting for parts`);
+  await expect(page.locator(".plan-line")).toHaveText(`check by ${shownDay(expected)} · waiting for parts`);
 
   // On a breakdown the stopped question is not asked: the machine is already down
   dialog = await openAction(page, "Start work");
@@ -425,10 +425,10 @@ test("S019: the Overdue filter shows a ticket planned in the past, with the red 
   await expect(row).toHaveCount(1);
   const badge = row.locator(".badge.text-bg-danger");
   await expect(badge).toHaveText(`Overdue since ${shownDay(istDay(-1)).slice(0, 5)}`);
-  await expect(row).toContainText(`Overdue · for ${shownDay(istDay(-1))} · waiting for parts`);
+  await expect(row).toContainText(`Overdue · check by ${shownDay(istDay(-1))} · waiting for parts`);
 });
 
-test("S019: a technician gets no Schedule button on an acknowledged ticket", async ({ page }) => {
+test("S019: a technician gets no Defer button on an acknowledged ticket", async ({ page }) => {
   const ticket = await raiseByApi("operator", {
     equipment_id: seed.extruder.id, intensity: "degraded", description: "S019 test: not yet started",
   });
@@ -436,5 +436,81 @@ test("S019: a technician gets no Schedule button on an acknowledged ticket", asy
   await asPerson(page, "technician", `/tickets/${ticket.id}`);
   await expect(stateBadge(page)).toHaveText("Acknowledged");
   await expect(page.getByRole("button", { name: "Start work" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Defer" })).toHaveCount(0);
+});
+
+// S034 (defer, hold and follow-up date) ---------------------------------------------------
+
+test("S034: a defect reads Defer; the badge reads Deferred and the timeline On hold; the engineer sees Defer too", async ({ page }) => {
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S034 test: guard loose",
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await expect(page.getByRole("button", { name: "Defer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Schedule" })).toHaveCount(0);
+  const dialog = await openAction(page, "Defer");
+  await dialog.locator("#move-schedule-reason").selectOption("slot");
+  await dialog.locator("#move-schedule-date").fill(istDay(4));
+  await saveDialog(page, "Defer");
+  await expect(stateBadge(page)).toHaveText("Deferred");
+  await expect(timeline(page).filter({ hasText: /^\s*On hold/ })).toHaveCount(1);
+});
+
+test("S034: a breakdown reads Put on hold; waiting for parts asks Check again by, with help, and the header says check by", async ({ page }) => {
+  const base = thisMinute();
+  const ticket = await raiseBreakdown(base, 60, "S034 test: gearbox oil seal");
+  await moveByApi("technician", ticket.id, "start", { occurred_at: istLocal(50, base) });
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  const dialog = await openAction(page, "Put on hold");
+  await expect(dialog.locator("label[for=move-schedule-date]")).toHaveText("Date");
+  await dialog.locator("#move-schedule-reason").selectOption("parts");
+  await expect(dialog.locator("label[for=move-schedule-date]")).toHaveText("Check again by");
+  await expect(dialog.getByText("When should someone follow this up? If the supplier gave a date, use it.")).toBeVisible();
+  const picked = istDay(5);
+  await dialog.locator("#move-schedule-date").fill(picked);
+  await setEventTime(dialog, istLocal(40, base));
+  await saveDialog(page, "Put on hold");
+  await expect(stateBadge(page)).toHaveText("Waiting");
+  await expect(page.locator(".plan-line")).toHaveText(`check by ${shownDay(picked)} · waiting for parts`);
+});
+
+test("S034: a production slot labels the date Planned for, without the help; the reason is above the date", async ({ page }) => {
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S034 test: slot label",
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  const dialog = await openAction(page, "Defer");
+  await dialog.locator("#move-schedule-reason").selectOption("slot");
+  await expect(dialog.locator("label[for=move-schedule-date]")).toHaveText("Planned for");
+  await expect(dialog.getByText("When should someone follow this up?")).toHaveCount(0);
+  const reasonBox = await dialog.locator("#move-schedule-reason").boundingBox();
+  const dateBox = await dialog.locator("#move-schedule-date").boundingBox();
+  expect(reasonBox.y).toBeLessThan(dateBox.y);
+});
+
+test("S034: In 14 days fills the date (the input's min plus 14 days) and the save succeeds; the list filter reads Deferred / Waiting", async ({ page }) => {
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S034 test: quick pick",
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  const dialog = await openAction(page, "Defer");
+  await dialog.locator("#move-schedule-reason").selectOption("vendor");
+  // Empty until a pick: the date is still a choice
+  await expect(dialog.locator("#move-schedule-date")).toHaveValue("");
+  const min = await dialog.locator("#move-schedule-date").getAttribute("min");
+  const [y, m, d] = min.split("-").map(Number);
+  const expected = new Date(y, m - 1, d + 14);
+  const pad = (n) => String(n).padStart(2, "0");
+  const expectedValue = `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`;
+  await dialog.getByRole("button", { name: "In 14 days" }).click();
+  await expect(dialog.locator("#move-schedule-date")).toHaveValue(expectedValue);
+  await saveDialog(page, "Defer");
+  await expect(stateBadge(page)).toHaveText("Deferred");
+
+  await page.goto("/tickets");
+  const filter = page.getByLabel("State");
+  await expect(filter.locator("option", { hasText: "Deferred / Waiting" })).toHaveCount(1);
+  await filter.selectOption("scheduled");
+  await expect(page).toHaveURL(/state=scheduled/);
+  await expect(page.locator(".list-group-item").filter({ hasText: "S034 test: quick pick" })).toHaveCount(1);
 });

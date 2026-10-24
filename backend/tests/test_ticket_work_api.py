@@ -1017,12 +1017,12 @@ class TestSchedule:
         start = now_ist().replace(second=0, microsecond=0) - timedelta(days=2)
         ticket = make_ticket(machine, occurred_at=local(start))
         assert refusal(move(admin, ticket, "schedule", waiting_reason="parts")) == (
-            400, "planned_date", "Choose the planned date")
+            400, "planned_date", "Choose a date")
         res = move(admin, ticket, "schedule", occurred_at=local(start + timedelta(hours=1)),
                    planned_date=start.date().isoformat(), waiting_reason="parts")
-        assert refusal(res) == (400, "planned_date", "The planned date cannot be before today")
+        assert refusal(res) == (400, "planned_date", "The date cannot be before today")
         res = move(admin, ticket, "schedule", planned_date=plan_day(366), waiting_reason="parts")
-        assert refusal(res) == (400, "planned_date", "Plan within a year")
+        assert refusal(res) == (400, "planned_date", "Choose a date within a year")
         res = move(admin, ticket, "schedule", planned_date=plan_day(1), waiting_reason="other")
         assert refusal(res) == (400, "remark", "Add a remark")
         res = move(admin, ticket, "schedule", planned_date=plan_day(1), waiting_reason="workshop")
@@ -1076,7 +1076,7 @@ class TestChangePlan:
         yesterday = make_overdue(ticket)
         assert detail(eng[0], ticket)["overdue"] is True
         res = move(eng[0], ticket, "reschedule", planned_date=yesterday, waiting_reason="slot", remark="x")
-        assert refusal(res) == (400, "planned_date", "The planned date cannot be before today")
+        assert refusal(res) == (400, "planned_date", "The date cannot be before today")
         assert moved(eng[0], ticket, "reschedule", planned_date=plan_day(2), waiting_reason="parts",
                      remark="Supplier slipped")["overdue"] is False
 

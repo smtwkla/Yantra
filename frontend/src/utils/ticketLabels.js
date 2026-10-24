@@ -31,7 +31,7 @@ export const INTENSITY_CHOICES = [
 export const STATE_LABELS = {
   raised: "Raised",
   acknowledged: "Acknowledged",
-  scheduled: "Scheduled",
+  scheduled: "On hold",
   in_progress: "In progress",
   back_in_service: "Back in service",
   closed: "Closed",
@@ -45,7 +45,7 @@ export const INTENSITY_FILTERS = [
 ];
 export const STATE_FILTERS = [
   ["open", "Open"],
-  ["scheduled", "Scheduled"],
+  ["scheduled", "Deferred / Waiting"],
   ["overdue", "Overdue"],
   ["closed", "Closed"],
   ["all", "All"],
@@ -64,7 +64,7 @@ export const EVENT_LABELS = {
   edited: "Edited",
   assigned: "Assigned",
   unassigned: "Unassigned",
-  scheduled: "Scheduled",
+  scheduled: "On hold",
   rescheduled: "Plan changed",
   note: "Note", // S027: a work note
 };
@@ -138,7 +138,7 @@ const MOVE_LABELS = {
   acknowledge: "Acknowledge",
   start: "Start work",
   restore: "Back in service",
-  schedule: "Schedule",
+  schedule: "Defer",
   reschedule: "Change plan",
   "send-back": "Send back",
   close: "Close",
@@ -150,21 +150,27 @@ const SAVE_LABELS = {
   acknowledge: "Acknowledge",
   start: "Start work",
   restore: "Back in service",
-  schedule: "Schedule",
+  schedule: "Defer",
   reschedule: "Change plan",
   "send-back": "Send back",
   close: "Close ticket",
   "not-a-fault": "Close as not a fault",
 };
 
-/** A move's button: on a defect the machine never stopped, so back in service reads "Fixed". */
+/**
+ * A move's button: on a defect the machine never stopped, so back in service reads "Fixed".
+ * S034: the schedule move reads "Defer" on a defect (EN 13306 deferred corrective maintenance)
+ * and "Put on hold" on a breakdown (a wait for resources, not a decision to delay).
+ */
 export function moveLabel(move, intensity) {
   if (move === "restore" && !isBreakdown(intensity)) return "Fixed";
+  if (move === "schedule" && isBreakdown(intensity)) return "Put on hold";
   return MOVE_LABELS[move] ?? move;
 }
 
 export function moveSaveLabel(move, intensity) {
   if (move === "restore" && !isBreakdown(intensity)) return "Fixed";
+  if (move === "schedule" && isBreakdown(intensity)) return "Put on hold";
   return SAVE_LABELS[move] ?? move;
 }
 
@@ -310,6 +316,42 @@ export const OTHER_REASON = "other";
 /** The planned date's limit after today (tickets_core.PLANNED_DATE_MAX_DAYS; the server checks it). */
 export const PLANNED_DATE_MAX_DAYS = 365;
 
+/**
+ * S034 § 1b: what the date means, by reason. "planned": maintenance and production choose the
+ * slot, so the date is a commitment. "check": someone outside maintenance controls the end of
+ * the wait, so the date is when to follow it up. A third grouping of the reasons, beside the
+ * labels and WAITING_REASON_DELAYS (approval is an administrative delay with a check date).
+ */
+export const PLAN_DATE_KINDS = {
+  parts: "check",
+  vendor: "check",
+  expert: "check",
+  slot: "planned",
+  approval: "check",
+  other: "check",
+};
+
+export function planDateKind(reason) {
+  return PLAN_DATE_KINDS[reason] ?? null;
+}
+
+/** The date field's label: "Date" before a reason is chosen. */
+export function planDateLabel(reason) {
+  const kind = planDateKind(reason);
+  if (kind === "planned") return "Planned for";
+  return kind === "check" ? "Check again by" : "Date";
+}
+
+export const PLAN_DATE_HELP = "When should someone follow this up? If the supplier gave a date, use it.";
+
+/** The date quick picks, in days from today. */
+export const PLAN_QUICK_DAYS = [7, 14, 30];
+
+/** The words before a plan's date: "for" (planned) or "check by" (check). */
+function planDateWord(reason) {
+  return planDateKind(reason) === "check" ? "check by" : "for";
+}
+
 /** The reason inside a sentence: "waiting for parts"; Other reads "other reason". */
 export function waitingText(reason) {
   if (reason === OTHER_REASON) return "other reason";
@@ -319,19 +361,19 @@ export function waitingText(reason) {
 
 /**
  * The state badge's one word (BR1-13): a scheduled ticket reads Waiting when its machine is
- * down (critical), else Scheduled, and Overdue once past its planned date.
+ * down (critical), else Deferred (S034), and Overdue once past its planned date.
  */
 export function stateLabel(ticket) {
   if (ticket.state === "scheduled") {
     if (ticket.overdue) return "Overdue";
-    return isBreakdown(ticket.intensity) ? "Waiting" : "Scheduled";
+    return isBreakdown(ticket.intensity) ? "Waiting" : "Deferred";
   }
   return STATE_LABELS[ticket.state] ?? ticket.state;
 }
 
-/** A plan as a line: "for 25-10-2026 · waiting for parts". */
+/** A plan as a line: "for 25-10-2026 · waiting for a production slot", "check by …" for the other reasons (S034). */
 export function planText(plannedDate, reason) {
-  return `for ${formatDateTime(plannedDate)} · ${waitingText(reason)}`;
+  return `${planDateWord(reason)} ${formatDateTime(plannedDate)} · ${waitingText(reason)}`;
 }
 
 /** The line under the ticket's header (BR2-08): the plan, or "Overdue since …" once past it. */
@@ -348,7 +390,7 @@ export function overdueBadge(plannedDate) {
 
 /**
  * The plan text of each timeline event (BR2-08), from the events' own plan columns:
- * scheduled "for 25-10-2026 · waiting for parts"; rescheduled the same with "(was …)", the
+ * scheduled "check by 25-10-2026 · waiting for parts" ("for" on a planned reason, S034); rescheduled the same with "(was …)", the
  * old plan read from the previous scheduled or rescheduled event; "" for any other event.
  */
 export function planChanges(events) {
@@ -356,9 +398,10 @@ export function planChanges(events) {
   return events.map((e) => {
     if (e.event !== "scheduled" && e.event !== "rescheduled") return "";
     const plan = `${formatDateTime(e.planned_date)} · ${waitingText(e.waiting_reason)}`;
+    const word = planDateWord(e.waiting_reason);
     const was = e.event === "rescheduled" && previous ? ` (was ${previous})` : "";
     previous = plan;
-    return `for ${plan}${was}`;
+    return `${word} ${plan}${was}`;
   });
 }
 
