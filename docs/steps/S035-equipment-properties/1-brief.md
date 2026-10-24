@@ -1,7 +1,7 @@
 Step: S035 — Equipment properties: master, classes and models
 Doc: brief
 Author: Planner (Opus)
-Date: 24-10-2026 (revised 24-10-2026: brief-review r1)
+Date: 24-10-2026 (revised 24-10-2026: brief-review r1, r2)
 Track: full
 Baseline: — (set at approval from the last review's *Reviewed against*)
 Status: In review
@@ -68,7 +68,8 @@ module.
    opens the same model dialog as Masters (BR1-04). In S036 the item's own values join it.
 5. **Seed** (migration v26): 26 properties after ISO 14224 Annex A for pumps, electric
    motors, compressors, valves, combustion engines and electric generators, plus the
-   hydraulic properties of the request (§ 4.6).
+   hydraulic properties of the request (§ 4.6). The seed makes properties only. It links
+   none to a class, because the plant's class codes are not known to the code (§ 9.5).
 
 **Type or property (BR1-01).** How equipment of a class is **built** is its **type** (S004,
 ISO 14224 class → type): a pump is centrifugal or reciprocating, an `RPP` is closed or open
@@ -76,8 +77,7 @@ execution. Yantra keeps that on the model's `type_id`, and the failure-code scop
 like-with-like comparisons read it. A **property** is a datum about the item: a rating, a
 dimension, a design detail such as *Drain*. So the seed has no *Pump type*, *Motor type*,
 *Compressor type*, *Valve type* or *Execution*: those are types, set up in *Masters › Equip
-Type*. The help line of the property dialog says so (§ 7.1). The seed makes properties only. It links
-   none to a class, because the plant's class codes are not known to the code (§ 9.5).
+Type*. The help line of the property dialog says so (§ 7.1).
 
 ### Out of scope
 
@@ -112,7 +112,7 @@ Type*. The help line of the property dialog says so (§ 7.1). The seed makes pro
   from the model's (S036: a rewound motor now 5.5 kW). An operating value changes in
   service, so it is a reading (Plan.MD § 6), not a property. The seed names say "– design"
   where Annex A does.
-- **ISO 55001 § 7.5 — asset information** (to verify: clause number). The organisation
+- **ISO 55001 § 7.5 — asset information** (*Information requirements*). The organisation
   decides which information it keeps about its assets, and keeps its quality. The property
   master is that decision, made once in Masters instead of in each engineer's notebook.
 - **ISO 14224 — equipment taxonomy.** Data belongs to the item it describes. A pump's drive
@@ -279,8 +279,11 @@ ISO 14224 Annex A where it has the class (to verify against the text); the rows 
   `uq_property_options_label` (BR1-06):
   `INSERT IGNORE INTO property_options (property_id, label, created_by) SELECT id,
   'Internal', 'migration-v26' FROM property_definitions WHERE name = 'Drain'`.
-- **Descriptions** (BR1-14): every number row gets "The maker's rating, from the nameplate
-  or the data sheet." The other rows get none, except *Degree of protection* ("The IP code
+- **Descriptions** (BR1-14, BR2-09): the rating rows (*Power – design*, *Speed*,
+  *Voltage*, *Rated current*, *Frequency*, the pressures, *Flow rate – design*, *Free air
+  delivery*, *Displacement*, *Maximum operating pressure*, *Generator rating*) get "The
+  maker's rating, from the nameplate or the data sheet." *Number of stages*, *Nominal size*
+  and *Fuel tank capacity* get "From the data sheet." The other rows get none, except *Degree of protection* ("The IP code
   on the nameplate, for example IP55") and *Mounting* ("The IM or B/V code, for example
   B3").
 - No *Pump type*, *Motor type*, *Compressor type*, *Valve type* or *Execution*: they are
@@ -371,7 +374,7 @@ In answers, a number's `value` is the normalised string ("62.5", never "62.5000"
 
 `PUT /equipment-models/<id>/properties` with `{"values": {"<property_id>": value, …}}`:
 
-- `values` missing or not an object → 400 on `values` "Send the values as a list"; `{}` →
+- `values` missing or not an object → 400 on `values` "Send the values as an object"; `{}` →
   200, nothing changes (BR1-08);
 - a key that is not a positive whole number in a string (`"abc"`, `"12.0"`, `"-1"`) → 400
   on `values.<key>` "This property is not on the class";
@@ -441,7 +444,7 @@ One order for every write in the module, each step taken only when the write nee
 
 | Route | Key | Body / answer |
 |---|---|---|
-| `GET /api/masters/properties` | `masters:read` | `{"items": [...]}`: every field, plus `options` (id, label, active) and `class_count`; `?include_inactive=1` as the other masters (`_include_inactive`) |
+| `GET /api/masters/properties` | `masters:read` | `{"items": [...]}`: every field, plus `options` (id, label, active), `class_count` and `value_count` (the models holding a value of it, BR2-01); `?include_inactive=1` as the other masters (`_include_inactive`) |
 | `POST /api/masters/properties` | `equipment:edit` | name, data_type, unit, description; for a choice, optional `options: ["Internal", …]` created in the same transaction → 201 |
 | `PUT /api/masters/properties/<id>` | `equipment:edit` | any of name, data_type, unit, description, active |
 | `POST /api/masters/properties/<id>/options` | `equipment:edit` | `{"label"}` → 201; only on a choice property ("Only a choice has options", 400 on `label`); a duplicate → 409 (§ 5.1) |
@@ -495,8 +498,14 @@ has no active property.
   list: one input per option with **Add option**. A help line under the data type: "How the
   equipment is built (centrifugal, open execution) is its type: use Equip Type for that."
   The dialog fits a phone (`expectDialogFits`).
-- **Edit**: the same dialog. Data type and unit are disabled when models hold values, with
-  the line "Models hold values of this property, so its type and unit are fixed." An option
+- **Edit**: the same dialog, with the two rules of § 5.1 (BR2-01):
+  - **Data type** is disabled when the property has an option (any, active or not) or
+    `value_count > 0`, with the line "This property has options or values, so its data type
+    is fixed.";
+  - **Unit** is disabled when `value_count > 0`, with the line "Models hold values of this
+    property, so its unit is fixed.".
+
+  An option
   is renamed in place or deactivated with its toggle; there is no delete.
 
 ### 7.2 Class properties dialog
@@ -504,7 +513,7 @@ has no active property.
 - Title "Properties of <class code> — <class name>". A help line: "Tick the data this kind
   of equipment has. A part's own data, such as its motor's power, goes on the part's class."
   A list of tick boxes, one per active property, by name, with its type and unit in grey. A search box above the list filters it
-  by name (30+ properties on a phone).
+  by name (26 seed properties and more later, on a phone).
 - Linked properties that are now inactive show ticked and disabled, with "(inactive)".
 - **Save properties** sends the full set. Unticking shows no warning, because no value is
   lost (§ 5.4).
@@ -520,6 +529,11 @@ has no active property.
   - text: a text input;
   - yes/no: three buttons **Yes**, **No**, **Not set**.
 - **Save values**. A refused value shows its message under its input (§ 5.3: one at a time).
+- **Opening** (BR2-03): the dialog fetches `GET /equipment-models/<id>/properties` first,
+  then opens with the answer as its seed (`openEdit`), so `useFormModal`'s snapshot, taken
+  in `nextTick` after `open()`, holds the stored values and an untouched **Cancel** closes
+  without the leave-guard. A failed fetch shows its message and does not open the dialog.
+  The class dialog does the same with its GET.
 - **Wiring** (BR1-07): `useFormModal` with `send(request)`, as § 7.2. The form is keyed by
   the literal strings `"values.<property_id>"`, and the request builds `{"values": {...}}`
   from them. So a refusal's `field` (`"values.12"`) is a key of the form, `fieldError` shows
@@ -535,9 +549,13 @@ has no active property.
   cards stack.
 - A two-column list: name, value ("62.5 kVA" or "—"). Under it, in grey: "Values from model
   <model label>."
-- Users with `equipment:edit` see a button **Edit model values** in the card's header. It
-  opens `ModelPropertiesModal` for the item's model; after a save the page reloads the item,
-  so the card shows the new values (BR1-04). The dialog's title names the model, so the user
+- Users with `equipment:edit` at any site see a button **Edit model values** in the card's
+  header: the page's existing `canEditModels` (`EquipmentDetailView.vue` line 55), not
+  `canEdit` (the item's site, not scrapped). It matches the API's union check for model
+  values, and shows on every lifecycle, as model data stays right for a scrapped item
+  (BR2-02). It opens `ModelPropertiesModal` for `node.model_id`, titled with
+  `node.model_label`; the dialog's `saved` event calls the page's `load()`, so the card shows
+  the new values (BR1-04, BR2-07). The dialog's title names the model, so the user
   sees that every item of the model changes.
 - Hidden when the class has no active property.
 
@@ -574,8 +592,10 @@ has no active property.
   → 200 on the writes (the union);
 - the detail's `properties`: a model value shows with `source: "model"`; a property without
   a value → `display: null`; an unlinked or inactive property → absent;
-- the database down: one write and one read → 503, with a `db_down` fixture as in
-  `test_access_control_api.py` (line 42; it is local to that file, not in `conftest.py`);
+- the database down: one write and one read → 503, with the `db_down` fixture moved to
+  `conftest.py` (§ 3.2; the bodies in `test_access_control_api.py` lines 42–47 and
+  `test_auth.py` lines 63–68 are identical; `conftest.py` imports `db_helpers`; the comment in
+  `test_health.py` line 14 is updated) (BR2-04);
 - `conftest.py`: the five-table clean-up keeps the seeded properties and options
   (`created_by = 'migration-v26'`). `_SEEDED_TABLES` today takes one creator
   (`SEED_CREATOR = "migration-v11"`, line 146): it becomes a creator per table;
@@ -695,3 +715,8 @@ None.
 | BR1-07 | minor | Accepted, option (a): both dialogs on `useFormModal` with `send(request)`; the model form keyed by `"values.<id>"` (§ 7.2, § 7.3). |
 | BR1-08 | minor | Accepted: the option label rule (§ 5.1), the number form (§ 5.2), `values` shape and keys (§ 5.3), the set and the inactive class (§ 6.2), the last active option (§ 5.4); tests in § 8.2. |
 | BR1-09…BR1-18 | nit | Accepted: Baseline set at approval; numbers sent normalised (§ 5.2); the fit check on a model with properties (§ 8.4); § 1.2 aligned; option count = active; seed descriptions (§ 4.6); ISO 55001 § 7.5 line (§ 2); `db_down` moved to `conftest.py` (§ 3.2); `_TABLES` order named; BR1-18 needs no change. |
+| BR2-01 | minor | Accepted: `value_count` on the GET items (§ 6.1); the two disable rules and help lines in § 7.1. |
+| BR2-02 | minor | Accepted: the card button follows `canEditModels`, on every lifecycle (§ 7.4). |
+| BR2-03 | minor | Accepted: both set dialogs fetch first, then open with the answer as seed (§ 7.3). |
+| BR2-04 | minor | Accepted: § 8.2 now uses the moved `db_down`, with the identical bodies, the import and the `test_health.py` comment. |
+| BR2-05…BR2-09 | nit | Accepted: the item-5 sentence put back; "26 seed properties"; `node.model_id`, `node.model_label` and `saved` → `load()` named; "Send the values as an object"; descriptions split by kind; the ISO 55001 tag dropped. |
