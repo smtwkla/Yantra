@@ -139,7 +139,7 @@ function print() {
               <td class="code">{{ row.code }}</td>
               <td :style="indent(row)">{{ row.name }}</td>
               <td>{{ classType(row) }}</td>
-              <td>{{ row.model_label }}</td>
+              <td>{{ row.model_label ?? "—" }}</td>
               <td>{{ row.serial_no }}</td>
               <td>{{ row.year }}</td>
               <td>{{ row.effective_criticality }}</td>

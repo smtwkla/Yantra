@@ -13,11 +13,14 @@ only when the write needs it:
     (2) the target parent equipment row
     (3) the unit row
     (4) the equipment model row (only when a write newly picks it)
-    (5) the class row (the model's; its code is the prefix on create)
+    (5) the class row: the model's, or a model-less component unit's directly picked one
+        (S033) — on create always (its code is the prefix), on update only when newly picked
+    (5a) the type row, only when a write without a model newly picks a type (S033)
     (6) the serial_counters row
 
-The type is no longer locked here: it comes from the model, whose type never changes
-(S012 § 5.5); its name for the event comes from the plain re-read.
+A write with a model never locks a type: it comes from the model, whose type never changes
+(S012 § 5.5); its name for the event comes from the plain re-read.  Class (5) before type
+(5a) is the order masters.py takes too.
 
 - Every lock is a single-row ``SELECT <decision columns> FROM <table> WHERE id = %s
   FOR UPDATE``, never taken through the join fragment (MariaDB has no FOR UPDATE OF,
@@ -31,9 +34,9 @@ The type is no longer locked here: it comes from the model, whose type never cha
   reverse of the order above: the one accepted deadlock (brief § 6 Locking).
 - masters.py locks units, sites, manufacturers, models, classes, equipment types, people,
   memberships and person_units but never equipment, and takes manufacturer → model →
-  class → type, the order here; this module never locks sites, manufacturers, types,
+  class → type, the order here; this module never locks sites, manufacturers,
   people, memberships or person_units (it reads memberships and person_units plain, for
-  the site checks, S011) and locks units/models/classes only after any equipment rows.
+  the site checks, S011) and locks units/models/classes/types only after any equipment rows.
   So no lock cycle spans the two modules.  masters.py's own
   site-role writes lock person → their membership and person_units rows → units, and
   the membership insert then takes the site's row through its FK: unit → site, the
@@ -90,6 +93,7 @@ from equipment_core import (
     format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
+from masters import lock_type_of_class
 from masters_core import model_label
 from settings import label_base_url
 from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
@@ -119,9 +123,9 @@ NODE_JOINS = (
     " JOIN sites s ON s.id = u.site_id"
     " JOIN equipment_classes c ON c.id = e.class_id"
     " LEFT JOIN equipment_types t ON t.id = e.type_id"
-    # Inner joins, as the class: every node has a model (S012, BR3-04)
-    " JOIN equipment_models m ON m.id = e.model_id"
-    " JOIN manufacturers mf ON mf.id = m.manufacturer_id"
+    # Left joins: a component unit may have no model (S033); its model columns then read NULL
+    " LEFT JOIN equipment_models m ON m.id = e.model_id"
+    " LEFT JOIN manufacturers mf ON mf.id = m.manufacturer_id"
 )
 _NODE_FROM = " FROM equipment e" + NODE_JOINS
 
@@ -367,9 +371,11 @@ def _lock_model(cur, model_id, stored_model_id):
 
 
 def _lock_class(cur, class_id):
-    """Lock the class of a newly picked model (5); its code is the prefix on create, read
-    here.  Through the API an active model always has an active class (masters.py refuses
-    to deactivate a class with active models), so "inactive" is defence in depth."""
+    """Lock the class a write takes (5): a newly picked model's, or the one a model-less
+    component unit picks directly (S033 § 5.2); its code is the prefix on create, read here.
+    A directly picked class must be active.  A model's class is active whenever the model is
+    (masters.py refuses to deactivate a class with active models), so for a model the
+    check only holds that rule again."""
     cur.execute(_LOCK_CLASS, (class_id,))
     equipment_class = cur.fetchone()
     if equipment_class is None:
@@ -387,6 +393,19 @@ def _pick_model(cur, clean, stored_model_id):
     equipment_class = _lock_class(cur, class_id)
     clean["class_id"], clean["type_id"] = class_id, type_id
     return model, equipment_class
+
+
+def _pick_class_and_type(cur, clean, stored_class_id):
+    """A write without a model (a component unit, S033 § 5.2): lock the class it newly picks
+    (5) and the type it newly picks (5a), checked against the class the row will hold.
+    ``clean`` holds only what is newly picked (the caller drops unchanged values), so an
+    unchanged inactive class or type is kept.  Returns the locked class, or None."""
+    equipment_class = None
+    if "class_id" in clean:
+        equipment_class = _lock_class(cur, clean["class_id"])
+    if clean.get("type_id") is not None:
+        lock_type_of_class(cur, clean["type_id"], clean.get("class_id", stored_class_id))
+    return equipment_class
 
 
 # ---------------------------------------------------------------------------
@@ -714,7 +733,10 @@ def create_equipment():
             unit = _lock_target_unit(cur, clean["unit_id"], "equipment:edit")              # (3)
         else:
             _load_target_node(cur, clean["parent_id"], clean["level"], "equipment:edit")   # (2)
-        equipment_model, equipment_class = _pick_model(cur, clean, None)   # (4), (5)
+        if clean["model_id"] is not None:
+            equipment_model, equipment_class = _pick_model(cur, clean, None)   # (4), (5)
+        else:
+            equipment_model, equipment_class = None, _pick_class_and_type(cur, clean, None)   # (5), (5a)
         code = _next_code(cur, equipment_class["code"])                  # (6)
         node_id = insert_row(cur, "equipment", {"code": code, **clean}, actor())
         created = _written_state(cur, node_id, unit, equipment_class, equipment_model)
@@ -735,11 +757,13 @@ def update_equipment(node_id):
         if locked["lifecycle"] == SCRAPPED:
             raise ApiError("This record is scrapped and cannot be changed", 409)
         this_year = _this_year()
-        stored = {"code": node["code"], "level": locked["level"]}
+        stored = {"code": node["code"], "level": locked["level"], "model_id": locked["model_id"],
+                  "class_id": locked["class_id"], "type_id": locked["type_id"]}
         clean = clean_body(lambda body, creating: validate_equipment(body, creating, this_year, stored),
                            creating=False)
-        # Sending back the current parent, unit or model is not a move or a model change
-        for field in ("parent_id", "unit_id", "model_id"):
+        # Sending back the current parent, unit, model, class or type is not a change: only a
+        # newly picked one is locked and checked, so an unchanged inactive one is kept (S033 § 5.2)
+        for field in ("parent_id", "unit_id", "model_id", "class_id", "type_id"):
             if field in clean and clean[field] == locked[field]:
                 del clean[field]
         unit = equipment_model = equipment_class = None
@@ -747,9 +771,11 @@ def update_equipment(node_id):
             _load_target_node(cur, clean["parent_id"], locked["level"], "equipment:edit")   # (2)
         if "unit_id" in clean:
             unit = _lock_target_unit(cur, clean["unit_id"], "equipment:edit")               # (3)
-        if "model_id" in clean:
-            # Another class is a reclassification: the code is kept (S002)
+        # Another class is a reclassification: the code is kept (S002)
+        if clean.get("model_id") is not None:
             equipment_model, equipment_class = _pick_model(cur, clean, locked["model_id"])   # (4), (5)
+        else:
+            equipment_class = _pick_class_and_type(cur, clean, locked["class_id"])          # (5), (5a)
         if clean.get("lifecycle") == SCRAPPED:
             _check_no_open_tickets(cur, [node_id, *_check_parts_scrapped(cur, node_id)])
         before = _tracked_state(node)

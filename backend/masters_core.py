@@ -81,7 +81,10 @@ def _parse_designation(raw):
 
 
 def model_label(manufacturer_name, designation):
-    """How a model is named everywhere (lists, pickers, events): "Atlas Copco GA37"."""
+    """How a model is named everywhere (lists, pickers, events): "Atlas Copco GA37".  None for
+    a node without a model (S033), whose model columns read NULL."""
+    if manufacturer_name is None and designation is None:
+        return None
     return f"{manufacturer_name} {designation}"
 
 

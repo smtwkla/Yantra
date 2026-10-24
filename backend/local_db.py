@@ -748,6 +748,20 @@ _MIGRATIONS = [
     (27, "Email address per person, from Keycloak (S032)", [
         "ALTER TABLE people ADD COLUMN IF NOT EXISTS email VARCHAR(254) NULL",
     ]),
+    # S033 — model optional on component units (docs/steps/S033-model-optional-component-units/
+    # 1-brief.md § 4): a component unit may have no model; its class and type are then picked
+    # directly.  fk_equipment_model (model_id, class_id) stays: InnoDB skips a foreign key whose
+    # column is NULL, so a node without a model passes and one with a model still matches its
+    # class.  The CHECK keeps "equipment and components have a model" a database rule.  No
+    # _PRECONDITIONS entry: the column was NOT NULL, so every existing row has a model and meets
+    # the CHECK.  MODIFY re-runs as a no-op and the CHECK has IF NOT EXISTS, so a half-applied v28
+    # re-runs.  Rollback: the previous release reads nodes through inner joins to the model, so a
+    # component unit saved without a model is lost from its lists until it gets a model again.
+    (28, "Model optional on component units (S033)", [
+        "ALTER TABLE equipment MODIFY model_id INT NULL",
+        """ALTER TABLE equipment ADD CONSTRAINT IF NOT EXISTS chk_equipment_model_level
+            CHECK (model_id IS NOT NULL OR level = 'component_unit')""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

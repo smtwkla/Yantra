@@ -11,7 +11,8 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   System), with zoom. The overview is also below, as Mermaid text (PyCharm's
   Markdown preview and GitHub draw it).
 - Both diagrams were generated from a database at **migration v27**
-  (23-10-2026).
+  (23-10-2026); the one v28 change (`equipment.model_id` may be empty, S033)
+  was added by hand on 24-10-2026.
 
 ## Conventions
 
@@ -32,7 +33,7 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `units` | `site_id`, code (the part after the dot; the full `SITE.UNIT` code is derived), name, optional OneERP warehouse code, active |
 | `equipment_classes` | Code (= the equipment-code prefix, e.g. `VBM`), name, active |
 | `equipment_types` | Per class: name, active (S004); `equipment.type_id` must be a type of the equipment's class |
-| `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required), `class_id` and `type_id` (copied from the model, S012), lifecycle (S030), criticality |
+| `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required on equipment and components, optional on component-units, S033 v28 CHECK), `class_id` and `type_id` (copied from the model, S012; picked directly when a component-unit has no model, S033), lifecycle (S030), criticality |
 | `manufacturers` | Makers: name (unique without regard to case), active (S012). Generic and in-house makers are ordinary rows |
 | `equipment_models` | Manufacturer, designation (unique per maker), class, optional type of that class — all but the designation fixed after creation; active (S012) |
 | `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002) |
@@ -105,7 +106,7 @@ erDiagram
     int unit_id FK "null"
     int class_id FK
     int type_id FK "null"
-    int model_id FK
+    int model_id FK "null"
   }
   equipment_classes {
     int id PK
@@ -233,7 +234,7 @@ erDiagram
     int unit_id PK,FK
   }
   equipment_classes ||--o{ equipment : "class_id"
-  equipment_models ||--o{ equipment : "model_id"
+  equipment_models o|--o{ equipment : "model_id"
   equipment o|--o{ equipment : "parent_id"
   equipment_types o|--o{ equipment : "type_id"
   units o|--o{ equipment : "unit_id"

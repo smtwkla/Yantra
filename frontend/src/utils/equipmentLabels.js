@@ -70,7 +70,7 @@ export function describeEvent(event) {
     case "type":
       return change("Type", typeText(oldValue), typeText(newValue));
     case "model":
-      // Every node has a model (S012), so neither side is ever empty
+      // A side without a model reads "No model", as the backend writes it (S033 § 5.4)
       return change("Model", oldValue, newValue);
     default:
       return String(event.event);

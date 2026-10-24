@@ -224,8 +224,11 @@ function onSaved({ result, created }) {
                 <dt class="col-5">Level</dt><dd class="col-7">{{ LEVEL_LABELS[node.level] }}</dd>
                 <dt class="col-5">Class</dt><dd class="col-7">{{ classLabel }}</dd>
                 <dt class="col-5">Type</dt><dd class="col-7">{{ node.type_name }}</dd>
-                <dt class="col-5">Manufacturer</dt><dd class="col-7">{{ node.manufacturer_name }}</dd>
-                <dt class="col-5">Model</dt><dd class="col-7">{{ node.model_designation }}</dd>
+                <!-- A component-unit may have no model (S033) -->
+                <template v-if="node.model_id !== null">
+                  <dt class="col-5">Manufacturer</dt><dd class="col-7">{{ node.manufacturer_name }}</dd>
+                </template>
+                <dt class="col-5">Model</dt><dd class="col-7">{{ node.model_designation ?? "No model" }}</dd>
                 <dt class="col-5">Serial no.</dt><dd class="col-7">{{ node.serial_no }}</dd>
                 <dt class="col-5">Year</dt><dd class="col-7">{{ node.year }}</dd>
                 <template v-if="node.level === 'equipment'">

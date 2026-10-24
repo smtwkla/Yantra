@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
-import { apiAs, asPerson } from "./support/people.js";
+import { apiAs, asPerson, seedIds } from "./support/people.js";
 import { raiseByApi, saveDialog } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
@@ -190,6 +190,48 @@ test("S029: a bookmarked tickets=down shows the plain list to a storekeeper, who
   await asPerson(page, "storekeeper", `/equipment?tickets=down&q=${encodeURIComponent(prefix)}`);
   for (const machine of [red, amber, green]) await expect(rowOf(page, machine)).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Tickets" })).toHaveCount(0);
+});
+
+// S033: a component-unit may have no model; its class and type are then picked directly
+test("S033: engineer adds a component-unit with No model; its page and the list show no model", async ({ page }, testInfo) => {
+  const name = `E2E no model ${testInfo.project.name}`;
+  const { extruder } = await seedIds();
+  await asPerson(page, "engineer", `/equipment/${extruder.id}`);
+  await page.getByRole("button", { name: "Add part" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel("Level")).toHaveValue("component_unit");
+  await dialog.getByLabel("Model").selectOption({ label: "No model" });
+  await expectDialogFits(page);
+  await expect(dialog.getByLabel("Class filter")).toHaveCount(0);
+  await expect(dialog).toContainText("Without a model, the class sets the code prefix. A later class change keeps the code.");
+  await dialog.getByLabel("Class", { exact: true }).selectOption({ label: "GBX — Gearbox" });
+  await expect(dialog.getByLabel("Type", { exact: true }).locator("option:checked")).toHaveText("No type");
+  await expectDialogFits(page);
+  await dialog.getByLabel("Name").fill(name);
+  await saveDialog(page, "Save");
+
+  await expect(page.getByRole("heading", { name: new RegExp(` — ${name}$`) })).toBeVisible();
+  const details = page.locator(".card", { has: page.locator(".card-header", { hasText: /^\s*Details\s*$/ }) });
+  const model = details.locator("dt", { hasText: /^Model$/ }).locator("xpath=following-sibling::dd[1]");
+  await expect(model).toHaveText("No model");
+  await expect(details.locator("dt", { hasText: /^Manufacturer$/ })).toHaveCount(0);
+  await expect(details.locator("dt", { hasText: /^Class$/ }).locator("xpath=following-sibling::dd[1]")).toContainText("GBX");
+
+  await page.goto(`/equipment?level=component_unit&q=${encodeURIComponent(name)}`);
+  const row = page.locator("tbody tr", { hasText: name });
+  await expect(row).toHaveCount(1);
+  const headers = await page.locator("thead th").allTextContents();
+  await expect(row.locator("td").nth(headers.findIndex((h) => h.trim() === "Model"))).toHaveText("—");
+});
+
+test("S033: the Add equipment dialog does not offer No model", async ({ page }) => {
+  await asPerson(page, "engineer", "/equipment");
+  await page.getByRole("button", { name: "Add equipment" }).click();
+  await expectDialogFits(page);
+  const model = (await openDialog(page)).getByLabel("Model");
+  await expect(model.locator("option", { hasText: "Atlas Copco GA37 — CMP / Screw compressor" })).toHaveCount(1);
+  await expect(model.locator("option", { hasText: "No model" })).toHaveCount(0);
 });
 
 async function createEquipment(name) {

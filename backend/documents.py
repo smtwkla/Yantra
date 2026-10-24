@@ -216,7 +216,10 @@ def _list_items(cur, owner, owner_id):
 
 def _inherited(cur, node):
     """The node's model group (S012 § 5.6), left out when the model has no documents.  A node
-    shows its own model's documents only, not its parent's (§ 9.6)."""
+    shows its own model's documents only, not its parent's (§ 9.6).  A component unit without
+    a model (S033) has no model group."""
+    if node["model_id"] is None:
+        return []
     items = _list_items(cur, "model", node["model_id"])
     if not items:
         return []

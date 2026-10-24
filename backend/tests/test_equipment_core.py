@@ -3,7 +3,8 @@
 import pytest
 
 from equipment_core import (
-    MODEL_INACTIVE, PICK_A_MODEL, check_lifecycle_change, check_parent, check_type_class, derive_from_model,
+    CLASS_FROM_MODEL, MODEL_INACTIVE, NO_MODEL, PICK_A_CLASS, PICK_A_MODEL, PICK_A_TYPE, PICK_A_TYPE_OF_CLASS,
+    TYPE_FROM_MODEL, check_lifecycle_change, check_parent, check_type_class, derive_from_model,
     effective_criticality, format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 
@@ -18,9 +19,11 @@ def _create(**data):
     return validate_equipment(data, creating=True, this_year=THIS_YEAR)
 
 
-def _update(stored_level="equipment", stored_code="VBM001", **data):
+def _update(stored_level="equipment", stored_code="VBM001", stored_model_id=2, stored_class_id=1,
+            stored_type_id=None, **data):
     return validate_equipment(data, creating=False, this_year=THIS_YEAR,
-                              stored={"code": stored_code, "level": stored_level})
+                              stored={"code": stored_code, "level": stored_level, "model_id": stored_model_id,
+                                      "class_id": stored_class_id, "type_id": stored_type_id})
 
 
 EQUIPMENT = {"level": "equipment", "unit_id": 1, "model_id": 2, "name": "Vertical blade mill"}
@@ -287,12 +290,15 @@ class TestModelAndRefusedFields:
         assert _update(name="x") == ({"name": "x"}, [])
         assert _update(model_id=9) == ({"model_id": 9}, [])
         assert _update(model_id=None)[1] == [{"field": "model_id", "message": PICK_A_MODEL}]
+        # S033: a component unit may clear it, with its class
+        assert _update(stored_level="component_unit", model_id=None, class_id=1) == (
+            {"model_id": None, "class_id": 1}, [])
 
     @pytest.mark.parametrize("field, message", [
         ("make", "Make and model are now picked from Models"),
         ("model", "Make and model are now picked from Models"),
-        ("class_id", "Class and type come from the model"),
-        ("type_id", "Class and type come from the model"),
+        ("class_id", "Class comes from the model"),   # S033: only beside a model
+        ("type_id", "Type comes from the model"),
         ("status", "This field is now called Lifecycle. Reload the page."),   # S030 § 4.4
     ])
     @pytest.mark.parametrize("value", [None, 2, "Kirloskar"])
@@ -354,3 +360,134 @@ class TestValidateUpdate:
 
     def test_scrapped_is_a_valid_target_lifecycle_on_update(self):
         assert _update(lifecycle="scrapped") == ({"lifecycle": "scrapped"}, [])
+
+
+class TestNoModel:
+    """S033 § 5.1: a component unit may have no model; its class and type are then picked."""
+
+    UNIT = {"level": "component_unit", "parent_id": 5, "name": "Gearbox"}
+
+    @staticmethod
+    def _no_model(**data):
+        """An update of a component unit without a model, of class 1 and (by default) no type."""
+        return _update(stored_level="component_unit", stored_model_id=None, **data)
+
+    def test_messages(self):
+        assert (PICK_A_CLASS, PICK_A_TYPE, PICK_A_TYPE_OF_CLASS, CLASS_FROM_MODEL, TYPE_FROM_MODEL, NO_MODEL) == (
+            "Pick a class", "Pick a type", "Pick a type of the new class, or No type",
+            "Class comes from the model", "Type comes from the model", "No model")
+
+    # --- the model ---
+
+    @pytest.mark.parametrize("level, place", [
+        ("equipment", {"unit_id": 1}), ("component_unit", {"parent_id": 5}), ("component", {"parent_id": 5}),
+    ])
+    def test_create_with_model_absent_is_pick_a_model_at_every_level(self, level, place):
+        _, errors = _create(level=level, **place, name="x")
+        assert errors == [{"field": "model_id", "message": PICK_A_MODEL}]
+
+    def test_create_with_model_absent_and_class_and_type_sent_is_pick_a_model_only(self):   # BR3-01
+        _, errors = _create(**self.UNIT, class_id=1, type_id=3)
+        assert errors == [{"field": "model_id", "message": PICK_A_MODEL}]
+
+    @pytest.mark.parametrize("level, place", [("equipment", {"unit_id": 1}), ("component", {"parent_id": 5})])
+    def test_a_null_model_on_equipment_or_a_component_is_pick_a_model(self, level, place):
+        _, errors = _create(level=level, **place, name="x", model_id=None, class_id=1)
+        assert errors == [{"field": "model_id", "message": PICK_A_MODEL}]
+        _, errors = _update(stored_level=level, model_id=None, class_id=1)
+        assert errors == [{"field": "model_id", "message": PICK_A_MODEL}]
+
+    def test_create_a_component_unit_without_a_model(self):
+        clean, errors = _create(**self.UNIT, model_id=None, class_id=4, type_id=7)
+        assert errors == []
+        assert clean == {**self.UNIT, "model_id": None, "class_id": 4, "type_id": 7}
+
+    def test_create_without_a_type_is_no_type(self):
+        clean, errors = _create(**self.UNIT, model_id=None, class_id=4)
+        assert errors == [] and clean["type_id"] is None
+        clean, errors = _create(**self.UNIT, model_id=None, class_id=4, type_id=None)
+        assert errors == [] and clean["type_id"] is None
+
+    # --- class and type beside a model ---
+
+    @pytest.mark.parametrize("value", [None, 1, 9])
+    def test_class_or_type_beside_a_sent_model_is_refused(self, value):
+        for field, message in (("class_id", CLASS_FROM_MODEL), ("type_id", TYPE_FROM_MODEL)):
+            expected = [{"field": field, "message": message}]
+            assert _create(**self.UNIT, model_id=2, **{field: value})[1] == expected
+            assert self._no_model(model_id=2, **{field: value})[1] == expected
+
+    def test_class_beside_a_stored_model_is_refused(self):
+        assert _update(stored_level="component_unit", class_id=1)[1] == [
+            {"field": "class_id", "message": CLASS_FROM_MODEL}]
+
+    # --- class and type without a model ---
+
+    @pytest.mark.parametrize("class_body", [{}, {"class_id": None}])
+    def test_no_class_on_create_or_when_clearing_a_model_is_pick_a_class(self, class_body):
+        expected = [{"field": "class_id", "message": PICK_A_CLASS}]
+        assert _create(**self.UNIT, model_id=None, **class_body)[1] == expected
+        assert _update(stored_level="component_unit", model_id=None, **class_body)[1] == expected
+
+    def test_an_absent_class_on_a_no_model_node_keeps_the_stored_class(self):
+        assert self._no_model(name="x") == ({"name": "x"}, [])
+        assert self._no_model(model_id=None, name="x") == ({"model_id": None, "name": "x"}, [])
+
+    def test_a_null_class_on_a_no_model_node_is_pick_a_class(self):
+        assert self._no_model(class_id=None)[1] == [{"field": "class_id", "message": PICK_A_CLASS}]
+
+    @pytest.mark.parametrize("raw", ["", "x", True, -1, 0, 1.5])
+    def test_a_class_that_is_not_an_id_is_pick_a_class(self, raw):   # BR2-02
+        expected = [{"field": "class_id", "message": PICK_A_CLASS}]
+        assert self._no_model(class_id=raw)[1] == expected
+        assert _create(**self.UNIT, model_id=None, class_id=raw)[1] == expected
+
+    @pytest.mark.parametrize("raw", ["x", "", True, 0])
+    def test_a_type_that_is_not_an_id_is_pick_a_type(self, raw):   # BR2-02
+        assert self._no_model(type_id=raw)[1] == [{"field": "type_id", "message": PICK_A_TYPE}]
+
+    def test_a_class_change_without_a_type_is_refused(self):   # BR1-01
+        assert self._no_model(class_id=2)[1] == [{"field": "type_id", "message": PICK_A_TYPE_OF_CLASS}]
+
+    def test_clearing_the_model_with_a_new_class_and_no_type_is_refused(self):   # BR1-01
+        _, errors = _update(stored_level="component_unit", model_id=None, class_id=2)
+        assert errors == [{"field": "type_id", "message": PICK_A_TYPE_OF_CLASS}]
+
+    def test_clearing_the_model_with_the_same_class_keeps_the_type(self):
+        clean, errors = _update(stored_level="component_unit", stored_type_id=3, model_id=None, class_id=1)
+        assert errors == [] and clean == {"model_id": None, "class_id": 1}
+
+    def test_a_class_change_with_a_type_or_no_type_is_accepted(self):
+        assert self._no_model(class_id=2, type_id=8) == ({"class_id": 2, "type_id": 8}, [])
+        assert self._no_model(class_id=2, type_id=None) == ({"class_id": 2, "type_id": None}, [])
+
+    def test_a_type_alone_is_accepted(self):   # its class is the database's check (BR2-07)
+        assert self._no_model(type_id=8) == ({"type_id": 8}, [])
+        assert self._no_model(type_id=None) == ({"type_id": None}, [])
+
+    def test_a_class_change_restating_the_stored_type_is_another_class(self):   # BR2-01
+        expected = [{"field": "type_id", "message": "This type belongs to another class"}]
+        assert self._no_model(stored_type_id=11, class_id=2, type_id=11)[1] == expected
+        _, errors = _update(stored_level="component_unit", stored_type_id=11, model_id=None, class_id=2, type_id=11)
+        assert errors == expected
+
+    def test_a_class_change_with_no_type_on_a_node_without_one_is_accepted(self):   # BR3-02
+        assert self._no_model(stored_type_id=None, class_id=2, type_id=None) == (
+            {"class_id": 2, "type_id": None}, [])
+
+    def test_an_unchanged_class_and_type_restated_are_accepted(self):
+        assert self._no_model(stored_type_id=11, class_id=1, type_id=11) == ({"class_id": 1, "type_id": 11}, [])
+
+    def test_update_without_a_model_on_a_no_model_node_with_class_and_type(self):
+        assert self._no_model(class_id=2, type_id=5, name="Gearbox 2") == (
+            {"class_id": 2, "type_id": 5, "name": "Gearbox 2"}, [])
+
+    def test_setting_a_model_on_a_no_model_node(self):
+        assert self._no_model(model_id=9) == ({"model_id": 9}, [])
+
+    # --- history ---
+
+    def test_tracked_changes_model_cleared_and_set_again(self):   # BR1-05
+        with_model, without = _state(model_label="Atlas Copco GA37"), _state(model_label=None)
+        assert tracked_changes(with_model, without) == [("model", "Atlas Copco GA37", NO_MODEL)]
+        assert tracked_changes(without, with_model) == [("model", NO_MODEL, "Atlas Copco GA37")]

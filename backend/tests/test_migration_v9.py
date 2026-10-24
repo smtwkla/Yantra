@@ -1,5 +1,6 @@
 """Manufacturers, equipment models, equipment.model_id NOT NULL, model documents (S012 § 4) —
 built by v9, now by v20 (S025: v1–v13 squashed; v20's re-run is test_migration_v20.py's).
+Since v28 (S033) model_id is NULLable and a CHECK requires it on equipment and components.
 Tests of today's schema.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
 """
 
@@ -29,7 +30,7 @@ def _columns(table):
 def test_the_shape_holds():
     equipment = _columns("equipment")
     assert "make" not in equipment and "model" not in equipment
-    assert equipment["model_id"]["IS_NULLABLE"] == "NO"
+    assert equipment["model_id"]["IS_NULLABLE"] == "YES"   # v28: a component unit may have no model (S033)
     assert _columns("equipment_documents")["equipment_id"]["IS_NULLABLE"] == "YES"
     # 'status' is 'lifecycle' since v25 (S030)
     assert _columns("equipment_events")["event"]["COLUMN_TYPE"] == (
@@ -38,10 +39,11 @@ def test_the_shape_holds():
 
 def test_an_equipment_row_with_a_null_model_is_refused(make_equipment):
     row = _run("SELECT unit_id, class_id FROM equipment WHERE id = %s", (make_equipment()["id"],))[0]
-    with pytest.raises(pymysql.err.IntegrityError) as caught:
+    # Since v28 by chk_equipment_model_level (4025), no longer by NOT NULL (1048)
+    with pytest.raises(pymysql.err.OperationalError) as caught:
         _run("INSERT INTO equipment (code, level, unit_id, class_id, model_id, name, created_by) "
              "VALUES ('ZZV9N1', 'equipment', %s, %s, NULL, 'x', 'test')", (row["unit_id"], row["class_id"]))
-    assert caught.value.args[0] == 1048
+    assert caught.value.args[0] == 4025
 
 
 @pytest.mark.parametrize("owners", ["two", "none"])

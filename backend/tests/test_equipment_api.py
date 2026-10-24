@@ -1166,8 +1166,8 @@ class TestModels:
     @pytest.mark.parametrize("field, message", [
         ("make", "Make and model are now picked from Models"),
         ("model", "Make and model are now picked from Models"),
-        ("class_id", "Class and type come from the model"),
-        ("type_id", "Class and type come from the model"),
+        ("class_id", "Class comes from the model"),   # S033: only beside a model
+        ("type_id", "Type comes from the model"),
     ])
     def test_old_fields_are_refused_even_null_or_unchanged(self, admin, make_unit, make_model, make_equipment,
                                                            field, message):
@@ -1358,3 +1358,160 @@ class TestTicketLight:
         res = admin.get(f"{EQUIPMENT}/asset-list", query_string={"unit_id": unit["id"], "tickets": "down"})
         assert res.status_code == 200, res.get_json()
         assert "ticket_light" not in res.get_data(as_text=True)
+
+
+class TestNoModel:
+    """S033: a component unit may have no model; its class (required) and type (optional) are
+    then picked directly.  Equipment and components still need a model."""
+
+    @staticmethod
+    def _create(client, parent, cls, type_id=None, level="component_unit", **extra):
+        body = {"level": level, "parent_id": parent["id"], "model_id": None, "class_id": cls["id"],
+                "type_id": type_id, "name": "Gearbox", **extra}
+        return client.post(EQUIPMENT, json=body)
+
+    def _node(self, admin, parent, cls, type_id=None, **extra):
+        res = self._create(admin, parent, cls, type_id, **extra)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+
+    def test_create_without_a_model_takes_the_class_prefix(self, admin, make_class, make_type, make_equipment):
+        cls = make_class()
+        kind = make_type(cls=cls)
+        node = self._node(admin, make_equipment(), cls, kind["id"])
+        assert node["code"].startswith(cls["code"])
+        assert (node["class_id"], node["class_code"], node["type_id"], node["type_name"]) == (
+            cls["id"], cls["code"], kind["id"], kind["name"])
+        assert (node["model_id"], node["model_designation"], node["manufacturer_name"], node["model_label"]) == (
+            None, None, None, None)
+        assert _events(admin, node) == [("created", None, node["full_path"])]
+
+    def test_create_without_a_type(self, admin, make_class, make_equipment):
+        node = self._node(admin, make_equipment(), make_class())
+        assert (node["type_id"], node["type_name"]) == (None, None)
+
+    def test_an_inactive_class_or_type_is_409(self, admin, make_class, make_type, make_equipment):
+        parent = make_equipment()
+        cls = make_class()
+        kind = make_type(cls=cls)
+        admin.put(f"{MASTERS}/equipment-types/{kind['id']}", json={"active": False})
+        res = self._create(admin, parent, cls, kind["id"])
+        assert (res.status_code, res.get_json()) == (409, {"error": "The type is inactive", "field": "type_id"})
+        assert admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False}).status_code == 200
+        res = self._create(admin, parent, cls)
+        assert (res.status_code, res.get_json()) == (409, {"error": "The class is inactive", "field": "class_id"})
+
+    def test_a_type_of_another_class_or_an_unknown_class_or_type_is_400(self, admin, make_class, make_type,
+                                                                        make_equipment):
+        parent, cls = make_equipment(), make_class()
+        res = self._create(admin, parent, cls, make_type()["id"])
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "This type belongs to another class", "field": "type_id"})
+        res = self._create(admin, parent, {"id": 999999999})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Unknown class", "field": "class_id"})
+        res = self._create(admin, parent, cls, 999999999)
+        assert (res.status_code, res.get_json()) == (400, {"error": "Unknown type", "field": "type_id"})
+
+    def test_a_refused_create_uses_no_number(self, admin, make_class, make_equipment):
+        cls, parent = make_class(), make_equipment()
+        first = self._node(admin, parent, cls)
+        assert self._create(admin, parent, cls, 999999999).status_code == 400
+        assert _number(self._node(admin, parent, cls), cls) == _number(first, cls) + 1
+
+    @pytest.mark.parametrize("level", ["equipment", "component"])
+    def test_equipment_or_a_component_without_a_model_is_400(self, admin, make_class, make_unit, make_equipment,
+                                                            level):
+        place = {"unit_id": make_unit()["id"]} if level == "equipment" else {"parent_id": make_equipment()["id"]}
+        res = admin.post(EQUIPMENT, json={"level": level, **place, "model_id": None,
+                                          "class_id": make_class()["id"], "name": "x"})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Pick a model", "field": "model_id"})
+
+    def test_create_with_model_absent_is_pick_a_model(self, admin, make_class, make_equipment):
+        res = admin.post(EQUIPMENT, json={"level": "component_unit", "parent_id": make_equipment()["id"],
+                                          "class_id": make_class()["id"], "type_id": None, "name": "x"})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Pick a model", "field": "model_id"})
+
+    def test_no_class_is_pick_a_class(self, admin, make_equipment):
+        res = admin.post(EQUIPMENT, json={"level": "component_unit", "parent_id": make_equipment()["id"],
+                                          "model_id": None, "class_id": None, "name": "x"})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Pick a class", "field": "class_id"})
+
+    def test_a_type_alone_of_another_class_is_400(self, admin, make_class, make_type, make_equipment):   # BR2-07
+        node = self._node(admin, make_equipment(), make_class())
+        res = _put(admin, node, type_id=make_type()["id"])
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "This type belongs to another class", "field": "type_id"})
+
+    def test_class_and_type_change_on_a_no_model_node(self, admin, make_class, make_type, make_equipment):
+        cls_a, cls_b = make_class(), make_class()
+        kind_b = make_type(cls=cls_b)
+        node = self._node(admin, make_equipment(), cls_a)
+        res = _put(admin, node, class_id=cls_b["id"])
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "Pick a type of the new class, or No type", "field": "type_id"})
+        res = _put(admin, node, class_id=cls_b["id"], type_id=kind_b["id"])
+        assert res.status_code == 200, res.get_json()
+        changed = res.get_json()
+        assert (changed["code"], changed["class_id"], changed["type_id"]) == (node["code"], cls_b["id"], kind_b["id"])
+        assert _events(admin, node)[:2] == [("type", "none", kind_b["name"]), ("class", cls_a["code"], cls_b["code"])]
+
+    def test_clear_the_model_then_set_it_again(self, admin, make_class, make_type, make_model, make_equipment):
+        cls = make_class()
+        kind = make_type(cls=cls)
+        model = make_model(cls=cls, type_id=kind["id"])
+        part = make_equipment(parent=make_equipment(), model=model)
+        res = _put(admin, part, model_id=None, class_id=cls["id"], type_id=kind["id"])
+        assert res.status_code == 200, res.get_json()
+        cleared = res.get_json()
+        assert (cleared["model_id"], cleared["model_label"], cleared["class_id"], cleared["type_id"]) == (
+            None, None, cls["id"], kind["id"])
+        assert _events(admin, part)[0] == ("model", model["label"], "No model")
+
+        other = make_model()   # another class, no type
+        res = _put(admin, part, model_id=other["id"])
+        assert res.status_code == 200, res.get_json()
+        again = res.get_json()
+        assert (again["model_id"], again["class_id"], again["type_id"]) == (other["id"], other["class_id"], None)
+        assert sorted(_events(admin, part)[:3]) == sorted([
+            ("model", "No model", other["label"]), ("class", cls["code"], other["class_code"]),
+            ("type", kind["name"], "none")])
+
+    def test_clearing_the_model_of_equipment_is_still_400(self, admin, make_equipment):
+        res = _put(admin, make_equipment(), model_id=None, class_id=1)
+        assert (res.status_code, res.get_json()) == (400, {"error": "Pick a model", "field": "model_id"})
+
+    def test_an_unchanged_inactive_class_is_kept(self, admin, make_class, make_equipment):
+        cls = make_class()
+        node = self._node(admin, make_equipment(), cls)
+        assert admin.put(f"{MASTERS}/equipment-classes/{cls['id']}", json={"active": False}).status_code == 200
+        res = _put(admin, node, name="Renamed", class_id=cls["id"], type_id=None)
+        assert (res.status_code, res.get_json()["name"], res.get_json()["class_id"]) == (200, "Renamed", cls["id"])
+
+    def test_an_unchanged_inactive_type_is_kept(self, admin, make_class, make_type, make_equipment):
+        cls = make_class()
+        kind = make_type(cls=cls)
+        node = self._node(admin, make_equipment(), cls, kind["id"])
+        assert admin.put(f"{MASTERS}/equipment-types/{kind['id']}", json={"active": False}).status_code == 200
+        res = _put(admin, node, name="Renamed", class_id=cls["id"], type_id=kind["id"])
+        assert (res.status_code, res.get_json()["name"], res.get_json()["type_id"]) == (200, "Renamed", kind["id"])
+
+    def test_list_detail_and_tree_show_a_no_model_node(self, admin, make_class, make_unit, make_equipment):
+        unit = make_unit()
+        machine = make_equipment(unit=unit)
+        node = self._node(admin, machine, make_class(), name=f"Gearbox {unit['code']}")
+        rows = _list(admin, level="component_unit", unit_id=unit["id"], q=f"gearbox {unit['code']}")["items"]
+        assert [(r["id"], r["model_label"]) for r in rows] == [(node["id"], None)]
+        assert _get(admin, node)["model_label"] is None
+        assert [child["id"] for child in _get(admin, machine)["children"]] == [node["id"]]
+
+    def test_the_documents_of_a_no_model_node_have_no_model_group(self, admin, make_class, make_equipment):
+        node = self._node(admin, make_equipment(), make_class())
+        res = admin.get(f"{EQUIPMENT}/{node['id']}/documents")
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["inherited"] == []
+
+    def test_the_database_refuses_equipment_without_a_model(self, make_equipment):
+        node = make_equipment()
+        with pytest.raises(pymysql.err.OperationalError) as caught:
+            _db("UPDATE equipment SET model_id = NULL WHERE id = %s", (node["id"],))
+        assert "chk_equipment_model_level" in str(caught.value)

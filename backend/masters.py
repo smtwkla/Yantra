@@ -464,8 +464,10 @@ def _lock_active_parent(cur, table, record_id, field, label):
         raise ApiError(f"The {label} is inactive", 409, field)
 
 
-def _lock_type_for_model(cur, type_id, class_id):
-    """Lock the type a new model gets: a type of the model's class (400, S004), active (409)."""
+def lock_type_of_class(cur, type_id, class_id):
+    """Lock the type a write newly picks for a record of ``class_id``: a new model's type, or
+    a model-less component unit's (equipment.py, S033 § 5.2).  A type of that class (400,
+    S004), active (409)."""
     cur.execute("SELECT id, class_id, active FROM equipment_types WHERE id = %s FOR UPDATE", (type_id,))
     equipment_type = cur.fetchone()
     if equipment_type is None:
@@ -503,7 +505,7 @@ def create_equipment_model():
         _lock_active_parent(cur, "manufacturers", clean["manufacturer_id"], "manufacturer_id", "manufacturer")
         _lock_active_parent(cur, "equipment_classes", clean["class_id"], "class_id", "class")
         if clean.get("type_id") is not None:
-            _lock_type_for_model(cur, clean["type_id"], clean["class_id"])
+            lock_type_of_class(cur, clean["type_id"], clean["class_id"])
         model_id = insert_row(cur, "equipment_models", clean, actor())
     with conn.cursor() as cur:
         return jsonify(_fetch_model(cur, model_id)), 201

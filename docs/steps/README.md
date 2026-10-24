@@ -309,6 +309,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S030 | [Equipment lifecycle](S030-equipment-lifecycle/1-brief.md) — the register field *Status* (in service / standby / out of use / scrapped) renamed *Lifecycle* in screens, API, code and DB (v25); *Status* reserved for down / working / degraded / PM due | 2 | Done — committed 6866fbd; checks: 1 auto (full track) | 23-10-2026 |
 | S031 | [Me: my open work, tickets I raised, my activity](S031-me-page/1-brief.md) — a *Me* nav item with three tabs: open tickets assigned to me, tickets I raised or reported, timeline lines I recorded; v26 two indexes | 3 | Committed; device check pending | 23-10-2026 |
 | S032 | [Email to managers when a ticket is closed](S032-closed-ticket-email/1-brief.md) — email as a second alert channel (Mailgun over SMTP, addresses from Keycloak at login); *Ticket closed* to the site's managers; v27 `people.email` | 3 | Committed; device checks pending (rows 27-30 of device-checks.md) | 23-10-2026 |
+| S033 | [Model optional on component-units](S033-model-optional-component-units/1-brief.md) — a component-unit may have no model; its class (required) and type (optional) are then picked directly; v28 `equipment.model_id` NULL with a level CHECK | 3 | In code review | 23-10-2026 |
 
 ## Queued (not yet briefed)
 

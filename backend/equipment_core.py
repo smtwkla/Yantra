@@ -6,8 +6,9 @@ and locks rows, passes plain values in, and acts on what comes back.
 The tree has three fixed levels (ISO 14224 levels 6-8): equipment, component
 unit, component.  Only equipment has a unit; a part sits under a parent.
 
-Every node has a model (S012); its class and type come from the model and are never
-set apart from it.
+Equipment and components have a model (S012); their class and type come from the model and
+are never set apart from it.  A component unit may have no model (S033): its class (required)
+and type (optional) are then picked directly.
 """
 
 from masters_core import RESERVED_TYPE_NAME, optional_text_parser, parse_name
@@ -25,6 +26,12 @@ INHERIT = "inherit"
 
 # How a node without a type shows in events; masters refuses it as a type name
 NO_TYPE = RESERVED_TYPE_NAME
+
+# How a node without a model shows in events (S033 § 5.4)
+NO_MODEL = "No model"
+
+# The one level that may have no model (S033 § 1.1)
+NO_MODEL_LEVEL = "component_unit"
 
 YEAR_MIN = 1900
 TEXT_MAX = 100
@@ -170,14 +177,16 @@ def _display(key, value):
         return INHERIT
     if key == "type_name" and value is None:
         return NO_TYPE
+    if key == "model_label" and value is None:
+        return NO_MODEL
     return value
 
 
 def tracked_changes(before, after):
     """Compare two dicts of display values; return ``[(event, old, new)]`` for each tracked change.
 
-    Keys read: ``level``, ``full_path``, ``model_label``, ``class_code``, ``type_name``
-    (None = no type), ``criticality`` (own value, None = inherit) and ``lifecycle``.  Any other
+    Keys read: ``level``, ``full_path``, ``model_label`` (None = no model), ``class_code``,
+    ``type_name`` (None = no type), ``criticality`` (own value, None = inherit) and ``lifecycle``.  Any other
     key (name, serial number, notes, ...) is not tracked.  Types are compared by name, so a reclassification
     between two types of the same name gives no type event (S004 § 5.2).
     """
@@ -197,22 +206,27 @@ def tracked_changes(before, after):
 # ---------------------------------------------------------------------------
 
 PICK_A_MODEL = "Pick a model"
+PICK_A_CLASS = "Pick a class"
+PICK_A_TYPE = "Pick a type"
+PICK_A_TYPE_OF_CLASS = "Pick a type of the new class, or No type"
+CLASS_FROM_MODEL = "Class comes from the model"
+TYPE_FROM_MODEL = "Type comes from the model"
 
 # Keys an old open tab may still send (S012 § 5.4, S030 § 4.4): refused, even as null or
-# unchanged, so such a tab fails loudly instead of having its make, model, class, type or
-# lifecycle ignored
+# unchanged, so such a tab fails loudly instead of having its make, model or lifecycle
+# ignored.  class_id and type_id are refused only beside a model (_check_class_and_type).
 _REFUSED_FIELDS = {
     "make": "Make and model are now picked from Models",
     "model": "Make and model are now picked from Models",
-    "class_id": "Class and type come from the model",
-    "type_id": "Class and type come from the model",
     # S030 § 4.4: the field was renamed lifecycle
     "status": "This field is now called Lifecycle. Reload the page.",
 }
 
 
 def _parse_model_id(raw):
-    """Required on create and never cleared: missing and null get the same message."""
+    """An id, or None for no model (allowed for a component unit only, validate_equipment)."""
+    if raw is None:
+        return None
     if not _is_id(raw):
         raise ValueError(PICK_A_MODEL)
     return raw
@@ -264,14 +278,61 @@ def _check_place(level, clean, creating, errors):
             errors.append({"field": "parent_id", "message": check_parent(level, None)})
 
 
+def _check_class_and_type(data, clean, creating, stored, errors):
+    """The class and type of a write (S033 § 5.1).  With a model they come from it, so
+    ``class_id`` and ``type_id`` are refused even as null or unchanged.  Without one (a
+    component unit) the class is required and the type optional; a class change must restate
+    the type.  Whether the class and type exist, are active and match is the shell's check,
+    except a restated stored type beside a new class, which cannot match (the FK keeps the
+    stored type of the stored class)."""
+    failed = {e["field"] for e in errors}
+    if "model_id" in failed or (creating and "model_id" not in data):
+        return   # the model is not settled: "Pick a model" alone (BR3-01)
+    with_model = clean["model_id"] is not None if "model_id" in clean else stored["model_id"] is not None
+    if with_model:
+        for field, message in (("class_id", CLASS_FROM_MODEL), ("type_id", TYPE_FROM_MODEL)):
+            if field in data:
+                errors.append({"field": field, "message": message})
+        return
+
+    stored_class = None if creating else stored["class_id"]
+    # A create, or a model cleared on this write: the class must be given
+    class_required = creating or stored["model_id"] is not None
+    if "class_id" in data:
+        if not _is_id(data["class_id"]):
+            errors.append({"field": "class_id", "message": PICK_A_CLASS})
+            return
+        clean["class_id"] = data["class_id"]
+    elif class_required:
+        errors.append({"field": "class_id", "message": PICK_A_CLASS})
+        return
+    class_changed = clean.get("class_id", stored_class) != stored_class
+
+    if "type_id" not in data:
+        if creating:
+            clean["type_id"] = None
+        elif class_changed:
+            errors.append({"field": "type_id", "message": PICK_A_TYPE_OF_CLASS})
+        return
+    type_id = data["type_id"]
+    if type_id is not None and not _is_id(type_id):
+        errors.append({"field": "type_id", "message": PICK_A_TYPE})
+    elif type_id is not None and not creating and class_changed and type_id == stored["type_id"]:
+        # Called for its one wording (Decision 10): the classes differ here, so it never returns None
+        errors.append({"field": "type_id", "message": check_type_class(stored_class, clean["class_id"])})
+    else:
+        clean["type_id"] = type_id
+
+
 def validate_equipment(data, creating, this_year, stored=None):
     """Return ``(clean, errors)`` in the masters_core shape (errors: list of {field, message}).
 
-    ``this_year`` is the current IST year, passed in by the shell.  ``make``, ``model``,
-    ``class_id`` and ``type_id`` are refused (S012 § 5.4), and so is ``status``, renamed
-    ``lifecycle`` (S030 § 4.4); the class and type come from the
-    model (derive_from_model).  On an update,
-    ``stored`` is the node's current ``{code, level}``: code and level may be sent
+    ``this_year`` is the current IST year, passed in by the shell.  ``make`` and ``model``
+    are refused (S012 § 5.4), and so is ``status``, renamed ``lifecycle`` (S030 § 4.4).
+    With a model the class and type come from it (derive_from_model); a component unit
+    may have no model (``model_id: null``), and its ``class_id`` / ``type_id`` then go into
+    ``clean`` as sent (_check_class_and_type).  On an update, ``stored`` is the node's
+    current ``{code, level, model_id, class_id, type_id}``: code and level may be sent
     back unchanged (they are then dropped) but not changed, and the place rules are
     checked against the stored level.  On create the code is issued by the shell,
     so a ``code`` in the body is ignored like any other unknown field.
@@ -303,6 +364,11 @@ def validate_equipment(data, creating, this_year, stored=None):
             clean[field] = parse(data[field])
         except ValueError as exc:
             errors.append({"field": field, "message": str(exc)})
+
+    if "model_id" in clean and clean["model_id"] is None and level != NO_MODEL_LEVEL:
+        del clean["model_id"]
+        errors.append({"field": "model_id", "message": PICK_A_MODEL})
+    _check_class_and_type(data, clean, creating, stored, errors)
 
     if level is not None:
         _check_place(level, clean, creating, errors)

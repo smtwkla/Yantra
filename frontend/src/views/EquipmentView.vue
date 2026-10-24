@@ -355,8 +355,8 @@ function printAssetList() {
             <td><router-link :to="`/equipment/${e.id}`" class="fw-semibold" @click.stop>{{ e.code }}</router-link></td>
             <td>{{ e.name }}</td>
             <td>{{ e.class_code }}<span v-if="e.type_name" class="text-secondary"> · {{ e.type_name }}</span></td>
-            <!-- So a row found by "GA37" shows why (S012) -->
-            <td>{{ e.model_label }}</td>
+            <!-- So a row found by "GA37" shows why (S012); a component-unit may have no model (S033) -->
+            <td>{{ e.model_label ?? "—" }}</td>
             <td>{{ level === "equipment" ? e.unit : e.full_path }}</td>
             <td><CriticalityBadge :grade="e.effective_criticality" /></td>
             <td><LifecycleBadge :lifecycle="e.lifecycle" /></td>

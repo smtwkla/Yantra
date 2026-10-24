@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { classHasNoModel, modelChoices, pickerLabel } from "../src/utils/modelPicker.js";
+import {
+  NO_MODEL, classHasNoModel, modelChoices, noModelClassChoices, noModelDefaults, noModelTypeChoices, pickerLabel,
+} from "../src/utils/modelPicker.js";
 
 const model = (id, classId, overrides = {}) => ({
   id, class_id: classId, class_code: classId === 1 ? "CMP" : "HP", label: `Maker M${id}`,
@@ -46,6 +48,49 @@ describe("modelChoices", () => {
   it("copes with a list not loaded yet", () => {
     expect(modelChoices(null)).toEqual([]);
   });
+
+  // S033: a component-unit may have no model
+  it("offers No model first for a component-unit only", () => {
+    expect(modelChoices(MODELS, { level: "component_unit" })).toEqual([
+      { id: NO_MODEL, text: "No model" }, ...modelChoices(MODELS),
+    ]);
+    expect(ids(modelChoices(MODELS, { level: "equipment" }))).toEqual([1, 2]);
+    expect(ids(modelChoices(MODELS, { level: "component" }))).toEqual([1, 2]);
+    expect(NO_MODEL).toBe("none");
+  });
+});
+
+describe("noModelClassChoices", () => {
+  const CLASSES = [
+    { id: 1, code: "GB", name: "Gearbox", active: 1 },
+    { id: 2, code: "MO", name: "Motor", active: 0 },
+  ];
+
+  it("offers active classes, and keeps the current inactive one marked", () => {
+    expect(noModelClassChoices(CLASSES)).toEqual([{ id: 1, text: "GB — Gearbox" }]);
+    expect(noModelClassChoices(CLASSES, 2)).toEqual([
+      { id: 1, text: "GB — Gearbox" }, { id: 2, text: "MO — Motor (inactive)" },
+    ]);
+    expect(noModelClassChoices(null)).toEqual([]);
+  });
+});
+
+describe("noModelTypeChoices", () => {
+  const TYPES = [
+    { id: 5, class_id: 1, name: "Helical", active: 1 },
+    { id: 6, class_id: 1, name: "Worm", active: 0 },
+    { id: 7, class_id: 2, name: "Induction", active: 1 },
+  ];
+
+  it("offers the active types of the picked class, and keeps the current inactive one marked", () => {
+    expect(noModelTypeChoices(TYPES, 1)).toEqual([{ id: 5, text: "Helical" }]);
+    expect(noModelTypeChoices(TYPES, 1, 6)).toEqual([{ id: 5, text: "Helical" }, { id: 6, text: "Worm (inactive)" }]);
+    expect(noModelTypeChoices(TYPES, 2, 6)).toEqual([{ id: 7, text: "Induction" }]);
+  });
+
+  it("offers none until a class is picked", () => {
+    expect(noModelTypeChoices(TYPES, "")).toEqual([]);
+  });
 });
 
 describe("classHasNoModel", () => {
@@ -54,5 +99,27 @@ describe("classHasNoModel", () => {
     expect(classHasNoModel([OLD], 1)).toBe(true);
     expect(classHasNoModel(MODELS, 9)).toBe(true);
     expect(classHasNoModel(MODELS, "")).toBe(false);
+  });
+});
+
+describe("noModelDefaults", () => {
+  it("takes the class filter, and no type when the filter is another class than the node's", () => {
+    expect(noModelDefaults({ classFilter: 2, currentClassId: 1, currentTypeId: 5 })).toEqual({ class_id: 2, type_id: "" });
+  });
+
+  it("keeps the node's class and type on edit with no filter", () => {
+    expect(noModelDefaults({ classFilter: "", currentClassId: 1, currentTypeId: 5 })).toEqual({ class_id: 1, type_id: 5 });
+  });
+
+  it("keeps the node's type when the filter is the node's own class", () => {
+    expect(noModelDefaults({ classFilter: 1, currentClassId: 1, currentTypeId: 5 })).toEqual({ class_id: 1, type_id: 5 });
+  });
+
+  it("starts empty on create with no filter", () => {
+    expect(noModelDefaults({ classFilter: "", currentClassId: null, currentTypeId: null })).toEqual({ class_id: "", type_id: "" });
+  });
+
+  it("gives No type when the node has no type", () => {
+    expect(noModelDefaults({ classFilter: "", currentClassId: 1, currentTypeId: null })).toEqual({ class_id: 1, type_id: "" });
   });
 });
