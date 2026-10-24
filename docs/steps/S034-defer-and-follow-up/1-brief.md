@@ -4,7 +4,7 @@ Author: Planner (Opus)
 Date: 24-10-2026
 Track: light
 Baseline: cbe8f02
-Status: Draft
+Status: In review
 
 # S034 — Defer, hold and follow-up date
 
