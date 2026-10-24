@@ -6,7 +6,7 @@ container (tooling/dev/dev-db-up.bat).  Names come from the ``uniq`` fixture; th
 import pytest
 
 PATH = "/api/masters/meter-types"
-SEED_NAMES = {"Run hours", "Strokes", "Production count", "Energy", "Odometer", "Oil temperature",
+SEED_NAMES = {"Run hours", "Strokes", "Production counter", "Energy", "Odometer", "Oil temperature",
               "Fuel level", "Shift production"}
 
 

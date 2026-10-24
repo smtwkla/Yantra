@@ -790,7 +790,7 @@ _MIGRATIONS = [
         """INSERT IGNORE INTO meter_types (name, unit, kind, decimals, created_by) VALUES
             ('Run hours', 'h', 'counter', 1, 'migration-v29'),
             ('Strokes', 'strokes', 'counter', 0, 'migration-v29'),
-            ('Production count', 'pcs', 'counter', 0, 'migration-v29'),
+            ('Production counter', 'pcs', 'counter', 0, 'migration-v29'),
             ('Energy', 'kWh', 'counter', 1, 'migration-v29'),
             ('Odometer', 'km', 'counter', 0, 'migration-v29'),
             ('Oil temperature', '°C', 'gauge', 1, 'migration-v29'),

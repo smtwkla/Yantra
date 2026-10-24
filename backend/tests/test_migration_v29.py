@@ -17,7 +17,7 @@ VERSIONS = list(range(20, 30))
 SEED = [
     ("Energy", "kWh", "counter", None, 1), ("Fuel level", "%", "gauge", None, 0),
     ("Odometer", "km", "counter", None, 0), ("Oil temperature", "°C", "gauge", None, 1),
-    ("Production count", "pcs", "counter", None, 0), ("Run hours", "h", "counter", None, 1),
+    ("Production counter", "pcs", "counter", None, 0), ("Run hours", "h", "counter", None, 1),
     ("Shift production", "pcs", "amount", None, 0), ("Strokes", "strokes", "counter", None, 0),
 ]
 
