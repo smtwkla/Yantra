@@ -13,12 +13,31 @@ One run at a time on this machine: every run (lanes or the single stack) uses th
 databases and folders, and each backend drops its database at start, so two runs at once
 spoil each other (22-10-2026: two windows' runs, 12 failures).  A run holds an exclusive lock
 on scratch/e2e-run.lock; a second run waits for it.  The operating system releases the lock
-when the process ends, a crash included, so a stale lock cannot block."""
+when the process ends, a crash included, so a stale lock cannot block.
+
+WebKit in Docker (S046): on Windows, Playwright's WebKit multiplies the emulated pixel ratio by
+the display scale (125 % gives a 312 px iPhone window, not 390).  So a run that includes
+phone-webkit starts one container from Playwright's official image (mcr.microsoft.com/
+playwright:v<version>-noble, the version of frontend's @playwright/test) running `run-server`,
+published on 127.0.0.1:3999 only, and sets E2E_WEBKIT_WS; playwright.config.js then connects
+phone-webkit to it with exposeNetwork "<loopback>", so the lanes' Vite and backend stay on the
+host.  The container starts inside the lock, its output goes to scratch/e2e-lanes/webkit.log,
+and it is removed after the run, a failed one included.  Its npm cache is the named volume
+yantra-e2e-npm (the image has no playwright package, npx fetches it once).  The first run of a
+Playwright version pulls the image (about 2.5 GB).
+
+    E2E_WEBKIT=native   run WebKit on Windows as before (S045's guard in e2e/support/test.js
+                        skips it when the window is narrower than the device)
+
+A run that names only plain projects other than phone-webkit (matched as Playwright does:
+case-insensitive, `*` wildcards) starts no container; a wildcard may match it, so it starts one."""
 
 import contextlib
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -38,18 +57,146 @@ MAX_LANES = 20                            # ports 5011–5030 and 5181–5200
 PROJECT_COUNT = 3                         # playwright.config.js's projects
 LOCK_FILE = ROOT / "scratch" / "e2e-run.lock"
 LOCK_POLL_SECONDS = 10
+WEBKIT_CONTAINER = "yantra-e2e-webkit"
+WEBKIT_PORT = 3999                        # host side, 127.0.0.1 only; outside the e2e and dev ports
+WEBKIT_NPM_VOLUME = "yantra-e2e-npm"
+NPM_CACHE = "/home/pwuser/.npm"
+WEBKIT_START_SECONDS = 60
+WEBKIT_LOG = LANE_LOGS / "webkit.log"
+WEBKIT_PROJECT = "phone-webkit"
+WAYS_OUT = ("Run without the iPhone tests (--project=phone-chromium --project=desktop-chromium), "
+            "or run WebKit on Windows (E2E_WEBKIT=native).")
 SUMMARY = re.compile(r"^\s*(\d+) (passed|failed|flaky|skipped|did not run)", re.MULTILINE)
+
+
+def named_projects(args):
+    """The project names Playwright 1.64 reads: `--project=a` and `--project a b` (variadic, up
+    to the next option).  It has no `-p` and splits nothing at commas."""
+    names = []
+    reading = False
+    for arg in args:
+        if arg.startswith("--project="):
+            names.append(arg.split("=", 1)[1])
+            reading = False
+        elif arg == "--project":
+            reading = True
+        elif arg.startswith("-"):
+            reading = False
+        elif reading:
+            names.append(arg)
+    return names
 
 
 def lane_count(args, wanted):
     """No more lanes than test groups: a shard is a spec file in one project, so a run of two
     spec files on one project needs two lanes, not six."""
     specs = [a for a in args if a.endswith(".spec.js")]
-    projects = [a for a in args if a.startswith("--project")]
+    projects = named_projects(args)
     if not specs and not projects:
         return wanted
     groups = (len(specs) or len(list((FRONTEND / "e2e").glob("*.spec.js")))) * (len(projects) or PROJECT_COUNT)
     return max(1, min(wanted, groups))
+
+
+def webkit_mode():
+    return os.environ.get("E2E_WEBKIT", "").lower()
+
+
+def needs_webkit_server(args, mode):
+    """True unless WebKit runs natively or every named project is a plain name other than
+    phone-webkit.  Playwright matches names case-insensitively with `*` wildcards, so a form
+    this parse does not understand errs towards starting the container."""
+    if mode == "native":
+        return False
+    projects = named_projects(args)
+    if not projects:
+        return True
+    return any("*" in name or name.lower() == WEBKIT_PROJECT for name in projects)
+
+
+def playwright_version(frontend=FRONTEND):
+    """The installed @playwright/test version: client and server must match in major.minor."""
+    package = frontend / "node_modules" / "@playwright" / "test" / "package.json"
+    return json.loads(package.read_text(encoding="utf-8"))["version"]
+
+
+def webkit_image(version):
+    return f"mcr.microsoft.com/playwright:v{version}-noble"
+
+
+def webkit_run_command(version):
+    """`docker run` for the WebKit server, attached (its output is the log), bound to loopback."""
+    return ["docker", "run", "--rm", "--init", "--user", "pwuser", "--name", WEBKIT_CONTAINER,
+            "-p", f"127.0.0.1:{WEBKIT_PORT}:3000", "-v", f"{WEBKIT_NPM_VOLUME}:{NPM_CACHE}",
+            webkit_image(version),
+            "npx", "-y", f"playwright@{version}", "run-server", "--port", "3000", "--host", "0.0.0.0"]
+
+
+def webkit_failure(cause):
+    """The message for a WebKit server that cannot start: what happened, then both ways out."""
+    reasons = {
+        "pull": "The WebKit image could not be downloaded. Check the internet connection, then run again.",
+        "port": f"Port {WEBKIT_PORT} is in use, so the WebKit server cannot start. "
+                "Close the program that uses it, then run again.",
+        "name": f"The old WebKit container could not be removed. Run docker rm -f {WEBKIT_CONTAINER}, "
+                "then run again.",
+        "cache": "The cache folder of the WebKit server could not be prepared. "
+                 "Check that Docker Desktop is running, then run again.",
+        "stopped": "The WebKit server stopped before it was ready. See scratch/e2e-lanes/webkit.log.",
+        "timeout": f"The WebKit server did not start in {WEBKIT_START_SECONDS} s. See scratch/e2e-lanes/webkit.log.",
+    }
+    return f"{reasons[cause]}\n{WAYS_OUT}"
+
+
+class WebkitUnavailable(Exception):
+    pass
+
+
+def _docker(*args, **kwargs):
+    return subprocess.run(["docker", *args], capture_output=True, text=True, **kwargs)
+
+
+def _port_in_use():
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        return probe.connect_ex(("127.0.0.1", WEBKIT_PORT)) == 0
+
+
+@contextlib.contextmanager
+def webkit_server(version):
+    """The WebKit container for the run (inside the lock, so nobody else owns its name or port)."""
+    image = webkit_image(version)
+    _docker("rm", "-f", WEBKIT_CONTAINER)           # a hard-killed run may have left it
+    if _docker("ps", "-aq", "--filter", f"name=^{WEBKIT_CONTAINER}$").stdout.strip():
+        raise WebkitUnavailable(webkit_failure("name"))
+    if _docker("image", "inspect", image).returncode != 0:
+        print(f"Pulling the WebKit image, about 2.5 GB, once per Playwright version: {image}")
+        if subprocess.run(["docker", "pull", image]).returncode != 0:
+            raise WebkitUnavailable(webkit_failure("pull"))
+    if _port_in_use():
+        raise WebkitUnavailable(webkit_failure("port"))
+    # A new named volume is owned by root, and npx runs as pwuser: hand the cache folder over
+    handed_over = _docker("run", "--rm", "--user", "root", "-v", f"{WEBKIT_NPM_VOLUME}:{NPM_CACHE}", image,
+                          "chown", "pwuser:pwuser", NPM_CACHE)
+    if handed_over.returncode != 0:
+        raise WebkitUnavailable(handed_over.stderr.strip() + "\n" + webkit_failure("cache"))
+    LANE_LOGS.mkdir(parents=True, exist_ok=True)
+    log = open(WEBKIT_LOG, "w", encoding="utf-8")
+    process = subprocess.Popen(webkit_run_command(version), stdout=log, stderr=subprocess.STDOUT)
+    try:
+        deadline = time.monotonic() + WEBKIT_START_SECONDS
+        while "Listening on ws://" not in WEBKIT_LOG.read_text(encoding="utf-8", errors="replace"):
+            if process.poll() is not None:
+                raise WebkitUnavailable(webkit_failure("stopped"))
+            if time.monotonic() > deadline:
+                raise WebkitUnavailable(webkit_failure("timeout"))
+            time.sleep(0.5)
+        print(f"WebKit server up in {image} (scratch/e2e-lanes/webkit.log)")
+        yield f"ws://127.0.0.1:{WEBKIT_PORT}/"
+    finally:
+        _docker("rm", "-f", WEBKIT_CONTAINER)
+        process.wait()
+        log.close()
 
 
 def lane_database(lane):
@@ -152,7 +299,15 @@ def main(args):
     if not 1 <= wanted <= MAX_LANES:
         sys.exit(f"E2E_LANES must be 1 to {MAX_LANES}, not {wanted}")
     with one_run_at_a_time():
-        return run(args, wanted)
+        if not needs_webkit_server(args, webkit_mode()):
+            return run(args, wanted)
+        try:
+            with webkit_server(playwright_version()) as endpoint:
+                os.environ["E2E_WEBKIT_WS"] = endpoint      # inherited by every lane's Playwright
+                return run(args, wanted)
+        except WebkitUnavailable as stop:
+            print(stop)
+            return 1
 
 
 def run(args, wanted):

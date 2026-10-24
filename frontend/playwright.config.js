@@ -35,7 +35,17 @@ export default defineConfig({
   projects: [
     { name: "phone-chromium", use: { ...devices["Pixel 7"] } },
     // WebKit is Safari's engine, not iOS Safari itself: no on-screen keyboard, no camera (§ 7.7)
-    { name: "phone-webkit", use: { ...devices["iPhone 14"] } },
+    // With E2E_WEBKIT_WS (set by run_lanes.py, S046) the browser runs in a Linux container, where
+    // the window is exactly 390 px; exposeNetwork carries its requests to 127.0.0.1 back to the host
+    {
+      name: "phone-webkit",
+      use: {
+        ...devices["iPhone 14"],
+        ...(process.env.E2E_WEBKIT_WS
+          ? { connectOptions: { wsEndpoint: process.env.E2E_WEBKIT_WS, exposeNetwork: "<loopback>" } }
+          : {}),
+      },
+    },
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } } },
   ],
   // Never reused: a server left running has not been reset

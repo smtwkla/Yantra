@@ -7,6 +7,9 @@
 :: Lanes: the tests run in E2E_LANES parallel lanes (default 6), each on its own database,
 :: backend and Vite (tooling\e2e\run_lanes.py; lane logs in scratch\e2e-lanes\). E2E_LANES=1 runs
 :: the single stack above.
+:: iPhone tests (S046): phone-webkit runs in a Docker container (Playwright's image, port 3999 on
+:: 127.0.0.1; the first run pulls about 2.5 GB), so a scaled Windows display cannot shrink the
+:: window. E2E_WEBKIT=native runs WebKit on Windows instead.
 :: Report: scratch\e2e-report\html\index.html (npx playwright show-report ..\scratch\e2e-report\html).
 setlocal
 set COMPOSE=docker compose -f "%~dp0dev\docker-compose.dev.yml"
@@ -27,8 +30,13 @@ if errorlevel 1 (
 
 cd /d "%~dp0..\frontend"
 
-:: 3. The browsers (a no-op when they are there; fetches the right ones after a Playwright update)
-call npx playwright install chromium webkit
+:: 3. The browsers (a no-op when they are there; fetches the right ones after a Playwright update).
+:: WebKit is in the container image unless E2E_WEBKIT=native.
+if /i "%E2E_WEBKIT%"=="native" (
+  call npx playwright install chromium webkit
+) else (
+  call npx playwright install chromium
+)
 if errorlevel 1 exit /b 1
 
 :: 4. The tests, in lanes
