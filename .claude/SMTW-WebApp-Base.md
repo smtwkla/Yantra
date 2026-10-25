@@ -21,7 +21,7 @@ apply to non-web repos (firmware, scripts, data tools).
 | Auth           | Keycloak                    | OIDC + PKCE, token as Bearer header                          |
 | JWT            | PyJWT (`pyjwt[crypto]`)     | Not python-jose — unmaintained                               |
 | Job queue      | DB-backed `task_queue`      | Default; Redis only when latency/throughput demand it        |
-| Scheduling     | APScheduler → `task_queue`  | Cron specs in Python; jobs enqueue rather than run inline    |
+| Scheduling     | Built-in schedule → `task_queue` | Worker enqueues daily tasks from a table (IST); APScheduler only for cron-like schedules |
 | Notifications  | Telegram Bot API            | Group-routed, sent via `task_queue`                          |
 | Object Storage | MinIO (S3-compatible)       | Only for large media / multi-server; otherwise `data/`       |
 | Dependency mgr | uv                          | Replaces pip + requirements.txt                              |
@@ -51,8 +51,8 @@ project/
 │   ├── <module>_recording.py   # Event-sourced modules: validation + write path
 │   ├── task_queue.py           # DB-backed queue ops: enqueue, claim_next, mark_done, mark_failed
 │   ├── task_handlers.py        # Dispatch table: task_type → handler(payload, conn)
-│   ├── scheduled_tasks.py      # Cron registry: task_type + cron expression
-│   ├── worker.py               # Separate process: APScheduler + task_queue drainer
+│   ├── scheduled_tasks.py      # Schedule table: (task_type, "HH:MM" IST) + pure due_tasks()
+│   ├── worker.py               # Separate process: schedule enqueuer + task_queue drainer
 │   ├── telegram_notifier.py    # send_alert(group_key, html) — enqueues via task_queue
 │   ├── secrets_*.py            # Credentials — gitignored, hook-blocked
 │   ├── example_secrets_*.py    # Templates — checked in, documents all required fields
@@ -381,6 +381,30 @@ def _close_db(exc):
 - Cache other expensive per-request computations on `g` too (e.g. `g.zones_cache`) — cleared automatically at request
   end.
 
+### The app runs while the database is missing or down
+
+A fresh deployment starts before its database exists, and a database restart must not take the app
+down. So:
+
+- **Nothing fails at import.** Create the pool lazily (it opens no connection). `app.py` calls
+  `ensure_schema` once at start and carries on whatever it returns, so it starts with the database
+  unreachable.
+- **`ensure_schema(config)`** runs the migrations and retries at most every 30 seconds; it returns `None`
+  when the schema is up to date, else the last error message, and never raises. The caller decides what
+  an unavailable database means. The result is cached under a lock, so concurrent requests do not
+  start parallel attempts.
+- **`get_db()` raises `DBUnavailable`** when the schema is not ready or the connection fails; one error
+  handler turns it into a `503` with a plain message. Pages that do not need the database (the login
+  configuration, the version) keep working.
+- **`GET /api/health`** is public and returns `{"status": "ok", "schema_ready": true|false}`. Deploy
+  scripts poll it (§ Versioning & Release › Deploy).
+- A status screen (Settings › Database) shows reachability, the schema version and the last error,
+  using its own short-timeout connection so a dead database cannot tie up the pool.
+- Tests: a `db_down` fixture makes the database unreachable, and every layer that touches the database
+  has a test that it returns `503`, not `500`.
+
+(Yantra, S013/S025, October 2026.)
+
 ### Timezone policy
 
 **All datetime values in the database are IST (naive). Servers and containers stay UTC.**
@@ -426,17 +450,21 @@ risk; the IT incharge knows to account for the +05:30 offset when browsing.
 - `local_db.py` owns the migration engine and the connection pool.
 - `_MIGRATIONS` is an ordered list of `(version, description, [sql_statements])` tuples.
 - Each entry is a list of individual SQL strings (not a single semicolon-separated string).
-- `init_db(config)` is called at startup and applies any pending migrations automatically.
+- `ensure_schema(config)` applies any pending migrations; `app.py` at start, the first requests and the worker call it
+  (§ DB Connection Pattern › The app runs while the database is down). `init_db(config)` is what it
+  runs.
 - Never edit or delete old migration entries — always append new ones.
 - Use `ADD COLUMN IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS` for defensive migrations that may be applied to
   databases in varying states.
 - For multi-tenant: each tenant gets its own database, named with a consistent prefix (e.g. `appname_TENANTID`).
 - Tests use a separate prefix (e.g. `appname_test_`) and drop test DBs on exit.
+  When the suite takes more than a few minutes, or agents test in parallel, use the parallel set-up
+  (§ Testing Pattern › Backend tests in parallel).
 
 ### Singleton via DB lock
 
-Gunicorn workers boot concurrently, so every worker calls `init_db`. Guard it with a DB-level named lock so only one
-runs migrations while the others wait:
+Gunicorn workers boot concurrently, so every worker calls `ensure_schema`, which runs `init_db`. Guard it with a
+DB-level named lock so only one runs migrations while the others wait:
 
 ```python
 # MariaDB: GET_LOCK(name, timeout) blocks up to `timeout` seconds; returns 1 when acquired
@@ -451,8 +479,8 @@ if cur.fetchone()["got"] == 1:
 ```
 
 Once the waiting workers get the lock they find no pending migrations and carry on. The same lock — held, with a
-non-blocking try (`GET_LOCK(name, 0)` / `pg_try_advisory_lock`) — keeps any singleton to one instance: the APScheduler,
-the queue drainer, background monitor threads. A connection-held lock is released automatically if its process dies.
+non-blocking try (`GET_LOCK(name, 0)` / `pg_try_advisory_lock`) — keeps any singleton to one instance: the worker
+(schedule and queue drainer), background monitor threads. A connection-held lock is released automatically if its process dies.
 
 ### Advisory locks on pooled connections (PostgreSQL)
 
@@ -476,17 +504,40 @@ to enqueue.
   `state = 'active'` with `wait_event = 'advisory'` piling up. Immediate relief: restart the backend (drops pooled
   connections) or `pg_terminate_backend` the stuck ones.
 
+### Preconditions
+
+A migration that cannot run on the data that exists (it adds a NOT NULL column, drops a table that still
+has rows, or needs a clean-up first) gets a **precondition**, never an edit of an applied migration.
+
+- `_PRECONDITIONS` is a dict `version → check(cursor)`; the check returns `None` (go) or a one-line
+  reason, in plain words, that says what to do first.
+- Before any pending version is applied, the engine checks the preconditions of **all** pending versions.
+  One refusal means nothing is applied, so a refusal never leaves some pending versions applied and others not. The reason shows in
+  the status screen (Settings › Database) and in the log; the app keeps serving with `schema_ready`
+  false (§ DB Connection Pattern).
+- A migration that touches no existing rows (a new table, a nullable column) states that in a comment
+  ("No `_PRECONDITIONS` entry: …") so the next reader knows it was considered.
+- Write the test from the production schema (the frozen fixture above), not from an empty database.
+
+(Yantra, S025, 21-10-2026.)
+
 ### Migration squashing
 
-When the migration list grows long (20+), squash all migrations into a single v1 entry containing the full schema as
-`CREATE TABLE IF NOT EXISTS` statements. This simplifies fresh installations. But do this only after explicit
+When the migration list grows long (20+), squash all migrations into a single entry containing the full
+schema as `CREATE TABLE IF NOT EXISTS` statements, numbered **above the highest version any deployed
+database has recorded** (a squashed `v1` would be skipped on a database that already holds `v1`–`v5`). This simplifies fresh installations. But do this only after explicit
 confirmation,
 as different instances of dev, staging, deploy need to be considered.
 After squashing:
 
-- Dev databases must be recreated (drop + recreate). Document this clearly.
-- Incremental migrations (v2+) continue to use `ALTER TABLE`.
+- Every existing database runs the squashed entry, so each statement must be safe on every shape a
+  database can have (`CREATE TABLE IF NOT EXISTS`, idempotent data statements); a shape it cannot
+  handle gets a precondition.
+- Incremental migrations (after the squashed version) continue to use `ALTER TABLE`.
 - Version numbers need not be contiguous (e.g. v1, v2, v3 … v13, v15 is fine if v14 was dropped during squash).
+- Keep the old migration texts, frozen and never edited, in a test fixture (`tests/fixtures/migrations_vN.py`).
+  The upgrade tests build a database from them and run the new migrations on it, so the squashed entry is
+  tested against the shape production really has.
 
 ---
 
@@ -585,9 +636,16 @@ CREATE TABLE IF NOT EXISTS task_queue (
 - **`worker.py`** — launched as `python worker.py`:
   1. Take the singleton lock (§ Local DB Migration Pattern › Singleton via DB lock) so only one worker instance drains
      the queue, even with several nodes.
-  2. Start APScheduler. Scheduled jobs (`scheduled_tasks.py`: task_type + cron expression) **enqueue** a task at cron
-     time rather than doing the work inline, so scheduled work gets the same retries and history as everything else.
+  2. Enqueue the scheduled tasks that are due. `scheduled_tasks.py` holds a table of `(task_type,
+     "HH:MM")` in IST and a pure `due_tasks(schedule, last_enqueued, now)`: a task is due when today's time
+     has passed and nothing of that type was enqueued since. "Last enqueued" is read from `task_queue`
+     itself, so a worker that was down runs the task once when it returns, and a restart never runs it
+     twice. The scheduled work gets the same retries and history as everything else. For schedules
+     that are not daily-at-a-time (every 15 minutes, first of the month), use APScheduler with cron
+     specs in the same place and the same rule: it **enqueues**, it does not run the work.
   3. Drain loop: `claim_next` → dispatch → `mark_done` / `mark_failed` with retry backoff.
+     Take the lock again after every reconnect: a lock belongs to the connection, and an idle night kills the
+     connection and the lock with it.
 - **No separate cron-log table.** `task_queue` already records every scheduled run as a row — filter by `task_type` +
   `created_at` for history.
 
@@ -827,6 +885,10 @@ For human-readable sequential identifiers:
 - Claude Code hook blocks Read/Edit/Write on files matching `secrets_*.py`.
 - Route all reads through `config.py` — modules import from `config`, never from `secrets_app` directly. One audit
   point, easy env-var overrides, and required fields validated at startup.
+- A missing secrets file falls back to the example **only in dev and test**; in production a missing
+  file stops the app at startup. In production the file is rendered by Ansible from a template
+  (`secrets_app.py.j2` in the devops repo): when you add or rename a field, change the example and the
+  template together.
 
 ---
 
@@ -907,6 +969,44 @@ pipeline steps, flags (`-m`, `-M`, `-B`) and every `release.env` option (`TEST_C
 - Configure it in `tooling/common/release.env` (gitignored); every setting is optional.
 - When it may run, and who triggers it: `CLAUDE-COMMON.md` § Release & deployment authorization.
 
+### Tests and builds on a clean copy
+
+Run the release's tests on a **temporary git worktree of HEAD**, and build the images from a temporary
+worktree of the release tag `v<version>`; never from the working folder. Then edits and test runs in
+the working folder during a release cannot touch what is tested or built. This is what the pre-flight
+setting *Tests a clean copy of HEAD: yes* means.
+
+- The test worktree links the working folder's dependency folder (`frontend/node_modules`) with a
+  junction or symlink, so it is not reinstalled. **Never remove that worktree by hand** (`git
+  worktree remove`, the IDE): removing a worktree follows the link and empties the working folder's
+  dependencies. The test script removes the link first, then the worktree. Vite serves the files behind
+  a junction by their real path, so `vite.config.js` adds the real `node_modules` to `server.fs.allow`.
+- The build script **refuses** a dirty tree, a missing tag, a HEAD that is not the tagged commit, and a
+  version already in the registry. `--dry-run` runs the refusals and the checkout only (no registry
+  check, login, build or push).
+- Give the release tests their own run name (`<APP>_TEST_RUN=release`) and their own log folder
+  (`scratch/release-tests/`).
+
+(Yantra, S025 and 22-10-2026, a tooling commit.)
+
+### Deploy
+
+A deploy script cannot trust the exit code of the tool it calls: `erp_spanner.py` exits 0 even when the
+Ansible playbook fails. So:
+
+1. Read the playbook's `PLAY RECAP` yourself, and treat `failed` or `unreachable` greater than 0, or no
+   `PLAY RECAP` in the output, as a failed deploy.
+2. Then poll the public `/api/health` until `schema_ready` is true, for a bounded time (3 minutes).
+   Success means the new version answers and its migrations ran, not that the playbook finished.
+3. On any failure after the version was stamped, print the **rollback lines** and stop: stamp the previous
+   version and deploy again; if the new schema was already applied, restore the database dump taken
+   before the deploy first. The script prints them; the person runs them (CLAUDE-COMMON § Release &
+   deployment authorization).
+4. Offer a read-only mode (`--check`: shows the host and the stamped line, changes nothing) and a
+   stamp-only mode (`--stamp-only`: writes the version stamp and leaves the deploy to a person).
+
+(Yantra, S025, 21-10-2026.)
+
 ### Version bumper (`bump_ver.py`)
 
 `tooling/common/bump_ver.py` reads `VERSION`, increments the requested part, writes back. Can be used standalone:
@@ -974,6 +1074,8 @@ Three layers — keep them separate:
 - Assert derived state through the projection functions.
 - Truncate the test DB once per session (session-scoped `pytest_configure`), not per class — per-class resets were
   tried and weren't worth the complexity. If tests pollute each other, fix the test, not the fixture.
+  When the suite takes more than a few minutes, or agents test in parallel, use the parallel set-up
+  (§ Testing Pattern › Backend tests in parallel).
 
 **Layer 4 — Frontend unit tests (Vitest)**
 
@@ -989,6 +1091,69 @@ Three layers — keep them separate:
 
 Write `test_rbac.py` first, before any module tests. It validates the policy file itself and catches mistakes
 immediately.
+
+### Backend tests in parallel (the next stage)
+
+Start with one test database, as above. Move to this when the backend suite takes more than a few
+minutes, or when several agents or windows run tests at once and collide on the one database.
+
+- Run **pytest-xdist** with `--dist loadscope` (all tests of a module on one worker, so module-scoped
+  fixtures stay valid). `<APP>_TEST_WORKERS` sets the worker count (default 8); `-n 0` runs one process.
+- **One database per worker and run name**: `appname_test_<run>_<worker>`, and
+  `appname_upgrade_<run>_<worker>` for the upgrade tests. A small `db_names.py` builds the names. The
+  tests create them and **keep them between runs** (a run starts with a truncate, not a rebuild). The
+  test DB user needs a wildcard grant on `appname_test_%` and `appname_upgrade_%`
+  (``GRANT ALL ON `appname\_test\_%`.* …``), made by the test wrapper or the dev DB's init script;
+  without it every worker fails at start with "Access denied".
+- **A run-name variable** (`<APP>_TEST_RUN`, default `dev`) is in every database name, so two runs at
+  the same time never share a database. Each agent, window and the release tests use their own
+  name; reserve `dev` and `release` for the person and the release.
+- **Named locks carry the database's name** (`GET_LOCK('<lock>:<database>')`), because MariaDB locks are
+  server-wide; otherwise two parallel runs wait on each other's lock.
+- **Dropping old test databases** is a manual chore (the tooling never drops them: about a dozen per
+  run name accumulate). Write the `DROP DATABASE` list from `information_schema.schemata` to a file
+  in `scratch/`, read it, then run it; never during a test run (the next run rebuilds what it needs).
+
+(Yantra, 22-10-2026, a tooling commit, not a step; a 6-minute suite became about 40 seconds.)
+
+---
+
+## Browser Testing Pattern
+
+Playwright specs test what the user sees, end to end, against a real backend. The pattern below came
+from a phone-first app; adjust the devices to yours.
+
+- **Its own stack per run.** The tests start their own backend and Vite on spare ports, with a database
+  dropped and rebuilt every run and its own `DATA_DIR`. Identity comes from test headers
+  (`X-Test-User`, `X-Test-Role`); a request without them gets no access, so a test cannot pass by
+  accident through an open door. A seed script builds the data.
+- **Levels.** A quick run (`@smoke` tests: a few journeys of real work, and the one spec that opens
+  every route) on the main device; the whole suite on the main device, with only the `@device` tests
+  on the other devices; and a release level that adds the iPhone engine. Run the full level in the
+  release, not in the normal unit-test run.
+- **Test logic once.** Run the logic tests on one device (the main phone). Tag a test `@device` only
+  when its purpose is a layout check (fits, in view, no sideways scroll, a geometry assertion) or when
+  it runs only on, or asserts differently on, another device. A helper that checks a dialog's fit inside
+  a flow test does not tag it.
+- **Every dialog a flow test opens is checked to fit** the screen (the main phone's narrow width does
+  this in every flow), so another device checks a dialog only through a `@device` test.
+- **Parallel lanes, planned by measured time.** Split the run into lanes (default 6). Each lane has
+  its own database, backend port, Vite port, data folder, log and Vite dependency cache (six servers
+  writing one cache race on its rename). List the tests once, weigh each spec file by its measured
+  seconds per test (a timings file updated after each run), and pack the longest first into the least
+  loaded lane. Merge the blob reports into one HTML report.
+- **One run per machine.** A lock file in the **main working folder's** `scratch/` (not the
+  worktree's) makes a second run wait; the timings file lives there too.
+- **WebKit on Windows** multiplies the emulated pixel ratio by the display scale (a 125 % display gives
+  a narrower window than the device), so run WebKit in the Playwright Docker image
+  (`mcr.microsoft.com/playwright:v<version>-noble`, `playwright run-server` on a loopback port) and
+  connect to it with `exposeNetwork` for the loopback; the stacks stay on the host. Pin the image to
+  the Playwright version; the first pull is large.
+- **A spec that fakes requests** (`page.route`, `context.route`) sets `test.use({ serviceWorkers:
+  "block" })` at file level: on WebKit a page controlled by a service worker bypasses the route.
+- A refusal or message is asserted **in view** (`toBeInViewport()`), not only present.
+
+(Yantra, S024/S046/S047/S054, October 2026.)
 
 ---
 
@@ -1263,8 +1428,8 @@ Start it with the banner `sync_common.py` prints — it imports `CLAUDE-COMMON.m
 
 ## Fresh Project Bootstrap Checklist
 
-1. `uv init backend && uv add flask flask-cors pymysql pyjwt[crypto] apscheduler` (PostgreSQL: `psycopg2-binary`
-   instead of `pymysql`).
+1. `uv init backend && uv add flask flask-cors pymysql pyjwt[crypto]` (add `apscheduler` only if you need cron-like
+   schedules; PostgreSQL: `psycopg2-binary` instead of `pymysql`).
 2. `npm create vite@latest frontend -- --template vue`, then `npm i bootstrap @popperjs/core keycloak-js`.
 3. Copy `sync_common.py` into `tooling/common/` and run it (see § Shared Tooling Sync) — that brings in
    `CLAUDE-COMMON.md`, this file, shared skills/hooks and release tooling.
@@ -1308,7 +1473,7 @@ Start it with the banner `sync_common.py` prints — it imports `CLAUDE-COMMON.m
 | Version shown differs from the release tag                | The root `VERSION` file is the only source — Vite and `/api/version` read it; `package.json`'s version is not the app version                                                                                       |
 | `cur.fetchone()[0]` on a dict cursor                      | Rows are dicts — use the column name: `cur.fetchone()["colname"]`                                                                                                                                                   |
 | Two workers run migrations concurrently                   | Singleton DB lock around `init_db` (§ Local DB Migration Pattern)                                                                                                                                                   |
-| Two scheduler / monitor instances running                 | Same singleton lock around `start_scheduler` and monitor threads                                                                                                                                                    |
+| Two workers or monitor threads running                    | Same singleton lock around the worker loop and monitor threads                                                                                                                                                      |
 | Pool exhaustion → gunicorn SIGKILL                        | `maxconn >= gunicorn workers + worker process + buffer`; the slow-request logger shows it coming                                                                                                                    |
 | Task marked done although the send failed                 | Mark done only on a verified successful send; otherwise let it retry                                                                                                                                                |
 | Duplicate Telegram alerts from threads                    | `threading.Lock` around the in-process aggregation path                                                                                                                                                             |
@@ -1317,3 +1482,4 @@ Start it with the banner `sync_common.py` prints — it imports `CLAUDE-COMMON.m
 | Replicate script "helpfully" fixes up rows                | Full copy is lift-and-shift; fix-up logic runs only in cutoff mode                                                                                                                                                  |
 | Silent disabled Submit button                             | Bind a `saveDisabledReason` computed to `title`; add an inline hint                                                                                                                                                 |
 | Direct `npm`/`uv` commands trip Claude permission prompts | Run the `tooling/*.bat` wrappers (CLAUDE-COMMON § Wrapper scripts)                                                                                                                                                  |
+| npm 10.9 crashes (`edgesOut`) when it resolves vitest's optional peers | Use `npx npm@11 install` to change dependencies; `npm ci` (Docker, CI) is fine                                                                                                                                      |

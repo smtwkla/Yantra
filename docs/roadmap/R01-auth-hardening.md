@@ -3,7 +3,7 @@ Roadmap: R01 — Auth hardening
 Doc: roadmap
 Author: Roadmapper (Opus)
 Date: 25-10-2026
-Status: Draft
+Status: Approved (KLA, 26-10-2026, gate R)
 ```
 
 # R01 — Auth hardening
@@ -11,8 +11,8 @@ Status: Draft
 **The point:** ten audit findings from 21-10-2026 are still open in today's code, and none of
 them is fixed by S025–S056. This roadmap cuts them into **six steps and one manual check**. The
 first useful result is the token checks (R01.2) and the input kept on a failed sign-in (R01.3),
-which can be coded in parallel. KLA has **seven decisions** to make; two of them (D1, D2) change
-the size of an item.
+which can be coded in parallel. KLA answered **nine questions** (26-10-2026, § Decisions): all at the recommendation except
+Q7.1, log lines only, which makes R01.7 small and drops its table.
 
 ## The feature
 
@@ -26,8 +26,8 @@ reach it (Plan.MD § 1, "Access from outside"). Every role except IT admin works
 plant. So a weakness in the sign-in, the file cache, the error text or the access trail can be
 used from anywhere, not only from the plant network.
 
-**What it is not:** no new module and no change to the maintenance rules. The only new data is
-the access-change table of R01.7, if KLA wants it (D1).
+**What it is not:** no new module and no change to the maintenance rules. No new data: Q7.1
+chose log lines over an access-change table.
 
 ## What exists
 
@@ -51,7 +51,7 @@ Each finding checked against the code at HEAD `82997ee` (25-10-2026).
 (`smtw_erp_devops/nginx/src/sites-available/vel-yantra.mspv.app.conf:11`), but Settings allows
 an upload limit up to **100 MB** (`backend/config.py:128`) and Yantra's own nginx takes 101 MB
 (`nginx.conf:39`). An upload between 50 and 100 MB gets nginx's HTML 413 from the front, not
-Yantra's message. See D5.
+Yantra's message. See Q5.3.
 
 **What no item rebuilds:** the network gate and access log (S013), the JSON error handlers and
 `DB_LOST_TEXT` (S025), the dialog guard (`FormModal.vue`, `useFormModal.js`, S007), the
@@ -81,13 +81,13 @@ text; no requirement numbers are given.
 | **RFC 9111, HTTP Caching** (fact) | `private` lets the browser store a response; `no-cache` makes it check with the server before each use; the ETag then answers 304 cheaply. | R01.4 uses `private, no-cache`. | R01.4 |
 | **ISO/IEC 27001:2022 A.8.5 Secure authentication** (to verify) | Sign-in is done by a sound method, and its failures are handled safely. | R01.2, R01.3. | R01.2, R01.3 |
 | **ISO 27001 A.5.18 Access rights** | Access is given, changed and taken away by a recorded process, and reviewed. | R01.7 records every change to a person's access. | R01.7 |
-| **ISO 27001 A.8.15 Logging** | Logs record activities and are protected from tampering. | R01.7 stops forged lines; the table (D1) is append-only. | R01.7 |
+| **ISO 27001 A.8.15 Logging** | Logs record activities and are protected from tampering. | R01.7 stops forged lines and logs every access change. Loki will keep the lines outside the container (KLA's plan, Q7.1). | R01.7 |
 | **ISO 27001 A.8.20 Networks security** | Networks and the devices on them are managed and controlled. | R01.1 verifies the gate in production; R01.5 narrows the trusted proxy and refuses ranges that would switch the gate off. | R01.1, R01.5 |
 | **ISO 27001 A.8.9 Configuration management** | Security settings of hardware, software and networks are set, recorded and kept. | R01.5's headers live in the image's `nginx.conf`, in git. | R01.5 |
 | **ISO 27001 A.8.12 Data leakage prevention** (to verify) | Measures stop data from leaking to people who should not see it. | R01.4 (file cache, DB detail). | R01.4 |
 | **ISO 27001 A.8.31 Separation of development, test and production environments** (to verify) | Development systems are kept apart, so a dev shortcut cannot reach real users or data. | R01.5 keeps the dev server, which skips sign-in, off the LAN. | R01.5 |
 | **ISO 27001 A.8.29 Security testing in development and acceptance** (to verify) | Security functions are tested before release. | R01.2's token tests and R01.6's route walk. | R01.2, R01.6 |
-| **ISO 9001:2015 § 7.5.3 Control of documented information** (to verify) | Records are protected from loss and unintended change. ISO 9001 is a future goal for the plant. | The access-change table (D1, option b) is a record kept in the database, not only in container logs. | R01.7 |
+| **ISO 9001:2015 § 7.5.3 Control of documented information** (to verify) | Records are protected from loss and unintended change. ISO 9001 is a future goal for the plant. | Not met by R01: Q7.1 chose log lines; the lasting record is Loki's, outside this repo. | R01.7 |
 
 **Base doc (SMTW-WebApp-Base.md) to correct upstream:** its token flow step 5 says "on decode
 failure, evict the cached JWKS client and retry once" (`.claude/SMTW-WebApp-Base.md:116`). That is
@@ -110,7 +110,7 @@ text below (CLAUDE-COMMON scope B).
 | R01.4 | What the server sends: files not served from cache, no DB detail in errors or to managers | S | full | — | open |
 | R01.5 | Web server and network: headers on every response, a CSP, timeouts, a narrower trusted proxy, a range check, dev servers off the LAN | M | full | R01.1 | open |
 | R01.6 | Route walk: every API route tried as a role with no access | S–M | full | — | open |
-| R01.7 | Access-change trail: forged log lines stopped, every access change logged, and (D1) an append-only table with a Settings list | M | full | R01.4 | open |
+| R01.7 | Access-change trail: forged log lines stopped, every access change logged (log lines only, Q7.1 a) | S | full | R01.4 | open |
 
 ### R01.1 — Check the network gate and the headers in production (manual)
 
@@ -188,7 +188,7 @@ text below (CLAUDE-COMMON scope B).
   - A shared leave guard (one composable, used by both screens): moving to another page in the
     app shows an in-app "Discard your changes?" dialog with the modals' words; closing or
     reloading the tab shows the browser's own prompt (its text cannot be changed). It applies to
-    **Raise ticket** and the **Readings sheet** (D3).
+    **Raise ticket** and the **Readings sheet** (Q3.2).
   - `loadProfile` shows a 503's own message (R01.2's text, or the DB message), and keeps the
     "not in the maintenance team" text for a 401 only.
   - Tests: a unit test of `auth.js` (none today, audit [28]); browser tests of the leave guard on
@@ -206,8 +206,8 @@ text below (CLAUDE-COMMON scope B).
   is warned before leaving a half-filled form.
 - **Note (fact):** the auth store, `api.js` and the router are shared frontend files (CLAUDE.md
   § Step workflow, *Shared code*), so the coder runs the whole browser suite once at the end.
-- **Migrations:** none. **Leaves for later:** keeping a draft across a full sign-in (D2 option b);
-  the leave guard on Settings (D3 option b); the base-doc text to smtw-common.
+- **Migrations:** none. **Leaves for later:** keeping a draft across a full sign-in (Q3.1 option b);
+  the leave guard on Settings (Q3.2 option b); the base-doc text to smtw-common.
 
 ### R01.4 — What the server sends
 
@@ -221,7 +221,7 @@ text below (CLAUDE-COMMON scope B).
     lost-connection 503.
   - `GET /api/settings/db-status`: host, port and the error text only for `settings:edit`
     holders (IT admin, who is held to the plant network); a manager sees reachable yes or no and
-    the schema version (D6). The S025 precondition message stays visible to IT admin there.
+    the schema version (Q4.1). The S025 precondition message stays visible to IT admin there.
   - Tests for each.
 - **Text on screen (scope B):** a manager's Settings › Database card says "Ask IT admin for the
   details." where the detail would be.
@@ -238,7 +238,7 @@ text below (CLAUDE-COMMON scope B).
   - `tooling/build/nginx.conf` (built into the frontend image):
     - the headers once at server level, repeated in `/assets/` (nginx drops inherited
       `add_header` when a block sets its own);
-    - a CSP (D4), starting from the audit's: `default-src 'self'; connect-src 'self'
+    - a CSP (Q5.1), starting from the audit's: `default-src 'self'; connect-src 'self'
       https://sso.mspv.app; img-src 'self' blob: data:; object-src 'none'; frame-ancestors
       'self'`. The brief checks what keycloak-js, the service worker, Bootstrap and the PDF and
       photo views load;
@@ -248,9 +248,9 @@ text below (CLAUDE-COMMON scope B).
     shorter than /7 (so the whole private block `fc00::/7` is still allowed; the brief settles
     the IPv6 limit). Message (scope B): "'0.0.0.0/0' is too wide. Enter a range of /8 or
     narrower, such as 10.24.0.0/16."
-  - Dev servers (D5): the backend's `app.run` on `127.0.0.1`; Vite on `127.0.0.1` by default,
+  - Dev servers (Q5.2): the backend's `app.run` on `127.0.0.1`; Vite on `127.0.0.1` by default,
     with a separate run config for device checks on the LAN.
-- **What changes in the devops repo (`smtw_erp_devops`, KLA runs it):** only for D5 (upload
+- **What changes in the devops repo (`smtw_erp_devops`, KLA runs it):** only for Q5.3 (upload
   size): `nginx/src/sites-available/vel-yantra.mspv.app.conf:11` `client_max_body_size` to
   `101M`, deployed with `nginx/deploy-nginx.yml`. HSTS is already set there
   (`security-headers.conf:4`). The CSP lives in this repo's `nginx.conf`, not at the front,
@@ -280,7 +280,7 @@ text below (CLAUDE-COMMON scope B).
   answer must be 401, 403 or 404, never 2xx. The public paths (`PUBLIC_PATHS`) and
   `GET /api/auth/me` (answered for any login) are the listed exceptions, each with its reason. A
   new route without a filled id makes the test fail, so each new route is a decision.
-- **Optional (D7):** a test that every token role is either in `INTERNAL_ONLY_ROLES` or in a list
+- **Optional (Q6.1):** a test that every token role is either in `INTERNAL_ONLY_ROLES` or in a list
   of roles allowed from outside with a dated reason (audit hindsight 2, "the deny-list gate
   fails open").
 - **After it:** a route that forgets its check fails the tests.
@@ -297,19 +297,18 @@ text below (CLAUDE-COMMON scope B).
     already do (`masters_core.py:64-71`).
   - A log line for every change of `active` on a person with a login: actor, person, before,
     after.
-  - **If D1 is option b or c:** an append-only table `access_changes` (who, when, which person,
-    what: login set or cleared, activated, deactivated, site row before and after), written in
-    the same transaction as the change, never updated or deleted by the app.
-  - **If D1 is option b:** a read-only list in Settings › Access log, *Access changes* tab, for
-    `access_log:view` holders.
-- **Text on screen (scope B, option b):** columns *When*, *Changed by*, *Person*, *Change*; a
-  change reads, for example, "Deactivated", "Login set: Technician A's login", "SMTW: Technician,
-  all units → SMTW: Engineer, all units". Empty state: "No access changes yet."
-- **After it:** KLA can answer "who gave this person access, and when" for an ISO 27001 access
-  review, also after the container logs have rotated.
-- **Migrations:** one new table for option b or c (the next free version when taken up; v33 is
-  the latest today), with `docs/schema.md` and `docs/schema.html`. None for option a.
-- **Leaves for later:** a periodic access-review report (ISO 27001 A.5.18 "reviewed"); trades are
+  - Each access-change line has one fixed shape, so Loki can find it by a label or a plain
+    filter: `access_change actor=<person id> person=<person id> field=<active|login|site role>
+    before=<value> after=<value>`. The coder fixes the exact field names in the brief; values are
+    escaped like every other line.
+- **Q7.1 (KLA, 26-10-2026): log lines only.** No table and no screen. KLA will configure Loki to
+  ship the container logs, so the lines outlive the container's log rotation. The Loki setup is
+  outside this repo (devops, KLA).
+- **After it:** KLA can answer "who gave this person access, and when" from Loki for an ISO 27001
+  access review, as long as Loki keeps the lines.
+- **Migrations:** none.
+- **Leaves for later:** the `access_changes` table and its Settings tab (Q7.1 b), if Loki's
+  retention proves too short; a periodic access-review report (ISO 27001 A.5.18 "reviewed"); trades are
   not access and stay out.
 
 ## Order
@@ -326,7 +325,7 @@ text below (CLAUDE-COMMON scope B).
 5. **R01.6** after R01.2 (both change `auth_utils.py`). Since KLA's decision it also marks
    routes in `documents.py`, `equipment.py`, `masters.py` and `tickets.py`, so it runs beside
    R01.3 only, not beside R01.4 or R01.7.
-6. **R01.7 last.** It waits for D1, and it shares `app.py` and `masters.py` with R01.4.
+6. **R01.7 last.** Q7.1 is answered (log lines only), and it shares `app.py` and `masters.py` with R01.4.
 
 **Parallel pairs** (no shared files, at most one migration; step skill § Parallel steps):
 - R01.2 ∥ R01.3 (backend vs frontend).
@@ -337,24 +336,46 @@ text below (CLAUDE-COMMON scope B).
 Settings view); R01.2 and R01.6 run best one after the other, because both change the auth tests
 (no shared file, but a finding in one changes the other).
 
-**Effort (estimate):** about two and a half days of step time with reviews, against the queue's
-"about a day". The difference: the readings sheet (S040) added a second full-page form to guard,
-and the access-change table (D1) is new work.
+**Effort (estimate):** about two days of step time with reviews, against the queue's "about a
+day". The difference: the readings sheet (S040) added a second full-page form to guard. Q7.1's
+log-lines answer took about half a day off the first estimate.
 
 ## Decisions for the user
 
-**D1. How complete must the access-change trail be?** Waits: R01.7.
-- **(a) Log lines only.** No migration, about 1 hour. The trail lives in the container logs; how
-  long they are kept is not known from this repo (risk below).
-- **(b) An append-only table and a read-only list in Settings › Access log — recommended.** The
-  record survives log rotation and can be shown in an ISO 27001 access review. One migration and
-  one tab; about half a day.
-- **(c) The table without a screen.** Same record; IT reads it in the database. Saves about an
-  hour, but KLA cannot see it.
-- With (b) or (c), also: **keep the rows forever (recommended: a few rows a month)**, or purge
-  after 365 days like the access log (Plan.MD § 1).
+**Answers (KLA, 26-10-2026, on the answer sheet
+https://claude.ai/artifact/7JKrBjU9VzZPEGpCytbCR2):**
 
-**D2. What happens when the sign-in cannot be renewed?** Waits: R01.3.
+| Question | Answer | Note |
+|---|---|---|
+| Q3.1 | a | A network drop keeps the typing; after a real end of session, *Sign in again* discards it (25-10-2026). |
+| Q3.2 | a | Only Raise ticket and the Readings sheet. |
+| Q4.1 | a | IT admin only. |
+| Q5.1 | a | Enforce the CSP in the release; check right after the deploy. |
+| Q5.2 | a | 127.0.0.1, plus a "Frontend (LAN)" run config. |
+| Q5.3 | a | Front proxy to 101 MB. KLA asked for a text for the devops team (below). |
+| Q6.1 | a | Yes, the every-role test. |
+| Q7.1 | **a** (not the recommendation) | Log lines only: "we will configure loki to ship logs". |
+| Q7.2 | — | Not asked: it applies only to Q7.1 b or c. |
+
+Also decided: R01.2 accepted as written; R01.6's declaration design (25-10-2026).
+
+**Text for the devops team (Q5.3):**
+
+> Yantra: raise the upload limit at the front proxy. In
+> `smtw_erp_devops/nginx/src/sites-available/vel-yantra.mspv.app.conf`, line 11, change
+> `client_max_body_size 50M;` to `client_max_body_size 101M;`, then reload nginx on the front
+> proxy. Why: Yantra's Settings allow uploads up to 100 MB, and Yantra's own nginx already
+> accepts 101 MB. Today a file between 50 and 100 MB gets the front proxy's "413 Request Entity
+> Too Large" page instead of Yantra's message. 101 MB leaves room for the form fields around a
+> 100 MB file. Check: upload a 60 MB PDF to a machine's documents in Yantra; it saves. No other
+> site changes.
+
+Questions are numbered by their item: Q3.2 is the second question of R01.3, and its options
+are answered as "3.2 a", "3.2 b" (renumbered 26-10-2026 at KLA's request; the old numbers
+were D2→Q3.1, D3→Q3.2, D6→Q4.1, D4→Q5.1, D5.1→Q5.2, D5.2→Q5.3, D7→Q6.1, D1.1→Q7.1,
+D1.2→Q7.2).
+
+**Q3.1. What happens when the sign-in cannot be renewed?** Waits: R01.3.
 - **(a) Keep the screen, show the message, offer *Sign in again* — recommended.** Simple. A
   network drop loses nothing. After a real end of session, *Sign in again* discards the input
   (see KLA's answer below).
@@ -366,12 +387,19 @@ and the access-change table (D1) is new work.
   shared phone until it is sent or discarded.
 - **(c) As today:** go to the login page at once. The input is lost.
 
-**D3. Which screens get the leave guard?** Waits: R01.3.
+**Q3.2. Which screens get the leave guard?** Waits: R01.3.
 - **(a) Raise ticket and the Readings sheet — recommended.** The two screens where real work is
   typed on a phone.
 - **(b) Also Settings.** Its inputs are IT admin's set-once values, at a desk; low value.
 
-**D4. Turn on the CSP at once, or watch it first?** Waits: R01.5.
+**Q4.1. Who sees the database details in Settings › Database?** Waits: R01.4.
+- **(a) IT admin only (`settings:edit`); a manager sees reachable yes or no and the schema
+  version — recommended.** IT admin works only from the plant network, so the details never reach
+  the internet. No new permission key.
+- (b) Managers too, but only from the plant network. Needs the network check in the route.
+- (c) As today.
+
+**Q5.1. Turn on the CSP at once, or watch it first?** Waits: R01.5.
 - **(a) Enforce it in the release, with a check right after the deploy — recommended.** The
   browser tests do not use Keycloak, so only production proves the sign-in under the CSP. A
   failure shows at once on login, and the way back is to redeploy the previous version.
@@ -380,30 +408,36 @@ and the access-change table (D1) is new work.
   releases.
 - **(c) No CSP now.** Only the header fixes; the CSP waits.
 
-**D5. Dev servers and the upload size** (two small points). Waits: R01.5.
-- Dev servers:
-  - **(a) Both on 127.0.0.1; a separate run config, "Frontend (LAN)", for the device checks that
-    run on the dev server — recommended.** The dev server skips sign-in, so it is open to the LAN
-    only while KLA runs a device check.
-  - (b) 127.0.0.1 only; dev-server device checks move to production.
-  - (c) As today: an admin API without sign-in on the LAN at port 5176.
-- Upload size above 50 MB:
-  - **(a) Raise the front proxy's limit to 101 MB (one line in the devops repo; KLA deploys it)
-    — recommended.** Settings stays the one place that sets the limit, and a refusal shows
-    Yantra's message.
-  - (b) Lower Settings' maximum to 50 MB. No devops change; a large manual must be split.
+**Q5.2. Where do the dev servers on KLA's laptop listen?** Waits: R01.5.
+- **(a) Both on 127.0.0.1; a separate run config, "Frontend (LAN)", for the device checks that
+  run on the dev server — recommended.** The dev server skips sign-in, so it is open to the LAN
+  only while KLA runs a device check.
+- (b) 127.0.0.1 only; dev-server device checks move to production.
+- (c) As today: an admin API without sign-in on the LAN at port 5176.
 
-**D6. Who sees the database details in Settings › Database?** Waits: R01.4.
-- **(a) IT admin only (`settings:edit`); a manager sees reachable yes or no and the schema
-  version — recommended.** IT admin works only from the plant network, so the details never reach
-  the internet. No new permission key.
-- (b) Managers too, but only from the plant network. Needs the network check in the route.
-- (c) As today.
+**Q5.3. How to fix the upload size above 50 MB?** Waits: R01.5.
+- **(a) Raise the front proxy's limit to 101 MB (one line in the devops repo; KLA deploys it)
+  — recommended.** Settings stays the one place that sets the limit, and a refusal shows
+  Yantra's message.
+- (b) Lower Settings' maximum to 50 MB. No devops change; a large manual must be split.
 
-**D7. Add the "every token role is a decision" test to R01.6?** Waits: R01.6.
+**Q6.1. Add the "every token role is a decision" test to R01.6?** Waits: R01.6.
 - **(a) Yes — recommended.** One small test; a future Keycloak role must be named internal-only
   or allowed from outside with a reason, so the deny-list gate cannot fail open by accident.
 - (b) No; it stays an audit hindsight point.
+
+**Q7.1. How complete must the access-change trail be?** Waits: R01.7.
+- **(a) Log lines only.** No migration, about 1 hour. The trail lives in the container logs; how
+  long they are kept is not known from this repo (risk below).
+- **(b) An append-only table and a read-only list in Settings › Access log — recommended.** The
+  record survives log rotation and can be shown in an ISO 27001 access review. One migration and
+  one tab; about half a day.
+- **(c) The table without a screen.** Same record; IT reads it in the database. Saves about an
+  hour, but KLA cannot see it.
+
+**Q7.2. With Q7.1 (b) or (c): how long are the rows kept?** Waits: R01.7.
+- **(a) Forever — recommended.** A few rows a month; the full history stays.
+- (b) Purge after 365 days, like the access log (Plan.MD § 1).
 
 **Not asked again:** Plan.MD § 1 already settles that every role except IT admin works from
 outside, that the VPN counts as internal, and that admin bypasses the gate. R01 departs from none
@@ -416,16 +450,17 @@ of it.
 - Audit [15]: the queued *Module and schema docs*.
 - Two-factor login (OTP) for the admin account: a Keycloak setting for KLA (`docs/Keycloak.md`
   line 82), not code. It is worth doing before R01.5's CSP release, since admin bypasses the gate.
-- The audit's hindsight points other than D7 (a global masters key, `team.py`, READ COMMITTED).
+- The audit's hindsight points other than Q6.1 (a global masters key, `team.py`, READ COMMITTED).
 - Malware scanning of uploads: its own queued item (ISO 27001 A.8.7).
-- Any edit of the devops repo by an agent: the one line of D5 is given as text for KLA.
+- Any edit of the devops repo by an agent: the one line of Q5.3 is given as text for KLA.
 
 **Risks:**
 - **The CSP can break sign-in in production only** (assumption: keycloak-js may load from or
   call `sso.mspv.app` in ways the dev bypass and the browser tests never exercise). Covered by
-  D4's check after the deploy and the rollback by redeploy.
-- **Container log retention is unknown** (fact: not in this repo; the devops compose would say).
-  With D1 (a), the access trail is only as long as the logs are kept.
+  Q5.1's check after the deploy and the rollback by redeploy.
+- **The access trail is only as long as Loki keeps it** (Q7.1 a). KLA will configure Loki to
+  ship the logs (devops, outside this repo); its retention sets how far back an access review can
+  look. Until Loki runs, the container's log rotation sets it.
 - **The front proxy's address is not confirmed** (`vm_register.yml` says "owner unconfirmed" for
   `10.24.0.100`). R01.1 step 6 confirms it before R01.5 narrows `set_real_ip_from`; a wrong
   address would make every client look like the proxy, so the gate would treat everyone as
@@ -451,6 +486,13 @@ of it.
 - 26-10-2026 — R01.1: checks 1 and 3 pass (KLA, phone), check 5 passes (curl); checks 2, 4 and 6
   are open. Found: the front proxy's `Permissions-Policy: camera=()` blocks any later in-page
   camera.
+- 26-10-2026 — KLA: R01.2 (token checks) accepted as written; it has no question.
+- 26-10-2026 — Questions renumbered by item (Q3.1 … Q7.2, mapping in § Decisions), at KLA's
+  request: the deck must name each question and label each option. The log lines above keep
+  the old D numbers.
+- 26-10-2026 — Gate R: KLA answered on the answer sheet. All at the recommendation except Q7.1
+  (a, log lines only; Loki will ship the logs). R01.7 shrinks to size S with no migration;
+  effort about two days. Status Approved.
 
 ## Feedback
 
