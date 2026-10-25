@@ -12,7 +12,7 @@ The checks (the numbers are the skill's § Check):
  4. Committed, every important check resolved, but not Done;
  5. every BR / BS finding of the brief reviews is answered in the brief;
  6. a step approved and not yet committed has a Baseline, and its commit exists;
- 7. device-checks.md's Done column and the impl report's ticks agree;
+ 7. device-checks.md's Done column and the impl report's ticks agree (skipped without the file);
  8. every folder has an index row and every row a folder; no step ID is used twice;
  9. the files a stage needs exist (impl report, code review);
 10. working-tree changes no step claims."""
@@ -165,7 +165,9 @@ def check_stage_files(status, names, has_impl_report):
 
 def run():
     facts = gather()
-    rows = device_rows((STEPS_DIR / "device-checks.md").read_text(encoding="utf-8"))
+    # A repo whose Device checks setting is none has no list: check 7 then has no rows to compare
+    device_file = STEPS_DIR / "device-checks.md"
+    rows = device_rows(device_file.read_text(encoding="utf-8")) if device_file.is_file() else []
     problems = []
     for step in facts.steps:
         if not step.has_brief:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "steps"))
 
 import step_snapshot as snap  # noqa: E402
 

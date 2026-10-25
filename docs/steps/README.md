@@ -321,11 +321,19 @@ Two things in a repo are its own; everything above is the same in every repo
 
 **The settings.** The repo's `.claude/CLAUDE.md` has a section
 `## Step workflow`: first a few lines on the repo's step tools, then one bullet
-per entry, `- **<Entry>**: <value>`, the form of `## Pre-flight`. The skill and
+per entry, `- **<Entry>**: <value>`, the form of `## Pre-flight`. An entry is one
+line (a bullet the IDE wraps loses the rest of its value). The skill and
 the agents point at an entry as "(settings: *Entry*)". A repo without the
 section: the orchestrator stops with "This repo has no Step workflow section in
 its CLAUDE.md. Add one; docs/steps/README.md lists the entries (see
 `## Pre-flight` for the form)."
+
+Six entries are read by the step tools (S057), so each is a list of backticked
+words, and its text outside the backticks is for the reader: a value holds no
+other backtick. A missing entry, or `none`, takes the default in the last
+column. The tools that read them (`step_facts.read_step_settings`) stop with
+the message above when the section is missing: `brief_facts.py` and
+`step_stats.py`. The other step tools read no setting.
 
 | Entry | Holds | When it is `none` |
 |---|---|---|
@@ -338,10 +346,17 @@ its CLAUDE.md. Add one; docs/steps/README.md lists the entries (see
 | *Device checks* | the device-check list, the named person, the kinds of check a browser cannot judge, the machines (where), an example Done status | device checks go to the user |
 | *Roadmap mock-ups* | the app's look (the style sheets to link, the views to copy from) and the sample data | the generic text only |
 | *Use on the floor* | the docs to judge screens against, the repo's missing-record states, the users' language | the generic text only |
+| *Code folders* | the folders the repo's code lives in, backticked: where `brief_facts.py` searches (`git grep`), then looks up a module `x.py` (and `tooling/steps`) and a test id's file (at the root, then `<folder>/<file>` and `<folder>/tests/<file>`) | the whole repo except `docs/`; modules in `tooling/steps` only; test files at the root only |
+| *Browser-test wrapper* | the file name of the command that starts a browser-test run, e.g. `run-e2e-tests.bat` | no browser runs counted; `/step stats` has no E2E columns (the other four `Browser-test` entries are then ignored) |
+| *Browser-test levels* | the level names counted, in the order of the report's columns; the header letters are their first letters (`b/n/t/f`); `targeted` is the reserved name of a run that names a spec file; a run with `--level=<name>` counts as that name; two levels may not share a first letter (the tool stops, exit 2) | as for the wrapper |
+| *Browser-test spec files* | the ending of a spec file name, e.g. `.spec.js`: a run naming such a file is `targeted`, at any level, when `targeted` is one of the levels; otherwise it counts at its `--level` or the default level | no run is `targeted` |
+| *Browser-test default level* | the level of a run with no flag and no spec file, then pairs `<level>` `<time>` (a date and time such as `2026-10-25T05:50Z`): such a run that started before the time has that level (the repo's history, when the wrapper's default changed) | the first level other than `targeted` |
+| *Browser-test total line* | a regular expression with one group, the seconds a run printed (e.g. `All lanes done in (\d+) s`); Playwright's own "N passed (1.2m)" line, for 40 tests or more, is built in | only Playwright's line |
 
 **The index.** The repo's steps are listed in `INDEX.md`, beside this file; it
 never syncs. The step tools (`tooling/steps/step_facts.py`) read it by shape,
-so keep it:
+so keep it; without it they stop with "This repo has no docs/steps/INDEX.md.
+docs/steps/README.md § The repo's settings and index gives its shape." (exit 2):
 - two tables, under `## Index` and, after it, `## Queued (not yet briefed)`;
 - an index row is `| S0NN | [<title>](S0NN-<slug>/1-brief.md) — <summary> | <phase> | <status> | <date> |`:
   the title cell links the step's brief, and the status is the fourth cell;
@@ -350,3 +365,6 @@ so keep it:
 - a step ID is used once.
 
 `docs/roadmap/INDEX.md` lists the roadmaps the same way; no tool parses it.
+
+`docs/steps/device-checks.md` is optional: `/step check` skips its check 7 when the
+file does not exist (a repo whose *Device checks* entry is `none`).

@@ -16,7 +16,10 @@ Reads every `backticked` reference in the brief:
     how many other code files use it, and which test files use it.
 Plain words in backticks (`down`, `critical`) are skipped: too common to grep usefully.
 It judges nothing: "not found" may be right for a name the brief says is new.
-Writes the same text to scratch/brief-facts-<step>.md."""
+Writes the same text to scratch/brief-facts-<step>.md.
+
+The folders searched are the repo's `Code folders` setting (.claude/CLAUDE.md § Step workflow);
+without it, the whole repo except docs/."""
 
 import re
 import subprocess
@@ -24,9 +27,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-STEPS_DIR = ROOT / "docs" / "steps"
-SEARCH_DIRS = ("backend", "frontend/src", "frontend/e2e", "frontend/tests", "tooling")
+from step_facts import ROOT, STEPS_DIR, backticked, load_step_settings
+
+STEP_TOOLS_DIR = "tooling/steps"          # the step tools sync to every repo: modules are looked up here too
 MAX_LISTED = 8                          # files or lines listed per name; the count says the rest
 
 BACKTICKED = re.compile(r"`([^`\n]+)`")
@@ -97,8 +100,9 @@ def definition_pattern(name):
                       rf"export\s+(default\s+)?(async\s+)?(function|const|class)\s+{word}\b")
 
 
-def summarise_hits(name, hits):
-    """git grep lines ("path:line:text") for ``name`` -> its report lines."""
+def summarise_hits(name, hits, folders=None):
+    """git grep lines ("path:line:text") for ``name`` -> its report lines.  A module ``name.py``
+    is looked up in each code folder (``folders``), then in the step tools' folder."""
     short = name.rsplit(".", 1)[-1]
     defines = definition_pattern(short)
     definitions, code_files, test_files = [], [], []
@@ -113,7 +117,8 @@ def summarise_hits(name, hits):
             code_files.append(path)
     if not hits:
         return [f"- `{name}`: not found"]
-    module = next((f"{d}/{short}.py" for d in ("backend", "tooling/steps") if (ROOT / d / f"{short}.py").is_file()), None)
+    module = next((f"{d}/{short}.py" for d in (*(folders or ()), STEP_TOOLS_DIR) if (ROOT / d / f"{short}.py").is_file()),
+                  None)
     where = f"a module ({module})" if module else (listing(definitions) or "none found")
     lines = [f"- `{name}`: defined at {where}"]
     lines.append(f"  - used in {len(code_files)} code file(s): {listing(code_files) or '—'}")
@@ -130,19 +135,21 @@ def listing(items):
 # Files and git
 # ---------------------------------------------------------------------------------------------
 
-def grep(pattern, fixed=True, word=True, dirs=SEARCH_DIRS):
-    """Tracked and untracked (not ignored) files under ``dirs`` -> 'path:line:text' lines."""
+def grep(pattern, folders=None, fixed=True, word=True):
+    """Tracked and untracked (not ignored) files under the code ``folders`` -> 'path:line:text'
+    lines; with no folders, the whole repo except docs/ (the step files name the code names they
+    discuss and would count as code)."""
     args = ["git", "grep", "-n", "-I", "--untracked"]
     args += ["-F"] if fixed else ["-E"]
     args += ["-w"] if word else []
-    args += ["-e", pattern, "--", *dirs]
+    args += ["-e", pattern, "--", *(folders or (".", ":!docs"))]
     result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     if result.returncode > 1:            # 1 = no match
         raise RuntimeError(result.stderr.strip())
     return [line for line in result.stdout.splitlines() if "__pycache__" not in line]
 
 
-def check_path(ref):
+def check_path(ref, folders=None):
     path = ROOT / ref.value
     if not path.is_file():
         return [f"- `{ref.value}`: **no such file**"]
@@ -152,7 +159,7 @@ def check_path(ref):
     return [f"- `{ref.value}`: exists ({count} lines)"]
 
 
-def check_file(ref):
+def check_file(ref, folders=None):
     """A bare file name -> where files of that name are (tracked or untracked, not ignored)."""
     result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{ref.value}",
                              ref.value], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
@@ -160,10 +167,13 @@ def check_file(ref):
     return [f"- `{ref.value}`: " + (listing(found) if found else "**no file of that name**")]
 
 
-def check_test(ref):
+def check_test(ref, folders=None):
+    """A test id's file is looked up at the root, then in each code folder and its tests/ folder."""
     file_part, names = ref.value.split("::", 1)
-    candidates = [p for p in (ROOT / file_part, ROOT / "backend" / file_part, ROOT / "backend/tests" / file_part)
-                  if p.is_file()]
+    places = [ROOT / file_part]
+    for folder in folders or ():
+        places += [ROOT / folder / file_part, ROOT / folder / "tests" / file_part]
+    candidates = [p for p in places if p.is_file()]
     if not candidates:
         return [f"- `{ref.value}`: **no such test file**"]
     text = candidates[0].read_text(encoding="utf-8", errors="replace")
@@ -171,28 +181,29 @@ def check_test(ref):
     return [f"- `{ref.value}`: " + (f"**not found: {', '.join(missing)}**" if missing else "exists")]
 
 
-def test_files_naming(text):
-    return sorted({hit.split(":", 1)[0] for hit in grep(text, word=False) if is_test_path(hit.split(":", 1)[0])})
+def test_files_naming(text, folders=None):
+    return sorted({hit.split(":", 1)[0] for hit in grep(text, folders, word=False)
+                   if is_test_path(hit.split(":", 1)[0])})
 
 
-def check_route(ref):
+def check_route(ref, folders=None):
     """Tests often build a route from a constant (f"{EQUIPMENT}/asset-list"), so when the whole
     route is in no test file, its last segment is looked for instead, and the line says so."""
     prefix = re.sub(r"/?<[^>]+>.*$", "", ref.value)
-    files, how = test_files_naming(prefix), ""
+    files, how = test_files_naming(prefix, folders), ""
     last = "/" + prefix.rsplit("/", 1)[-1]
     if not files and last != prefix and last != "/api":
-        files, how = test_files_naming(last), f" (by its last segment `{last}`)"
+        files, how = test_files_naming(last, folders), f" (by its last segment `{last}`)"
     return [f"- `{ref.value}`: called in {len(files)} test file(s){how}: {listing(files) or '—'}"]
 
 
-def check_name(ref):
+def check_name(ref, folders=None):
     module, _, short = ref.value.rpartition(".")
-    hits = grep(short)
+    hits = grep(short, folders)
     if module:
         own = [h for h in hits if Path(h.split(":", 1)[0]).stem == module.rsplit(".", 1)[-1]]
         hits = own or hits
-    return summarise_hits(ref.value, hits)
+    return summarise_hits(ref.value, hits, folders)
 
 
 CHECKS = {"path": check_path, "file": check_file, "test": check_test, "route": check_route, "name": check_name}
@@ -212,6 +223,7 @@ def main(argv):
     if len(argv) != 1:
         print(__doc__)
         return 2
+    folders = backticked(load_step_settings().get("Code folders")) or None
     path = brief_path(argv[0])
     refs = extract_refs(path.read_text(encoding="utf-8"))
     out = [f"# Brief facts — {path.relative_to(ROOT).as_posix()}", "",
@@ -221,7 +233,7 @@ def main(argv):
         if group:
             out += [f"## {title}", ""]
             for ref in group:
-                out += CHECKS[kind](ref)
+                out += CHECKS[kind](ref, folders)
             out.append("")
     text = "\n".join(out)
     step = re.match(r"S\d{3}", path.parent.name)

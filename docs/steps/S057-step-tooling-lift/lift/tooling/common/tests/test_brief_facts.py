@@ -2,10 +2,14 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "steps"))
 
 import brief_facts  # noqa: E402
+import step_facts  # noqa: E402
 from brief_facts import Ref, classify, extract_refs, is_test_path, summarise_hits  # noqa: E402
 
 
@@ -79,3 +83,64 @@ class TestSummariseHits:
     def test_a_long_list_is_cut(self):
         hits = [f"backend/m{i}.py:1:x = some_name()" for i in range(brief_facts.MAX_LISTED + 2)]
         assert summarise_hits("some_name", hits)[1].endswith("… (+2)")
+
+
+# ---------------------------------------------------------------------------------------------
+# S057: the folders come from the repo's Code folders setting
+# ---------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def git_args(monkeypatch):
+    """brief_facts.grep without git: records the argument list and finds nothing."""
+    seen = []
+
+    def fake_run(args, **_kwargs):
+        seen.append(args)
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(brief_facts.subprocess, "run", fake_run)
+    return seen
+
+
+def test_grep_searches_the_code_folders_given(git_args):
+    brief_facts.grep("x_y", ["backend", "frontend/src"])
+    assert git_args[0][-3:] == ["--", "backend", "frontend/src"]
+
+
+def test_grep_without_folders_searches_the_repo_except_docs(git_args):
+    brief_facts.grep("x_y", None)
+    assert git_args[0][-3:] == ["--", ".", ":!docs"]
+
+
+def test_a_module_is_looked_up_in_each_code_folder_then_in_the_step_tools(tmp_path, monkeypatch):
+    monkeypatch.setattr(brief_facts, "ROOT", tmp_path)
+    for folder in ("app", "tooling/steps"):
+        (tmp_path / folder).mkdir(parents=True)
+    (tmp_path / "app" / "orders.py").write_text("", encoding="utf-8")
+    (tmp_path / "tooling" / "run_logged.py").write_text("", encoding="utf-8")
+    (tmp_path / "tooling" / "steps" / "step_ls.py").write_text("", encoding="utf-8")
+    hits = ["app/orders.py:1:x = 1"]
+    assert summarise_hits("orders", hits, ["app", "tooling"])[0] == "- `orders`: defined at a module (app/orders.py)"
+    assert "a module (tooling/run_logged.py)" in summarise_hits("run_logged", hits, ["app", "tooling"])[0]
+    assert "a module (tooling/steps/step_ls.py)" in summarise_hits("step_ls", hits, None)[0]
+    assert "a module" not in summarise_hits("orders", hits, None)[0]       # no folders: step tools only
+
+
+def test_a_test_id_is_looked_up_at_the_root_then_in_each_code_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(brief_facts, "ROOT", tmp_path)
+    (tmp_path / "web" / "tests").mkdir(parents=True)
+    (tmp_path / "web" / "tests" / "test_a.py").write_text("def test_it(): pass\n", encoding="utf-8")
+    (tmp_path / "test_root.py").write_text("def test_r(): pass\n", encoding="utf-8")
+    assert brief_facts.check_test(Ref("test", "test_a.py::test_it"), ["web"]) == ["- `test_a.py::test_it`: exists"]
+    assert brief_facts.check_test(Ref("test", "test_a.py::test_it"), None) == [
+        "- `test_a.py::test_it`: **no such test file**"]
+    assert brief_facts.check_test(Ref("test", "test_root.py::test_r"), None) == ["- `test_root.py::test_r`: exists"]
+    assert "not found: test_gone" in brief_facts.check_test(Ref("test", "test_a.py::test_gone"), ["web"])[0]
+
+
+def test_the_report_needs_the_settings_section(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(step_facts, "SETTINGS_FILE", tmp_path / "CLAUDE.md")        # no such file
+    with pytest.raises(SystemExit) as stopped:
+        brief_facts.main(["S001"])
+    assert stopped.value.code == 2
+    assert "no Step workflow section" in capsys.readouterr().err

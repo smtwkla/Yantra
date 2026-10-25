@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "steps"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "steps"))
 
 from step_ls import shown  # noqa: E402
 

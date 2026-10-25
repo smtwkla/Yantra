@@ -4,7 +4,9 @@ behind /step check.  No git and no files: the pure functions only."""
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "steps"))
 
 import step_check  # noqa: E402
 import step_facts  # noqa: E402
@@ -230,3 +232,95 @@ class TestStageFiles:
     def test_an_impl_report_before_approval(self):
         [problem] = step_check.check_stage_files("Gate A", ["1-brief.md", "3-impl-report.md"], True)
         assert "exists" in problem
+
+
+# ---------------------------------------------------------------------------------------------
+# S057: the settings reader, and a repo that is not set up
+# ---------------------------------------------------------------------------------------------
+
+CLAUDE_MD = """\
+# CLAUDE.md
+
+## Step workflow
+
+Read by `/step`. One bullet per entry.
+
+- **Unit tests**: `tooling/run-tests.bat`
+- **Code folders**: `backend` `frontend/src`
+- **Device checks**: none
+- **Browser-test total line**: `All lanes done in (\\d+) s`
+
+### A sub-heading stays in the section
+
+- **Standards**: ISO 14224
+
+## Pre-flight
+
+- **Test command**: `x`
+"""
+
+
+class TestReadStepSettings:
+    def test_the_entries_of_the_section_only(self):
+        settings = step_facts.read_step_settings(CLAUDE_MD)
+        assert set(settings) == {"Unit tests", "Code folders", "Device checks", "Browser-test total line", "Standards"}
+        assert "Test command" not in settings               # the section ends at the next "## "
+
+    def test_none_reads_as_none(self):
+        assert step_facts.read_step_settings(CLAUDE_MD)["Device checks"] is None
+        assert step_facts.read_step_settings("## Step workflow\n\n- **Code folders**: `none`\n") == {"Code folders": None}
+
+    def test_a_missing_entry_is_not_in_the_dict(self):
+        assert "Browser-test wrapper" not in step_facts.read_step_settings(CLAUDE_MD)
+
+    def test_no_section_is_none(self):
+        assert step_facts.read_step_settings("# CLAUDE.md\n\n## Pre-flight\n\n- **Test command**: `x`\n") is None
+        assert step_facts.read_step_settings("") is None
+
+    def test_a_section_with_no_entry_is_an_empty_dict(self):
+        assert step_facts.read_step_settings("## Step workflow\n\nText only.\n") == {}
+
+
+class TestBackticked:
+    def test_the_words_without_their_backticks(self):
+        assert step_facts.backticked("`backend` `frontend/src`; read by x") == ["backend", "frontend/src"]
+        assert step_facts.backticked(r"`All lanes done in (\d+) s`") == [r"All lanes done in (\d+) s"]
+
+    def test_none_and_plain_text(self):
+        assert step_facts.backticked(None) == []
+        assert step_facts.backticked("no ticks here") == []
+
+
+def test_no_section_stops_with_the_message(tmp_path, monkeypatch, capsys):
+    (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n", encoding="utf-8")
+    monkeypatch.setattr(step_facts, "SETTINGS_FILE", tmp_path / "CLAUDE.md")
+    with pytest.raises(SystemExit) as stopped:
+        step_facts.load_step_settings()
+    assert stopped.value.code == 2
+    assert capsys.readouterr().err.strip() == (
+        "This repo has no Step workflow section in its CLAUDE.md. Add one; docs/steps/README.md lists the "
+        "entries (see `## Pre-flight` for the form).")
+
+
+def test_the_settings_load_from_the_file(tmp_path, monkeypatch):
+    (tmp_path / "CLAUDE.md").write_text(CLAUDE_MD, encoding="utf-8")
+    monkeypatch.setattr(step_facts, "SETTINGS_FILE", tmp_path / "CLAUDE.md")
+    assert step_facts.backticked(step_facts.load_step_settings()["Code folders"]) == ["backend", "frontend/src"]
+
+
+def test_gather_without_an_index_stops_with_the_message(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(step_facts, "STEPS_DIR", tmp_path)
+    with pytest.raises(SystemExit) as stopped:
+        step_facts.gather()
+    assert stopped.value.code == 2
+    assert capsys.readouterr().err.strip() == (
+        "This repo has no docs/steps/INDEX.md. docs/steps/README.md § The repo's settings and index gives its shape.")
+
+
+def test_check_7_has_no_rows_without_a_device_check_file(tmp_path, monkeypatch):
+    """A repo whose Device checks entry is none has no docs/steps/device-checks.md: /step check runs."""
+    monkeypatch.setattr(step_check, "STEPS_DIR", tmp_path)                 # no device-checks.md in it
+    monkeypatch.setattr(step_check, "gather", lambda: step_facts.Facts([], [], {}, [], [], []))
+    problems, _facts = step_check.run()
+    assert problems == []
+    assert step_check.check_device_rows("S019", "Done", "- [x] date picker — by IT Admin\n", []) == []

@@ -54,6 +54,12 @@ Work is done in numbered steps (`S001`, …) whose brief, reviews and implementa
 - **Device checks**: the list `docs/steps/device-checks.md`; the named person IT Admin; the kinds a browser engine cannot judge: a real camera or QR scan, paper from a printer and a ruler, the iPhone keyboard over a dialog, a real login through Keycloak, how a gloved thumb copes; where: the dev server on KLA's laptop, production on the TEST machine, or either; a Done status, e.g. `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped — iPhone)`.
 - **Roadmap mock-ups**: in Yantra's look: link `../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css` and `../../../frontend/src/assets/main.css`; the closest views are in `frontend/src/views/` (cards, the top bar, the bottom nav on a phone, form fields, badges); sample data from `docs/Plant-Facts.md` (machines, meters, units).
 - **Use on the floor**: judge each screen against how the plant works: `docs/Plant-Facts.md`, Plan.MD § 3 and § 6; the repo's missing-record state is no Team record (the no-Team-record states rendered, not blank or a 403); the wording: what a low-literacy or Tamil-speaking user would follow, where they use the screen.
+- **Code folders**: `backend` `frontend/src` `frontend/e2e` `frontend/tests` `tooling`; read by brief_facts.py: the folders git grep searches, and where a module and a test file are looked up; none = the whole repo except docs/.
+- **Browser-test wrapper**: `run-e2e-tests.bat`; read by step_stats.py: the file name of the command that starts a browser run; none = no browser runs counted, no E2E columns.
+- **Browser-test levels**: `basic` `normal` `targeted` `full`; the levels step_stats.py counts, in the order of its columns (header b/n/t/f); targeted is the reserved name of a run that names a spec file; two levels may not share a first letter.
+- **Browser-test spec files**: `.spec.js`; a run that names a file ending so is targeted, at any level.
+- **Browser-test default level**: `normal` `full` `2026-10-25T05:50Z`; the level of a run with no flag and no spec file, then pairs of a level and a time: such a run that started before the time has that level (S047's runner of 25-10-2026 made no flag mean Normal; before it, Full).
+- **Browser-test total line**: `All lanes done in (\d+) s`; a regular expression with one group, the seconds a lane run printed; Playwright's own N passed (1.2m) line (40 tests or more) is built in.
 
 ## Docs to keep current
 

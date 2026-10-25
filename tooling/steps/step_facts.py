@@ -4,11 +4,13 @@ the files and runs git twice (one log, one status)."""
 
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 STEPS_DIR = ROOT / "docs" / "steps"
+SETTINGS_FILE = ROOT / ".claude" / "CLAUDE.md"
 # Files every step touches: listed once, not under each step
 SHARED_DOCS = ("docs/steps/INDEX.md", "docs/steps/device-checks.md")
 HEADER_LINES = 15                       # the header block is the brief's first lines
@@ -22,6 +24,12 @@ QUEUED_ROW = re.compile(r"^\| (S\d{3})\b")
 SUBJECT_STEPS = re.compile(r"^\s*((?:S\d{3}\s*[,+&/]?\s*(?:and\s+)?)+)[:;\-–]")
 REVIEW_FILE = re.compile(r"^(2-brief-review|4-code-review)-([rs])(\d+)\.md$")
 FILE_PATH = re.compile(r"`([\w.\-]+(?:/[\w.\-\[\]]+)+\.\w+)`")
+SETTINGS_ENTRY = re.compile(r"^- \*\*(.+?)\*\*: (.*)$")
+BACKTICKED = re.compile(r"`([^`]+)`")
+NO_SETTINGS = ("This repo has no Step workflow section in its CLAUDE.md. Add one; docs/steps/README.md "
+               "lists the entries (see `## Pre-flight` for the form).")
+NO_INDEX = ("This repo has no docs/steps/INDEX.md. docs/steps/README.md § The repo's settings and index "
+            "gives its shape.")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -98,6 +106,29 @@ def impl_report_files(text):
     return set(FILE_PATH.findall(text))
 
 
+def read_step_settings(text):
+    """.claude/CLAUDE.md text -> {entry: value} of the bullets `- **<Entry>**: <value>` in its
+    `## Step workflow` section (the form of `## Pre-flight`), or None when there is no such
+    section.  An entry is one line.  A value ``none`` is None."""
+    settings, in_section = {}, False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if in_section:
+                break
+            in_section = line.startswith("## Step workflow")
+            continue
+        match = SETTINGS_ENTRY.match(line) if in_section else None
+        if match:
+            value = match.group(2).strip()
+            settings[match.group(1)] = None if value.strip("`").lower() == "none" else value
+    return settings if in_section else None
+
+
+def backticked(value):
+    """An entry's value -> the list of its backticked words ([] for None)."""
+    return BACKTICKED.findall(value or "")
+
+
 # ---------------------------------------------------------------------------------------------
 # The shell: files and git
 # ---------------------------------------------------------------------------------------------
@@ -160,9 +191,26 @@ def read_head(path, lines=HEADER_LINES):
         return "".join(fh.readline() for _ in range(lines))
 
 
+def stop(message):
+    """A repo is not set up for the tools: say so on one line and exit 2."""
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
+
+
+def load_step_settings():
+    """The repo's Step workflow settings; stops (exit 2) when its CLAUDE.md has no such section."""
+    text = SETTINGS_FILE.read_text(encoding="utf-8") if SETTINGS_FILE.is_file() else ""
+    settings = read_step_settings(text)
+    if settings is None:
+        stop(NO_SETTINGS)
+    return settings
+
+
 def gather():
     """Every index step, read once (the brief's header, the folder's names, the impl report),
     with its commits and working-tree changes."""
+    if not (STEPS_DIR / "INDEX.md").is_file():
+        stop(NO_INDEX)
     index, queued = parse_index((STEPS_DIR / "INDEX.md").read_text(encoding="utf-8"))
     commits, hashes = {}, []
     for line in git("log", "--format=%H %s").splitlines():

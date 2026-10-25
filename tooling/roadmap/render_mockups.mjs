@@ -5,12 +5,12 @@
 //   node tooling/roadmap/render_mockups.mjs docs/roadmap/R01-mockups
 //
 // A mock-up chooses its size with <meta name="mockup-viewport" content="phone|desktop">: phone is
-// the Pixel 7 the logic tests use (412 x 915, scale 2), desktop 1366 x 768 (the desktop project).
+// a Pixel 7-size phone (412 x 915, scale 2), desktop a 1366 x 768 desktop.
 // A phone mock-up needs <meta name="viewport" content="width=device-width, initial-scale=1">, as the
 // app has: without it a mobile browser lays the page out 980 px wide.  The whole page is shot
 // (fullPage), so a long form or report shows in one picture.
 // Mock-ups load Bootstrap and the app's main.css by relative path from frontend/, so they look like
-// Yantra and need no network.  Exit 0 when every file rendered, 1 otherwise.
+// the app and need no network.  Exit 0 when every file rendered, 1 otherwise.
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -18,7 +18,6 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(ROOT, "frontend", "package.json"));
-const { chromium } = require("playwright");
 
 export const VIEWPORTS = {
   phone: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
@@ -40,6 +39,14 @@ async function main(folder) {
   const files = readdirSync(dir).filter((name) => name.toLowerCase().endsWith(".html")).sort();
   if (!files.length) {
     console.log(`No .html mock-ups in ${dir}.`);
+    return 1;
+  }
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch (err) {
+    if (err.code !== "MODULE_NOT_FOUND" && err.code !== "ERR_MODULE_NOT_FOUND") throw err;
+    console.log("Playwright is not installed in frontend/. The mock-up deck needs the browser tests' Playwright.");
     return 1;
   }
   const browser = await chromium.launch();

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tooling" / "roadmap" / "render_mockups.mjs"
 
 needs_node = pytest.mark.skipif(
@@ -57,3 +57,17 @@ def test_no_folder_named_says_how_to_call_it():
     result = run()
     assert result.returncode == 1
     assert "Name the mock-up folder" in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is missing")
+def test_playwright_missing_says_so(tmp_path):
+    """S057: in a repo without frontend/node_modules/playwright the script explains instead of throwing."""
+    script = tmp_path / "tooling" / "roadmap" / "render_mockups.mjs"
+    script.parent.mkdir(parents=True)
+    script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    mockups = tmp_path / "mockups"
+    mockups.mkdir()
+    (mockups / "a.html").write_text("<html><body>x</body></html>")
+    result = subprocess.run(["node", str(script), str(mockups)], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 1
+    assert "Playwright is not installed in frontend/." in result.stdout

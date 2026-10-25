@@ -1,7 +1,7 @@
 @echo off
 setlocal
-:: Tests of the tooling scripts (tooling\tests: deploy.py, S025; steps\: step_facts, step_check, brief_facts; run_lanes;
-:: run_logged). pytest and python-dotenv are fetched by uv (not locked); the tests use no network,
+:: Tests of the tooling scripts (tooling\tests: deploy.py, S025; preflight; run_lanes;
+:: run_logged). The step tools' tests are not here: they live in smtw-common (S057). pytest and python-dotenv are fetched by uv (not locked); the tests use no network,
 :: fetching them needs it once on a cold uv cache.
 :: Log: scratch\tooling-tests.log (YANTRA_TEST_LOG_DIR; tooling-tests-<run>.log when YANTRA_TEST_RUN is not dev); the last line is a summary.
 if not defined YANTRA_TEST_LOG_DIR set "YANTRA_TEST_LOG_DIR=%~dp0..\scratch"
