@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Status: Committed a2b4ac2 (25-10-2026); important check pending: KLA runs Pre-flight, then Release patch skips its tests (impl report, How KLA tests it); lift to smtw-common by KLA
+Status: Done (committed a2b4ac2, 25-10-2026; checks: the important one done by KLA, 25-10-2026, in the v0.1.10 release; the lift to smtw-common is KLA's)
 Baseline: 01d3566 (staleness review s1, 25-10-2026: only S054's sentence in CLAUDE.md § Browser tests changed)
 ```
 

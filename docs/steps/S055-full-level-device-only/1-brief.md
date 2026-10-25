@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: light
-Status: Gate B (CR r1: 1 minor, 2 nits — fixed, comments and the report only; snapshot refs/steps/S055)
+Status: Done (committed 2bb8632, 25-10-2026; released in v0.1.10; no device checks)
 Baseline: a2b4ac2 (stale check 25-10-2026: the code files of § 3 are unchanged since review r1; the docs changed only by S049, now committed, as BR1-04 expected, and by the uncommitted workflow edits — the orchestrator rename, the roadmapper — which touch no line on the Full level)
 ```
 

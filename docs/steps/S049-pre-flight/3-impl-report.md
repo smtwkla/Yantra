@@ -125,7 +125,7 @@ Seen in the runs, for the reviewer and KLA:
 
 ## Manual checks
 
-- [ ] **important** — Run `/pre-flight` (or the **Pre-flight** run config) before the next release; then **Release patch**: its console shows "Tests passed in pre-flight …" and goes straight to the version bump.
+- [x] **important** — Run `/pre-flight` (or the **Pre-flight** run config) before the next release; then **Release patch**: its console shows "Tests passed in pre-flight …" and goes straight to the version bump. — by KLA, 25-10-2026: the Pre-flight run config stamped 2bb8632 at 19:33; Release patch printed "Tests passed in pre-flight on 25-10-2026 19:33 for 2bb8632. The release does not run them again." and released v0.1.10 (03cad32, the stamp carried).
 
 ### How KLA tests it before copying it to smtw-common
 
