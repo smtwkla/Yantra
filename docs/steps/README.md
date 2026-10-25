@@ -5,8 +5,9 @@ implemented and reviewed again across separate Claude Code terminals:
 
 | Role | Model | Writes |
 |---|---|---|
+| Roadmapper | Opus | `docs/roadmap/R0N-<feature>.md`: a big feature cut into items `R0N.n`, the seed of steps (gate R; `docs/roadmap/README.md`) |
 | Advisor | Fable | `0-advice-<topic>.md` (on request) |
-| Planner | Opus | `1-brief.md` |
+| Orchestrator | Opus | `1-brief.md` |
 | Brief reviewer | Fable | `2-brief-review-rN.md` |
 | Coder | Opus or Sonnet | the code + `3-impl-report.md` |
 | Code reviewer | Opus | `4-code-review-rN.md` |
@@ -34,8 +35,8 @@ progress:
 
 | File | Written by | Purpose |
 |---|---|---|
-| `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the planner, a coder or a reviewer through the orchestrator (25-10-2026). Optional; a step may have none or several. |
-| `1-brief.md` | Planner | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
+| `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the orchestrator, a coder or a reviewer through the orchestrator (25-10-2026). Optional; a step may have none or several. |
+| `1-brief.md` | Orchestrator | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
 | `2-brief-review-r1.md`, `-r2.md`, … | Brief reviewer | One file per review round |
 | `2-brief-review-s1.md`, `-s2.md`, … | Brief reviewer | A staleness review: does the approved brief still hold for code changed since its baseline (§ Stale brief check) |
 | `3-impl-report.md` | Coder | The mandatory post-implementation report (CLAUDE-COMMON "Report after implementation"). Its **Docs updated** section lists every doc the step changed (the docs pass, standing rule 24-10-2026; which docs: `.claude/CLAUDE.md` § Docs to keep current), or says why none; its **Fix rounds** section answers each code-review finding. |
@@ -58,6 +59,7 @@ Date: DD-MM-YYYY
 Track: light | full
 Baseline: <commit> [+ uncommitted S0NN, …]
 Status: Draft | In review | Approved DD-MM-YYYY by <user> | Implementing | In code review | Done | Dropped
+From: R0N.n            (only for a step taken up from a roadmap item)
 ```
 
 `Track`, `Baseline` and `Status` appear in the brief only. The brief's status
@@ -78,7 +80,7 @@ track, so a small change doesn't carry a large step's ceremony.
   endpoint beyond plain CRUD;
 - roughly 10 files or fewer.
 
-The planner proposes the track; the user confirms or overrides it.
+The orchestrator proposes the track; the user confirms or overrides it.
 
 | | Full | Light |
 |---|---|---|
@@ -94,9 +96,9 @@ the index row are updated, and the user is told. A finding that only says
 "belongs on the full track" is `minor` (23-10-2026, S029): it switches the
 track, and the user may keep light at approval.
 
-**Facts run.** Before brief review round 1, the planner runs
+**Facts run.** Before brief review round 1, the orchestrator runs
 `tooling/step-brief-facts.bat S0NN`: where each file, test, route and code name
-the brief cites exists, and which tests use it. The planner fixes the brief
+the brief cites exists, and which tests use it. The orchestrator fixes the brief
 from it; the brief reviewer gets the output (23-10-2026, S029).
 
 **The light brief** (about a page):
@@ -155,7 +157,7 @@ The rules:
   `screens.spec.js`) on the Android phone, about 2 minutes. **Normal** (no
   flag): every test on the Android phone, and the `@device` tests (layout
   checks, tests that differ by device) on desktop. **Full**
-  (`--level=full`): every test on the Android phone, the iPhone and desktop.
+  (`--level=full`): every test on the Android phone, and the `@device` tests on the iPhone and desktop.
 - **The coder** runs the e2e tests whenever the frontend or an API the
   screens use changed, and reports the real result. It makes targeted runs
   (Normal with the spec files of the screens the step changed, plus
@@ -173,13 +175,13 @@ The rules:
   dev server on KLA's laptop, production on the TEST machine, or either) and
   done. A done row stays as the record (who, when).
 - **The round trip.** The user hands the named person the rows (printed or by
-  chat); the person reports back to the user; the user tells the planner; the
-  planner writes `- [x] <check> — by <name>, DD-MM-YYYY` into the step's impl
+  chat); the person reports back to the user; the user tells the orchestrator; the
+  orchestrator writes `- [x] <check> — by <name>, DD-MM-YYYY` into the step's impl
   report and fills the row's *Done* column. The person never edits the file.
-- **At gate B** the planner shows the `[auto]` checks as passed tests and the
+- **At gate B** the orchestrator shows the `[auto]` checks as passed tests and the
   real-device ones as the checklist. The user decides which checks are which,
   and can skip any.
-- **Nobody ticks for someone else.** The planner records the user's or the
+- **Nobody ticks for someone else.** The orchestrator records the user's or the
   named person's answer (`[x] … — by <name>, DD-MM-YYYY`, or `[skipped]
   <reason>`), never ticking a box on their behalf.
 - **Done** needs every important check `[auto]`, ticked for the user or the
@@ -197,14 +199,14 @@ The rules:
   - `Rejected`, with why;
   - `Deferred`, with the step it goes to.
 
-  The planner answers in the brief's Review log, and the coder in the impl report's Fix rounds.
+  The orchestrator answers in the brief's Review log, and the coder in the impl report's Fix rounds.
 
 ## Gates
 
 1. **Brief review.** The brief goes from `Draft` to `In review`. Review rounds
    repeat until no `blocker` or `major` finding is open.
 2. **Approval.** (None on the fix lane, § Tracks.) Only the user sets `Approved`, after reading the brief as it
-   stands after the last review round. On the full track the planner shows its
+   stands after the last review round. On the full track the orchestrator shows its
    decision-relevant sections verbatim (what, out of scope, standards, design
    decisions, open questions) and lists the others by heading, rather than a
    summary; on the light track, a bullet summary and the path (§ Tracks). The coder
@@ -228,7 +230,7 @@ Whoever changes a step's status also updates its row in the index below.
 A change requested after a brief is approved, while the step is not yet `Done`,
 becomes an **amendment** rather than a new step:
 
-1. **Write it.** The planner adds the amendment under the brief's **§ 10
+1. **Write it.** The orchestrator adds the amendment under the brief's **§ 10
    Amendments** as `A1`, `A2`, … It has its own header (requested by, status
    `Proposed` / `Approved DD-MM-YYYY by <user>`) and its own what, rules, where,
    tests and open points.
@@ -250,21 +252,21 @@ between approval and coding. The check catches it before the coder starts.
 
 1. **Record the baseline.** Every brief review names the code it read:
    `Reviewed against: <commit> [+ uncommitted S0NN, …]`. When the user approves,
-   the planner copies the last one into the brief's header as `Baseline:`.
+   the orchestrator copies the last one into the brief's header as `Baseline:`.
 2. **Check before coding** (the step, or an approved amendment):
-   - the planner compares the files named in the brief's *Where*, and the
+   - the orchestrator compares the files named in the brief's *Where*, and the
      modules they call, between the baseline and the working tree now (commits
      since the baseline plus uncommitted changes);
    - **nothing changed:** the coder starts;
    - **something changed:** one **staleness review**, `2-brief-review-sN.md`.
      The brief reviewer gets that diff and answers one question: does each
      statement in the brief still hold? Findings are `BS<n>-<nn>`;
-   - the planner answers them in the Review log as usual. A `blocker` or
+   - the orchestrator answers them in the Review log as usual. A `blocker` or
      `major` finding changes what the user approved, so the brief goes back to
      the user (gate A) before coding. Minor findings and nits are fixed in the
      brief text and the coder starts;
    - after the check, `Baseline:` is set to the code just checked.
-3. **Skipped** only when the user says so; the planner records it in the brief.
+3. **Skipped** only when the user says so; the orchestrator records it in the brief.
 
 ## IDE reformatting
 
@@ -308,7 +310,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 
 ## Prompts per terminal (manual mode)
 
-- Planner: `Plan S00N <topic> in docs/steps`
+- Orchestrator: `Plan S00N <topic> in docs/steps`
 - Brief reviewer: `Review docs/steps/S00N-<slug>/1-brief.md, write 2-brief-review-rN.md`
 - Coder: `Implement S00N per the approved brief, write 3-impl-report.md`
 - Code reviewer: `Review the S00N implementation (git diff) against 1-brief.md, write 4-code-review-rN.md`
@@ -364,13 +366,13 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S045 | [The known flaky tests made steady](S045-flaky-tests/1-brief.md) — five tests that failed at random (S016 deactivate, S018 A1 raise, S020 part line, S019 overdue after midnight, the push redirect test on Windows), test code only (fix lane) | 3 | Done — committed 67a4b57; #2, #3 still open flakes | 25-10-2026 |
 | S046 | [iPhone browser tests in a Docker container](S046-webkit-in-docker/1-brief.md) — the phone-webkit project connects to a WebKit `run-server` in Playwright's official image (exposeNetwork to the host's lanes), so the Windows display scale no longer narrows the iPhone window; one command as today | — | Done | 25-10-2026 |
 | S047 | [Browser test levels: Basic, Normal, Full](S047-test-levels/1-brief.md) — tags `@smoke` / `@device`; logic tests once on the Android phone, layout on every device; four journey tests; lanes planned from measured times; the release runs Full (the iPhone only there) | — | Done — committed 1a34660 | 25-10-2026 |
-| S049 | [Pre-flight before a release](S049-pre-flight/1-brief.md) — generic, built for the lift to smtw-common: `/pre-flight` runs the repo's test command (the release's `TEST_CMD`) on HEAD before the maintenance window, writes a bug report per failure and asks (fix the code, fix the test, mark as a known fault, investigate); green stamps the commit with a git note (`refs/notes/preflight`, 7 days, this machine), and `release.py` then skips its tests | — | Gate B | 25-10-2026 |
+| S049 | [Pre-flight before a release](S049-pre-flight/1-brief.md) — generic, built for the lift to smtw-common: `/pre-flight` runs the repo's test command (the release's `TEST_CMD`) on HEAD before the maintenance window, writes a bug report per failure and asks (fix the code, fix the test, mark as a known fault, investigate); green stamps the commit with a git note (`refs/notes/preflight`, 7 days, this machine), and `release.py` then skips its tests | — | Committed a2b4ac2; important check open | 25-10-2026 |
 | S050 | [Meter reading register](S050-reading-register/1-brief.md) — every reading of one node as a table: a row per reading time (newest first), a column per meter (one, some or all); a *Register* tab on *Readings* and a button on the *Meters* card; *Readings* opens to every `equipment:read` holder | 4 | Done — committed b5783a8 | 25-10-2026 |
 | S051 | [The time field shows the time, with a Now tick](S051-time-field-now-tick/1-brief.md) — the shared time field (readings, tickets) always shows a date and time; a *Now* check box to its right makes it read-only and leaves the time to the server (light track) | — | Done — committed 2dbd791 | 25-10-2026 |
 | S052 | [Meter readings on the ticket](S052-ticket-meters/1-brief.md) — a *Meters* card on the ticket page: each meter of the machine and the part as it stood when the fault happened (last reading at or before, with its age), a 7-day High / Low / Not OK warning, and an *Open register* link to S050; no migration | 4 | Done — committed 120ca79 | 25-10-2026 |
 | S053 | [Machine check before browser runs](S053-machine-check/1-brief.md) — Core Temp's hottest core, the processor's speed and the battery (draining on mains = a weak charger, KLA's dock) read before and during a run; the lane runner lowers the lane count and says why; `E2E_LANES` wins; `tooling/machine-check.bat` | — | Parked (deferred by KLA) | 25-10-2026 |
 | S054 | [S052's Meters-card failure test fails on the iPhone](S054-s052-webkit-route/1-brief.md) — the test's faked 503 (`page.route`) never reaches the card on `phone-webkit`; it blocked the release of 25-10-2026; cause first (advisor), then a test fix (fix lane) | — | Done — committed b11db2e | 25-10-2026 |
-| S055 | [The Full level runs logic once](S055-full-level-device-only/1-brief.md) — at Full, desktop and iPhone run only their `@device` tests (logic once, on the Android phone); about 241 tests instead of 567 in the release | — | Gate A | 25-10-2026 |
+| S055 | [The Full level runs logic once](S055-full-level-device-only/1-brief.md) — at Full, desktop and iPhone run only their `@device` tests (logic once, on the Android phone); about 241 tests instead of 567 in the release | — | Gate B | 25-10-2026 |
 
 ## Queued (not yet briefed)
 

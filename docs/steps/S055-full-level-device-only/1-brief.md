@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: light
-Status: Gate A (brief review r1: 0 blocker, 0 major; all findings answered)
-Baseline: 01d3566 + uncommitted S049 (brief-review r1)
+Status: Gate B (CR r1: 1 minor, 2 nits — fixed, comments and the report only; snapshot refs/steps/S055)
+Baseline: a2b4ac2 (stale check 25-10-2026: the code files of § 3 are unchanged since review r1; the docs changed only by S049, now committed, as BR1-04 expected, and by the uncommitted workflow edits — the orchestrator rename, the roadmapper — which touch no line on the Full level)
 ```
 
 # S055 — The Full level runs logic once
@@ -114,3 +114,7 @@ answer, as recommended).
 | BR1-01 minor: 26 `@device` tests, not 23 | Accepted: 26 with the date; § 5 compares with `--list -g @device` that day (§ 1, § 5) |
 | BR1-02 minor: the Full run is this brief's exception | Accepted: worded as this brief's exception, named at gate A (§ 5) |
 | BR1-03…BR1-06 nits | Accepted, all: § SMTW-Review in the docs (§ 3); the docs as they stand after S049's gate B, Baseline set (§ 3, header); assumption 1 is a fact (§ 6); the no-maintenance-standard line (§ 2) |
+
+### U2 — approval, 25-10-2026
+
+KLA: "approve S055 with the run kept."

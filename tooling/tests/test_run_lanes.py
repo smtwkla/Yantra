@@ -188,8 +188,13 @@ class TestLevels:
         assert run_lanes.expand_level("normal", given) == (given, {})
         assert run_lanes.expand_level("normal", ["--project", "phone-chromium"]) == (["--project", "phone-chromium"], {})
 
-    def test_full_adds_nothing(self):
-        assert run_lanes.expand_level("full", ["e2e/a.spec.js"]) == (["e2e/a.spec.js"], {})
+    def test_full_adds_no_project_and_sets_the_full_level(self):
+        """S055: every project runs; E2E_LEVEL=full makes desktop and the iPhone run @device only."""
+        assert run_lanes.expand_level("full", ["e2e/a.spec.js"]) == (["e2e/a.spec.js"], {"E2E_LEVEL": "full"})
+
+    def test_a_named_project_at_full_gets_no_device_filter(self):
+        given = ["--project=phone-webkit", "e2e/a.spec.js"]
+        assert run_lanes.expand_level("full", given) == (given, {})
 
     def test_only_full_starts_the_webkit_container(self):
         def needs(level):

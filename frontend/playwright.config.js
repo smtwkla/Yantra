@@ -4,17 +4,21 @@
 // Run with tooling/run-e2e-tests.bat.  Report, traces and screenshots: scratch/e2e-report/.
 // Lanes (tooling/e2e/run_lanes.py): with E2E_LANE=<n> this run is one lane of several, on its
 // own stack (stack.js); it writes a blob report that the runner merges into the one HTML report.
-// Levels (S047): E2E_LEVEL=normal (set by run_lanes.py when the level chose the projects) runs only
-// the @device tests on desktop-chromium; the logic tests run on phone-chromium.  E2E_LANE_PLAN
-// (JSON {project: [spec files]}, run_lanes.py's plan for this lane) keeps only the plan's projects,
-// each with its own files.
+// Levels (S047, S055): E2E_LEVEL (set by run_lanes.py when the level chose the projects) runs only
+// the @device tests on desktop-chromium at normal, and on desktop-chromium and phone-webkit at
+// full; the logic tests run on phone-chromium.  E2E_LANE_PLAN (JSON {project: [spec files]},
+// run_lanes.py's plan for this lane) keeps only the plan's projects, each with its own files.
 import { defineConfig, devices } from "@playwright/test";
 import { BACKEND_URL, FRONTEND_PORT, FRONTEND_URL, LANE_NAME } from "./e2e/support/stack.js";
 
 const REPORT_DIR = "../scratch/e2e-report";
 const LANE_SUFFIX = LANE_NAME ? `-${LANE_NAME}` : "";
 const LANE_PLAN = process.env.E2E_LANE_PLAN ? JSON.parse(process.env.E2E_LANE_PLAN) : null;
-const DEVICE_ONLY = process.env.E2E_LEVEL === "normal" ? ["desktop-chromium"] : [];
+const DEVICE_ONLY_BY_LEVEL = {
+  normal: ["desktop-chromium"],
+  full: ["desktop-chromium", "phone-webkit"],
+};
+const DEVICE_ONLY = DEVICE_ONLY_BY_LEVEL[process.env.E2E_LEVEL] ?? [];
 
 const PROJECTS = [
   { name: "phone-chromium", use: { ...devices["Pixel 7"] } },

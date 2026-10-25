@@ -1,6 +1,6 @@
 """Facts behind a brief's claims about the code, in one run (adopted 23-10-2026 from S029's
-/step stats: most brief-review findings were facts the planner had not checked — a constant
-that already existed, a test the change breaks).  The planner runs it before review round 1
+/step stats: most brief-review findings were facts the orchestrator had not checked — a constant
+that already existed, a test the change breaks).  The orchestrator runs it before review round 1
 and fixes the brief from it; the brief reviewer gets the output and verifies the brief's
 claims from it instead of finding each one again.
 

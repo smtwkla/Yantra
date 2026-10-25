@@ -5,7 +5,7 @@ description: Orchestrate Yantra's step workflow (docs/steps) from one terminal �
 
 # /step — step-workflow orchestrator
 
-You, the main session, are the **orchestrator and planner**. The other roles
+You, the main session, are the **orchestrator**. The other roles
 run as subagents, each with a fresh context:
 
 | Role | Subagent | Default model |
@@ -14,12 +14,19 @@ run as subagents, each with a fresh context:
 | Coder | `coder` | Sonnet; Opus when complex (see below) |
 | Code reviewer | `code-reviewer` | Opus |
 | Advisor | `advisor` | Fable |
+| Roadmapper | `roadmapper` | Opus |
 
 The step files are the only hand-over. Conventions: `docs/steps/README.md`.
 Read it before starting.
 
 ## Commands
 
+- `/step roadmap <feature>`: spawn the **roadmapper** to cut a big feature into a
+  roadmap (§ Roadmaps), then stop at **gate R**. `/step roadmap R0N` re-plans
+  one; `/step roadmap` alone lists the roadmaps from `docs/roadmap/README.md`.
+- `/step plan R0N.n`: take a roadmap item up as a step: the next free `S0NN`,
+  `From: R0N.n` in the brief's header, "→ S0NN, DD-MM-YYYY" on the item; then
+  phase 1 as for any topic.
 - `/step plan <topic>`: open a new step and run **phase 1**. Propose the track
   (below). `/step plan lite <topic>` or `/step plan full <topic>` forces it.
 - `/step fix <the bug>`: fix a small bug on the **fix lane** (§ Fix lane),
@@ -151,7 +158,7 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      The same when the draft passes **600 lines**, or adds more than one table
      and two screens. The user decides.
    - **Facts run** (23-10-2026, from S029's `/step stats`: most brief-review
-     findings were facts about existing code the planner had not checked).
+     findings were facts about existing code the orchestrator had not checked).
      Once the draft is written, run `tooling/step-brief-facts.bat S0NN` (it
      writes `scratch/brief-facts-S0NN.md`): every `backticked` file, test id,
      route and code name in the brief, with where it is defined and which code
@@ -327,7 +334,7 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      - **Schema docs** are the hard rule: a step whose migration is not in
        the repo's schema doc does not pass gate B.
      - The brief's *Where* lists the due docs under **Docs (housekeeping,
-       by the coder)**. The planner edits no doc at approval, except the
+       by the coder)**. The orchestrator edits no doc at approval, except the
        decisions recorded in the plan doc at gate A.
      - Tell the coder this in every spawn prompt. Before gate B, check the
        impl report's `## Docs updated` against the diff yourself.
@@ -337,8 +344,8 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      (`--level=basic`: the `@smoke` journeys and `screens.spec.js` on
      `phone-chromium`, about 2 minutes), **Normal** (no flag: every test on
      `phone-chromium`, the `@device` tests on `desktop-chromium`) and
-     **Full** (`--level=full`: every test on all three devices, the iPhone
-     in its container). The coder makes targeted runs (Normal with spec
+     **Full** (`--level=full`: every test on the Android phone, the `@device` tests on
+     desktop and the iPhone in its container). The coder makes targeted runs (Normal with spec
      files) as often as it needs, and may run Basic for a quick whole-app
      check. It runs the whole suite at Normal once, when the coding is done,
      and again only with a reason it states in the report. In a fix round it
@@ -415,13 +422,36 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    e.g. `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped —
    iPhone)`. Never tick a check yourself.
 
+## Roadmaps
+
+The roadmapper (`roadmapper`, Opus) cuts one big feature into a roadmap of items (25-10-2026, by
+KLA); conventions in `docs/roadmap/README.md`.
+
+- **Spawn** it with the feature, why KLA wants it now, and anything he said about scope or order.
+  It reads Plan.MD, the domain docs, the steps done and the code, and writes only
+  `docs/roadmap/R0N-<slug>.md`.
+- **Numbers:** roadmaps `R0N`, items `R0N.n`. **Only the orchestrator gives out step numbers,**
+  and only when KLA takes an item up (`/step plan R0N.n`). Add the roadmap's index row in
+  `docs/roadmap/README.md` yourself.
+- **Gate R: STOP.** Show the items table, the order with its reasons, the standards, and every
+  decision for the user with its options (recommended one marked), then the other sections by
+  heading. KLA approves; record his answers in the roadmap (Status `Approved …`), and the lasting
+  decisions in Plan.MD.
+- **Taking an item up:** the next free `S0NN`; the brief's header carries `From: R0N.n`; the item
+  gets "→ S0NN, DD-MM-YYYY"; the brief starts from the item's goal, size, track and dependencies,
+  and the usual phase 1 follows (facts run, self-check, reviews, gate A).
+- **When a step is Done,** mark its item `done` in the roadmap and update the index counts. When a
+  step changes the picture (a split, a new dependency, a decision), propose a re-plan
+  (`/step roadmap R0N`); a changed order or a new decision returns to gate R.
+- `/step ls` lists steps only; roadmap items show in `/step roadmap`.
+
 ## Advice
 
 The advisor (`advisor`, Fable) answers one technical question with research
 and read-only experiments (25-10-2026, by KLA; first run: S053's power
 readings, `0-advice-power-readings.md`).
 
-- **Who asks**: the planner (phase 1), a coder or the code reviewer through
+- **Who asks**: the orchestrator (phase 1), a coder or the code reviewer through
   an **ADVICE NEEDED** hand-back (phase 2), or the user (`/step ask`). A
   subagent cannot start another agent, so every request goes through the
   orchestrator.
@@ -629,7 +659,7 @@ review file).
   pushed), and committing or adopting when the user asks for it in the
   current request.
 - **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA). Every
-  agent — planner, advisor, reviewers, coder — changes only the repo's working tree and
+  agent — orchestrator, advisor, reviewers, coder — changes only the repo's working tree and
   Claude's memory:
   - no installing software, packages, browsers, drivers or scripts on the machine; no global
     npm / pip / uv installs;

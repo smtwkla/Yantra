@@ -52,7 +52,7 @@ review file there.
   Basic (`--level=basic`, the `@smoke` journeys and `screens.spec.js` on
   `phone-chromium`), Normal (no flag: every test on `phone-chromium`, the
   `@device` tests on `desktop-chromium`) and Full (`--level=full`: every test
-  on all three devices). The coder runs **targeted** runs (Normal with the
+  on the Android phone, the `@device` tests on desktop and the iPhone). The coder runs **targeted** runs (Normal with the
   spec files of the screens and APIs the step changed, from the spec-to-step
   map in `.claude/CLAUDE.md` § SMTW-Review, plus `e2e/screens.spec.js`) as
   often as it needs, and **the whole suite at Normal once** when the coding

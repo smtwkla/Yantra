@@ -11,8 +11,8 @@ setlocal
 ::      backend: uv builds the worktree's own .venv from its uv cache (seconds, no download).
 ::   3. The worktree's tooling\run-tests.bat, logs in scratch\release-tests\ of the working folder.
 ::   4. The browser tests at the Full level (S047): the worktree's tooling\run-e2e-tests.bat
-::      --level=full, every test on all three devices, the iPhone in its Docker container (needs
-::      Docker Desktop). It runs also when step 3 was red, so one attempt shows every fault. It
+::      --level=full: every test on the Android phone, the @device tests on desktop and on the
+::      iPhone (S055), the iPhone in its Docker container (needs Docker Desktop). It runs also when step 3 was red, so one attempt shows every fault. It
 ::      takes the machine's e2e lock in the working folder's scratch\, so it waits for an agent's
 ::      e2e run, and an agent's run waits for it.
 ::   5. The e2e report (its HTML and results.json, which /pre-flight reads, S049), the lane logs and

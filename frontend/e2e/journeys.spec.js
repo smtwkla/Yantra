@@ -1,9 +1,9 @@
 // The journeys (S047 § 1.4): the Basic level's smoke tests.  Each test walks one real piece of
 // work from start to end through the screens and checks what each person sees at each stage.
 // They repeat checks the other specs make in detail; that is their purpose: one run shows the app
-// works end to end.  Tagged @smoke (tooling/run-e2e-tests.bat --level=basic); untagged @device,
-// so at Normal they run on phone-chromium only, at Full on all three projects.  Names carry the
-// project and a run-unique suffix: projects may share a lane's database.
+// works end to end.  Tagged @smoke (tooling/run-e2e-tests.bat --level=basic) and not @device, so
+// at Normal and at Full they run on phone-chromium only (S055).  Names carry the project and a
+// run-unique suffix: projects may share a lane's database.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";

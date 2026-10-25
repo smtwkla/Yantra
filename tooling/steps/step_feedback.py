@@ -1,5 +1,5 @@
 """`/step feedback` facts in one run: the `## Feedback` items the step agents write at the end of
-their files (advice, brief reviews, impl reports, code reviews; 25-10-2026), so the planner can
+their files (advice, brief reviews, impl reports, code reviews; 25-10-2026), so the orchestrator can
 group what recurs and propose improvements.  It judges nothing.
 
     python tooling/steps/step_feedback.py            every step

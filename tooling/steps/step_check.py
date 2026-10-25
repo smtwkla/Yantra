@@ -1,5 +1,5 @@
 """`/step check`: the step files checked against each other and git, read-only.  One line per
-problem found; the planner (the LLM) adds the judgements a script cannot make and proposes
+problem found; the orchestrator (the LLM) adds the judgements a script cannot make and proposes
 the fixes.  Nothing is changed.
 
     python tooling/steps/step_check.py

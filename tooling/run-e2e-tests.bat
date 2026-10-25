@@ -8,7 +8,8 @@
 ::   basic   the @smoke tests (journeys.spec.js, screens.spec.js) on phone-chromium; about 2 min
 ::   normal  the default: every test on phone-chromium, the @device tests on desktop-chromium;
 ::           with spec files named, the targeted run
-::   full    every test on all three projects, phone-webkit included (the release; KLA asks)
+::   full    every test on phone-chromium, the @device tests on desktop-chromium and
+::           phone-webkit (S055); the release, or when KLA asks
 :: A --project you name wins over the level's devices, with no @device filter. Basic refuses -g.
 :: Exit 0 green, 1 a failure (as Playwright).
 :: Lanes: the tests run in E2E_LANES parallel lanes (default 6), each on its own database,

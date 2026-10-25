@@ -1,5 +1,5 @@
 """`/step ls` facts in one run: what the step skill's § Listing table is built from, gathered
-fast so the planner (the LLM) builds the table, adds notes and spots what is wrong — instead
+fast so the orchestrator (the LLM) builds the table, adds notes and spots what is wrong — instead
 of reading every step file one call at a time.
 
     python tooling/steps/step_ls.py           steps not yet Done, Dropped or parked, and queued ones

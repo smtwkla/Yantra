@@ -6,7 +6,8 @@ checks; the other arguments go to Playwright (spec files, --project=…, -g …)
     --level=basic    the @smoke tests (journeys.spec.js, screens.spec.js) on phone-chromium
     --level=normal   the default: every test on phone-chromium, the @device tests on
                      desktop-chromium (E2E_LEVEL=normal, read by playwright.config.js)
-    --level=full     every test on all three projects (the release)
+    --level=full     the release: every test on phone-chromium, the @device tests on
+                     desktop-chromium and phone-webkit (E2E_LEVEL=full)
     E2E_LANES=<n>    the number of lanes (default 6); 1 runs the single stack as before
 
 A level adds its --project arguments only when the caller names none; a caller who names
@@ -149,8 +150,9 @@ def _is_grep(arg):
 
 def expand_level(level, args):
     """A level as Playwright arguments -> (args, extra environment).  The level's projects are
-    added only when the caller named none, and only then does Normal filter desktop to @device
-    (E2E_LEVEL): a caller's --project=desktop-chromium runs every matching test there."""
+    added only when the caller named none, and only then do Normal and Full filter the projects
+    to @device (E2E_LEVEL; Normal: desktop, Full: desktop and the iPhone): a caller's
+    --project=desktop-chromium runs every matching test there."""
     named = bool(named_projects(args))
     if level == "basic":
         if any(_is_grep(arg) for arg in args):
@@ -158,6 +160,8 @@ def expand_level(level, args):
         return ([] if named else [f"--project={LOGIC_PROJECT}"]) + list(args) + ["--grep", "@smoke"], {}
     if level == "normal" and not named:
         return [f"--project={project}" for project in NORMAL_PROJECTS] + list(args), {"E2E_LEVEL": "normal"}
+    if level == "full" and not named:
+        return list(args), {"E2E_LEVEL": "full"}
     return list(args), {}
 
 

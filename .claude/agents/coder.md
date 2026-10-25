@@ -114,14 +114,15 @@ The orchestrator gives you one of three tasks:
     `screens.spec.js`, on `phone-chromium`, about 2 minutes; **Normal** (no
     flag, the default) runs every test on `phone-chromium` and the `@device`
     tests on `desktop-chromium`; **Full** (`--level=full`) runs every test on
-    all three devices, the iPhone included;
+    the Android phone and the `@device` tests on desktop and the iPhone;
   - **tag a new test** `@device` (`test("…", { tag: "@device" }, async …)`)
     only when its purpose is a layout check (its title names fits, in view,
     on screen, scrolls to, no sideways scroll, above or below; or its main
     assertion is a geometry), or it runs only on, or asserts differently on,
     a project other than `phone-chromium`. A logic test stays untagged, also
-    when it calls `expectDialogFits` or `expectFieldMessage`: the Full level
-    checks those on every device once per release;
+    when it calls `expectDialogFits` or `expectFieldMessage`: the Android phone
+    checks those in every flow, and another device checks a dialog only through a
+    `@device` test;
   - run the e2e tests whenever the frontend or an API the screens use
     changed:
     - **targeted** runs (Normal with spec files) as often as you need: the

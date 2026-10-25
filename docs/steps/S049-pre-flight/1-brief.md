@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Status: Gate B (CR r1: 3 minor, 5 nits — all fixed in fix round 1, with A2; verify review r2: 3 nits — fixed in fix round 2; snapshot refs/steps/S049) (approved 25-10-2026 by KLA; A1, A2 by KLA)
+Status: Committed a2b4ac2 (25-10-2026); important check pending: KLA runs Pre-flight, then Release patch skips its tests (impl report, How KLA tests it); lift to smtw-common by KLA
 Baseline: 01d3566 (staleness review s1, 25-10-2026: only S054's sentence in CLAUDE.md § Browser tests changed)
 ```
 

@@ -30,7 +30,7 @@ WRITTEN_BREAK = "\\n"  # the two characters backslash and n
 
 
 class SnapshotError(Exception):
-    """A refusal with a message for the planner."""
+    """A refusal with a message for the orchestrator."""
 
 
 def git(repo, *args, env=None):
