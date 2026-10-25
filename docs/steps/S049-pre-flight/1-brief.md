@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Status: Implementing (approved 25-10-2026 by KLA, open questions 1-3 as recommended)
+Status: Approved 25-10-2026 by KLA (open questions 1-3 as recommended); not coded yet (after S054)
 Baseline: c32e02f (brief-review r2; uncommitted changes were step documents only)
 ```
 

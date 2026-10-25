@@ -10,6 +10,11 @@ import {
   stateBadge, thisMinute, timeline, timeValue,
 } from "./support/tickets.js";
 
+// Some tests answer the page's own requests with page.route (S052: a failed or held Meters card).  On
+// WebKit a page controlled by the app's service worker (S021) sends its requests past page.route, so
+// no service worker is started.  Same reason as readings.spec.js:19-21 (S040).
+test.use({ serviceWorkers: "block" });
+
 let seed;
 let kannan; // the technician's Team record
 
