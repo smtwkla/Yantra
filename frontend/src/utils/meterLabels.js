@@ -1,7 +1,10 @@
+import { ageText } from "./ticketLabels.js";
+
 /**
- * Display words for meters — one vocabulary for every screen (S037 § 9.1, S038 § 1, § 3; readings: S039). Pure:
- * no imports. The limits wording ("Limits: 10–60 °C") comes from the API (meters_core), so it
- * lives once; here are the kinds, where a node's meter comes from, and a Yes / No meter's
+ * Display words for meters — one vocabulary for every screen (S037 § 9.1, S038 § 1, § 3; readings:
+ * S039). Pure: the only import is ticketLabels' ageText, so a reading's age reads as a ticket's
+ * (S052). The limits wording ("Limits: 10–60 °C") comes from the API (meters_core), so it lives
+ * once; here are the kinds, where a node's meter comes from, and a Yes / No meter's
  * expected answer.
  */
 
@@ -166,4 +169,31 @@ export function registerQuery(nodeId, meterIds = null) {
   if (nodeId !== null) query.node = String(nodeId);
   if (nodeId !== null && meterIds?.length) query.meters = meterIds.join(",");
   return query;
+}
+
+// ---------------------------------------------------------------------------
+// Meter readings on the ticket (S052)
+// ---------------------------------------------------------------------------
+
+/**
+ * How long before the ticket's time a reading was taken (§ 5.3): "at that time" in the same
+ * minute (the ticket's time may carry seconds, a reading is to the minute), else the Details
+ * card's words with "before": "12 min before", "8 h before", "2 d before". Both are API times.
+ */
+export function beforeText(takenAt, at) {
+  if (takenAt.slice(0, 16) === at.slice(0, 16)) return "at that time";
+  return `${ageText(takenAt, new Date(at))} before`;
+}
+
+const MARK_WORDS = { gauge: "High or Low", yes_no: "Not OK" };
+
+/**
+ * The warning under a meter whose readings were marked in the window before the ticket's time
+ * (§ 1.4): "High or Low 3 times in the 7 days before", "Not OK 1 time in the 7 days before"; null
+ * for no mark, and for a counter or an amount, which carry none. `days` is the API's
+ * `mark_window_days`.
+ */
+export function markWarningText(kind, count, days) {
+  if (!count || !MARK_WORDS[kind]) return null;
+  return `${MARK_WORDS[kind]} ${count} ${count === 1 ? "time" : "times"} in the ${days} days before`;
 }

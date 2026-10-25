@@ -10,7 +10,9 @@
  *    gap and in outline, the significant moves Close / Not a fault / Send back. On a wider
  *    screen the same buttons sit in one row, the significant ones on the left. While there is
  *    no labour, Close is disabled with the reason written under it and Add labour beside it;
- * 2. repeats; then details (half), times and assignees (a quarter each); then parts used (S020,
+ * 2. repeats; then details (half), times and assignees (a quarter each); then the meters as they
+ *    stood when it happened (S052, full width, only when the machine or the part has meters);
+ *    then parts used (S020,
  *    full width, in columns when long); then the timeline (full width, newest first; the newest 10,
  *    *Show all* expands it in place). Times, assignees, parts and labour show to
  *    ticket:work holders, or when not empty;
@@ -55,6 +57,7 @@ import MoveDialog from "./tickets/MoveDialog.vue";
 import NoteDialog from "./tickets/NoteDialog.vue";
 import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
+import TicketMetersCard from "./tickets/TicketMetersCard.vue";
 
 const route = useRoute();
 
@@ -401,6 +404,9 @@ watch(() => route.params.id, load, { immediate: true });
           </div>
         </div>
       </div>
+
+      <!-- S052: the meters as they stood when it happened; draws nothing while loading or without meters -->
+      <TicketMetersCard :ticket="ticket" />
 
       <!-- Full width: an overhaul can use 100 parts or more, in columns (PartsPanel) -->
       <div v-if="showParts" class="mb-3">

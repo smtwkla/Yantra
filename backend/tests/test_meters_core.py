@@ -1,5 +1,5 @@
 """meters_core (S038 § 5.1, § 5.2, § 5.5): limits validation, a node's meters, the wording; the
-reading rules (S039 § 5.1, § 5.2)."""
+reading rules (S039 § 5.1, § 5.2); the ticket card's lines (S052 § 5.2)."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -7,12 +7,12 @@ from decimal import Decimal
 import pytest
 
 from meters_core import (
-    ACTION_LIMITS, ACTION_REMOVE, ACTION_USE_MODEL, NO_LIMITS, SOURCE_MODEL, SOURCE_NODE, answer_state,
-    answer_word, counter_error, effective_meters, format_number, grouped_number, in_force_pair, limit_state,
-    limits_text, may_remove, override_of, parse_change_action, parse_meter_type_id, parse_reading_request,
-    parse_meter_type_ids, parse_taken_at, reading_text, reading_time_error, register_columns, register_rows,
-    reset_removal_error, same_limits, shown_meter_ids, to_minute, tracked_meter_change, validate_limits,
-    validate_reading,
+    ACTION_LIMITS, ACTION_REMOVE, ACTION_USE_MODEL, MARK_WINDOW_DAYS, NO_LIMITS, SOURCE_MODEL, SOURCE_NODE,
+    answer_state, answer_word, counter_error, effective_meters, format_number, grouped_number, in_force_pair,
+    limit_state, limits_text, mark_window, may_remove, override_of, parse_change_action, parse_meter_type_id,
+    parse_reading_request, parse_meter_type_ids, parse_taken_at, reading_text, reading_time_error,
+    readings_at_ticket, register_columns, register_rows, reset_removal_error, same_limits, shown_meter_ids,
+    to_minute, tracked_meter_change, validate_limits, validate_reading,
 )
 
 D = Decimal
@@ -562,3 +562,38 @@ class TestParseMeterTypeIds:
     @pytest.mark.parametrize("raw", ["3,x", "3,", "0", "-1", "x", "3.5", "٣"])
     def test_a_malformed_list_is_refused(self, raw):
         assert parse_meter_type_ids(raw) == (None, [{"field": "meter_type_ids", "message": "Pick a meter"}])
+
+
+class TestReadingsAtTicket:
+    """S052 § 5.2: the core maps meters to lines; the shell picks the readings."""
+    METERS = [{"meter_type": OIL_OK}, {"meter_type": OIL}, {"meter_type": HOURS}]
+    READING = {"value": "120.5", "taken_at": "2026-10-23 06:00:00", "limit_state": None, "is_reset": False}
+
+    def test_lines_follow_the_meters_order(self):
+        lines = readings_at_ticket(self.METERS, {}, {}, 12)
+        assert [line["meter_type"]["id"] for line in lines] == [9, 6, 1]
+
+    def test_a_meter_without_a_reading_has_none(self):
+        lines = readings_at_ticket(self.METERS, {(12, 1): self.READING}, {}, 12)
+        assert [line["at_ticket"] for line in lines] == [None, None, self.READING]
+
+    def test_the_reading_passes_through_unchanged(self):
+        lines = readings_at_ticket([{"meter_type": HOURS}], {(12, 1): dict(self.READING)}, {}, 12)
+        assert lines[0]["at_ticket"] == self.READING
+
+    def test_the_count_passes_through_and_defaults_to_zero(self):
+        lines = readings_at_ticket(self.METERS, {}, {(12, 6): 3, (12, 9): 1}, 12)
+        assert [line["marked_count"] for line in lines] == [1, 3, 0]
+
+    def test_another_node_s_readings_and_counts_are_not_taken(self):
+        lines = readings_at_ticket([{"meter_type": OIL}], {(13, 6): self.READING}, {(13, 6): 2}, 12)
+        assert lines == [{"meter_type": OIL, "at_ticket": None, "marked_count": 0}]
+
+    def test_no_meters_no_lines(self):
+        assert readings_at_ticket([], {(12, 1): self.READING}, {(12, 1): 4}, 12) == []
+
+
+class TestMarkWindow:
+    def test_seven_days_before_exactly(self):
+        assert MARK_WINDOW_DAYS == 7
+        assert mark_window(datetime(2026, 10, 23, 14, 20, 30)) == datetime(2026, 10, 16, 14, 20, 30)

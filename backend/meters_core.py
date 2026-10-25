@@ -16,6 +16,9 @@ The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5): i
 (register_columns, shown_meter_ids), its rows by minute (register_rows) and the query's id list
 (parse_meter_type_ids).
 
+Meter readings on the ticket (S052, docs/steps/S052-ticket-meters/1-brief.md § 5.2): the 7-day
+window for the marked readings (mark_window) and the card's lines (readings_at_ticket).
+
 Limits and readings are numbers of the meter type's decimals, parsed with Decimal (never
 float) and returned as strings without trailing zeros.  Only a gauge has limits: a counter triggers PM
 every N units, an amount is a quantity produced, and a Yes / No meter's good answer is fixed
@@ -531,3 +534,32 @@ def register_rows(readings, columns):
             "id": reading["id"], "value": value, "limit_state": reading["limit_state"],
             "is_reset": bool(reading["is_reset"])}
     return [{"taken_at": minute, "cells": by_minute[minute]} for minute in sorted(by_minute, reverse=True)]
+
+
+# ---------------------------------------------------------------------------
+# Meter readings on the ticket (S052, docs/steps/S052-ticket-meters/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+# The marked readings counted before the ticket's time; the same week as READING_BACKDATE_DAYS
+MARK_WINDOW_DAYS = 7
+
+
+def mark_window(at):
+    """The start of the marked-readings window before the ticket's time ``at``: the window is
+    (``since``, ``at``], so a reading exactly MARK_WINDOW_DAYS before is outside it."""
+    return at - timedelta(days=MARK_WINDOW_DAYS)
+
+
+def readings_at_ticket(meters, at_readings, mark_counts, node_id):
+    """The ticket card's lines for one node (§ 5.2), in the meters' order: each
+    ``{meter_type, at_ticket, marked_count}``.  ``meters`` are the node's meters in force
+    (``effective_meters``); ``at_readings`` and ``mark_counts`` are keyed by (node_id,
+    meter_type_id): the reading the shell picked (already worded by reading_out) and the number
+    of marked readings in the window.  A meter with no reading has ``at_ticket`` None; with no
+    count, 0 (a counter and an amount store no mark)."""
+    lines = []
+    for meter in meters:
+        key = (node_id, meter["meter_type"]["id"])
+        lines.append({"meter_type": meter["meter_type"], "at_ticket": at_readings.get(key),
+                      "marked_count": mark_counts.get(key, 0)})
+    return lines

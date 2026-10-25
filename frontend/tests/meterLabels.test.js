@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  beforeText, markWarningText,
   expectedAnswerText, formatReading, goodReadingText, isToday, isUnavailable, KIND_LABELS, limitsBody, meterHeader,
   meterTypeOption, NOT_SAVED, notSavedOr, parseRegisterQuery, readingBadgeClass, readingBadges, registerQuery, savedMessage, SOURCE_LABELS,
   unitAndKind,
@@ -153,5 +154,35 @@ describe("the reading register (S050)", () => {
     expect(registerQuery(12)).toEqual({ tab: "register", node: "12" });
     expect(registerQuery(12, [3, 7])).toEqual({ tab: "register", node: "12", meters: "3,7" });
     expect(registerQuery(12, [])).toEqual({ tab: "register", node: "12" });
+  });
+});
+
+describe("meter readings on the ticket (S052)", () => {
+  const AT = "2026-10-23T14:20:00+05:30";
+
+  it("the same minute reads 'at that time', with or without seconds on the ticket's time", () => {
+    expect(beforeText("2026-10-23T14:20:00+05:30", AT)).toBe("at that time");
+    expect(beforeText("2026-10-23T14:20:00+05:30", "2026-10-23T14:20:30+05:30")).toBe("at that time");
+  });
+
+  it("an earlier reading reads its age before, rounded down, as the Details card's age", () => {
+    expect(beforeText("2026-10-23T14:08:00+05:30", AT)).toBe("12 min before");
+    expect(beforeText("2026-10-23T06:00:00+05:30", AT)).toBe("8 h before");
+    expect(beforeText("2026-10-21T06:00:00+05:30", AT)).toBe("2 d before");
+    // A reading a minute before a ticket at 14:20:30 is 1 min before, not "at that time"
+    expect(beforeText("2026-10-23T14:19:00+05:30", "2026-10-23T14:20:30+05:30")).toBe("1 min before");
+  });
+
+  it("the warning for a gauge and a Yes / No meter, one time and three", () => {
+    expect(markWarningText("gauge", 3, 7)).toBe("High or Low 3 times in the 7 days before");
+    expect(markWarningText("gauge", 1, 7)).toBe("High or Low 1 time in the 7 days before");
+    expect(markWarningText("yes_no", 2, 7)).toBe("Not OK 2 times in the 7 days before");
+    expect(markWarningText("yes_no", 1, 7)).toBe("Not OK 1 time in the 7 days before");
+  });
+
+  it("no warning without a mark, or for a counter and an amount", () => {
+    expect(markWarningText("gauge", 0, 7)).toBeNull();
+    expect(markWarningText("counter", 2, 7)).toBeNull();
+    expect(markWarningText("amount", 2, 7)).toBeNull();
   });
 });

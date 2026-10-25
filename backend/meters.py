@@ -33,6 +33,10 @@ removal checks equipment:edit (IT admin removes, but does not log), then locks t
 The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5, § 6): one node's
 active readings as a table, a row per minute and a column per meter; a plain read under
 equipment:read, paged by minute.
+
+Meter readings on the ticket (S052, docs/steps/S052-ticket-meters/1-brief.md § 5, § 6): each meter
+in force on the ticket's machine and the nodes down to its part, with the reading as it stood at the
+ticket's time and the marked readings of the week before; a plain read under ticket:read.
 """
 
 from datetime import datetime
@@ -47,12 +51,14 @@ from equipment_core import SCRAPPED
 from masters import checked_limits, lock_meter_type, read_model_meters, read_models_meters
 from masters_core import model_label
 from meters_core import (
-    ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, NO_LIMITS, PICK_A_METER, YES_NO, answer_state, answer_word,
-    counter_error, effective_meters, format_number, in_force_pair, limit_state, may_remove, meter_type_of,
-    parse_change_action, parse_meter_type_id, parse_meter_type_ids, parse_reading_request, register_columns,
-    register_rows, reset_removal_error, same_limits, shown_meter_ids, to_minute, tracked_meter_change,
-    validate_reading,
+    ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, MARK_WINDOW_DAYS, NO_LIMITS, PICK_A_METER, YES_NO, answer_state,
+    answer_word, counter_error, effective_meters, format_number, in_force_pair, limit_state, mark_window, may_remove,
+    meter_type_of, parse_change_action, parse_meter_type_id, parse_meter_type_ids, parse_reading_request,
+    readings_at_ticket, register_columns, register_rows, reset_removal_error, same_limits, shown_meter_ids, to_minute,
+    tracked_meter_change, validate_reading,
 )
+from tickets import read_ticket
+from tickets_core import machine_and_component
 
 meters_bp = Blueprint("meters", __name__)
 
@@ -268,19 +274,41 @@ def reading_out(row, kind):
     return out
 
 
-def _last_readings(cur, node_ids):
+def _last_readings(cur, node_ids, until=None):
     """The newest active reading of each meter of the nodes → {(node_id, meter_type_id): row};
-    newest by (taken_at, id), the history's order.  One query for any number of nodes."""
+    newest by (taken_at, id), the history's order.  One query for any number of nodes.
+
+    ``until`` (a naive IST datetime; S052 § 3) limits it to the readings taken at or before that
+    time.  The bound is on the outer row *and* the NOT EXISTS neighbour: a later reading must not
+    count as the newer one, or it would hide every earlier reading (S052 BR1-02).  Without
+    ``until`` the query is the S039 card's and the S040 sheet's as before."""
     if not node_ids:
         return {}
+    outer_bound, neighbour_bound, params = "", "", list(node_ids)
+    if until is not None:
+        outer_bound, neighbour_bound = " AND r.taken_at <= %s", " AND n.taken_at <= %s"
+        params = [*node_ids, until, until]
     cur.execute(
         "SELECT r.equipment_id, r.meter_type_id, r.value, r.taken_at, r.is_reset, r.limit_state"
         " FROM meter_readings r"
-        f" WHERE r.equipment_id IN ({_marks(node_ids)}) AND r.removed_at IS NULL AND NOT EXISTS ("
+        f" WHERE r.equipment_id IN ({_marks(node_ids)}) AND r.removed_at IS NULL{outer_bound} AND NOT EXISTS ("
         "  SELECT 1 FROM meter_readings n WHERE n.equipment_id = r.equipment_id"
-        "  AND n.meter_type_id = r.meter_type_id AND n.removed_at IS NULL"
-        "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", list(node_ids))
+        f"  AND n.meter_type_id = r.meter_type_id AND n.removed_at IS NULL{neighbour_bound}"
+        "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", params)
     return {(row["equipment_id"], row["meter_type_id"]): row for row in cur.fetchall()}
+
+
+def _mark_counts(cur, node_ids, since, until):
+    """The number of active marked readings (a gauge High / Low, a Yes / No Not OK) of each meter
+    of the nodes taken in (``since``, ``until``] → {(node_id, meter_type_id): count} (S052 § 5.1
+    step 6).  A counter and an amount store no limit_state, so they never appear."""
+    if not node_ids:
+        return {}
+    cur.execute(
+        "SELECT equipment_id, meter_type_id, COUNT(*) AS n FROM meter_readings"
+        f" WHERE equipment_id IN ({_marks(node_ids)}) AND removed_at IS NULL AND limit_state IS NOT NULL"
+        " AND taken_at > %s AND taken_at <= %s GROUP BY equipment_id, meter_type_id", [*node_ids, since, until])
+    return {(row["equipment_id"], row["meter_type_id"]): row["n"] for row in cur.fetchall()}
 
 
 def _newest_active_id(cur, node_id, meter_type_id):
@@ -545,3 +573,77 @@ def readings_register(node_id):
         "columns": columns, "shown": shown, "rows": rows_to_list(register_rows(readings, columns)),
         "total": total, "page": page, "per_page": per_page,
     })
+
+
+# ---------------------------------------------------------------------------
+# Meter readings on the ticket (S052)
+# ---------------------------------------------------------------------------
+
+def _node_or_none(cur, node_id):
+    """The node under equipment:read, or None when it answers 404 (outside the user's units)."""
+    try:
+        return load_node_for_user(cur, node_id, for_update=False, key="equipment:read")[1]
+    except ApiError as exc:
+        if exc.status != 404:
+            raise
+        return None
+
+
+def _ticket_path(cur, ticket):
+    """The ticket's machine, then each node down to its part (§ 5.1 steps 2–4), root first.
+
+    Every node of the path is in the machine's unit (equipment.NODE_JOINS' root unit), so access
+    is all-or-nothing.  A ticket is visible through its own unit or its machine's
+    (tickets._visible_condition), so a reader may see a ticket whose machine is outside their
+    units: the machine then answers 404 and the path is empty, the card hidden, the ticket page
+    unaffected (§ 7 decision 6).  A 403 is not caught: it cannot happen while equipment:read is
+    "*", and must surface if the key ever narrows.
+
+    A part moved to another machine since the raise is left out with its ancestors: its meters now
+    belong to that machine.  Its 404 means the same (it can only fail when it left the machine's
+    unit)."""
+    machine = _node_or_none(cur, ticket["m_id"])
+    if machine is None:
+        return []
+    if ticket["c_id"] is None:
+        return [machine]
+    part = _node_or_none(cur, ticket["c_id"])
+    if part is None or machine_and_component(part)[0] != machine["id"]:
+        return [machine]
+    path = [machine]
+    if part["gp_id"] is not None:
+        # The part sits under a component-unit, itself under the machine
+        path.append(load_node_for_user(cur, part["parent_id"], for_update=False, key="equipment:read")[1])
+    path.append(part)
+    return path
+
+
+@meters_bp.route("/tickets/<int:ticket_id>/meters")
+@require_perm("ticket:read")
+def ticket_meters(ticket_id):
+    """The ticket card's meters (§ 5.1, § 6): per node of the path with a meter in force, each
+    meter's newest active reading at or before the ticket's time and its marked readings in the
+    window before.  Plain reads, no locks; two reading queries for all nodes, none per meter."""
+    with get_db().cursor() as cur:
+        ticket = read_ticket(cur, ticket_id)
+        at = ticket["occurred_at"]
+        nodes = []
+        for node in _ticket_path(cur, ticket):
+            meters = _meters_of(cur, node["id"], node["model_id"])
+            if meters:
+                nodes.append((node, meters))
+        node_ids = [node["id"] for node, _ in nodes]
+        last = _last_readings(cur, node_ids, until=at)
+        counts = _mark_counts(cur, node_ids, mark_window(at), at)
+    out = []
+    for node, meters in nodes:
+        at_readings = {}
+        for meter in meters:
+            key = (node["id"], meter["meter_type"]["id"])
+            if key in last:
+                at_readings[key] = reading_out(last[key], meter["meter_type"]["kind"])
+        out.append({
+            "node": {"id": node["id"], "code": node["code"], "name": node["name"], "level": node["level"]},
+            "meters": readings_at_ticket(meters, at_readings, counts, node["id"]),
+        })
+    return jsonify({"at": row_to_dict({"at": at})["at"], "mark_window_days": MARK_WINDOW_DAYS, "nodes": out})

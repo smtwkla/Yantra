@@ -625,3 +625,171 @@ class TestRegister:
 
     def test_the_database_down_is_503(self, operator, node, db_down):
         assert operator.get(_register_url(node)).status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# Meter readings on the ticket (S052 § 5, § 6)
+# ---------------------------------------------------------------------------
+
+def _ticket_meters(client, ticket, expect=200):
+    res = client.get(f"/api/tickets/{ticket['id']}/meters")
+    assert res.status_code == expect, res.get_json()
+    return res.get_json()
+
+
+def _ticket_at(db_rows, ticket, moment):
+    """The ticket's time written straight to the row, for a time chosen against the readings."""
+    db_rows("UPDATE tickets SET occurred_at = %s WHERE id = %s", (moment, ticket["id"]))
+
+
+def _taken_at(db_rows, reading, moment):
+    """A reading's time written straight to the row, for times the log refuses (over 7 days back)."""
+    db_rows("UPDATE meter_readings SET taken_at = %s WHERE id = %s", (moment, reading["id"]))
+
+
+def _lines(answer, node):
+    """{meter_type_id: line} of one node of the answer."""
+    entry = next(n for n in answer["nodes"] if n["node"]["id"] == node["id"])
+    return {line["meter_type"]["id"]: line for line in entry["meters"]}
+
+
+def _node_ids(answer):
+    return [n["node"]["id"] for n in answer["nodes"]]
+
+
+class TestTicketMeters:
+
+    def test_the_reading_at_or_before_the_ticket_s_time_with_its_marks(self, operator, node, hours, oil,
+                                                                       make_ticket, db_rows):
+        _log(operator, node, hours, "100", 120)
+        at_minute = _log(operator, node, hours, "105", 60)
+        _log(operator, node, hours, "110", 30)              # after the ticket's time: never shown
+        _log(operator, node, oil, "70", 100)                # High
+        _log(operator, node, oil, "30", 20)                 # after the ticket's time
+        ticket = make_ticket(node)
+        # Seconds on the ticket's time (§ 5.3): the reading of that minute still counts
+        at = _minutes_ago(60).replace(second=30)
+        _ticket_at(db_rows, ticket, at)
+        answer = _ticket_meters(operator, ticket)
+        assert (answer["at"], answer["mark_window_days"]) == (api_time(at), 7)
+        assert [n["node"] for n in answer["nodes"]] == [
+            {"id": node["id"], "code": node["code"], "name": node["name"], "level": "equipment"}]
+        lines = _lines(answer, node)
+        assert lines[hours["id"]]["at_ticket"] == {"value": "105", "taken_at": at_minute["taken_at"],
+                                                   "limit_state": None, "is_reset": False}
+        assert lines[hours["id"]]["marked_count"] == 0
+        assert (lines[oil["id"]]["at_ticket"]["value"], lines[oil["id"]]["at_ticket"]["limit_state"]) == ("70", "high")
+        assert lines[oil["id"]]["marked_count"] == 1
+        assert set(lines[oil["id"]]["meter_type"]) == {"id", "name", "unit", "kind", "decimals", "expected_answer"}
+
+    def test_no_reading_before_the_ticket_s_time_is_none(self, operator, node, hours, make_ticket, db_rows):
+        _log(operator, node, hours, "100", 10)
+        ticket = make_ticket(node)
+        _ticket_at(db_rows, ticket, _minutes_ago(30))
+        line = _lines(_ticket_meters(operator, ticket), node)[hours["id"]]
+        assert (line["at_ticket"], line["marked_count"]) == (None, 0)
+
+    def test_the_path_is_root_first_and_a_node_with_no_meter_is_absent(self, admin, operator, node, make_equipment,
+                                                                         make_meter_type, make_ticket):
+        drive = make_equipment(parent=node)
+        motor = make_equipment(parent=drive, level="component")
+        machine_meter = _add_own(admin, node, make_meter_type(kind="counter", unit="h", decimals=1))
+        motor_meter = _add_own(admin, motor, make_meter_type(kind="counter", unit="h", decimals=1))
+        ticket = make_ticket(motor)
+        assert _node_ids(_ticket_meters(operator, ticket)) == [node["id"], motor["id"]]
+        _add_own(admin, drive, make_meter_type())
+        answer = _ticket_meters(operator, ticket)
+        assert [(n["node"]["id"], n["node"]["level"]) for n in answer["nodes"]] == [
+            (node["id"], "equipment"), (drive["id"], "component_unit"), (motor["id"], "component")]
+        assert list(_lines(answer, node)) == [machine_meter["id"]]
+        assert list(_lines(answer, motor)) == [motor_meter["id"]]
+
+    def test_marked_readings_in_the_seven_days_before(self, operator, engineer, node, oil, hours, make_ticket,
+                                                       db_rows):
+        at = _minutes_ago(120)
+        inside = [_log(operator, node, oil, "70", 10 + i) for i in range(3)]          # High
+        for hours_before, reading in zip((1, 50, 24 * 7 - 1), inside):
+            _taken_at(db_rows, reading, at - timedelta(hours=hours_before))
+        outside = [_log(operator, node, oil, "5", 20 + i) for i in range(2)]          # Low
+        _taken_at(db_rows, outside[0], at - timedelta(days=7))                        # exactly 7 days: outside
+        _taken_at(db_rows, outside[1], at - timedelta(days=8))
+        _log(operator, node, oil, "70", 5)                                            # after the ticket's time
+        removed = _log(operator, node, oil, "70", 30)
+        _taken_at(db_rows, removed, at - timedelta(hours=2))
+        _ok(engineer.delete(_readings(node, removed)), 204)
+        _log(operator, node, oil, "30", 40)                                           # not marked
+        _log(operator, node, hours, "100", 50)                                        # a counter is never marked
+        ticket = make_ticket(node)
+        _ticket_at(db_rows, ticket, at)
+        lines = _lines(_ticket_meters(operator, ticket), node)
+        assert (lines[oil["id"]]["marked_count"], lines[hours["id"]]["marked_count"]) == (3, 0)
+
+    def test_a_marked_reading_a_minute_inside_the_window_counts(self, operator, node, oil, make_ticket, db_rows):
+        at = _minutes_ago(120)
+        reading = _log(operator, node, oil, "70", 10)
+        _taken_at(db_rows, reading, at - timedelta(days=7) + timedelta(minutes=1))
+        ticket = make_ticket(node)
+        _ticket_at(db_rows, ticket, at)
+        assert _lines(_ticket_meters(operator, ticket), node)[oil["id"]]["marked_count"] == 1
+
+    def test_a_removed_reading_is_never_shown_the_older_active_one_is(self, operator, engineer, node, hours,
+                                                                      make_ticket, db_rows):
+        older = _log(operator, node, hours, "100", 90)
+        newer = _log(operator, node, hours, "104", 70)
+        _ok(engineer.delete(_readings(node, newer)), 204)
+        ticket = make_ticket(node)
+        _ticket_at(db_rows, ticket, _minutes_ago(60))
+        at_ticket = _lines(_ticket_meters(operator, ticket), node)[hours["id"]]["at_ticket"]
+        assert (at_ticket["value"], at_ticket["taken_at"]) == ("100", older["taken_at"])
+
+    def test_a_yes_no_reading_comes_back_as_its_word(self, operator, node, oil_ok, make_ticket, db_rows):
+        _log(operator, node, oil_ok, "no", 90)
+        ticket = make_ticket(node)
+        _ticket_at(db_rows, ticket, _minutes_ago(60))
+        line = _lines(_ticket_meters(operator, ticket), node)[oil_ok["id"]]
+        assert (line["at_ticket"]["value"], line["at_ticket"]["limit_state"], line["marked_count"]) == (
+            "no", "not_ok", 1)
+
+    def test_a_machine_with_no_meters_gives_no_nodes(self, operator, node, make_equipment, make_ticket):
+        part = make_equipment(parent=node)
+        assert _ticket_meters(operator, make_ticket(node))["nodes"] == []
+        assert _ticket_meters(operator, make_ticket(part))["nodes"] == []
+
+    def test_a_part_moved_to_another_machine_is_left_out(self, admin, operator, node, unit, make_equipment,
+                                                         make_meter_type, make_ticket):
+        drive = make_equipment(parent=node)
+        _add_own(admin, node, make_meter_type(kind="counter", unit="h", decimals=1))
+        _add_own(admin, drive, make_meter_type(kind="counter", unit="h", decimals=1))
+        ticket = make_ticket(drive)
+        other = make_equipment(unit=unit)
+        assert admin.put(f"{EQUIPMENT}/{drive['id']}", json={"parent_id": other["id"]}).status_code == 200
+        assert _node_ids(_ticket_meters(operator, ticket)) == [node["id"]]
+
+    def test_a_part_moved_out_of_the_user_s_units_is_left_out(self, admin, operator, node, make_unit,
+                                                               make_equipment, make_meter_type, make_ticket):
+        drive = make_equipment(parent=node)
+        _add_own(admin, node, make_meter_type(kind="counter", unit="h", decimals=1))
+        ticket = make_ticket(drive)
+        other = make_equipment(unit=make_unit())
+        assert admin.put(f"{EQUIPMENT}/{drive['id']}", json={"parent_id": other["id"]}).status_code == 200
+        assert _node_ids(_ticket_meters(operator, ticket)) == [node["id"]]
+
+    def test_an_unknown_ticket_and_one_outside_the_units_are_404(self, operator, user_with_units, make_unit, node,
+                                                                 hours, make_ticket):
+        ticket = make_ticket(node)
+        _ticket_meters(user_with_units("maint_operator", [make_unit()]), ticket, 404)
+        _ticket_meters(operator, {"id": 999999999}, 404)
+
+    def test_a_ticket_seen_through_its_unit_with_its_machine_moved_away_gives_no_nodes(
+            self, admin, user_with_units, make_unit, make_ticket, node, unit, hours):
+        ticket = make_ticket(node)
+        new_unit = make_unit()
+        assert admin.put(f"{EQUIPMENT}/{node['id']}", json={"unit_id": new_unit["id"]}).status_code == 200
+        assert _ticket_meters(user_with_units("maint_operator", [unit]), ticket)["nodes"] == []
+        assert _node_ids(_ticket_meters(user_with_units("maint_operator", [new_unit]), ticket)) == [node["id"]]
+
+    def test_the_storekeeper_is_403(self, at_unit, node, hours, make_ticket):
+        _ticket_meters(at_unit("maint_storekeeper"), make_ticket(node), 403)
+
+    def test_the_database_down_is_503(self, operator, db_down):
+        assert operator.get("/api/tickets/1/meters").status_code == 503

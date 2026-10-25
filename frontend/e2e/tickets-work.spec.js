@@ -2,7 +2,8 @@
 // through the API (setup), then works it on the screens; every dialog opened must fit
 // (openAction calls expectDialogFits).
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
+import { logByApi, meterMachine } from "./support/meters.js";
 import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
 import {
   card, causeId, istDay, istLocal, moveByApi, openAction, raiseByApi, regradeByApi, saveDialog, setEventTime, shownDay, shownTime,
@@ -570,3 +571,141 @@ test("S051: a move dialog shows the time with Now ticked; a back-dated time type
   await expect(timeline(page).filter({ hasText: "Acknowledged" })).toContainText(shownTime(istLocal(100, base)));
 });
 
+
+// S052: the Meters card on the ticket page, the readings as they stood when it happened
+const ticketMeter = (page, name) => card(page, "Meters").getByTestId("ticket-meter").filter({ hasText: name });
+
+/** A press of its own in the operator's unit with Run hours and an oil gauge (High above 60), and a ticket on it at `at`. */
+async function pressTicket(testInfo, tag, at) {
+  const machine = await meterMachine(testInfo, tag, {
+    unit: "SMTW.MCC2", ownMeters: [["Run hours", {}], ["Oil temperature", { max_value: "60" }]],
+  });
+  const ticket = await raiseByApi("operator", {
+    equipment_id: machine.id, intensity: "critical", description: `S052 test: ${tag}`, occurred_at: at,
+  });
+  return { machine, ticket };
+}
+
+test("S052: the ticket's Meters card shows the reading before the ticket's time with its age, and High on the gauge", async ({ page }, testInfo) => {
+  const base = thisMinute();
+  const at = istLocal(60, base);
+  const { machine, ticket } = await pressTicket(testInfo, "s52card", at);
+  const before = istLocal(60 + 8 * 60, base); // 8 h before the ticket's time
+  await logByApi(machine, "Run hours", "100", before);
+  await logByApi(machine, "Oil temperature", "65", before);
+  await logByApi(machine, "Run hours", "120", istLocal(30, base)); // after: the repair's test run, never shown
+  await logByApi(machine, "Oil temperature", "40", istLocal(20, base));
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  const meters = card(page, "Meters");
+  await expect(meters).toContainText(`Readings up to ${shownTime(at)}, when it happened`);
+  await expect(meters.getByTestId("ticket-meters-node")).toContainText(`${machine.code} — ${machine.name}`);
+  const hours = ticketMeter(page, "Run hours");
+  await expect(hours).toContainText("100.0 h");
+  await expect(hours).toContainText(`${shownTime(before)} · 8 h before`);
+  await expect(hours).not.toContainText("120.0");
+  const oil = ticketMeter(page, "Oil temperature");
+  await expect(oil).toContainText("65.0 °C");
+  await expect(oil.locator(".badge")).toHaveText("High");
+  await expect(oil.getByTestId("ticket-meter-warning")).toHaveText("High or Low 1 time in the 7 days before");
+});
+
+test("S052: a gauge marked High three times in the 7 days before shows the warning", async ({ page }, testInfo) => {
+  const base = thisMinute();
+  const at = istLocal(60, base);
+  const { ticket } = await pressTicket(testInfo, "s52warn", at);
+  for (const days of [1, 2, 3]) await logByApi(ticket.machine, "Oil temperature", "70", istLocal(60 + days * 24 * 60, base));
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  await expect(ticketMeter(page, "Oil temperature").getByTestId("ticket-meter-warning"))
+    .toHaveText("High or Low 3 times in the 7 days before");
+  await expect(ticketMeter(page, "Oil temperature")).toContainText("1 d before");
+  await expect(ticketMeter(page, "Run hours")).toContainText("No reading before this time");
+  await expect(ticketMeter(page, "Run hours").getByTestId("ticket-meter-warning")).toHaveCount(0);
+});
+
+test("S052: Open register on the machine's heading opens the register for that machine", async ({ page }, testInfo) => {
+  const base = thisMinute();
+  const { ticket } = await pressTicket(testInfo, "s52reg", istLocal(60, base));
+  await logByApi(ticket.machine, "Run hours", "100", istLocal(90, base));
+  await asPerson(page, "operator", `/tickets/${ticket.id}`);
+  await card(page, "Meters").getByRole("link", { name: "Open register" }).click();
+  await expect(page).toHaveURL(new RegExp(`/readings\\?tab=register&node=${ticket.machine.id}$`));
+  await expect(page.getByTestId("register-node")).toContainText(`${ticket.machine.code} — ${ticket.machine.name}`);
+});
+
+test("S052: a ticket on a machine with no meters shows no Meters card", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s52none", { unit: "SMTW.MCC2" });
+  const ticket = await raiseByApi("operator", {
+    equipment_id: machine.id, intensity: "critical", description: "S052 test: no meters", occurred_at: istLocal(30),
+  });
+  // Wait for the card's own answer, so the check cannot pass while it is still loading (BR1-05)
+  const answered = page.waitForResponse((res) => res.url().includes(`/api/tickets/${ticket.id}/meters`));
+  await asPerson(page, "operator", `/tickets/${ticket.id}`);
+  expect((await answered).status()).toBe(200);
+  await expect(card(page, "Details")).toBeVisible();
+  await expect(card(page, "Meters")).toHaveCount(0);
+});
+
+test("S052: when the Meters card cannot load it says so; Try again keeps the card in place until the answer arrives", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/meters", 503);
+  const base = thisMinute();
+  const { ticket } = await pressTicket(testInfo, "s52fail", istLocal(60, base));
+  await logByApi(ticket.machine, "Run hours", "100", istLocal(90, base));
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  await page.route(`**/api/tickets/${ticket.id}/meters`, async (route) => {
+    calls += 1;
+    if (calls === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Database unavailable" }) });
+    await held; // the retry stays in flight until the test lets it go
+    return route.continue();
+  });
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  const meters = card(page, "Meters");
+  await expect(meters).toContainText("Meter readings could not be loaded. Try again in a minute.");
+  const again = meters.getByRole("button", { name: "Try again" });
+  await again.click();
+  // CR1-01: while the retry runs the card stays, with its text, and the button cannot be tapped twice
+  await expect(meters).toContainText("Meter readings could not be loaded.");
+  await expect(again).toBeDisabled();
+  release();
+  await expect(ticketMeter(page, "Run hours")).toContainText("100.0 h");
+  await expect(meters).not.toContainText("could not be loaded");
+});
+
+test("S052: changing the ticket's part reloads the Meters card with the part's node", async ({ page }, testInfo) => {
+  const base = thisMinute();
+  const { machine, ticket } = await pressTicket(testInfo, "s52part", istLocal(60, base));
+  const api = await apiAs("admin");
+  let part;
+  try {
+    const types = (await (await api.get("/api/masters/meter-types")).json()).items;
+    const res = await api.post("/api/equipment", {
+      data: { level: "component_unit", parent_id: machine.id, model_id: machine.model_id, name: "S052 test part" },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    part = await res.json();
+    const added = await api.post(`/api/equipment/${part.id}/meters`, { data: { meter_type_id: types.find((t) => t.name === "Run hours").id } });
+    expect(added.status(), await added.text()).toBe(201);
+  } finally {
+    await api.dispose();
+  }
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  const nodes = card(page, "Meters").getByTestId("ticket-meters-node");
+  await expect(nodes).toHaveCount(1);
+  await page.getByRole("button", { name: "Edit" }).click();
+  await openDialog(page);
+  await expectDialogFits(page);
+  await page.locator("#edit-component").selectOption(String(part.id));
+  await saveDialog(page, "Save");
+  await expect(nodes).toHaveCount(2);
+  await expect(nodes.last()).toContainText("S052 test part");
+});
+
+test("S052: the ticket page with the Meters card has no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
+  const base = thisMinute();
+  const { ticket } = await pressTicket(testInfo, "s52fit", istLocal(60, base));
+  await logByApi(ticket.machine, "Oil temperature", "70", istLocal(90, base));
+  await asPerson(page, "operator", `/tickets/${ticket.id}`);
+  await expect(ticketMeter(page, "Oil temperature").getByTestId("ticket-meter-warning")).toBeVisible();
+  await expectNoSidewaysScroll(page);
+});
