@@ -500,3 +500,7 @@ each reading is not shown (item 1); a tap on a cell does nothing in this step (i
 | BS1-02 minor — the sideways-scroll test is `@device` | Accepted, as recommended: tagged, no device in the title, enough meters to overflow at 1366 px, frame `scrollWidth > clientWidth`; the other tests untagged; the storekeeper nav test finds *Readings* in the visible nav (§ 8.4) |
 | BS1-03 minor — S051 changed more than the time field | Accepted: the intro names the keys and the S051 tests; no design change (intro) |
 | BS1-04…BS1-08 nits | Accepted, all: template lines 344–371 (§ 1.3); Plan.MD line 799 and the existing "Decided (S050)" line (§ 3 Docs); § 9 items 6–7 settled; `journeys.spec.js` targeted (§ 8.6); the spec map `readings` S039/S040/S050/S051 (§ 3 Docs) |
+
+### U5 — gate B question, 25-10-2026
+
+The meter chooser reads "Meters: 1 of 2" when only some meters are ticked (the coder's wording; the brief named only "Meters: All"). KLA: keep "Meters: 1 of 2".
