@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  expectedAnswerText, formatReading, goodReadingText, isToday, isUnavailable, KIND_LABELS, limitsBody, meterTypeOption,
-  NOT_SAVED, notSavedOr, readingBadges, savedMessage, SOURCE_LABELS, unitAndKind,
+  expectedAnswerText, formatReading, goodReadingText, isToday, isUnavailable, KIND_LABELS, limitsBody, meterHeader,
+  meterTypeOption, NOT_SAVED, notSavedOr, parseRegisterQuery, readingBadgeClass, readingBadges, registerQuery, savedMessage, SOURCE_LABELS,
+  unitAndKind,
 } from "../src/utils/meterLabels.js";
 
 const OIL = { id: 6, name: "Oil temperature", unit: "°C", kind: "gauge", decimals: 1, expected_answer: null };
@@ -53,12 +54,24 @@ describe("readings (S039)", () => {
     expect(formatReading("yes", OIL_OK)).toBe("Yes");
   });
 
+  it("leaves the unit out with { unit: false }, for the register's cells (S050 BR1-10)", () => {
+    expect(formatReading("12345.6", HOURS, { unit: false })).toBe("12,345.6");
+    expect(formatReading("420", SHIFT, { unit: false })).toBe("420");
+    expect(formatReading("yes", OIL_OK, { unit: false })).toBe("Yes");
+  });
+
   it("names a reading's marks: High, Low, Not OK and Reset (BR3-06)", () => {
     expect(readingBadges({ limit_state: "high", is_reset: false })).toEqual(["High"]);
     expect(readingBadges({ limit_state: "low", is_reset: false })).toEqual(["Low"]);
     expect(readingBadges({ limit_state: "not_ok", is_reset: false })).toEqual(["Not OK"]);
     expect(readingBadges({ limit_state: null, is_reset: true })).toEqual(["Reset"]);
     expect(readingBadges({ limit_state: null, is_reset: false })).toEqual([]);
+  });
+
+  it("colours Reset as information and every other mark as a warning, for the history and the register (CR1-03)", () => {
+    expect(readingBadgeClass("Reset")).toBe("text-bg-info");
+    expect(readingBadgeClass("High")).toBe("text-bg-warning");
+    expect(readingBadgeClass("Not OK")).toBe("text-bg-warning");
   });
 
   it("says what was saved only when the reading is outside what is good (BR2-09)", () => {
@@ -116,5 +129,29 @@ describe("the readings sheet's shared helpers (S040)", () => {
 
   it("isToday pads one-digit months and days", () => {
     expect(isToday("2026-01-05T08:00:00+05:30", new Date("2026-01-05T03:30:00Z"))).toBe(true);
+  });
+});
+
+describe("the reading register (S050)", () => {
+  it("heads a column with the name and unit; a type with no unit with its name alone (BR2-06)", () => {
+    expect(meterHeader(HOURS)).toBe("Run hours (h)");
+    expect(meterHeader(OIL_OK)).toBe(OIL_OK.name);
+  });
+
+  it("reads the node and the ticked meters from the URL; bad values are dropped, absent = all", () => {
+    expect(parseRegisterQuery({})).toEqual({ nodeId: null, meterIds: null });
+    expect(parseRegisterQuery({ node: "12", meters: "3,7" })).toEqual({ nodeId: 12, meterIds: [3, 7] });
+    expect(parseRegisterQuery({ node: "12", meters: "3,x,0,-1,3, 7 " })).toEqual({ nodeId: 12, meterIds: [3, 7] });
+    expect(parseRegisterQuery({ node: "12", meters: "x" })).toEqual({ nodeId: 12, meterIds: null });
+    expect(parseRegisterQuery({ node: "abc" })).toEqual({ nodeId: null, meterIds: null });
+    expect(parseRegisterQuery({ node: "0" }).nodeId).toBeNull();
+    expect(parseRegisterQuery({ node: ["1", "2"] }).nodeId).toBeNull();
+  });
+
+  it("writes the URL: the tab always, the meters only when some are ticked", () => {
+    expect(registerQuery(null)).toEqual({ tab: "register" });
+    expect(registerQuery(12)).toEqual({ tab: "register", node: "12" });
+    expect(registerQuery(12, [3, 7])).toEqual({ tab: "register", node: "12", meters: "3,7" });
+    expect(registerQuery(12, [])).toEqual({ tab: "register", node: "12" });
   });
 });

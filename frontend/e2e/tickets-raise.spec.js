@@ -74,6 +74,17 @@ test("S017: raise from the Tickets list naming a person with no login; the open 
   await expect(page.getByText("Raise test: vibration at the cutter")).toBeVisible();
 });
 
+test("S050: Change on the raise form brings back the earlier search text and its matches (CR1-01)", async ({ page }) => {
+  await asPerson(page, "supervisor", "/tickets");
+  await page.getByRole("link", { name: "Raise ticket" }).click();
+  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
+  await expect(page.getByLabel("Which equipment?")).toBeHidden();
+  await page.getByRole("button", { name: "Change", exact: true }).click();
+  await expect(page.getByLabel("Which equipment?")).toHaveValue(seed.extruder.name);
+  await expect(page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) })).toBeVisible();
+});
+
 test("S017: with no symptom and no description, the description is asked for", async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();

@@ -59,7 +59,7 @@ const routes = [
     component: TicketDetailView,
     meta: { title: "Ticket" },
   },
-  // The end-of-day readings sheet (S040): a nav item, for reading:log holders
+  // Readings (S040, S050): the end-of-day sheet for reading:log holders, the register for every equipment:read holder
   {
     path: "/readings",
     name: "readings",

@@ -10,6 +10,9 @@
  * High / Low / Not OK mark, opens its History; Log reading (reading:log holders) opens the
  * reading dialog. After a save outside what is good, the card says so on the meter's row.
  *
+ * Open register (S050 § 1.4) opens /readings?tab=register&node=<id>: every reading of the node as
+ * a table. It shows while the node has a meter in force.
+ *
  * Emits @changed after a meter write, so the page reloads the node's history (a reading writes
  * no equipment history).
  */
@@ -17,7 +20,7 @@ import { ref, watch } from "vue";
 import { apiGet, apiPut } from "../../api";
 import { formatDateTime } from "../../utils/datetime";
 import {
-  formatReading, goodReadingText, LIMIT_STATE_LABELS, savedMessage, SOURCE_LABELS, unitAndKind,
+  formatReading, goodReadingText, LIMIT_STATE_LABELS, registerQuery, savedMessage, SOURCE_LABELS, unitAndKind,
 } from "../../utils/meterLabels";
 import NodeMeterFormModal from "./NodeMeterFormModal.vue";
 import ReadingFormModal from "./ReadingFormModal.vue";
@@ -111,9 +114,15 @@ async function remove(meter) {
   <div class="card mt-3">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
       <span>Meters</span>
-      <button v-if="canEdit" class="btn btn-sm btn-outline-primary" :disabled="meters === null" @click="meterModal.openAdd(node, meters)">
-        <i class="fa-solid fa-plus me-1"></i>Add meter
-      </button>
+      <span class="d-flex flex-wrap gap-1">
+        <!-- S050: every reading of this node as a table; shown while a meter is in force (BR1-15) -->
+        <router-link v-if="meters?.length" class="btn btn-outline-secondary touch-target" :to="{ path: '/readings', query: registerQuery(node.id) }">
+          <i class="fa-solid fa-table me-1"></i>Open register
+        </router-link>
+        <button v-if="canEdit" class="btn btn-sm btn-outline-primary" :disabled="meters === null" @click="meterModal.openAdd(node, meters)">
+          <i class="fa-solid fa-plus me-1"></i>Add meter
+        </button>
+      </span>
     </div>
     <div v-if="loadError" class="card-body text-danger">Meters could not be loaded: {{ loadError }}</div>
     <div v-else-if="meters === null" class="card-body text-secondary">Loading…</div>

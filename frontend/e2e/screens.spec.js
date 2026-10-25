@@ -9,8 +9,6 @@ const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager",
 // ticket:read and ticket:raise: every site role but the storekeeper, and IT admin (config_rbac)
 const TICKET_ROLES = EVERYONE.filter((key) => key !== "storekeeper");
 const SETTINGS_ROLES = ["manager", "it_admin"];
-// reading:log (S039): the operator and up; not the storekeeper or IT admin
-const READING_ROLES = EVERYONE.filter((key) => !["storekeeper", "it_admin"].includes(key));
 
 let seed;
 let ticket;
@@ -46,12 +44,16 @@ const screens = () => [
   { path: "/tickets", title: "Tickets", shows: (page) => page.getByRole("combobox", { name: "State" }), who: TICKET_ROLES },
   // S031: the My activity tab is there for every role, whatever its default tab
   // S040: the site heading (code first) for a one-site user, the site picker for the manager; both hold with
-  // no meters in the lane's database (empty state, BR1-12)
+  // no meters in the lane's database (empty state, BR1-12).  S050: every role opens it; the storekeeper and
+  // IT admin (no reading:log) get only the Register tab, with the equipment search
   {
-    path: "/readings", title: "Readings", who: READING_ROLES,
-    shows: (page, key) => (key === "manager"
-      ? page.getByLabel("Site", { exact: true })
-      : page.getByTestId("sheet-heading").filter({ hasText: "SMTW — " })),
+    path: "/readings", title: "Readings", who: EVERYONE,
+    shows: (page, key) => {
+      if (["storekeeper", "it_admin"].includes(key)) return page.getByLabel("Which equipment?");
+      return key === "manager"
+        ? page.getByLabel("Site", { exact: true })
+        : page.getByTestId("sheet-heading").filter({ hasText: "SMTW — " });
+    },
   },
   { path: "/me", title: "Me", shows: (page) => page.getByRole("button", { name: "My activity", exact: true }), who: TICKET_ROLES },
   { path: "/tickets/new", title: "Raise ticket", shows: (page) => page.getByRole("heading", { name: "Raise ticket" }), who: TICKET_ROLES },

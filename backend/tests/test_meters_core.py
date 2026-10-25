@@ -10,9 +10,9 @@ from meters_core import (
     ACTION_LIMITS, ACTION_REMOVE, ACTION_USE_MODEL, NO_LIMITS, SOURCE_MODEL, SOURCE_NODE, answer_state,
     answer_word, counter_error, effective_meters, format_number, grouped_number, in_force_pair, limit_state,
     limits_text, may_remove, override_of, parse_change_action, parse_meter_type_id, parse_reading_request,
-    parse_taken_at,
-    reading_text, reading_time_error, reset_removal_error, same_limits, to_minute, tracked_meter_change,
-    validate_limits, validate_reading,
+    parse_meter_type_ids, parse_taken_at, reading_text, reading_time_error, register_columns, register_rows,
+    reset_removal_error, same_limits, shown_meter_ids, to_minute, tracked_meter_change, validate_limits,
+    validate_reading,
 )
 
 D = Decimal
@@ -462,3 +462,103 @@ class TestReadingWords:
         assert reading_text(D("12345.6"), HOURS) == "12,345.6 h"
         assert reading_text(D("420"), SHIFT) == "420 pcs"
         assert reading_text(D("0"), OIL_OK) == "No"
+
+
+# ---------------------------------------------------------------------------
+# The reading register (S050 § 5.1, § 5.2, § 5.5)
+# ---------------------------------------------------------------------------
+
+def _in_force(meter_type, low=None, high=None):
+    return {"meter_type": meter_type, "min_value": low, "max_value": high}
+
+
+def _column(meter_type, in_force=True):
+    return {"meter_type": meter_type, "in_force": in_force, "min_value": None, "max_value": None}
+
+
+def _row(reading_id, meter_type, value, minute, limit_state=None, is_reset=0):
+    return {"id": reading_id, "meter_type_id": meter_type["id"], "value": D(value),
+            "taken_at": datetime(2026, 10, 23, 18, minute), "is_reset": is_reset, "limit_state": limit_state}
+
+
+class TestRegisterColumns:
+    def test_the_meters_in_force_in_their_order(self):
+        columns = register_columns([_in_force(OIL, "10", "60"), _in_force(HOURS)], [OIL])
+        assert [(c["meter_type"]["id"], c["in_force"]) for c in columns] == [(6, True), (1, True)]
+        assert (columns[0]["min_value"], columns[0]["max_value"]) == ("10", "60")
+
+    def test_a_type_read_but_no_longer_on_the_node_comes_after_by_name(self):
+        columns = register_columns([_in_force(HOURS)], [SHIFT, HOURS, FUEL])
+        assert [(c["meter_type"]["name"], c["in_force"]) for c in columns] == [
+            ("Run hours", True), ("Fuel level", False), ("Shift production", False)]
+        assert columns[1]["min_value"] is None and columns[1]["max_value"] is None
+
+    def test_a_type_without_an_active_reading_and_not_in_force_is_no_column(self):
+        # read_types holds only types with an active reading: one with removed readings only is absent
+        assert register_columns([], []) == []
+        assert [c["meter_type"]["id"] for c in register_columns([_in_force(HOURS)], [])] == [1]
+
+
+class TestShownMeterIds:
+    COLUMNS = [_column(OIL), _column(HOURS), _column(SHIFT, in_force=False)]
+
+    def test_all_when_none_is_asked(self):
+        assert shown_meter_ids(self.COLUMNS, None) == [6, 1, 8]
+
+    def test_the_asked_columns_in_column_order(self):
+        assert shown_meter_ids(self.COLUMNS, [8, 6]) == [6, 8]
+
+    def test_an_id_that_is_no_column_is_ignored(self):
+        assert shown_meter_ids(self.COLUMNS, [1, 99]) == [1]
+
+    def test_only_stale_ids_show_all(self):
+        assert shown_meter_ids(self.COLUMNS, [99]) == [6, 1, 8]
+
+    def test_no_columns(self):
+        assert shown_meter_ids([], [3]) == []
+
+
+class TestRegisterRows:
+    COLUMNS = [_column(OIL), _column(HOURS), _column(OIL_OK)]
+
+    def test_one_row_per_minute_newest_first_a_cell_per_meter(self):
+        readings = [
+            _row(1, HOURS, "100.0", 0), _row(2, OIL, "55.0", 0), _row(3, OIL_OK, "1", 0),
+            _row(4, HOURS, "108.5", 30), _row(5, OIL, "62.0", 30, limit_state="high"),
+            _row(6, HOURS, "0", 45, is_reset=1),
+        ]
+        rows = register_rows(readings, self.COLUMNS)
+        assert [r["taken_at"].minute for r in rows] == [45, 30, 0]
+        assert rows[0]["cells"] == {1: {"id": 6, "value": "0", "limit_state": None, "is_reset": True}}
+        assert rows[1]["cells"][6] == {"id": 5, "value": "62", "limit_state": "high", "is_reset": False}
+        assert rows[1]["cells"][1]["value"] == "108.5"
+        assert set(rows[2]["cells"]) == {1, 6, 9}
+
+    def test_a_yes_no_value_comes_back_as_its_word(self):
+        rows = register_rows([_row(1, OIL_OK, "1", 0), _row(2, OIL_OK, "0", 5, limit_state="not_ok")], self.COLUMNS)
+        assert [r["cells"][9]["value"] for r in rows] == ["no", "yes"]
+        assert rows[0]["cells"][9]["limit_state"] == "not_ok"
+
+    def test_no_readings_no_rows(self):
+        assert register_rows([], self.COLUMNS) == []
+
+    def test_two_readings_of_one_meter_at_one_minute_the_higher_id_wins(self):
+        rows = register_rows([_row(9, HOURS, "120", 0), _row(4, HOURS, "110", 0)], self.COLUMNS)
+        assert len(rows) == 1 and rows[0]["cells"][1]["id"] == 9 and rows[0]["cells"][1]["value"] == "120"
+
+    def test_a_reading_of_a_meter_that_is_no_column_is_left_out(self):
+        assert register_rows([_row(1, SHIFT, "400", 0)], self.COLUMNS) == []
+
+
+class TestParseMeterTypeIds:
+    @pytest.mark.parametrize("raw", [None, "", "  "])
+    def test_absent_or_empty_is_all(self, raw):
+        assert parse_meter_type_ids(raw) == (None, [])
+
+    @pytest.mark.parametrize("raw, ids", [("3,7", [3, 7]), ("3,3", [3]), (" 3 , 7 ", [3, 7]), ("7,3,7", [7, 3])])
+    def test_a_comma_list(self, raw, ids):
+        assert parse_meter_type_ids(raw) == (ids, [])
+
+    @pytest.mark.parametrize("raw", ["3,x", "3,", "0", "-1", "x", "3.5", "٣"])
+    def test_a_malformed_list_is_refused(self, raw):
+        assert parse_meter_type_ids(raw) == (None, [{"field": "meter_type_ids", "message": "Pick a meter"}])

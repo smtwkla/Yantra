@@ -12,6 +12,10 @@ time window (parse_taken_at, reading_time_error), the counter order against both
 (counter_error), a gauge's limits and a Yes / No meter's answer (limit_state, answer_state),
 and who may remove a reading (may_remove, reset_removal_error).
 
+The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5): its columns
+(register_columns, shown_meter_ids), its rows by minute (register_rows) and the query's id list
+(parse_meter_type_ids).
+
 Limits and readings are numbers of the meter type's decimals, parsed with Decimal (never
 float) and returned as strings without trailing zeros.  Only a gauge has limits: a counter triggers PM
 every N units, an amount is a quantity produced, and a Yes / No meter's good answer is fixed
@@ -466,3 +470,64 @@ def parse_reading_request(body, now):
     if message:
         errors = [*errors, {"field": "taken_at", "message": message}]
     return {"meter_type_id": meter_type_id, "taken_at": taken_at}, errors
+
+
+# ---------------------------------------------------------------------------
+# The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+def parse_meter_type_ids(raw):
+    """The register's ``meter_type_ids`` query (§ 5.5) → ``(ids, errors)``: ``ids`` None for all
+    (absent or empty), else the ids in the order first named, duplicates dropped.  Spaces around
+    an id are trimmed; anything but a comma list of positive integers is refused."""
+    if raw is None or raw.strip() == "":
+        return None, []
+    ids = []
+    for part in raw.split(","):
+        text = part.strip()
+        if not (text.isascii() and text.isdigit()) or int(text) < 1:
+            return None, [{"field": "meter_type_ids", "message": PICK_A_METER}]
+        if int(text) not in ids:
+            ids.append(int(text))
+    return ids, []
+
+
+def register_columns(meters_in_force, read_types):
+    """The register's columns (§ 5.1): the node's meters in force (``effective_meters``' list, in
+    its order), then every meter type of ``read_types`` (the types with an active reading on the
+    node) that is not in force, by name, with ``in_force`` False and no limits."""
+    in_force_ids = {meter["meter_type"]["id"] for meter in meters_in_force}
+    columns = [{"meter_type": meter["meter_type"], "in_force": True,
+                "min_value": meter["min_value"], "max_value": meter["max_value"]} for meter in meters_in_force]
+    gone = sorted((t for t in read_types if t["id"] not in in_force_ids), key=lambda t: (t["name"].casefold(), t["id"]))
+    columns.extend({"meter_type": t, "in_force": False, "min_value": None, "max_value": None} for t in gone)
+    return columns
+
+
+def shown_meter_ids(columns, wanted):
+    """The columns the rows are built for (§ 5.5): the ``wanted`` ids that are columns, in column
+    order; all columns when ``wanted`` is None or names none of them (a stale bookmark, BR1-03)."""
+    column_ids = [column["meter_type"]["id"] for column in columns]
+    shown = [i for i in column_ids if wanted is not None and i in wanted]
+    return shown or column_ids
+
+
+def register_rows(readings, columns):
+    """The register's rows (§ 5.2): one per distinct ``taken_at``, newest first, each
+    ``{taken_at, cells: {meter_type_id: {id, value, limit_state, is_reset}}}``.  ``readings`` are
+    active reading rows (id, meter_type_id, value, taken_at, is_reset, limit_state); a column gives
+    its meter's kind, so a Yes / No value is worded "yes" / "no" and any other as format_number.
+    A reading of a meter that is not a column is left out."""
+    kinds = {column["meter_type"]["id"]: column["meter_type"]["kind"] for column in columns}
+    by_minute = {}
+    # S039 refuses a second active reading of one meter at one minute (SAME_MINUTE); should the data
+    # ever hold two, the higher id is the later write and wins: readings are taken in id order
+    for reading in sorted(readings, key=lambda r: r["id"]):
+        kind = kinds.get(reading["meter_type_id"])
+        if kind is None:
+            continue
+        value = answer_word(reading["value"]) if kind == YES_NO else format_number(reading["value"])
+        by_minute.setdefault(reading["taken_at"], {})[reading["meter_type_id"]] = {
+            "id": reading["id"], "value": value, "limit_state": reading["limit_state"],
+            "is_reset": bool(reading["is_reset"])}
+    return [{"taken_at": minute, "cells": by_minute[minute]} for minute in sorted(by_minute, reverse=True)]

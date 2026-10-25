@@ -9,7 +9,8 @@ export const navItems = [
   { name: "me", path: "/me", icon: "fa-solid fa-user", label: "Me", perm: "ticket:read" },
   { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
   { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
-  { name: "readings", path: "/readings", icon: "fa-solid fa-gauge", label: "Readings", perm: "reading:log" },
+  // S050: every equipment:read holder; the storekeeper and IT admin see only the Register tab
+  { name: "readings", path: "/readings", icon: "fa-solid fa-gauge", label: "Readings", perm: "equipment:read" },
   { name: "masters", path: "/masters", icon: "yi-icon yi-table-edit", label: "Masters", perm: "masters:read" },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];

@@ -1,4 +1,5 @@
-// Meter readings from the equipment page (S039 § 1.3, § 1.4, § 8) and the end-of-day sheet (S040).
+// Meter readings from the equipment page (S039 § 1.3, § 1.4, § 8), the end-of-day sheet (S040) and the
+// reading register (S050 § 8.4).
 //
 // Set-up (BR1-09, BR2-04, BS1-03): the three projects share one database, so no test reads or
 // writes a seed node.  Each test makes its own machine at SMTW.MCC2 (the operator's unit) with
@@ -930,4 +931,249 @@ test("S051: Enter more readings starts the next round with Now ticked and the ti
   await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeChecked();
   await expect(time).toHaveAttribute("readonly", "");
   expect([istLocal(0), istLocal(1)]).toContain(await time.inputValue());
+});
+
+// S050: the meter reading register, a Register tab on Readings and Open register on the Meters card
+const registerRows = (page) => page.getByTestId("register-row");
+const registerHeaders = (page) => page.getByTestId("register-frame").locator("thead th");
+const picker = (page) => page.getByLabel("Which equipment?");
+const tabButton = (page, name) => page.getByRole("button", { name, exact: true });
+const chooser = (page) => page.getByRole("button", { name: /^Meters: / });
+
+/** Readings of `node` through the API as the operator, one request each: [meter name, value, takenAt]. */
+async function logReadings(node, entries) {
+  const api = await apiAs("operator");
+  try {
+    const types = (await (await api.get("/api/masters/meter-types")).json()).items;
+    for (const [name, value, takenAt] of entries) {
+      const res = await api.post(`/api/equipment/${node.id}/readings`, {
+        data: { meter_type_id: types.find((t) => t.name === name).id, value, taken_at: takenAt },
+      });
+      expect(res.status(), await res.text()).toBe(201);
+    }
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** A component-unit under `machine`, of the machine's model, with its own meters (names), as admin. */
+async function partOf(machine, name, meterNames) {
+  const api = await apiAs("admin");
+  try {
+    const types = (await (await api.get("/api/masters/meter-types")).json()).items;
+    const res = await api.post("/api/equipment", {
+      data: { level: "component_unit", parent_id: machine.id, model_id: machine.model_id, name },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    const part = await res.json();
+    for (const meter of meterNames) {
+      const added = await api.post(`/api/equipment/${part.id}/meters`, { data: { meter_type_id: types.find((t) => t.name === meter).id } });
+      expect(added.status(), await added.text()).toBe(201);
+    }
+    return part;
+  } finally {
+    await api.dispose();
+  }
+}
+
+async function pickInRegister(page, code) {
+  await picker(page).fill(code);
+  await page.getByRole("button", { name: new RegExp(`^${code} — `) }).click();
+}
+
+test("S050: Open register on a press's Meters card shows a row per reading time, newest first, a column per meter, High on an over-limit gauge", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50card", {
+    unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", { max_value: "60" }]],
+  });
+  const [first, second, third] = [istLocal(90), istLocal(60), istLocal(30)];
+  await logReadings(machine, [
+    ["Run hours", "100", first], ["Oil temperature", "50", first],
+    ["Run hours", "110", second], ["Oil temperature", "65", second],
+    ["Run hours", "120", third],
+  ]);
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
+  await card(page, "Meters").getByRole("link", { name: "Open register" }).click();
+  await expect(page).toHaveURL(new RegExp(`/readings\\?tab=register&node=${machine.id}$`));
+  await expect(page.getByTestId("register-node")).toContainText(`${machine.code} — ${machine.name}`);
+  // The meters in the Meters card's order (by name); the time first
+  await expect(registerHeaders(page)).toHaveText(["Time", "Oil temperature (°C)", "Run hours (h)"]);
+  await expect(registerRows(page)).toHaveCount(3);
+  await expect(registerRows(page).locator("th")).toHaveText([shownTime(third), shownTime(second), shownTime(first)]);
+  const cells = (row) => registerRows(page).nth(row).locator("td");
+  await expect(cells(0)).toHaveText(["", "120.0"]); // no oil reading at that minute: an empty cell
+  await expect(cells(1).nth(0)).toHaveText(/^65\.0\s*High$/); // the number only: the unit is in the header
+  await expect(cells(1).nth(0).locator(".badge")).toHaveText("High");
+  await expect(cells(2)).toHaveText(["50.0", "100.0"]);
+});
+
+test("S050: unticking all but one meter leaves its column and the times it was read; the URL keeps it after a reload", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50tick", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  const [first, second, third] = [istLocal(90), istLocal(60), istLocal(30)];
+  await logReadings(machine, [
+    ["Run hours", "100", first], ["Oil temperature", "50", first], ["Oil temperature", "52", second], ["Run hours", "120", third],
+  ]);
+  await asPerson(page, "engineer", `/readings?tab=register&node=${machine.id}`);
+  await expect(registerRows(page)).toHaveCount(3);
+  await expect(chooser(page)).toHaveText("Meters: All");
+  await chooser(page).click();
+  await page.getByRole("checkbox", { name: "Oil temperature (°C)" }).uncheck();
+  await expect(registerHeaders(page)).toHaveText(["Time", "Run hours (h)"]);
+  await expect(registerRows(page).locator("th")).toHaveText([shownTime(third), shownTime(first)]);
+  await expect(page).toHaveURL(/&meters=\d+$/);
+  // The last tick cannot be cleared
+  await expect(page.getByRole("checkbox", { name: "Run hours (h)" })).toBeDisabled();
+
+  await page.reload();
+  await expect(registerHeaders(page)).toHaveText(["Time", "Run hours (h)"]);
+  await expect(registerRows(page)).toHaveCount(2);
+  await expect(chooser(page)).toHaveText("Meters: 1 of 2");
+  await chooser(page).click();
+  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(registerHeaders(page)).toHaveText(["Time", "Oil temperature (°C)", "Run hours (h)"]);
+  await expect(page).not.toHaveURL(/meters=/);
+});
+
+test("S050: a value typed on the sheet is still there after a look at the Register tab (BR1-01)", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50keep", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await openSheet(page, "supervisor");
+  const hours = sheetRow(sheetCard(page, machine), "Run hours");
+  await rowInput(hours).fill("123");
+  await tabButton(page, "Register").click();
+  await expect(picker(page)).toBeVisible();
+  await expect(page.getByTestId("sheet-heading")).toBeHidden();
+  await tabButton(page, "Sheet").click();
+  await expect(rowInput(hours)).toHaveValue("123");
+  await expect(page.getByTestId("filled-count")).toContainText("1 of");
+});
+
+test("S050: the search finds a component-unit by code, its row shows the full path, and the register shows its own meters", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50part", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  const motor = await partOf(machine, `S050 motor ${testInfo.project.name}`, ["Energy"]);
+  const taken = istLocal(30);
+  await logReadings(motor, [["Energy", "4500.5", taken]]);
+  await logReadings(machine, [["Run hours", "100", taken]]);
+  await asPerson(page, "engineer", "/readings?tab=register");
+  await expect(page.getByTestId("register-empty")).toHaveText("Find a machine or part to see its readings.");
+  await picker(page).fill(motor.code);
+  const result = page.getByRole("button", { name: new RegExp(`^${motor.code} — `) });
+  await expect(result).toContainText(motor.full_path);
+  await result.click();
+  await expect(page.getByTestId("register-node")).toContainText(motor.full_path);
+  await expect(registerHeaders(page)).toHaveText(["Time", "Energy (kWh)"]); // not the machine's Run hours (U2)
+  await expect(registerRows(page)).toHaveCount(1);
+  await expect(registerRows(page).first().locator("td")).toHaveText(["4,500.5"]);
+});
+
+test("S050: a link with a stale meters id opens the register with the remaining columns and no error", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50stale", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  await logReadings(machine, [["Run hours", "100", istLocal(60)], ["Oil temperature", "40", istLocal(30)]]);
+  await asPerson(page, "engineer", `/readings?tab=register&node=${machine.id}&meters=999999999`);
+  await expect(registerHeaders(page)).toHaveText(["Time", "Oil temperature (°C)", "Run hours (h)"]);
+  await expect(registerRows(page)).toHaveCount(2);
+  await expect(chooser(page)).toHaveText("Meters: All");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("S050: Show more adds the next 30 rows with no row twice", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50more", { unit: UNIT, ownMeters: [["Oil temperature", {}]] });
+  const times = Array.from({ length: 32 }, (_, i) => istLocal(10 * (i + 1)));
+  await logReadings(machine, times.map((taken, i) => ["Oil temperature", String(20 + i), taken]));
+  await asPerson(page, "engineer", `/readings?tab=register&node=${machine.id}`);
+  await expect(registerRows(page)).toHaveCount(30);
+  // A reading logged meanwhile shifts the next page by one row: no time may show twice (§ 5.3.5)
+  const newest = istLocal(5);
+  await logReadings(machine, [["Oil temperature", "99", newest]]);
+  await page.getByRole("button", { name: "Show more" }).click();
+  await expect(registerRows(page)).toHaveCount(32);
+  const shown = await registerRows(page).locator("th").allTextContents();
+  expect(shown).toEqual(times.map(shownTime));
+  // No third page: the reading logged meanwhile is newer than the first page, not after the last one
+  await expect(page.getByRole("button", { name: "Show more" })).toHaveCount(0);
+});
+
+test("S050: the storekeeper sees Readings in the nav with only the Register tab, opens a machine's register, and ?tab=sheet opens Register", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50store", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await logReadings(machine, [["Run hours", "250", istLocal(30)]]);
+  await asPerson(page, "storekeeper", "/");
+  await page.getByRole("button", { name: "Readings", exact: true }).filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/readings$/);
+  await expect(picker(page)).toBeVisible();
+  await expect(tabButton(page, "Sheet")).toHaveCount(0);
+  await expect(tabButton(page, "Register")).toHaveCount(0); // a single tab: no tab bar
+  await pickInRegister(page, machine.code);
+  await expect(registerRows(page)).toHaveCount(1);
+  await expect(registerRows(page).first().locator("td")).toHaveText(["250.0"]);
+
+  await page.goto("/readings?tab=sheet");
+  await expect(picker(page)).toBeVisible();
+  await expect(page.getByTestId("sheet-heading")).toHaveCount(0);
+});
+
+test("S050: after a pick the search hides and the node card shows; Change brings the search back", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s50change", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "engineer", "/readings?tab=register");
+  await pickInRegister(page, machine.code);
+  await expect(page.getByTestId("register-node")).toContainText(`${machine.code} — ${machine.name}`);
+  await expect(picker(page)).toBeHidden();
+  await expect(page.getByText("No readings yet.")).toBeVisible();
+  await expect(page.getByTestId("register-node").getByRole("link", { name: "Open equipment page" }))
+    .toHaveAttribute("href", `/equipment/${machine.id}`);
+  await page.getByTestId("register-node").getByRole("button", { name: "Change" }).click();
+  await expect(picker(page)).toBeVisible();
+  // The earlier search text and its matches are still there (S050 CR1-01)
+  await expect(picker(page)).toHaveValue(machine.code);
+  await expect(page.getByRole("button", { name: new RegExp(`^${machine.code} — `) })).toBeVisible();
+  await expect(page).toHaveURL(/\/readings\?tab=register$/);
+});
+
+test("S050: a failed Show more shows its message and Try again under the table, where Show more was (CR1-02)", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/readings/register", 503); // the failure is the point of the test
+  const machine = await meterMachine(testInfo, "s50morefail", { unit: UNIT, ownMeters: [["Oil temperature", {}]] });
+  await logReadings(machine, Array.from({ length: 32 }, (_, i) => ["Oil temperature", String(20 + i), istLocal(10 * (i + 1))]));
+  let failPage2 = true;
+  await page.route(`**/api/equipment/${machine.id}/readings/register?*page=2*`, async (route) => {
+    if (failPage2) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "down" }) });
+    else await route.continue();
+  });
+  await asPerson(page, "engineer", `/readings?tab=register&node=${machine.id}`);
+  await expect(registerRows(page)).toHaveCount(30);
+  await page.getByRole("button", { name: "Show more" }).click();
+  const failure = page.getByTestId("register-more-error");
+  await expect(failure).toContainText("Readings could not be loaded. Try again in a minute.");
+  await expect(failure).toBeInViewport(); // next to the table's foot, not above the node card
+  await expect(page.getByRole("button", { name: "Show more" })).toHaveCount(0);
+  failPage2 = false;
+  await failure.getByRole("button", { name: "Try again" }).click();
+  await expect(registerRows(page)).toHaveCount(32);
+  await expect(failure).toHaveCount(0);
+});
+
+test("S050: a link to a machine that does not exist shows the not-found message with the search under it (CR1-06)", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/readings/register", 404); // the refusal is the point of the test
+  await asPerson(page, "engineer", "/readings?tab=register&node=999999999");
+  await expect(page.getByRole("alert")).toHaveText("This machine was not found, or you have no access to it. Find another machine.");
+  await expect(picker(page)).toBeVisible();
+  await expect(page.getByTestId("register-empty")).toHaveCount(0);
+});
+
+test("S050: the meter columns scroll sideways inside the table's frame, not the page, and the time column stays in view", { tag: "@device" }, async ({ page }, testInfo) => {
+  // Every seed meter type and the Yes / No one: enough columns to overflow a 1366 px desktop too
+  const names = ["Run hours", "Strokes", "Production counter", "Energy", "Odometer", "Oil temperature", "Fuel level",
+    "Shift production", questionName];
+  const machine = await meterMachine(testInfo, "s50wide", { unit: UNIT, ownMeters: names.map((n) => [n, {}]) });
+  await logReadings(machine, [["Run hours", "100", istLocal(30)]]);
+  await asPerson(page, "engineer", `/readings?tab=register&node=${machine.id}`);
+  await expect(registerHeaders(page)).toHaveCount(names.length + 1);
+  const frame = page.getByTestId("register-frame");
+  const sizes = await frame.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(sizes.scroll, "the frame does not scroll sideways").toBeGreaterThan(sizes.client);
+  await expectNoSidewaysScroll(page);
+  const time = registerRows(page).first().locator("th");
+  await expect(time).toBeInViewport();
+  await frame.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  await expect(time).toBeInViewport();
+  const frameBox = await frame.boundingBox();
+  const timeBox = await time.boundingBox();
+  expect(timeBox.x, "the time column moved with the meters").toBeLessThanOrEqual(frameBox.x + 2);
+  await expectNoSidewaysScroll(page);
 });

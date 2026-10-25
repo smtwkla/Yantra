@@ -29,6 +29,10 @@ readings and the same-minute row are then read plainly, so two writers on one no
 on (1) and the second sees the first one's row (its snapshot starts after the lock).  No
 locking range read: gap locks on ix_meter_readings_meter_time could deadlock two inserts.  A
 removal checks equipment:edit (IT admin removes, but does not log), then locks the reading row.
+
+The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5, § 6): one node's
+active readings as a table, a row per minute and a column per meter; a plain read under
+equipment:read, paged by minute.
 """
 
 from datetime import datetime
@@ -37,16 +41,17 @@ from flask import Blueprint, jsonify, request
 
 from api_common import MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, int_arg
 from auth_utils import has_perm_at, require_perm
-from db_helpers import count, get_db, insert_row, row_to_dict, transaction, update_row
-from equipment import IST, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, write_events
+from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
+from equipment import IST, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, node_path, write_events
 from equipment_core import SCRAPPED
 from masters import checked_limits, lock_meter_type, read_model_meters, read_models_meters
 from masters_core import model_label
 from meters_core import (
     ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, NO_LIMITS, PICK_A_METER, YES_NO, answer_state, answer_word,
     counter_error, effective_meters, format_number, in_force_pair, limit_state, may_remove, meter_type_of,
-    parse_change_action, parse_meter_type_id, parse_reading_request, reset_removal_error, same_limits, to_minute,
-    tracked_meter_change, validate_reading,
+    parse_change_action, parse_meter_type_id, parse_meter_type_ids, parse_reading_request, register_columns,
+    register_rows, reset_removal_error, same_limits, shown_meter_ids, to_minute, tracked_meter_change,
+    validate_reading,
 )
 
 meters_bp = Blueprint("meters", __name__)
@@ -492,3 +497,51 @@ def readings_sheet():
         if out_machines:
             out_units.append({"id": unit["id"], "code": unit["code"], "name": unit["name"], "machines": out_machines})
     return jsonify({"site": site, "units": out_units})
+
+
+# ---------------------------------------------------------------------------
+# The reading register (S050)
+# ---------------------------------------------------------------------------
+
+def _read_meter_types(cur, node_id):
+    """The meter types with at least one active reading on the node (§ 5.1.2), in or out of force."""
+    cur.execute(
+        "SELECT t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
+        " t.expected_answer AS t_expected_answer FROM meter_types t WHERE t.id IN ("
+        "  SELECT meter_type_id FROM meter_readings WHERE equipment_id = %s AND removed_at IS NULL)", (node_id,))
+    return [meter_type_of(row) for row in cur.fetchall()]
+
+
+@meters_bp.route("/equipment/<int:node_id>/readings/register")
+@require_perm("equipment:read")
+def readings_register(node_id):
+    """Every active reading of one node as a table (S050 § 5, § 6): a row per minute, newest first,
+    a column per meter.  Paged by minute: the count, the page's minutes, then their readings — a
+    fixed handful of queries, none per meter or per row (§ 5.3)."""
+    wanted, errors = parse_meter_type_ids(request.args.get("meter_type_ids"))
+    if errors:
+        raise ApiError(errors[0]["message"], 400, errors[0]["field"])
+    page = int_arg("page", 1, 1, MAX_PAGE)
+    per_page = int_arg("per_page", HISTORY_PER_PAGE, 1, MAX_PER_PAGE)
+    with get_db().cursor() as cur:
+        _, node = load_node_for_user(cur, node_id, for_update=False, key="equipment:read")
+        columns = register_columns(_meters_of(cur, node_id, node["model_id"]), _read_meter_types(cur, node_id))
+        shown = shown_meter_ids(columns, wanted)
+        total, readings = 0, []
+        if shown:
+            where = f"equipment_id = %s AND removed_at IS NULL AND meter_type_id IN ({_marks(shown)})"
+            params = (node_id, *shown)
+            total = count(cur, f"SELECT COUNT(DISTINCT taken_at) AS n FROM meter_readings WHERE {where}", params)
+            cur.execute(f"SELECT DISTINCT taken_at FROM meter_readings WHERE {where}"
+                        " ORDER BY taken_at DESC LIMIT %s OFFSET %s", (*params, per_page, (page - 1) * per_page))
+            minutes = [row["taken_at"] for row in cur.fetchall()]
+            if minutes:
+                cur.execute("SELECT id, meter_type_id, value, taken_at, is_reset, limit_state FROM meter_readings"
+                            f" WHERE {where} AND taken_at IN ({_marks(minutes)})", (*params, *minutes))
+                readings = cur.fetchall()
+    return jsonify({
+        "node": {"id": node["id"], "code": node["code"], "name": node["name"], "level": node["level"],
+                 "full_path": node_path(node)},
+        "columns": columns, "shown": shown, "rows": rows_to_list(register_rows(readings, columns)),
+        "total": total, "page": page, "per_page": per_page,
+    })

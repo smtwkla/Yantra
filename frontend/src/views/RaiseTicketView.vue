@@ -31,8 +31,8 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet, apiPost, apiUpload } from "../api";
+import EquipmentPicker from "../components/EquipmentPicker.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
-import { useDebounced } from "../composables/useDebounced";
 import { userPersonId } from "../stores/auth";
 import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../utils/documentTypes";
 import { revealError } from "../utils/revealError";
@@ -48,7 +48,6 @@ const OTHER_MODE = "OTH";
 const DESCRIPTION_MAX = 1000;
 const TITLE_MAX = 200;
 const MB = 1024 * 1024;
-const PICKER_SIZE = 20;
 // The picked intensity button, in its badge's colour
 const PICKED_CLASS = { critical: "btn-danger", degraded: "btn-warning", initial: "btn-secondary" };
 
@@ -135,37 +134,6 @@ function defaultRestorePerson(permissions, sitePeople) {
 function chooseEquipment(id) {
   router.replace({ query: id ? { equipment: String(id) } : {} });
 }
-
-// ---- equipment picker (no ?equipment): search by code or name among the user's units ----
-
-const searchText = ref("");
-const results = ref(null);
-const searching = ref(false);
-const searchError = ref("");
-let searchSeq = 0;
-
-async function search() {
-  const text = searchText.value.trim();
-  const seq = ++searchSeq;
-  searchError.value = "";
-  if (!text) {
-    results.value = null;
-    return;
-  }
-  searching.value = true;
-  try {
-    const params = new URLSearchParams({ level: "all", q: text, per_page: String(PICKER_SIZE) });
-    const page = await apiGet(`/api/equipment?${params}`);
-    if (seq === searchSeq) results.value = page;
-  } catch (err) {
-    if (seq === searchSeq) searchError.value = err.message;
-  } finally {
-    if (seq === searchSeq) searching.value = false;
-  }
-}
-
-const { schedule: scheduleSearch } = useDebounced(search);
-watch(searchText, scheduleSearch);
 
 // ---- the form ----
 
@@ -310,6 +278,10 @@ function done() {
   <div class="py-3 raise">
     <h4 class="mb-3">Raise ticket</h4>
 
+    <!-- Step 1: pick the equipment. Hidden, not unmounted, once a node is picked: Change brings back the
+         earlier search text and matches (CR1-01) -->
+    <EquipmentPicker v-show="!ticket && !nodeId" @pick="chooseEquipment" />
+
     <!-- Step 2: saved; add photos -->
     <template v-if="ticket">
       <div class="alert alert-success">
@@ -340,39 +312,8 @@ function done() {
       <button class="btn btn-primary btn-lg w-100" :disabled="uploading" @click="done">Done</button>
     </template>
 
-    <!-- Step 1: pick the equipment -->
-    <template v-else-if="!nodeId">
-      <label class="form-label" for="raise-search">Which equipment?</label>
-      <input
-        id="raise-search"
-        v-model="searchText"
-        class="form-control form-control-lg mb-2"
-        type="search"
-        placeholder="Code or name"
-        autocomplete="off"
-      />
-      <div v-if="searching" class="text-secondary small">Searching…</div>
-      <div v-if="searchError" class="alert alert-danger py-2">{{ searchError }}</div>
-      <div v-else-if="results && results.items.length === 0" class="text-secondary">No equipment found at your units.</div>
-      <div v-else-if="results" class="list-group">
-        <button
-          v-for="e in results.items"
-          :key="e.id"
-          type="button"
-          class="list-group-item list-group-item-action py-3"
-          @click="chooseEquipment(e.id)"
-        >
-          <span class="fw-semibold">{{ e.code }}</span> — {{ e.name }}
-          <div class="small text-secondary">{{ e.full_path }}</div>
-        </button>
-        <div v-if="results.total > results.items.length" class="list-group-item small text-secondary">
-          More found — type more of the code or name.
-        </div>
-      </div>
-    </template>
-
     <!-- Step 1: the ticket -->
-    <template v-else>
+    <template v-else-if="nodeId">
       <div v-if="nodeLoading && !node" class="text-secondary">Loading…</div>
       <div v-else-if="nodeError" class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span>{{ nodeError }}</span>

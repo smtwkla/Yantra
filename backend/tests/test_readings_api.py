@@ -504,3 +504,124 @@ class TestSheet:
     @pytest.mark.parametrize("query", ["", "?site_id=", "?site_id=abc", "?site_id=0", "?site_id=-1", "?site_id=1.5"])
     def test_a_missing_or_bad_site_id_is_400(self, operator, query):
         assert _refusal(operator.get(f"{SHEET}{query}")) == (400, "site_id", "Pick a site")
+
+
+# ---------------------------------------------------------------------------
+# The reading register (S050 § 5, § 6)
+# ---------------------------------------------------------------------------
+
+def _register_url(node, **query):
+    args = "&".join(f"{k}={v}" for k, v in query.items())
+    return f"{EQUIPMENT}/{node['id']}/readings/register" + (f"?{args}" if args else "")
+
+
+def _register(client, node, **query):
+    return _ok(client.get(_register_url(node, **query)))
+
+
+def _column_ids(register):
+    return [c["meter_type"]["id"] for c in register["columns"]]
+
+
+class TestRegister:
+
+    def test_rows_newest_first_a_cell_per_meter_total_counts_minutes(self, operator, node, hours, oil, oil_ok):
+        _log(operator, node, hours, "100", 60)
+        _log(operator, node, oil, "70", 60)                                # above 60: High
+        _log(operator, node, oil_ok, "yes", 60)
+        _log(operator, node, hours, "108.5", 30)
+        _log(operator, node, oil, "40", 10)
+        register = _register(operator, node)
+        assert (register["total"], register["page"], register["per_page"]) == (3, 1, 30)
+        assert register["node"]["id"] == node["id"] and register["node"]["full_path"] == node["full_path"]
+        assert set(_column_ids(register)) == {hours["id"], oil["id"], oil_ok["id"]}
+        assert all(c["in_force"] for c in register["columns"])
+        oil_column = next(c for c in register["columns"] if c["meter_type"]["id"] == oil["id"])
+        assert (oil_column["min_value"], oil_column["max_value"]) == ("10", "60")
+        assert register["shown"] == _column_ids(register)
+        assert [r["taken_at"] for r in register["rows"]] == [api_time(_minutes_ago(m)) for m in (10, 30, 60)]
+        assert register["rows"][0]["cells"] == {str(oil["id"]): {
+            "id": register["rows"][0]["cells"][str(oil["id"])]["id"], "value": "40", "limit_state": None,
+            "is_reset": False}}
+        oldest = register["rows"][2]["cells"]
+        assert (oldest[str(hours["id"])]["value"], oldest[str(oil["id"])]["limit_state"],
+                oldest[str(oil_ok["id"])]["value"]) == ("100", "high", "yes")
+
+    def test_page_two_gives_the_next_minutes(self, operator, node, hours, oil):
+        for minutes in (50, 40, 30):
+            _log(operator, node, hours, str(100 - minutes), minutes)
+            _log(operator, node, oil, "20", minutes)
+        first = _register(operator, node, per_page=2)
+        second = _register(operator, node, per_page=2, page=2)
+        assert (first["total"], len(first["rows"]), len(second["rows"])) == (3, 2, 1)
+        assert [r["taken_at"] for r in first["rows"] + second["rows"]] == [
+            api_time(_minutes_ago(m)) for m in (30, 40, 50)]
+        assert _register(operator, node)["per_page"] == 30
+
+    def test_one_meter_gives_only_its_minutes_and_every_column(self, operator, node, hours, oil):
+        _log(operator, node, hours, "100", 60)
+        _log(operator, node, oil, "30", 50)
+        _log(operator, node, hours, "110", 40)
+        register = _register(operator, node, meter_type_ids=hours["id"])
+        assert register["shown"] == [hours["id"]]
+        assert set(_column_ids(register)) == {hours["id"], oil["id"]}
+        assert register["total"] == 2
+        assert [list(r["cells"]) for r in register["rows"]] == [[str(hours["id"])], [str(hours["id"])]]
+
+    def test_removed_readings_are_left_out_and_a_meter_with_only_removed_ones_is_no_column(
+            self, admin, operator, engineer, node, hours, make_meter_type):
+        wrong = _log(operator, node, hours, "500", 50)
+        _log(operator, node, hours, "100", 60)
+        assert engineer.delete(_readings(node, wrong)).status_code == 204
+        dropped = _add_own(admin, node, make_meter_type())
+        gone = _log(operator, node, dropped, "30", 20)
+        assert engineer.delete(_readings(node, gone)).status_code == 204
+        _ok(admin.put(f"{EQUIPMENT}/{node['id']}/meters/{dropped['id']}", json={"active": False}))
+        register = _register(operator, node)
+        assert _column_ids(register) == [hours["id"]]
+        assert register["total"] == 1 and register["rows"][0]["cells"][str(hours["id"])]["value"] == "100"
+
+    def test_a_meter_removed_from_the_node_with_readings_is_a_column_not_in_force(
+            self, admin, operator, node, hours, make_meter_type):
+        dropped = _add_own(admin, node, make_meter_type(), min_value="10", max_value="60")
+        _log(operator, node, dropped, "70", 30)
+        _log(operator, node, hours, "100", 30)
+        _ok(admin.put(f"{EQUIPMENT}/{node['id']}/meters/{dropped['id']}", json={"active": False}))
+        register = _register(operator, node)
+        assert [(c["meter_type"]["id"], c["in_force"], c["min_value"]) for c in register["columns"]] == [
+            (hours["id"], True, None), (dropped["id"], False, None)]
+        cells = register["rows"][0]["cells"]
+        assert (cells[str(dropped["id"])]["value"], cells[str(dropped["id"])]["limit_state"]) == ("70", "high")
+
+    @pytest.mark.parametrize("raw", ["x", "0", "-1", "3,", "3,x"])
+    def test_a_malformed_id_list_is_400(self, operator, node, hours, raw):
+        assert _refusal(operator.get(_register_url(node, meter_type_ids=raw))) == (
+            400, "meter_type_ids", "Pick a meter")
+
+    def test_an_id_that_is_no_column_is_ignored_and_only_such_ids_show_all(self, operator, node, hours, oil,
+                                                                             make_meter_type):
+        stranger = make_meter_type()
+        _log(operator, node, hours, "100", 30)
+        _log(operator, node, oil, "30", 20)
+        some = _register(operator, node, meter_type_ids=f"{oil['id']},{stranger['id']}")
+        assert (some["shown"], some["total"]) == ([oil["id"]], 1)
+        everything = _register(operator, node, meter_type_ids=stranger["id"])
+        assert (set(everything["shown"]), everything["total"]) == ({hours["id"], oil["id"]}, 2)
+
+    def test_an_unknown_node_and_one_outside_the_units_are_404(self, operator, user_with_units, make_unit, node,
+                                                              hours):
+        assert operator.get(f"{EQUIPMENT}/999999999/readings/register").status_code == 404
+        outsider = user_with_units("maint_engineer", [make_unit()])
+        assert outsider.get(_register_url(node)).status_code == 404
+
+    def test_the_storekeeper_and_it_admin_read_it(self, operator, at_unit, admin, node, hours):
+        _log(operator, node, hours, "100", 30)
+        for client in (at_unit("maint_storekeeper"), admin):
+            assert _register(client, node)["total"] == 1
+
+    def test_a_node_with_no_meters_and_no_readings(self, operator, node):
+        register = _register(operator, node)
+        assert (register["columns"], register["shown"], register["rows"], register["total"]) == ([], [], [], 0)
+
+    def test_the_database_down_is_503(self, operator, node, db_down):
+        assert operator.get(_register_url(node)).status_code == 503

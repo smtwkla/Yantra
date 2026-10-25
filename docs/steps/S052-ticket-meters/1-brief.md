@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Baseline: 4d89084 (docs-only working tree)
-Status: Approved 25-10-2026 by KLA (coded after S050)
+Baseline: refs/steps/S050 2e0e28f (staleness review s1, 25-10-2026, against S047, S051 and S050)
+Status: Implementing (approved 25-10-2026 by KLA; coded after S050)
 ```
 
 # S052 — Meter readings on the ticket
@@ -29,7 +29,7 @@ Today the ticket page links the machine and part codes to the equipment page
 reading (S039), and S050 (in review) adds the reading register.
 
 **Built on** 4d89084 (S044) plus S046; S047 (e2e tooling) and S050 (register) are open. **This
-step is coded after S050**: its *Register* links open S050's register (§ 9 item 1). **No
+step is coded after S050**: its *Open register* links open S050's register (§ 9 item 1). **No
 migration, no new permission key, no write.**
 
 ## 1. What will be built
@@ -41,12 +41,13 @@ migration, no new permission key, no write.**
 2. **The nodes shown.** The ticket's machine, then each node on the path down to the ticket's
    part (`component`), so at most three: machine → component-unit → component. A node shows
    only when it has at least one meter in force (S038). A heading per node: "code — name",
-   with a *Register* link on the right (§ 1.5).
+   with an *Open register* link on the right (§ 1.5).
    - Example: a ticket on a motor's bearing shows the press's strokes and oil temperature, then
      the motor's run hours. The bearing itself has no meter and is left out.
 3. **One line per meter**, in the *Meters* card's order (S038):
    - the meter's name; the value as the equipment page shows it (`formatReading`, Indian
-     grouping, the unit); the marks *High* / *Low* / *Not OK* / *Reset* (`readingBadges`);
+     grouping, the unit); the marks *High* / *Low* / *Not OK* / *Reset* (`readingBadges`),
+     coloured with S050's `readingBadgeClass` from `meterLabels.js` (BS1-06);
    - the reading's time and its age before the ticket's time: "23-10-2026 06:00 · 8 h before"
      (§ 5.3 for the wording);
    - no reading at or before that time: "No reading before this time" in grey.
@@ -58,8 +59,10 @@ migration, no new permission key, no write.**
    - The number of days comes from the answer's `mark_window_days` (§ 6), so the 7 lives only
      in `MARK_WINDOW_DAYS`.
    - The reading shown in item 3 counts too when it is inside the 7 days.
-5. **The *Register* link** per node opens S050's register for that node,
-   `/readings?tab=register&node=<id>`. Every role that sees the ticket may open it: every
+5. **The *Open register* link** per node (the label of S050's button on the equipment page,
+   `MetersCard.vue:120`; one name for one thing, BS1-04) opens S050's register for that node:
+   the link target is `{ path: '/readings', query: registerQuery(node.id) }`, S050's helper in
+   `meterLabels.js` (as `MetersCard.vue:119` uses it), never a literal URL (BS1-01). Every role that sees the ticket may open it: every
    `ticket:read` holder has `equipment:read` (`*`), and S050 § 1.2 opens *Readings* to every
    `equipment:read` holder.
 6. **The card is hidden** when no node of the path has a meter in force. Tickets on machines
@@ -358,12 +361,14 @@ No migration. The route reads `tickets` (through `read_ticket`), `equipment`, `n
   its age ("8 h before"), and *High* on the gauge.
 - **important** — S052: a gauge marked *High* three times in the 7 days before shows "High or
   Low 3 times in the 7 days before".
-- S052: *Register* on the machine's heading opens `/readings?tab=register&node=<id>`
-  (S050's register for that node).
+- S052: *Open register* on the machine's heading opens S050's register for that node.
 - S052: a ticket on a machine with no meters shows no *Meters* card. The test waits for the
   `/api/tickets/<id>/meters` response (`page.waitForResponse`) before it checks the card is
   absent, so it cannot pass during the load (BR1-05).
-- S052: on a phone (Pixel 7) the card fits the width: `scrollWidth` of the page ≤ its width.
+- S052: the ticket's *Meters* card fits the screen width, with no sideways scroll
+  (`expectNoSidewaysScroll`, `e2e/support/dialogs.js:49`). A layout test: tagged `@device`
+  (S047 § 1.3), so at Normal it runs on `phone-chromium` and `desktop-chromium` (BS1-03).
+- The other four S052 tests are untagged logic tests; none is `@smoke`.
 
 ### 8.5 On a real device
 
@@ -371,20 +376,21 @@ None. Everything here is a layout or a flow a browser engine judges.
 
 ### 8.6 Acceptance
 
-All suites green (`tooling/run-tests.bat`); the targeted e2e specs (`tickets-work.spec.js`,
-`screens.spec.js`) during coding and the full e2e run once at the end
-(`--project=phone-chromium --project=desktop-chromium`).
+All suites green (`tooling/run-tests.bat`). Browser runs at the levels of S047 (BS1-02): the
+targeted specs at Normal (`tickets-work.spec.js`, `screens.spec.js`) as often as needed; the
+whole suite at Normal once when the coding is done (`tooling/run-e2e-tests.bat`, no `--level`
+and no `--project`: a named `--project` turns the `@device` filter off); never `--level=full`.
 
 ## 9. Open questions and assumptions
 
 1. **S050 comes first.** Assumed: S050 is approved and coded before this step, so the
-   *Register* link has a target. If S050 is dropped or delayed, the link opens the node's
+   *Open register* link has a target. If S050 is dropped or delayed, the link opens the node's
    equipment page instead (`/equipment/<id>`), where the *Meters* card's *History* is. The
    stale-brief check at implement time covers S050's final URL.
 2. **Storing the hours at the ticket's time** for MTBF in operating units. Proposed: a later
    step with the KPI work (Plan.MD § 8 phase 5, "History, reports": MTBF/MTTR). Not built here.
 3. **The window of 7 days.** Decided by KLA, 25-10-2026: 7 days. It matches S039's
-   back-dating window for readings (`READING_BACKDATE_DAYS = 7`, `meters_core.py:276`) and a
+   back-dating window for readings (`READING_BACKDATE_DAYS = 7`, `meters_core.py:280`; BS1-05) and a
    week of daily rounds.
 4. **Defects as well as breakdowns.** Decided by KLA, 25-10-2026: the card shows on every
    ticket, defects too; a defect's *When it happened* is when it was found.
@@ -408,3 +414,13 @@ None.
 | BR1-06 | minor | Accepted, option (a). Header "Readings up to 23-10-2026 14:20, when it happened"; *Try again* kept, the page's *Retry* to the tidy-up (Out of scope, § 9 item 5). |
 | BR1-07…BR1-14 | nit | Accepted: the `_mark_counts` predicate and `mark_window` in the core, the 7-day boundary test (07); the part read once, the path rule for a re-parented part (08); `_meters_of` per node, stated (09); ISO 14224 Table 5 / Annex C, SMRP 3.5.1 (10); seconds on the ticket's time (11); tests and fixtures named (12); "the ticket's time" instead of "the fault" (13); `markWarningText(kind, count, days)` from `mark_window_days` (14). |
 | U1–U3 (gate A) | — | KLA approved on 25-10-2026: the window is 7 days (§ 9 item 3); the card shows on defects too (§ 9 item 4); *Try again*, the page's *Retry* renamed in the tidy-up (§ 9 item 5). |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 25-10-2026
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor — use S050's `registerQuery` | Accepted: the link target is `{ path: '/readings', query: registerQuery(node.id) }` (§ 1.5) |
+| BS1-02 minor — the run instruction after S047 | Accepted: targeted Normal, the whole suite at Normal once with no `--project`, never Full (§ 8.6) |
+| BS1-03 minor — the width test is `@device` | Accepted: tagged, `expectNoSidewaysScroll`, no device in the title; the other four untagged, none `@smoke` (§ 8.4) |
+| BS1-04 minor — *Register* against S050's *Open register* | Accepted: *Open register* on the ticket card too, one name for one thing (CLAUDE-COMMON scope B) (§ 1.2, § 1.5, § 8.4) |
+| BS1-05, BS1-06 nits | Accepted: `meters_core.py:280` (§ 9); badges coloured with `readingBadgeClass` (§ 1.3) |

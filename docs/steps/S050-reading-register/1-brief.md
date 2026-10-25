@@ -4,8 +4,8 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026 (revised 25-10-2026: brief-review r1, r2)
 Track: full
-Status: Approved 25-10-2026 by KLA (open questions 1–7 as proposed)
-Baseline: 4d89084 (brief-review r2; uncommitted changes were step documents only)
+Status: Gate B (CR r1: 3 minor, 3 nits — all fixed in fix round 1; verify review r2: 1 nit CR2-01 — fixed; snapshot refs/steps/S050) (approved 25-10-2026 by KLA, open questions 1–7 as proposed)
+Baseline: refs/steps/S051 2dbd791 (staleness review s1, 25-10-2026, against S047 and S051)
 ```
 
 # S050 — Meter reading register
@@ -30,9 +30,15 @@ User answers (25-10-2026, before the draft):
 - U3: a row is one exact minute (`taken_at`). The sheet is not changed: a round that crosses
   a minute boundary while it saves shows as two rows.
 
-Built on 4d89084 (S044) plus S046; S047 is at gate A and touches only the e2e tooling and tags
-(§ 9 item 6); S051 (in review) changes the shared time field the sheet uses, not the sheet's
-code (§ 9 item 7). **No migration, no new permission key, no write.**
+Built on 4d89084 (S044) plus S046, S047 (browser test levels and tags, gate B, snapshot
+refs/steps/S047) and S051 (gate B, refs/steps/S051). S051 changed the shared time field and
+also keyed it per opening in `ReadingsView.vue` (`rounds`, raised in `enterMore()`, `:key`) and
+`RaiseTicketView.vue` (`restoreFieldKey`, raised in `resetForm()`, `:key`), and added six
+`S051:` tests to `readings.spec.js`, two of which drive the sheet through `/readings` and its
+*Now* box (BS1-03). No S050 design change follows: the sheet moved to `ReadingsSheet.vue`
+carries `rounds` and `enterMore()` with it; the picker extraction leaves `restoreFieldKey` in
+`RaiseTicketView.vue`; the S051 tests must stay green (*Sheet* stays the default tab, and the
+*Register* tab has no *Now* box) (§ 9 items 6–7). **No migration, no new permission key, no write.**
 
 ## 1. What will be built
 
@@ -53,7 +59,7 @@ code (§ 9 item 7). **No migration, no new permission key, no write.**
    Its place is unchanged: after *Tickets*. The landing page is unchanged, because *Me* and
    *Equipment* come first (S035).
 3. **Picking a node on the *Register* tab** (BR1-04). The equipment search of *Raise ticket*
-   (`RaiseTicketView.vue`, lines 139–168 and 341–368) moves to a shared component,
+   (`RaiseTicketView.vue`, lines 139–168 and 344–371; BS1-04) moves to a shared component,
    `EquipmentPicker.vue`, used by both screens with the same behaviour and wording: the label
    *Which equipment?* with a fixed input id, owned by the picker (the raise tests find it by
    that label, `tickets-raise.spec.js` lines 58, 80, 90; BR2-03), a search field (placeholder
@@ -209,8 +215,9 @@ code (§ 9 item 7). **No migration, no new permission key, no write.**
 ### Docs (housekeeping, by the coder)
 
 - `docs/Plan.MD` — § 4.5: a "Built (S050)" line; § 6 *Screens*, the *Readings* line (line
-  797, "for roles with `reading:log`"): both tabs and who sees which (BR1-14).
-- `.claude/CLAUDE.md` — § SMTW-Review, the spec-to-step map: `readings` S039/S040/S050.
+  799, "for roles with `reading:log`"; BS1-05). § 4.5 already has a "Decided (S050)" line: turn
+  it into "Built (S050)" rather than adding a second line: both tabs and who sees which (BR1-14).
+- `.claude/CLAUDE.md` — § SMTW-Review, the spec-to-step map: `readings` S039/S040/S050/S051 (BS1-08), and `journeys` S047.
 - No schema doc change (no migration). `docs/Keycloak.md`: no change (no role or key).
 
 ## 4. Data model
@@ -399,8 +406,14 @@ The route uses `get_db()`, so an unreachable DB answers 503 like every read
   for them (BR1-11, BR2-08).
 - S050: after a pick, the picker hides and the node card shows; *Change* brings the picker
   back (BR2-02).
-- S050: on a phone (Pixel 7) the meter columns scroll sideways inside the table, the page
-  does not (`scrollWidth` of the page ≤ its width), and the time column stays in view.
+- S050: the meter columns scroll sideways inside the table's frame, the page does not, and
+  the time column stays in view. A layout test: tagged `@device` (S047 § 1.3), so at Normal it
+  runs on `phone-chromium` and on `desktop-chromium` (1366 px). Its set-up gives the node enough
+  meters that the frame overflows at 1366 px too; it asserts the frame's `scrollWidth >
+  clientWidth`, the page's `scrollWidth` ≤ its width, and the time column in view (BS1-02).
+- The other S050 tests are untagged logic tests. The storekeeper nav test finds *Readings* by
+  role in whichever nav is visible (bottom bar or side bar), so it stays a logic test.
+  `screens.spec.js` already carries `@smoke` and `@device` (BS1-02).
 - `screens.spec.js`: `/readings` opens for every role; the storekeeper and IT admin see the
   picker's search field.
 - `tickets-raise.spec.js` (targeted, unchanged): the raise flow still picks equipment by
@@ -408,13 +421,16 @@ The route uses `get_db()`, so an unreachable DB answers 503 like every read
 
 ### 8.5 On a real device
 
-None (BR1-07). The sideways-scroll test of § 8.4 runs on `phone-webkit` in the full suite the
-user runs before each deploy (S046), which is the iPhone check.
+None (BR1-07). The sideways-scroll test of § 8.4 runs on `phone-webkit` in the release's Full
+run (`tooling/release-tests.bat`, S047), which is the iPhone check (BS1-01).
 
 ### 8.6 Acceptance
 
-All suites green (`tooling/run-tests.bat`); the targeted e2e specs and the full e2e run once
-at the end of coding (`--project=phone-chromium --project=desktop-chromium`).
+All suites green (`tooling/run-tests.bat`). Browser runs at the levels of S047 (BS1-01): the
+targeted specs at Normal (`readings.spec.js`, `screens.spec.js`, `tickets-raise.spec.js`,
+`journeys.spec.js` — journey 3 opens `/readings`, BS1-07) as often as needed; the whole suite
+at Normal once when the coding is done (`tooling/run-e2e-tests.bat`, no flag and no
+`--project`: an explicit `--project` turns the `@device` filter off); never `--level=full`.
 
 ## 9. Open questions and assumptions
 
@@ -430,10 +446,9 @@ at the end of coding (`--project=phone-chromium --project=desktop-chromium`).
    stays in the component. The coder states which.
 5. **Default tab for a `reading:log` holder** opening `/readings`: *Sheet* (as today). The
    *Open register* button and the tab's link always carry `?tab=register`.
-6. **S047** (gate A) may tag e2e tests `@smoke` / `@device`. If it is coded first, the new
-   S050 tests follow its tags; the stale-brief check at implement time covers it.
-7. **S051** (at gate A) changes `EventFields.vue`, the comment header of
-   `RaiseTicketView.vue`, `tickets-raise.spec.js` and the S040 e2e tests that click *Change*.
+6. **S047** — settled (BS1-06): coded first; the new S050 tests follow its tags (§ 8.4).
+7. **S051** — settled (BS1-06): coded first (see the intro for what it changed). It changed
+   `EventFields.vue`, `RaiseTicketView.vue`, `tickets-raise.spec.js` and the S040 e2e tests that clicked *Change*.
    S050 moves the sheet's code but does not change it, edits `RaiseTicketView.vue` (the
    picker) and adds tests to `readings.spec.js`: the two steps are coded one after the other,
    never in parallel (BR2-09).
@@ -476,3 +491,12 @@ node's own meters only; one row per exact minute, the sheet unchanged.
 KLA approved the brief as it stands after round 2. Open questions as proposed: who logged
 each reading is not shown (item 1); a tap on a cell does nothing in this step (item 2); items
 3–7 as written.
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 25-10-2026
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor — the run instruction after S047 | Accepted: targeted Normal, the whole suite at Normal once with no `--project`, never Full; the iPhone check is the release's Full run (§ 8.5, § 8.6) |
+| BS1-02 minor — the sideways-scroll test is `@device` | Accepted, as recommended: tagged, no device in the title, enough meters to overflow at 1366 px, frame `scrollWidth > clientWidth`; the other tests untagged; the storekeeper nav test finds *Readings* in the visible nav (§ 8.4) |
+| BS1-03 minor — S051 changed more than the time field | Accepted: the intro names the keys and the S051 tests; no design change (intro) |
+| BS1-04…BS1-08 nits | Accepted, all: template lines 344–371 (§ 1.3); Plan.MD line 799 and the existing "Decided (S050)" line (§ 3 Docs); § 9 items 6–7 settled; `journeys.spec.js` targeted (§ 8.6); the spec map `readings` S039/S040/S050/S051 (§ 3 Docs) |

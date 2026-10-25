@@ -66,13 +66,14 @@ const YES_NO_WORDS = { yes: "Yes", no: "No" };
 /**
  * A reading as the screens show it: the type's decimals with Indian grouping (U4) and the unit,
  * "12,345.6 h", "420 pcs"; a Yes / No reading as "Yes" / "No". The API's value is a decimal
- * string; display only, so a double is exact enough.
+ * string; display only, so a double is exact enough. `{ unit: false }` leaves the unit out, for a
+ * table whose column header names it (the register, S050 BR1-10): "12,345.6".
  */
-export function formatReading(value, meterType) {
+export function formatReading(value, meterType, { unit = true } = {}) {
   if (meterType.kind === "yes_no") return YES_NO_WORDS[value] ?? String(value);
   const digits = meterType.decimals;
   const number = Number(value).toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  return `${number} ${meterType.unit}`;
+  return unit ? `${number} ${meterType.unit}` : number;
 }
 
 /** The badges of one reading, in the order the history shows them: High / Low / Not OK, then Reset. */
@@ -82,6 +83,9 @@ export function readingBadges(reading) {
   if (reading.is_reset) badges.push(RESET_LABEL);
   return badges;
 }
+
+/** The badge colour of a reading's mark: Reset is information, a mark outside what is good is a warning. */
+export const readingBadgeClass = (label) => (label === RESET_LABEL ? "text-bg-info" : "text-bg-warning");
 
 /**
  * What the card says after a save (BR2-09): a gauge outside its limits, or an answer other than
@@ -132,4 +136,34 @@ const IST_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
 export function isToday(takenAt, now) {
   if (typeof takenAt !== "string") return false;
   return takenAt.slice(0, 10) === IST_DATE.format(now);
+}
+
+// ---------------------------------------------------------------------------
+// The reading register (S050)
+// ---------------------------------------------------------------------------
+
+/** A register column's header: the meter's name and unit, "Run hours (h)"; a type with no unit (Yes / No) its name alone (BR2-06). */
+export function meterHeader(meterType) {
+  return meterType.unit ? `${meterType.name} (${meterType.unit})` : meterType.name;
+}
+
+const positiveId = (text) => (/^\d+$/.test(String(text).trim()) && Number(text) > 0 ? Number(text) : null);
+
+/**
+ * The register's URL query → `{ nodeId, meterIds }`: the node's id or null; the ticked meters'
+ * ids, or null for all (`meters` absent, or naming no valid id). A bad value is dropped, never an
+ * error: the server ignores ids that are not columns, and its `shown` is what the screen ticks.
+ */
+export function parseRegisterQuery(query) {
+  const nodeId = query.node === undefined ? null : positiveId(query.node);
+  const ids = typeof query.meters === "string" ? query.meters.split(",").map(positiveId).filter((id) => id !== null) : [];
+  return { nodeId, meterIds: ids.length ? [...new Set(ids)] : null };
+}
+
+/** The register's URL query for a node and the ticked meters (null = all, left out of the URL). */
+export function registerQuery(nodeId, meterIds = null) {
+  const query = { tab: "register" };
+  if (nodeId !== null) query.node = String(nodeId);
+  if (nodeId !== null && meterIds?.length) query.meters = meterIds.join(",");
+  return query;
 }

@@ -13,7 +13,7 @@ import { computed, ref, watch } from "vue";
 import { apiDelete, apiGet } from "../../api";
 import FormModal from "../../components/FormModal.vue";
 import { formatDateTime } from "../../utils/datetime";
-import { formatReading, readingBadges, RESET_LABEL } from "../../utils/meterLabels";
+import { formatReading, readingBadgeClass, readingBadges } from "../../utils/meterLabels";
 
 defineProps({
   canSeeRemoved: { type: Boolean, default: false },
@@ -98,8 +98,6 @@ async function remove(reading) {
   }
 }
 
-const badgeClass = (label) => (label === RESET_LABEL ? "text-bg-info" : "text-bg-warning");
-
 defineExpose({ open });
 </script>
 
@@ -117,7 +115,7 @@ defineExpose({ open });
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="text-secondary small">{{ formatDateTime(reading.taken_at) }}</span>
           <span class="fw-semibold" :class="{ 'text-decoration-line-through': reading.removed_at }">{{ formatReading(reading.value, meterType) }}</span>
-          <span v-for="badge in readingBadges(reading)" :key="badge" class="badge" :class="badgeClass(badge)">{{ badge }}</span>
+          <span v-for="badge in readingBadges(reading)" :key="badge" class="badge" :class="readingBadgeClass(badge)">{{ badge }}</span>
           <span v-if="reading.removed_at" class="badge text-bg-secondary">Removed</span>
           <button
             v-if="reading.can_remove && confirmingId !== reading.id"
