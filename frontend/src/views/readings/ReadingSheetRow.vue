@@ -2,6 +2,7 @@
 /**
  * One meter of the end-of-day sheet (docs/steps/S040-readings-sheet/1-brief.md § 1.4-§ 1.6): its
  * name and unit, the last reading, and the input; after a save, the result and Undo.
+ * - From 768 px (md) the three are columns of one line; on a phone they stack.
  * - A number meter has the unit beside an input with the phone's decimal keypad; an amount also
  *   explains its period (S039).
  * - A Yes / No meter shows two large toggles instead; a second tap on the picked one clears it.
@@ -53,46 +54,54 @@ function pick(answer) {
 
 <template>
   <li class="sheet-meter list-group-item" :class="{ 'read-today': lastToday && !saved }" data-testid="sheet-meter">
-    <div class="d-flex flex-wrap align-items-baseline gap-2">
-      <label class="fw-semibold" :for="kind === 'yes_no' ? undefined : inputId">{{ meterType.name }}</label>
-      <span v-if="kind === 'amount'" class="text-secondary small">Amount per period</span>
-    </div>
-    <div v-if="kind === 'amount'" class="form-text mt-0">The amount for the period just ended, such as this shift.</div>
+    <!-- Three columns from md up (meter, last reading, input), fixed widths so they line up from
+         meter to meter and card to card; stacked in the same order on a phone -->
+    <div class="row gx-3 gy-1 align-items-center">
+      <div class="col-12 col-md-4">
+        <div class="d-flex flex-wrap align-items-baseline gap-2">
+          <label class="fw-semibold" :for="kind === 'yes_no' ? undefined : inputId">{{ meterType.name }}</label>
+          <span v-if="kind === 'amount'" class="text-secondary small">Amount per period</span>
+        </div>
+        <div v-if="kind === 'amount'" class="form-text mt-0">The amount for the period just ended, such as this shift.</div>
+      </div>
 
-    <div class="small text-secondary mb-1" data-testid="sheet-last">
-      <template v-if="meter.last">
-        <i v-if="lastToday" class="fa-solid fa-circle-check text-success me-1" aria-hidden="true"></i>
-        {{ lastText }}
-        <span v-if="meter.last.limit_state" class="badge text-bg-warning ms-1">{{ LIMIT_STATE_LABELS[meter.last.limit_state] }}</span>
-      </template>
-      <template v-else>No readings yet</template>
-    </div>
+      <div class="col-12 col-md-4 small text-secondary" data-testid="sheet-last">
+        <template v-if="meter.last">
+          <i v-if="lastToday" class="fa-solid fa-circle-check text-success me-1" aria-hidden="true"></i>
+          {{ lastText }}
+          <span v-if="meter.last.limit_state" class="badge text-bg-warning ms-1">{{ LIMIT_STATE_LABELS[meter.last.limit_state] }}</span>
+        </template>
+        <template v-else>No readings yet</template>
+      </div>
 
-    <div v-if="kind === 'yes_no'" class="d-flex gap-2" role="group" :aria-label="meterType.name">
-      <button
-        v-for="answer in ['yes', 'no']"
-        :key="answer"
-        type="button"
-        class="btn btn-lg flex-fill answer-button"
-        :class="state.value === answer ? 'btn-primary' : 'btn-outline-primary'"
-        :aria-pressed="state.value === answer"
-        :disabled="readOnly"
-        @click="pick(answer)"
-      >
-        {{ answer === "yes" ? "Yes" : "No" }}
-      </button>
-    </div>
-    <div v-else class="input-group">
-      <input
-        :id="inputId"
-        v-model="state.value"
-        class="form-control"
-        :class="{ 'is-invalid': state.error }"
-        inputmode="decimal"
-        autocomplete="off"
-        :readonly="readOnly"
-      />
-      <span class="input-group-text">{{ meterType.unit }}</span>
+      <div class="col-12 col-md-4">
+        <div v-if="kind === 'yes_no'" class="d-flex gap-2" role="group" :aria-label="meterType.name">
+          <button
+            v-for="answer in ['yes', 'no']"
+            :key="answer"
+            type="button"
+            class="btn btn-lg flex-fill answer-button"
+            :class="state.value === answer ? 'btn-primary' : 'btn-outline-primary'"
+            :aria-pressed="state.value === answer"
+            :disabled="readOnly"
+            @click="pick(answer)"
+          >
+            {{ answer === "yes" ? "Yes" : "No" }}
+          </button>
+        </div>
+        <div v-else class="input-group">
+          <input
+            :id="inputId"
+            v-model="state.value"
+            class="form-control"
+            :class="{ 'is-invalid': state.error }"
+            inputmode="decimal"
+            autocomplete="off"
+            :readonly="readOnly"
+          />
+          <span class="input-group-text">{{ meterType.unit }}</span>
+        </div>
+      </div>
     </div>
 
     <div v-if="state.showReset && !readOnly" class="form-check mt-2">

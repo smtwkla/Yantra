@@ -127,7 +127,7 @@ const emptyText = computed(() => {
 
 <template>
   <div class="py-3">
-    <ul class="nav nav-pills nav-fill mb-3">
+    <ul class="nav nav-tabs nav-fill mb-3">
       <li v-for="[key, text] in TABS" :key="key" class="nav-item">
         <button
           type="button"

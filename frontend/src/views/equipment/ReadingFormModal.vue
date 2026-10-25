@@ -6,7 +6,7 @@
  * - A Yes / No meter: its question as the title and two large toggles, Yes and No. The user
  *   picks, then saves with the dialog's Save (decision 11), so a note typed after the answer is
  *   kept and a mis-tap is corrected before saving.
- * - Time taken is the time with a Now tick (EventFields, S051): Now sends no taken_at, so the server's clock
+ * - Time of reading is the time with a Now tick (EventFields, S051): Now sends no taken_at, so the server's clock
  *   decides and a phone a few minutes off is never refused.
  *
  * The rules are the server's (meters_core): a refusal shows beside its field. With the database
@@ -131,7 +131,7 @@ defineExpose({ open });
       :key="opens"
       v-model:time="form.taken_at"
       :with-remark="false"
-      time-label="Time taken"
+      time-label="Time of reading"
       :time-error="fieldError('taken_at')"
       id-prefix="reading"
     />

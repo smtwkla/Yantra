@@ -9,8 +9,8 @@
  * - The node and the ticked meters live in the URL (?tab=register&node=<id>&meters=3,7; absent
  *   meters = all), so a link from the Meters card, a bookmark and Back keep them. The ticks shown
  *   are the answer's `shown` (a stale id in the URL is dropped by the server, BR1-03).
- * - No node: the shared equipment search (EquipmentPicker). A node: its card with Change and
- *   Open equipment page, the column chooser, the table and Show more (30 rows a page).
+ * - No node: the shared equipment search (EquipmentPicker). A node: its card with an X beside the
+ *   name (Clear and choose another) and Open equipment page, the column chooser, the table and Show more (30 rows a page).
  * - The time column stays on the left; the meter columns scroll sideways inside the frame.
  *
  * Mounted once and kept while the Sheet tab shows (ReadingsView.vue): `active` is false then,
@@ -146,7 +146,7 @@ const cellText = (cell, column) => formatReading(cell.value, column.meter_type, 
 
 <template>
   <div class="py-3">
-    <!-- One picker, hidden while a node shows (not unmounted): Change brings back the search text and matches (CR1-01) -->
+    <!-- One picker, hidden while a node shows (not unmounted): the X (Clear and choose another) brings back the search text and matches (CR1-01) -->
     <div v-show="nodeId === null || notFound">
       <div v-if="notFound && nodeId !== null" class="alert alert-warning" role="alert">{{ NOT_FOUND }}</div>
       <EquipmentPicker @pick="pick" />
@@ -164,11 +164,21 @@ const cellText = (cell, column) => formatReading(cell.value, column.meter_type, 
         <div class="card mb-3" data-testid="register-node">
           <div class="card-body d-flex flex-wrap align-items-center gap-2">
             <div class="flex-grow-1 text-break">
-              <div class="fw-semibold">{{ register.node.code }} — {{ register.node.name }}</div>
+              <div class="d-flex align-items-center gap-1">
+                <span class="fw-semibold">{{ register.node.code }} — {{ register.node.name }}</span>
+                <button
+                  type="button"
+                  class="btn btn-link text-secondary clear-node"
+                  title="Clear and choose another"
+                  aria-label="Clear and choose another"
+                  @click="change"
+                >
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
               <div class="small text-secondary">{{ register.node.full_path }}</div>
             </div>
             <router-link class="btn btn-outline-secondary" :to="`/equipment/${register.node.id}`">Open equipment page</router-link>
-            <button type="button" class="btn btn-outline-secondary" @click="change">Change</button>
           </div>
         </div>
 
@@ -251,6 +261,14 @@ const cellText = (cell, column) => formatReading(cell.value, column.meter_type, 
 </template>
 
 <style scoped>
+/* The X beside the node's name: a 44 px tap target (CR1-09) that does not make the name's line taller */
+.clear-node {
+  min-width: 44px;
+  min-height: 44px;
+  margin-block: -10px;
+  padding: 0;
+}
+
 /* The meter columns scroll sideways inside the frame, never the page (§ 1.5) */
 .register-frame {
   max-width: 100%;

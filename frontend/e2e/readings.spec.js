@@ -64,7 +64,7 @@ test("S039: an operator logs a reading from the equipment page", async ({ page }
   const value = dialog.getByLabel("Value", { exact: true });
   await expect(value).toHaveAttribute("inputmode", "decimal");
   await expect(dialog.locator(".input-group-text")).toHaveText("h");
-  await expect(dialog).toContainText("Time taken");
+  await expect(dialog).toContainText("Time of reading");
   await expect(dialog.getByLabel("Meter reset")).not.toBeChecked();
   await value.fill("120.5");
   await saveDialog(page, "Save");
@@ -511,7 +511,7 @@ for (const [label, consoleStatus, reply] of FAILURES) {
   });
 }
 
-test("S040: a refused Time taken shows once on the time field and stops the loop (CR1-04)", async ({ page, consoleWatch }, testInfo) => {
+test("S040: a refused Time of reading shows once on the time field and stops the loop (CR1-04)", async ({ page, consoleWatch }, testInfo) => {
   consoleWatch.allowFailedRequest("/readings", 400);
   const machine = await meterMachine(testInfo, "s40time", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
   const seen = await watchPosts(page, machine, (route) => route.continue());
@@ -524,13 +524,13 @@ test("S040: a refused Time taken shows once on the time field and stops the loop
   await saveReadings(page).click();
   await expect(page.locator(".invalid-feedback")).toHaveCount(1); // once, on the shared field
   await expect(page.locator(".invalid-feedback")).toBeInViewport();
-  await expect(hours.getByRole("alert")).toHaveText("Not saved. Change Time taken, then save again.");
-  await expect(oil.getByRole("alert")).toHaveText("Not saved. Change Time taken, then save again.");
+  await expect(hours.getByRole("alert")).toHaveText("Not saved. Change Time of reading, then save again.");
+  await expect(oil.getByRole("alert")).toHaveText("Not saved. Change Time of reading, then save again.");
   await expect(rowInput(oil)).toHaveValue("40");
   expect(seen.posts, "every row was posted with the refused time").toBe(1);
 });
 
-test("S040: a reading already at that minute is refused on its own row, not on Time taken (CR1-04)", async ({ page, consoleWatch }, testInfo) => {
+test("S040: a reading already at that minute is refused on its own row, not on Time of reading (CR1-04)", async ({ page, consoleWatch }, testInfo) => {
   consoleWatch.allowFailedRequest("/readings", 409);
   const machine = await meterMachine(testInfo, "s40same", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
   const taken = istLocal(30);
@@ -666,7 +666,7 @@ test("S040 A1: a full save makes the round read-only, and Enter more readings st
   await expect(hours.getByRole("status")).toHaveText("Saved");
   await expect(rowInput(hours)).toHaveAttribute("readonly", "");
   await expect(rowInput(oil)).toHaveAttribute("readonly", ""); // an empty row is locked too
-  await expect(page.locator("input[type=datetime-local]")).toHaveAttribute("readonly", ""); // Time taken is locked
+  await expect(page.locator("input[type=datetime-local]")).toHaveAttribute("readonly", ""); // Time of reading is locked
   await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeDisabled(); // S051
   await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
   await expect(saveReadings(page)).toHaveCount(0);
@@ -681,7 +681,7 @@ test("S040 A1: a full save makes the round read-only, and Enter more readings st
   await expect(rowInput(oil)).not.toHaveAttribute("readonly", ""); // editable again
   await expect(hours.getByRole("status")).toHaveCount(0);
   await expect(hours.getByRole("button", { name: "Undo" })).toHaveCount(0); // no Undo of the old round
-  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time taken is back to Now (S051)
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time of reading is back to Now (S051)
   await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeChecked();
   await expect(hours.getByTestId("sheet-last")).toContainText("100.0 h"); // the round just saved is the last reading
   await expect(saveReadings(page)).toBeDisabled(); // nothing typed yet
@@ -755,7 +755,7 @@ test("S040 A1: emptying a refused row to retype it does not lock the round (CR4-
   // Backspace to the empty field, as on a phone keypad: the field still takes input
   await rowInput(hours).fill("");
   await expect(rowInput(hours)).not.toHaveAttribute("readonly", "");
-  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time taken is not locked (S051)
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time of reading is not locked (S051)
   await rowInput(hours).pressSequentially("1100");
   await expect(rowInput(hours)).toHaveValue("1100");
   await expect(saveReadings(page)).toBeEnabled();
@@ -1109,7 +1109,7 @@ test("S050: the storekeeper sees Readings in the nav with only the Register tab,
   await expect(page.getByTestId("sheet-heading")).toHaveCount(0);
 });
 
-test("S050: after a pick the search hides and the node card shows; Change brings the search back", async ({ page }, testInfo) => {
+test("S050: after a pick the search hides and the node card shows; the X (Clear and choose another) brings the search back", async ({ page }, testInfo) => {
   const machine = await meterMachine(testInfo, "s50change", { unit: UNIT, ownMeters: [["Run hours", {}]] });
   await asPerson(page, "engineer", "/readings?tab=register");
   await pickInRegister(page, machine.code);
@@ -1118,7 +1118,7 @@ test("S050: after a pick the search hides and the node card shows; Change brings
   await expect(page.getByText("No readings yet.")).toBeVisible();
   await expect(page.getByTestId("register-node").getByRole("link", { name: "Open equipment page" }))
     .toHaveAttribute("href", `/equipment/${machine.id}`);
-  await page.getByTestId("register-node").getByRole("button", { name: "Change" }).click();
+  await page.getByTestId("register-node").getByRole("button", { name: "Clear and choose another" }).click();
   await expect(picker(page)).toBeVisible();
   // The earlier search text and its matches are still there (S050 CR1-01)
   await expect(picker(page)).toHaveValue(machine.code);

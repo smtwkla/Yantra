@@ -41,6 +41,30 @@ body {
 }
 
 /* -----------------------------------------------------------------------
+   Tabs (.nav-tabs). Bootstrap draws the active tab in the body colour and
+   the others with no border, which on the near-white content background
+   reads as plain text. Here every tab has an outline, the others are grey,
+   and the active one is white with a blue top bar and blue bold text.
+   ----------------------------------------------------------------------- */
+
+.nav-tabs {
+  --bs-nav-tabs-link-active-bg: #ffffff;
+  --bs-nav-tabs-link-active-color: var(--bs-primary);
+  --bs-nav-tabs-link-active-border-color: var(--bs-border-color) var(--bs-border-color) #ffffff;
+}
+
+.nav-tabs .nav-link {
+  border-color: var(--bs-border-color);
+  background-color: #e9eef4;
+  color: var(--text-secondary);
+}
+
+.nav-tabs .nav-link.active {
+  font-weight: 600;
+  box-shadow: inset 0 3px 0 var(--bs-primary);
+}
+
+/* -----------------------------------------------------------------------
    Self-hosted icons (SVGs in assets/icons, fetched with tooling/material-icon.bat).
    Used like Font Awesome: <i class="yi-icon yi-table-edit">. The SVG is a mask
    over a currentColor background, so the icon follows the text colour and

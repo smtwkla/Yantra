@@ -48,7 +48,7 @@ function chooseTab(key) {
 
 <template>
   <div class="pt-3">
-    <ul v-if="canLog" class="nav nav-pills nav-fill">
+    <ul v-if="canLog" class="nav nav-tabs nav-fill">
       <li v-for="[key, text] in TABS" :key="key" class="nav-item">
         <button
           type="button"

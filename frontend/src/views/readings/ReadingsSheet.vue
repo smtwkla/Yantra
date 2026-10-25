@@ -13,7 +13,7 @@
  * - After a full save the round is read-only and "Enter more readings" starts a new one (A1).
  * - The rules are the server's (S039): this screen only collects, posts and shows.
  *
- * Time taken is one field for the sheet ("Now" sends no taken_at, so the server's clock decides).
+ * Time of reading is one field for the sheet ("Now" sends no taken_at, so the server's clock decides).
  */
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { apiDelete, apiGet, apiPost } from "../../api";
@@ -27,8 +27,8 @@ import ReadingSheetRow from "./ReadingSheetRow.vue";
 const SITE_KEY = "yantra.readings.site_id";
 const LOAD_FAILED = "Readings could not be loaded. Try again in a minute.";
 const SITE_GONE = "This site is no longer available. Pick another site.";
-// A refused Time taken is the sheet's, so every row would get the same answer: the loop stops
-const TIME_NOT_SAVED = "Not saved. Change Time taken, then save again.";
+// A refused Time of reading is the sheet's, so every row would get the same answer: the loop stops
+const TIME_NOT_SAVED = "Not saved. Change Time of reading, then save again.";
 const UNDO_FAILED = "The reading was not removed. Try again in a minute.";
 const OUT_OF_USE = "out_of_use";
 
@@ -284,7 +284,7 @@ async function saveAll() {
   target?.scrollIntoView({ block: "center" });
 }
 
-/** A new round: every row empty, Time taken back to now, the last readings reloaded (A1). */
+/** A new round: every row empty, Time of reading back to now, the last readings reloaded (A1). */
 function enterMore() {
   takenAt.value = null;
   rounds.value++;
@@ -347,7 +347,7 @@ async function undo(row) {
       <template v-else-if="sheet">
         <div class="card mb-3">
           <div class="card-body pb-1">
-            <EventFields :key="rounds" v-model:time="takenAt" :with-remark="false" time-label="Time taken" :time-error="timeError" :locked="roundDone" id-prefix="sheet" />
+            <EventFields :key="rounds" v-model:time="takenAt" :with-remark="false" time-label="Time of reading" :time-error="timeError" :locked="roundDone" id-prefix="sheet" />
           </div>
         </div>
         <div class="small text-secondary mb-2" data-testid="read-today-count">{{ readToday }} of {{ rows.length }} read today</div>
