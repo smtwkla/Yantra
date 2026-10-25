@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 25-10-2026
 Track: full
-Status: Gate B (CR r1: 1 minor, 6 nits — fixed in fix round 1, text only; no snapshot: the commit leaves R01 out, KLA 25-10-2026)
+Status: Done (committed 713fbd6, 25-10-2026; no device checks)
 Baseline: 82997ee (brief-review r2; uncommitted changes were S056's own step files only)
 ```
 
