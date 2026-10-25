@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
 import step_check  # noqa: E402
 import step_facts  # noqa: E402
 
-README = """\
+INDEX = """\
 ## Index
 
 | ID | Title | Plan.MD phase | Status | Date |
@@ -33,12 +33,12 @@ HASHES = ["b6b8dfb0123456789abcdef0123456789abcdef0", "3df667c0123456789abcdef01
 
 class TestParseIndex:
     def test_index_rows_with_their_status_cell(self):
-        steps, _ = step_facts.parse_index(README)
+        steps, _ = step_facts.parse_index(INDEX)
         assert steps == [("S001", "Basic masters", "S001-basic-masters", "Done — committed 817844c"),
                          ("S027", "Work notes", "S027-work-notes", "Gate A (BR r1)")]
 
     def test_queued_rows_with_an_id_only(self):
-        _, queued = step_facts.parse_index(README)
+        _, queued = step_facts.parse_index(INDEX)
         assert queued == [("S030", "S030 Calibration — instruments")]
 
 
@@ -110,16 +110,16 @@ def test_stage():
     assert step_check.stage("Something else") == ""
 
 
-class TestStageMatchesReadme:
+class TestStageMatchesIndex:
     def test_same_stage_in_other_words(self):
-        assert step_check.check_stage_matches_readme("Done (committed b6b8dfb)", "Done — committed b6b8dfb") == []
+        assert step_check.check_stage_matches_index("Done (committed b6b8dfb)", "Done — committed b6b8dfb") == []
 
     def test_different_stage(self):
-        [problem] = step_check.check_stage_matches_readme("Implementing (approved)", "In review (light track)")
+        [problem] = step_check.check_stage_matches_index("Implementing (approved)", "In review (light track)")
         assert "(1)" in problem
 
     def test_an_unknown_form_is_not_judged(self):
-        assert step_check.check_stage_matches_readme("Committed b6b8dfb", "see the brief") == []
+        assert step_check.check_stage_matches_index("Committed b6b8dfb", "see the brief") == []
 
 
 class TestCommits:
@@ -214,7 +214,7 @@ def test_check_folders():
     problems = step_check.check_folders(["S026-refusal-in-view", "S028-gone"],
                                         ["S026-refusal-in-view", "S026-work-notes", "S027-work-notes"])
     assert any("S028-gone does not exist" in p for p in problems)
-    assert any("S026-work-notes has no README row" in p for p in problems)
+    assert any("S026-work-notes has no INDEX row" in p for p in problems)
     assert any("S026 is used by 2 folders" in p for p in problems)
 
 

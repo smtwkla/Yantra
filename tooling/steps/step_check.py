@@ -5,7 +5,7 @@ the fixes.  Nothing is changed.
     python tooling/steps/step_check.py
 
 The checks (the numbers are the skill's § Check):
- 1. the brief's Status and its README index row are in the same stage;
+ 1. the brief's Status and its INDEX.md row are in the same stage;
  2. a commit names the step but the Status is not Committed or Done; a hash in the Status is
     not in git;
  3. Done, but an important check of the impl report is still open (`- [ ]`);
@@ -22,7 +22,7 @@ import sys
 
 from step_facts import SHARED_DOCS, STEP_ID, STEPS_DIR, gather, header_value
 
-# The stage a Status (or README status cell) is in: its first words, in this order
+# The stage a Status (or INDEX.md status cell) is in: its first words, in this order
 STAGES = ("done", "dropped", "parked", "committed", "gate b", "gate a", "in code review", "implementing",
           "approved", "in review", "draft", "queued")
 NOT_STARTED = ("draft", "in review", "gate a", "approved")
@@ -47,10 +47,10 @@ def stage(text):
     return ""
 
 
-def check_stage_matches_readme(status, readme_status):
-    a, b = stage(status), stage(readme_status)
+def check_stage_matches_index(status, index_status):
+    a, b = stage(status), stage(index_status)
     if a and b and a != b:
-        return [f"README row says \"{readme_status[:70]}\", the brief says \"{status[:70]}\" (1)"]
+        return [f"INDEX row says \"{index_status[:70]}\", the brief says \"{status[:70]}\" (1)"]
     return []
 
 
@@ -134,10 +134,10 @@ def check_folders(index_folders, folders):
     problems = []
     for folder in index_folders:
         if folder not in folders:
-            problems.append(f"the README row's folder {folder} does not exist (8)")
+            problems.append(f"the INDEX row's folder {folder} does not exist (8)")
     for folder in folders:
         if folder not in index_folders:
-            problems.append(f"folder {folder} has no README row (8)")
+            problems.append(f"folder {folder} has no INDEX row (8)")
     seen = {}
     for folder in folders:
         seen.setdefault(folder[:4], []).append(folder)
@@ -170,7 +170,7 @@ def run():
     for step in facts.steps:
         if not step.has_brief:
             continue
-        found = check_stage_matches_readme(step.status, step.readme_status)
+        found = check_stage_matches_index(step.status, step.index_status)
         found += check_commits(step.status, step.commits, facts.hashes)
         found += check_manual_boxes(step.status, step.impl_text)
         reviews = [step.text(n) for n in step.names if BRIEF_REVIEW.match(n)]

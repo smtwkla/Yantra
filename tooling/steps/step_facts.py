@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 STEPS_DIR = ROOT / "docs" / "steps"
 # Files every step touches: listed once, not under each step
-SHARED_DOCS = ("docs/steps/README.md", "docs/steps/device-checks.md")
+SHARED_DOCS = ("docs/steps/INDEX.md", "docs/steps/device-checks.md")
 HEADER_LINES = 15                       # the header block is the brief's first lines
 VERDICT_MAX = 300                       # a verdict paragraph is cut here; the review file has the rest
 
@@ -29,7 +29,7 @@ FILE_PATH = re.compile(r"`([\w.\-]+(?:/[\w.\-\[\]]+)+\.\w+)`")
 # ---------------------------------------------------------------------------------------------
 
 def parse_index(text):
-    """README text -> ([(id, title, folder, status cell)] of the Index table, [(id, idea)] of the
+    """INDEX.md text -> ([(id, title, folder, status cell)] of the Index table, [(id, idea)] of the
     Queued table's rows that carry a step ID; ideas without one are left out)."""
     steps, queued, in_queued = [], [], False
     for line in text.splitlines():
@@ -107,7 +107,7 @@ class Step:
     id: str
     title: str
     folder: str
-    readme_status: str
+    index_status: str
     header: str = ""                    # the brief's header block ("" without a brief)
     status: str = ""
     names: list = field(default_factory=list)
@@ -163,7 +163,7 @@ def read_head(path, lines=HEADER_LINES):
 def gather():
     """Every index step, read once (the brief's header, the folder's names, the impl report),
     with its commits and working-tree changes."""
-    index, queued = parse_index((STEPS_DIR / "README.md").read_text(encoding="utf-8"))
+    index, queued = parse_index((STEPS_DIR / "INDEX.md").read_text(encoding="utf-8"))
     commits, hashes = {}, []
     for line in git("log", "--format=%H %s").splitlines():
         full_hash, _, subject = line.partition(" ")
@@ -172,8 +172,8 @@ def gather():
             commits.setdefault(step_id, []).append(full_hash[:7])
     changed = changed_paths()
     steps, claimed = [], set(SHARED_DOCS)
-    for step_id, title, folder, readme_status in index:
-        step = Step(step_id, title, folder, readme_status, commits=commits.get(step_id, []))
+    for step_id, title, folder, index_status in index:
+        step = Step(step_id, title, folder, index_status, commits=commits.get(step_id, []))
         brief = step.path / "1-brief.md"
         if brief.exists():
             step.header = read_head(brief)
