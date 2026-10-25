@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026 (revised 25-10-2026: brief-review r1, r2)
 Track: full
-Status: Gate B (CR r1: 3 minor, 3 nits — all fixed in fix round 1; verify review r2: 1 nit CR2-01 — fixed; snapshot refs/steps/S050) (approved 25-10-2026 by KLA, open questions 1–7 as proposed)
+Status: Done (committed b5783a8, 25-10-2026; checks: auto; no device checks)
 Baseline: refs/steps/S051 2dbd791 (staleness review s1, 25-10-2026, against S047 and S051)
 ```
 

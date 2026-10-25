@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026 (revised 25-10-2026: brief-review r1)
 Track: light
-Status: Gate B (CR r1: 2 minor, 4 nits — 5 fixed, CR1-03 rejected with reason, in fix round 1; verify review r2: 0 blocker, 0 major, 0 minor, 1 nit CR2-01 — fixed; snapshot refs/steps/S051) (approved 25-10-2026 by KLA)
+Status: Done (committed 2dbd791, 25-10-2026; checks: auto; not important, open: device-checks row 34 (iPhone read-only look) and a gloved tap on Now)
 Baseline: refs/steps/S047 39d9477 (staleness review s1, 25-10-2026: S047's tags and run levels; nothing in frontend/src changed)
 ```
 

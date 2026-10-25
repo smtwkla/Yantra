@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Status: Gate B (CR r1: 1 minor, 4 nits — fixed in round 1; verify review r2: 0 blocker, 0 major, 1 minor CR2-01 — fixed in round 2; snapshot refs/steps/S047) (approved 25-10-2026 by KLA: Q1 by purpose, Q2 journeys as proposed, Q3 Basic includes screens.spec.js)
+Status: Done (committed 1a34660, 25-10-2026; checks: 7 runs recorded, no device checks)
 Baseline: 4d89084 + uncommitted step docs and the 25-10-2026 run-rule edits (.claude/CLAUDE.md, agents, step skill); reviewed against in r2
 ```
 

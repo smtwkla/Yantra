@@ -5,7 +5,7 @@ Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
 Baseline: refs/steps/S050 2e0e28f (staleness review s1, 25-10-2026, against S047, S051 and S050)
-Status: Gate B (CR r1: 1 minor, 2 nits — all fixed in fix round 1; verify review r2: 2 nits CR2-01, CR2-02 — fixed in fix round 2; snapshot refs/steps/S052) (approved 25-10-2026 by KLA; coded after S050)
+Status: Done (committed 120ca79, 25-10-2026; checks: auto; no device checks)
 ```
 
 # S052 — Meter readings on the ticket
