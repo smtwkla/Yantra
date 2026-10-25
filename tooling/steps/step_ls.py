@@ -2,8 +2,9 @@
 fast so the planner (the LLM) builds the table, adds notes and spots what is wrong — instead
 of reading every step file one call at a time.
 
-    python tooling/steps/step_ls.py          steps not yet Done or Dropped, and queued ones
-    python tooling/steps/step_ls.py all      every step
+    python tooling/steps/step_ls.py           steps not yet Done, Dropped or parked, and queued ones
+    python tooling/steps/step_ls.py deferred  only the parked (deferred) steps
+    python tooling/steps/step_ls.py all       every step
 
 Per step: the index title and folder, the brief's Status line, the latest review and its
 verdict paragraph, the commits whose subject names the step, whether an impl report exists,
@@ -18,11 +19,25 @@ import step_snapshot
 from step_facts import ROOT, SHARED_DOCS, gather, latest_review, verdict_line
 
 
+CLOSED = ("done", "dropped")
+PARKED = ("parked", "deferred")   # set aside by the user; the brief is kept for later
+
+
+def shown(status, argv):
+    """Whether a step with this Status line is listed: `all` lists every step, `deferred` only the
+    parked ones, and no argument the open ones (not Done, Dropped or parked)."""
+    if "all" in argv:
+        return True
+    state = status.lower()
+    if "deferred" in argv:
+        return state.startswith(PARKED)
+    return not state.startswith(CLOSED + PARKED)
+
+
 def main(argv):
-    show_all = "all" in argv
     facts = gather()
     for step in facts.steps:
-        if not show_all and step.status.lower().startswith(("done", "dropped")):
+        if not shown(step.status, argv):
             continue
         review, label = latest_review(step.names)
         print(f"{step.id} | {step.title} | {step.folder}")
@@ -34,7 +49,8 @@ def main(argv):
             print(f"  working tree: {', '.join(f'{facts.changed[p]} {p}' for p in step.changed)}")
     shared = [p for p in SHARED_DOCS if p in facts.changed]
     print("shared step docs changed: " + (", ".join(shared) or "none"))
-    for step_id, idea in facts.queued:
+    only_parked = "deferred" in argv and "all" not in argv
+    for step_id, idea in facts.queued if not only_parked else []:
         print(f"{step_id} | queued | {idea}")
     try:
         snaps = step_snapshot.listing(ROOT)
