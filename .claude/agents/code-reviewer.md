@@ -149,6 +149,13 @@ review file there.
     re-describing them;
   - say in the verdict which files you re-read.
 
+- **A fact you cannot settle.** When a finding depends on how a library,
+  browser, operating system or device really behaves, and a short read-only
+  check does not settle it, write the finding with what you know and return
+  **ADVICE NEEDED** at the top of your final message: the question, why it
+  matters, what you tried. The orchestrator runs the advisor; the finding is
+  answered in the next round.
+
 ## How to write findings
 
 - **`blocker`, `major` and `minor`:** give each an ID, a severity, `file:line`,

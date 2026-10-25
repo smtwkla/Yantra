@@ -5,6 +5,7 @@ implemented and reviewed again across separate Claude Code terminals:
 
 | Role | Model | Writes |
 |---|---|---|
+| Advisor | Fable | `0-advice-<topic>.md` (on request) |
 | Planner | Opus | `1-brief.md` |
 | Brief reviewer | Fable | `2-brief-review-rN.md` |
 | Coder | Opus or Sonnet | the code + `3-impl-report.md` |
@@ -33,6 +34,7 @@ progress:
 
 | File | Written by | Purpose |
 |---|---|---|
+| `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the planner, a coder or a reviewer through the orchestrator (25-10-2026). Optional; a step may have none or several. |
 | `1-brief.md` | Planner | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
 | `2-brief-review-r1.md`, `-r2.md`, … | Brief reviewer | One file per review round |
 | `2-brief-review-s1.md`, `-s2.md`, … | Brief reviewer | A staleness review: does the approved brief still hold for code changed since its baseline (§ Stale brief check) |
@@ -360,6 +362,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S050 | [Meter reading register](S050-reading-register/1-brief.md) — every reading of one node as a table: a row per reading time (newest first), a column per meter (one, some or all); a *Register* tab on *Readings* and a button on the *Meters* card; *Readings* opens to every `equipment:read` holder | 4 | Done — committed b5783a8 | 25-10-2026 |
 | S051 | [The time field shows the time, with a Now tick](S051-time-field-now-tick/1-brief.md) — the shared time field (readings, tickets) always shows a date and time; a *Now* check box to its right makes it read-only and leaves the time to the server (light track) | — | Done — committed 2dbd791 | 25-10-2026 |
 | S052 | [Meter readings on the ticket](S052-ticket-meters/1-brief.md) — a *Meters* card on the ticket page: each meter of the machine and the part as it stood when the fault happened (last reading at or before, with its age), a 7-day High / Low / Not OK warning, and an *Open register* link to S050; no migration | 4 | Done — committed 120ca79 | 25-10-2026 |
+| S053 | [Machine check before browser runs](S053-machine-check/1-brief.md) — Core Temp's hottest core, the processor's speed and the battery (draining on mains = a weak charger, KLA's dock) read before and during a run; the lane runner lowers the lane count and says why; `E2E_LANES` wins; `tooling/machine-check.bat` | — | Parked (deferred by KLA) | 25-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -383,4 +386,3 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 | Drop the legacy `user_units` table | S011 A1, 16-10-2026 | After S011 is live and a rollback is no longer wanted (S011 A1 rule 3) |
 | S048 What's new — each version's notes, shown once to admin, IT admin and engineers after a deploy (needs a migration: who has seen which version) | user, 25-10-2026 | Before S049, which drafts its text |
 | S049 Pre-flight skill — before a release: `/step check`, then a draft of the next version's What's new text from the commits since the last tag; does not run the tests (the release does) | user, 25-10-2026 | After S048 |
-| S053 Machine check before browser runs — power source, power mode and processor throttling (CPU temperature is not readable without the maker's driver); the lane runner lowers the lane count on battery, energy saver or a slowed processor and says why; an explicit `E2E_LANES` wins. Also sampled every 30 s during a run: the battery draining while on mains (`root/wmi BatteryStatus`: `PowerOnline` with `DischargeRate` > 0) means the charger is too weak (KLA's Thunderbolt dock; full speed only with the barrel adapter) → "The charger is too weak for this load: the battery drains on mains power. Connect the barrel adapter.", recorded in the run's report; the next run takes fewer lanes. On the dock alone Windows shows "Slow charging" (KLA): to verify whether a script can read that flag (the USB-C/UCSI event log, or the laptop maker's WMI adapter wattage); if so, it is the first check, and the drain check the fallback. **CPU temperature: readable from Core Temp** (KLA runs it): its shared memory `CoreTempMappingObject` read from Python stdlib `mmap` worked on 25-10-2026 (i9-13950HX, 24 cores, TjMax 100, one core 100.5 °C at 28 % load; probe `scratch/coretemp-probe.py`); hottest core above about 90 °C → fewer lanes with the reason, the peak during the run in the report; Core Temp not running → the processor-speed check | user, 25-10-2026 (a hot room, energy saver and the dock's USB-C power slowed the tests) | Light; after S047 (same runner) |

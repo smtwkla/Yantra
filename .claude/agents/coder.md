@@ -61,6 +61,11 @@ The orchestrator gives you one of three tasks:
     tables or endpoints, a different rule, permissions, behaviour the user would
     notice, or a conflict between the brief and the code. Put the question at
     the top of your final message, under **QUESTIONS FOR THE USER**.
+  - When the work depends on a fact you cannot settle in a few minutes — how
+    a library, browser, operating system or device really behaves — stop and
+    return **ADVICE NEEDED**: the question in one sentence, why it matters,
+    and what you tried with its result. The orchestrator runs the advisor and
+    resumes you with its answer. Do not guess and build on the guess.
 - **Design and structure** (CLAUDE-COMMON principles):
   - put each rule in its layer: business rules and calculations in the pure
     core, fetching, locking and storing in the route and DB shell, display

@@ -13,6 +13,7 @@ run as subagents, each with a fresh context:
 | Brief reviewer | `brief-reviewer` | Fable |
 | Coder | `coder` | Sonnet; Opus when complex (see below) |
 | Code reviewer | `code-reviewer` | Opus |
+| Advisor | `advisor` | Fable |
 
 The step files are the only hand-over. Conventions: `docs/steps/README.md`.
 Read it before starting.
@@ -29,10 +30,14 @@ Read it before starting.
   must be `Approved`. Run **phase 2**.
 - `/step review S00N`: run **phase 2** from its code-review loop, for code that
   already exists.
+- `/step ask S00N <question>`: run the **advisor** on one technical question for
+  the step (§ Advice), and report its answer. Change nothing else.
 - `/step status [S00N]`: report the step's files, status and open findings.
   Change nothing.
-- `/step ls [all]`: list the steps not yet `Done` or `Dropped`, then the queued
-  ideas, as one table (§ Listing). `all` also lists Done and Dropped steps.
+- `/step ls [all | deferred]`: list the steps not yet `Done`, `Dropped` or
+  parked, then the queued ideas, as one table (§ Listing). `all` also lists
+  Done, Dropped and parked steps; `deferred` lists only the parked
+  (deferred) ones (25-10-2026, by KLA).
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
@@ -219,6 +224,12 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
          before editing a file; release and deploy actions in order, each
          runnable where it is placed; the machine, account and network of
          every manual check; nothing on the device list a browser could do.
+   - **Advice** (25-10-2026, by KLA). Before writing a claim or a design
+     decision that rests on how a library, browser, operating system or
+     device really behaves, and that you cannot check in a few lines, spawn
+     `advisor` (§ Advice) instead of guessing. Also when the user asks how
+     something can be done, and after a brief review whose finding asks
+     "how do we know this works?". Cite the advice file in the brief.
 2. **Review loop.**
    - Set the status to `In review`.
    - Spawn `brief-reviewer` with the brief's path, the round number and the
@@ -292,6 +303,11 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    run name (`YANTRA_TEST_RUN`, e.g. `s021c1`, `s021cr2`), so agents running
    tests at the same time never share a database.
    - If it returns **QUESTIONS FOR THE USER**, stop and ask them.
+   - If it returns **ADVICE NEEDED**, spawn `advisor` with its question and
+     what it tried (§ Advice), then resume the coder with the advice file.
+     If the answer changes the design, it goes to the user as an amendment,
+     never as a silent change. The code reviewer may return the same, and is
+     answered the same way.
    - After the answers, record any design-level ones in the brief as an
      amendment that the user approves, then resume the coder.
    - **Housekeeping: the docs pass** (standing rule, 24-10-2026, by KLA).
@@ -395,6 +411,29 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    e.g. `Done (committed abc123; checks: 6 auto, 2 done by IT Admin, 1 skipped —
    iPhone)`. Never tick a check yourself.
 
+## Advice
+
+The advisor (`advisor`, Fable) answers one technical question with research
+and read-only experiments (25-10-2026, by KLA; first run: S053's power
+readings, `0-advice-power-readings.md`).
+
+- **Who asks**: the planner (phase 1), a coder or the code reviewer through
+  an **ADVICE NEEDED** hand-back (phase 2), or the user (`/step ask`). A
+  subagent cannot start another agent, so every request goes through the
+  orchestrator.
+- **The spawn prompt** gives: the step and its folder, the question in one
+  sentence, why it matters, what is already known or was tried (with the
+  evidence), the candidates to check, and the topic name for the file. Say
+  that the rule **Agents change nothing outside the repo** applies.
+- **The answer** is `0-advice-<topic>.md` in the step's folder. Read it, and
+  carry its effect into the brief (an answered finding, a changed section),
+  the coder's next run, or the review. Its *recommendations* are advice: a
+  design choice in it still goes to the user at gate A or as an amendment.
+- **The user's checks** in the advice (things only the user can do on their
+  machine) become manual checks of the step, or questions at the next gate.
+- **Not for**: design decisions, reviews, or facts a `grep` or a three-line
+  check answers (do those yourself, self-check item 1).
+
 ## Snapshots
 
 Standing rule (24-10-2026, by KLA): each step gets its own commit, while the
@@ -481,9 +520,10 @@ same time in its own git worktree, so two long steps don't wait on each other.
 ## Listing
 
 `/step ls` builds the table fresh every time; it is never stored, so it can't
-go stale. **Run `tooling/step-ls.bat` (`all` passes on) once and build the
-table from its output** — don't read the step files or run git yourself. The
-script prints, per step not yet Done or Dropped (all steps with `all`): the
+go stale. **Run `tooling/step-ls.bat` (`all` or `deferred` passes on) once and
+build the table from its output** — don't read the step files or run git yourself. The
+script prints, per step not yet Done, Dropped or parked (all steps with
+`all`, only the parked ones with `deferred`): the
 index title and folder, the brief's `Status:` line, the latest review with its
 verdict paragraph, the commits whose subject names the step, whether an impl
 report exists, and the working-tree changes in the step's folder (and, for an
@@ -569,6 +609,21 @@ review file).
   snapshot under `refs/steps/` (§ Snapshots; no branch moves, nothing is
   pushed), and committing or adopting when the user asks for it in the
   current request.
+- **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA). Every
+  agent — planner, advisor, reviewers, coder — changes only the repo's working tree and
+  Claude's memory:
+  - no installing software, packages, browsers, drivers or scripts on the machine; no global
+    npm / pip / uv installs;
+  - no changes to the operating system's settings, the registry, services, scheduled tasks,
+    environment variables, or other repos;
+  - experiments are read-only: read a value, run a small check; any script stays in the
+    session scratchpad or `scratch/`;
+  - allowed, because the repo's own tooling does it as written: what the repo's `tooling/`
+    scripts do when run (e.g. installing Playwright's browsers, starting the e2e containers,
+    the release tests' temporary worktree), installing the repo's own lockfiles when a step
+    changes dependencies, and temporary git worktrees the agent removes itself;
+  - anything else outside the repo: ask the user first.
+  Put this limit in every spawn prompt that runs experiments.
 - **Subagents can't ask the user anything.** Any question they raise comes back
   to you, and you put it to the user.
 - **Never edit a review file**, and never fabricate a subagent's result. Wait
