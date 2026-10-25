@@ -113,6 +113,13 @@ Browser runs (targeted; `playwright.config.js` not changed, so no full suite):
 
 `docker ps -a` after each run: no `yantra-e2e-webkit` left.
 
+### Round 2 (async verify review r2)
+
+Tooling suite after the round: 130 passed (129 before, 1 new). Only `tooling/e2e/run_lanes.py` and `tooling/tests/test_run_lanes.py` changed. No e2e run (no Playwright or screen change).
+
+- **CR2-01 Fixed.** The `chown` failure message now adds Docker's stderr and its newline only when stderr is not empty, so the message no longer starts with an empty line. New test: `TestWebkitStart::test_a_silent_hand_over_failure_message_starts_with_the_reason`. Fails without the fix: `assert not True` (the message started with "\n"). Passes with it.
+- **CR2-02 Fixed.** The two failure tests (`test_a_container_that_stops_early_is_not_called_a_timeout`, `test_a_failed_cache_folder_hand_over_stops_the_run`) use `pytest.raises`; `import pytest` added to the test file.
+
 ## Docs updated (round 1)
 
 - None needed: `.claude/CLAUDE.md` § Browser tests already says a run naming projects without `phone-webkit` starts no container; the exact `--project` rule is in the `run_lanes.py` docstring (updated). `tooling/run-e2e-tests.bat` unchanged (it already compared `E2E_WEBKIT` with `/i`).

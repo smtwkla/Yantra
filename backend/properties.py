@@ -29,6 +29,9 @@ LOCK ORDER — one order for every write here, each step taken only when the wri
   records a model's meters as model → meter type → model_meters.  No route here locks a meter
   type or a model_meters row, and a model's meters and its property values both take the model
   row first, so S038 joins no cycle.
+- An item's own values (S044) are written in item_properties.py, which takes the equipment row
+  first, then (2) and the share locks of this module's values write; its LOCK ORDER note says
+  why no cycle forms.  This module never locks equipment, and imports nothing from equipment.py.
 """
 
 from flask import Blueprint, jsonify, request
@@ -37,7 +40,7 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import require_perm
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from properties_core import (
-    CHOICE, CHOOSE_ACTIVE_PROPERTIES, ONLY_CHOICE_HAS_OPTIONS, can_link, check_model_values, parse_property_ids,
+    CHOICE, CHOOSE_ACTIVE_PROPERTIES, ONLY_CHOICE_HAS_OPTIONS, can_link, check_values, parse_property_ids,
     parse_value_keys, property_changes, property_view, validate_option, validate_property,
 )
 
@@ -49,10 +52,12 @@ UNIQUE_KEY_ERRORS.update({
     "uq_property_options_label": ("label", "An option with this label exists"),
 })
 
+# value_count: the models' values and the items' own (S044 § 1.6), hidden ones included
 _PROPERTY_SELECT = (
     "SELECT p.*,"
     " (SELECT COUNT(*) FROM class_properties cp WHERE cp.property_id = p.id) AS class_count,"
-    " (SELECT COUNT(*) FROM model_property_values v WHERE v.property_id = p.id) AS value_count"
+    " (SELECT COUNT(*) FROM model_property_values v WHERE v.property_id = p.id)"
+    " + (SELECT COUNT(*) FROM equipment_property_values iv WHERE iv.property_id = p.id) AS value_count"
     " FROM property_definitions p"
 )
 _OPTION_COLUMNS = "id, property_id, label, active"
@@ -66,7 +71,7 @@ def _body():
     return body
 
 
-def _options_by_property(cur, property_ids, lock=""):
+def options_by_property(cur, property_ids, lock=""):
     """``{property_id: [{id, label, active}]}`` in the order they were made; ``lock`` a locking clause."""
     if not property_ids:
         return {}
@@ -81,7 +86,7 @@ def _options_by_property(cur, property_ids, lock=""):
 
 def _property_out(cur, property_id):
     record = fetch_one(cur, f"{_PROPERTY_SELECT} WHERE p.id = %s", (property_id,))
-    record["options"] = _options_by_property(cur, [property_id])[property_id]
+    record["options"] = options_by_property(cur, [property_id])[property_id]
     return record
 
 
@@ -96,7 +101,7 @@ def list_properties():
     with get_db().cursor() as cur:
         cur.execute(f"{_PROPERTY_SELECT}{where} ORDER BY p.name")
         items = rows_to_list(cur.fetchall())
-        options = _options_by_property(cur, [item["id"] for item in items])
+        options = options_by_property(cur, [item["id"] for item in items])
         for item in items:
             item["options"] = options[item["id"]]
         return jsonify({"items": items})
@@ -143,9 +148,11 @@ def update_property(property_id):
         stored = _lock_property(cur, property_id)
         has_options = bool(count(cur, "SELECT COUNT(*) AS n FROM property_options WHERE property_id = %s"
                                       " LOCK IN SHARE MODE", (property_id,)))
-        cur.execute("SELECT 1 FROM model_property_values WHERE property_id = %s LIMIT 1 LOCK IN SHARE MODE",
-                    (property_id,))
-        has_values = cur.fetchone() is not None
+        has_values = False
+        # A model's value or an item's own fixes the type and the unit (S044 § 1.6)
+        for table in ("model_property_values", "equipment_property_values"):
+            cur.execute(f"SELECT 1 FROM {table} WHERE property_id = %s LIMIT 1 LOCK IN SHARE MODE", (property_id,))
+            has_values = has_values or cur.fetchone() is not None
         changes, refusal = property_changes(stored, clean, has_options, has_values)
         if refusal:
             _refuse(refusal)
@@ -234,7 +241,7 @@ def add_class_properties(class_id):
         cur.execute(f"SELECT id, data_type, active FROM property_definitions WHERE id IN ({placeholders})"
                     " ORDER BY id FOR UPDATE", property_ids)   # (2), ascending
         found = cur.fetchall()
-        options = _options_by_property(cur, property_ids, " LOCK IN SHARE MODE")
+        options = options_by_property(cur, property_ids, " LOCK IN SHARE MODE")
         if len(found) != len(property_ids) or not all(
                 can_link(prop, sum(1 for o in options[prop["id"]] if o["active"])) for prop in found):
             raise ApiError(CHOOSE_ACTIVE_PROPERTIES, 400, "property_ids")
@@ -262,7 +269,7 @@ def remove_class_property(class_id, property_id):
 # A model's values (§ 5.3) and the equipment page's card (§ 6.3)
 # ---------------------------------------------------------------------------
 
-def _linked_properties(cur, class_id):
+def linked_properties(cur, class_id):
     """The active properties of the class, by name."""
     cur.execute("SELECT p.id, p.name, p.data_type, p.unit FROM class_properties cp"
                 " JOIN property_definitions p ON p.id = cp.property_id"
@@ -270,26 +277,50 @@ def _linked_properties(cur, class_id):
     return cur.fetchall()
 
 
-def _model_values(cur, model_id):
-    cur.execute(f"SELECT {_VALUE_COLUMNS} FROM model_property_values WHERE model_id = %s", (model_id,))
+def _values(cur, table, owner_column, owner_id, property_ids=None, lock=""):
+    """``{property_id: row}`` of one owner's value rows; ``property_ids`` to read only those,
+    ``lock`` a locking clause."""
+    where, params = f"{owner_column} = %s", [owner_id]
+    if property_ids is not None:
+        if not property_ids:
+            return {}
+        where += f" AND property_id IN ({', '.join(['%s'] * len(property_ids))})"
+        params += list(property_ids)
+    cur.execute(f"SELECT {_VALUE_COLUMNS} FROM {table} WHERE {where}{lock}", params)
     return {row["property_id"]: row for row in cur.fetchall()}
 
 
-def _card_rows(cur, class_id, model_id):
-    """The linked active properties with the model's values -> (properties, values, options, view rows)."""
-    properties = _linked_properties(cur, class_id)
-    # A component-unit may have no model (S033): its rows show no value (BS1-01)
-    values = _model_values(cur, model_id) if model_id is not None else {}
-    options = _options_by_property(cur, [p["id"] for p in properties])
-    labels = {o["id"]: o["label"] for opts in options.values() for o in opts}
-    return properties, values, options, property_view(properties, values, labels)
+def model_values(cur, model_id, property_ids=None, lock=""):
+    """The model's values, ``{property_id: row}``."""
+    return _values(cur, "model_property_values", "model_id", model_id, property_ids, lock)
 
 
-def equipment_properties(cur, class_id, model_id):
-    """The Properties card of an equipment item (§ 6.3): its class's active properties with its
-    model's values, ``source`` "model" or None (S044 adds "item").  ``model_id`` None (a
-    component-unit without a model, S033): every row has no value."""
-    return _card_rows(cur, class_id, model_id)[3]
+def item_values(cur, node_id):
+    """The item's own values (S044), ``{property_id: row}``, those hidden by a class change too."""
+    return _values(cur, "equipment_property_values", "equipment_id", node_id)
+
+
+def option_labels(options):
+    """``{option_id: label}`` of options_by_property's answer, inactive options too."""
+    return {o["id"]: o["label"] for opts in options.values() for o in opts}
+
+
+def _card_rows(cur, class_id, model_id, node_id=None):
+    """The linked active properties with the model's values and, given ``node_id``, the item's
+    own -> (properties, model values, options, view rows)."""
+    properties = linked_properties(cur, class_id)
+    # A component-unit may have no model (S033): its rows show only its own values (BS1-01)
+    values = model_values(cur, model_id) if model_id is not None else {}
+    options = options_by_property(cur, [p["id"] for p in properties])
+    own = item_values(cur, node_id) if node_id is not None else None
+    return properties, values, options, property_view(properties, values, option_labels(options), own)
+
+
+def equipment_properties(cur, class_id, model_id, node_id):
+    """The Properties card of an equipment item (§ 6.3): its class's active properties with the
+    value in force, the item's own (``source`` "item", S044) or its model's ("model"), or None.
+    ``model_id`` None (a component-unit without a model, S033): only its own values show."""
+    return _card_rows(cur, class_id, model_id, node_id)[3]
 
 
 def _model_properties(cur, model_id, class_id):
@@ -329,44 +360,74 @@ def list_model_properties(model_id):
         return jsonify(_model_properties(cur, model_id, _model_class(cur, model_id)))
 
 
+# ---------------------------------------------------------------------------
+# A values save, a model's here or an item's in item_properties.py (S044): the same body, the
+# same locks after the owner's, the same checks and the same row writes
+# ---------------------------------------------------------------------------
+
+def values_from_body():
+    """The body's ``values`` and its property ids, ascending; 400 on a non-object or a bad key."""
+    values = _body().get("values")
+    property_ids, refusal = parse_value_keys(values)
+    if refusal:
+        raise ApiError(refusal[1], 400, refusal[0])
+    return values, property_ids
+
+
+def lock_value_properties(cur, class_id, property_ids):
+    """(2) the properties named, ascending, FOR UPDATE; then their links to ``class_id`` and (3)
+    their options LOCK IN SHARE MODE -> ``(properties, options)``: ``{id: {id, name, data_type,
+    unit, active, linked}}`` for the ids found, and options_by_property's answer for them."""
+    placeholders = ", ".join(["%s"] * len(property_ids))
+    cur.execute(f"SELECT id, name, data_type, unit, active FROM property_definitions WHERE id IN ({placeholders})"
+                " ORDER BY id FOR UPDATE", property_ids)   # (2), ascending
+    found = {row["id"]: row for row in cur.fetchall()}
+    cur.execute(f"SELECT property_id FROM class_properties WHERE class_id = %s"
+                f" AND property_id IN ({placeholders}) LOCK IN SHARE MODE", [class_id, *property_ids])
+    linked = {row["property_id"] for row in cur.fetchall()}
+    properties = {pid: {**row, "linked": pid in linked} for pid, row in found.items()}
+    return properties, options_by_property(cur, list(found), " LOCK IN SHARE MODE")   # (3)
+
+
+def checked_changes(values, properties, options, stored):
+    """check_values' changes, or 400 on the first refusal by property name (nothing saved)."""
+    changes, refusal = check_values(values, properties, options, stored)
+    if refusal:
+        raise ApiError(refusal[1], 400, refusal[0])
+    return changes
+
+
+def write_values(cur, table, owner_column, owner_id, changes):
+    """Store ``changes`` (``[(property_id, columns or None to clear)]``) as one owner's rows of
+    ``table`` (model_property_values or equipment_property_values: the same columns)."""
+    for property_id, columns in changes:
+        if columns is None:
+            cur.execute(f"DELETE FROM {table} WHERE {owner_column} = %s AND property_id = %s",
+                        (owner_id, property_id))
+            continue
+        cur.execute(
+            f"INSERT INTO {table} ({owner_column}, property_id, value_number, value_text, value_bool,"
+            " option_id, updated_at, updated_by) VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)"
+            " ON DUPLICATE KEY UPDATE value_number = VALUES(value_number), value_text = VALUES(value_text),"
+            " value_bool = VALUES(value_bool), option_id = VALUES(option_id), updated_at = NOW(),"
+            " updated_by = VALUES(updated_by)",
+            (owner_id, property_id, columns["value_number"], columns["value_text"], columns["value_bool"],
+             columns["option_id"], actor()))
+
+
 @properties_bp.route("/equipment-models/<int:model_id>/properties", methods=["PUT"])
 @require_perm("equipment:edit")
 def set_model_properties(model_id):
     """Set or clear the values named in ``values``; the others stay.  The first refusal by
     property name answers and nothing is saved (§ 5.3).  An inactive model may be edited: its
     data stays right for the equipment that uses it."""
-    values = _body().get("values")
-    property_ids, refusal = parse_value_keys(values)
-    if refusal:
-        raise ApiError(refusal[1], 400, refusal[0])
+    values, property_ids = values_from_body()
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         class_id = _model_class(cur, model_id, " FOR UPDATE")   # (1)
         if property_ids:
-            placeholders = ", ".join(["%s"] * len(property_ids))
-            cur.execute(f"SELECT id, name, data_type, active FROM property_definitions WHERE id IN ({placeholders})"
-                        " ORDER BY id FOR UPDATE", property_ids)   # (2), ascending
-            found = {row["id"]: row for row in cur.fetchall()}
-            cur.execute(f"SELECT property_id FROM class_properties WHERE class_id = %s"
-                        f" AND property_id IN ({placeholders}) LOCK IN SHARE MODE", [class_id, *property_ids])
-            linked = {row["property_id"] for row in cur.fetchall()}
-            properties = {pid: {**row, "linked": pid in linked} for pid, row in found.items()}
-            options = _options_by_property(cur, list(found), " LOCK IN SHARE MODE")   # (3)
-            changes, refusal = check_model_values(values, properties, options, _model_values(cur, model_id))
-            if refusal:
-                raise ApiError(refusal[1], 400, refusal[0])
-            for property_id, columns in changes:
-                if columns is None:
-                    cur.execute("DELETE FROM model_property_values WHERE model_id = %s AND property_id = %s",
-                                (model_id, property_id))
-                    continue
-                cur.execute(
-                    "INSERT INTO model_property_values (model_id, property_id, value_number, value_text, value_bool,"
-                    " option_id, updated_at, updated_by) VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)"
-                    " ON DUPLICATE KEY UPDATE value_number = VALUES(value_number), value_text = VALUES(value_text),"
-                    " value_bool = VALUES(value_bool), option_id = VALUES(option_id), updated_at = NOW(),"
-                    " updated_by = VALUES(updated_by)",
-                    (model_id, property_id, columns["value_number"], columns["value_text"], columns["value_bool"],
-                     columns["option_id"], actor()))
+            properties, options = lock_value_properties(cur, class_id, property_ids)   # (2), (3)
+            changes = checked_changes(values, properties, options, model_values(cur, model_id))
+            write_values(cur, "model_property_values", "model_id", model_id, changes)
     with conn.cursor() as cur:
         return jsonify(_model_properties(cur, model_id, class_id))

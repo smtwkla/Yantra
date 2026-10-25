@@ -65,7 +65,13 @@ A write with a model never locks a type: it comes from the model, whose type nev
   counts link rows, never readings, so it never waits on a reading.  No cycle.
 - properties.py (S043) locks a class (5) or a model (4), never both, then only its own
   property and option rows, and never equipment; the detail reads its card plainly.  So it
-  adds no lock cycle.
+  adds no lock cycle.  An item's own property values (S044) are written in item_properties.py
+  under (1) the node (load_node_for_user, equipment:edit at its site; scrapped refused from the
+  locked row) → the property rows named, ascending, FOR UPDATE → their class links (for the
+  locked row's class), options and the model's value rows LOCK IN SHARE MODE → the
+  equipment_property_values rows → the equipment_events inserts.  It never locks the model or
+  the class row, and no path takes a property row and then an equipment row; its own note
+  says why no cycle forms.
 - tickets.py (S017) raises a ticket under (1) the node raised on → (6) the serial counter
   (scope TK:YYYY-MM) → (7) the ticket row.  Ticket rows come last everywhere: nothing that
   holds one then takes an equipment, unit or counter lock.  The ticket insert takes shared
@@ -301,8 +307,9 @@ def _detail(cur, node):
     cur.execute("SELECT id, event, old_value, new_value, created_at, created_by FROM equipment_events "
                 "WHERE equipment_id = %s ORDER BY created_at DESC, id DESC", (node["id"],))
     out["events"] = rows_to_list(cur.fetchall())
-    # The Properties card (S043 § 6.3): the class's active properties with the model's values
-    out["properties"] = equipment_properties(cur, node["class_id"], node["model_id"])
+    # The Properties card (S043 § 6.3): the class's active properties with the value in force, the
+    # item's own (S044) or its model's
+    out["properties"] = equipment_properties(cur, node["class_id"], node["model_id"], node["id"])
     return out
 
 

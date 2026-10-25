@@ -70,6 +70,20 @@ describe("describeEvent", () => {
       .toBe("Meter limits: Oil temperature: 10–60 °C → up to 55 °C");
   });
 
+  it("a property name with a colon keeps its whole name (S044 CR1-02)", () => {
+    expect(describeEvent(ev("property", "Power: rated: 7.5 kW", "Power: rated: 5.5 kW")))
+      .toBe("Property: Power: rated: 7.5 kW → 5.5 kW");
+    expect(describeEvent(ev("property", "Power: rated: 7 kW", "Power: rated: 75 kW")))
+      .toBe("Property: Power: rated: 7 kW → 75 kW");
+  });
+
+  it("the property event names the property once (S044)", () => {
+    expect(describeEvent(ev("property", "Rated power: 7.5 kW (model)", "Rated power: 5.5 kW")))
+      .toBe("Property: Rated power: 7.5 kW (model) → 5.5 kW");
+    expect(describeEvent(ev("property", "Frame size: 132M", "Frame size: no value")))
+      .toBe("Property: Frame size: 132M → no value");
+  });
+
   it("an unknown event is shown by name", () => {
     expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
   });

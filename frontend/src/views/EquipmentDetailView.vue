@@ -20,6 +20,12 @@
  * model changes), for equipment:edit at any site (canEditModels), on every lifecycle. A
  * component-unit without a model (S033) lists its class's properties with "—", with no model
  * line and no button (BS1-01).
+ *
+ * This machine's values (S044 § 1.2–1.4): a row shows the item's own value where it has one,
+ * marked "· this machine" when the item has a model (on a model-less component-unit every value
+ * is its own); the line under the rows then says which values are not the model's. Edit this
+ * machine's values follows canEdit (equipment:edit at the node's site, not on a scrapped node) and
+ * comes first: the model's button changes every machine of the model, so it stands apart.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -41,6 +47,7 @@ import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
 import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
 import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
+import ItemPropertiesModal from "./equipment/ItemPropertiesModal.vue";
 import ModelPropertiesModal from "./masters/ModelPropertiesModal.vue";
 
 const route = useRoute();
@@ -57,6 +64,7 @@ const moveModal = ref(null);
 const lifecycleModal = ref(null);
 const documentsCards = ref(null);
 const propertiesModal = ref(null);
+const itemPropertiesModal = ref(null);
 const propertiesError = ref("");
 
 const scrapped = computed(() => node.value?.lifecycle === "scrapped");
@@ -77,6 +85,9 @@ const canRaiseTicket = computed(
   () => (node.value?.permissions ?? []).includes("ticket:raise") && !scrapped.value && !loading.value
 );
 const siteAndUnit = computed(() => node.value.unit.split("."));
+// A row with this machine's own value, marked only when the machine has a model to differ from
+const markedOwn = (p) => p.source === "item" && node.value.model_id !== null;
+const anyMarkedOwn = computed(() => node.value.properties.some(markedOwn));
 
 // The node's open tickets, loaded after the node (its permissions say whether to)
 const openTickets = ref(null); // null until loaded
@@ -125,14 +136,24 @@ async function load() {
 // Vue Router reuses this component when only :id changes, so follow the route
 watch(() => route.params.id, load, { immediate: true });
 
-// The dialog fetches the model's stored values first; a failed fetch leaves it closed with the message
-async function editModelValues() {
+// Each dialog fetches its stored values first; a failed fetch leaves it closed with the message
+async function openPropertiesDialog(open) {
   propertiesError.value = "";
   try {
-    await propertiesModal.value.open({ id: node.value.model_id, label: node.value.model_label, class_code: node.value.class_code });
+    await open();
   } catch (err) {
     propertiesError.value = err.message;
   }
+}
+
+function editModelValues() {
+  return openPropertiesDialog(() =>
+    propertiesModal.value.open({ id: node.value.model_id, label: node.value.model_label, class_code: node.value.class_code })
+  );
+}
+
+function editItemValues() {
+  return openPropertiesDialog(() => itemPropertiesModal.value.open({ id: node.value.id, code: node.value.code }));
 }
 
 // A new tab, as from the list; anyone who may see the node may print its label (S014)
@@ -276,18 +297,29 @@ function onSaved({ result, created }) {
           <div class="card h-100">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
               <span>Properties</span>
-              <button v-if="canEditModels && node.model_id !== null" class="btn btn-sm btn-outline-primary" :disabled="loading" @click="editModelValues">
-                <i class="fa-solid fa-pen me-1"></i>Edit model values
-              </button>
+              <div class="d-flex flex-wrap gap-2">
+                <button v-if="canEdit" class="btn btn-sm btn-outline-primary" @click="editItemValues">
+                  <i class="fa-solid fa-pen me-1"></i>Edit this machine's values
+                </button>
+                <button v-if="canEditModels && node.model_id !== null" class="btn btn-sm btn-outline-primary" :disabled="loading" @click="editModelValues">
+                  <i class="fa-solid fa-pen me-1"></i>Edit model values
+                </button>
+              </div>
             </div>
             <div class="card-body">
               <div v-if="propertiesError" class="alert alert-danger py-2">{{ propertiesError }}</div>
               <dl class="row mb-2">
                 <template v-for="p in node.properties" :key="p.property_id">
-                  <dt class="col-6">{{ p.name }}</dt><dd class="col-6">{{ valueText(p.display) }}</dd>
+                  <dt class="col-6">{{ p.name }}</dt>
+                  <dd class="col-6">
+                    {{ valueText(p.display) }}<small v-if="markedOwn(p)" class="text-secondary"> · this machine</small>
+                  </dd>
                 </template>
               </dl>
-              <div v-if="node.model_id !== null" class="small text-secondary">Values from model {{ node.model_label }}.</div>
+              <div v-if="node.model_id !== null" class="small text-secondary">
+                <template v-if="anyMarkedOwn">Values from model {{ node.model_label }}, except those marked this machine.</template>
+                <template v-else>Values from model {{ node.model_label }}.</template>
+              </div>
             </div>
           </div>
         </div>
@@ -324,6 +356,7 @@ function onSaved({ result, created }) {
     <EquipmentMoveModal ref="moveModal" @saved="load" />
     <EquipmentLifecycleModal ref="lifecycleModal" @saved="load" />
     <ModelPropertiesModal ref="propertiesModal" @saved="load" />
+    <ItemPropertiesModal ref="itemPropertiesModal" @saved="load" />
   </div>
 </template>
 

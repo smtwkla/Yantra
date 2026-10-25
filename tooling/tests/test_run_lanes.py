@@ -4,6 +4,8 @@ Playwright and no database: the pure helpers only."""
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "e2e"))
 
 import run_lanes  # noqa: E402
@@ -152,12 +154,9 @@ class TestWebkitStart:
             pass
 
     def test_a_container_that_stops_early_is_not_called_a_timeout(self, monkeypatch, tmp_path):
-        try:
+        with pytest.raises(run_lanes.WebkitUnavailable) as stop:
             self._start(monkeypatch, tmp_path, lambda *a, **k: _Done())
-        except run_lanes.WebkitUnavailable as stop:
-            message = str(stop)
-        else:
-            raise AssertionError("expected WebkitUnavailable")
+        message = str(stop.value)
         assert "did not start in" not in message
         assert "stopped before it was ready" in message and "webkit.log" in message
         assert "E2E_WEBKIT=native" in message
@@ -165,10 +164,14 @@ class TestWebkitStart:
     def test_a_failed_cache_folder_hand_over_stops_the_run(self, monkeypatch, tmp_path):
         def docker(*args, **kwargs):
             return _Done(1, stderr="boom") if "chown" in args else _Done()
-        try:
+        with pytest.raises(run_lanes.WebkitUnavailable) as stop:
             self._start(monkeypatch, tmp_path, docker)
-        except run_lanes.WebkitUnavailable as stop:
-            message = str(stop)
-        else:
-            raise AssertionError("expected WebkitUnavailable")
+        message = str(stop.value)
         assert "cache" in message and "boom" in message and "E2E_WEBKIT=native" in message
+
+    def test_a_silent_hand_over_failure_message_starts_with_the_reason(self, monkeypatch, tmp_path):
+        def docker(*args, **kwargs):
+            return _Done(1) if "chown" in args else _Done()
+        with pytest.raises(run_lanes.WebkitUnavailable) as stop:
+            self._start(monkeypatch, tmp_path, docker)
+        assert not str(stop.value).startswith("\n")

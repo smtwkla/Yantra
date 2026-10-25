@@ -1,4 +1,4 @@
-"""Equipment properties — the pure rules (S043 § 5, § 8.1)."""
+"""Equipment properties — the pure rules (S043 § 5, § 8.1; an item's own values: S044 § 5, § 8.1)."""
 
 from decimal import Decimal
 
@@ -8,7 +8,7 @@ from properties_core import (
     CHOOSE_ACTIVE_PROPERTIES, CHOOSE_A_PROPERTY, CHOOSE_DATA_TYPE, CHOOSE_OPTION, CHOOSE_YES_NO, DATA_TYPE_FIXED,
     DESCRIPTION_TOO_LONG, ENTER_LABEL, ENTER_NAME, ENTER_NUMBER, LABEL_TOO_LONG, NAME_TOO_LONG, NOT_ON_CLASS,
     NUMBER_TOO_BIG, ONLY_CHOICE_HAS_OPTIONS, OPTION_EXISTS, TEXT_TOO_LONG, TOO_MANY_DECIMALS, UNIT_FIXED,
-    UNIT_ONLY_NUMBER, UNIT_TOO_LONG, VALUES_NOT_OBJECT, can_link, check_model_values, format_value, number_text,
+    UNIT_ONLY_NUMBER, UNIT_TOO_LONG, VALUES_NOT_OBJECT, can_link, check_values, format_value, item_changes, item_events, number_text,
     parse_property_ids, parse_value, parse_value_keys, property_changes, property_view, stored_value,
     validate_option, validate_property,
 )
@@ -212,24 +212,24 @@ class TestModelValues:
     def test_unknown_inactive_or_unlinked_is_refused(self):
         props = {1: _prop(1, "A", active=0), 2: _prop(2, "B", linked=False)}
         for key in ("1", "2", "9"):
-            assert check_model_values({key: "1"}, props, {}, {}) == (None, (f"values.{key}", NOT_ON_CLASS))
+            assert check_values({key: "1"}, props, {}, {}) == (None, (f"values.{key}", NOT_ON_CLASS))
 
     def test_the_first_refusal_by_name_answers(self):
         props = {1: _prop(1, "Zeta"), 2: _prop(2, "alpha")}
-        assert check_model_values({"1": "x", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "x", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
 
     def test_an_unlinked_property_is_refused_in_its_name_s_place(self):
         """CR1-05: the order is by name, not by the body's key order; an unknown id (no name) first."""
         props = {1: _prop(1, "Zeta", linked=False), 2: _prop(2, "alpha")}
-        assert check_model_values({"1": "1", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "1", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
         props = {1: _prop(1, "alpha", active=0), 2: _prop(2, "Zeta")}
-        assert check_model_values({"2": "y", "1": "1"}, props, {}, {}) == (None, ("values.1", NOT_ON_CLASS))
-        assert check_model_values({"2": "y", "9": "1", "7": "1"}, props, {}, {}) == (
+        assert check_values({"2": "y", "1": "1"}, props, {}, {}) == (None, ("values.1", NOT_ON_CLASS))
+        assert check_values({"2": "y", "9": "1", "7": "1"}, props, {}, {}) == (
             None, ("values.7", NOT_ON_CLASS))
 
     def test_changes(self):
         props = {1: _prop(1, "Power"), 2: _prop(2, "Drain", "choice"), 3: _prop(3, "VSD", "yes_no")}
-        changes, error = check_model_values({"1": "7.5", "2": 5, "3": ""}, props,
+        changes, error = check_values({"1": "7.5", "2": 5, "3": ""}, props,
                                             {2: [{"id": 5, "active": 1}]}, {})
         assert error is None
         assert dict(changes) == {
@@ -238,11 +238,16 @@ class TestModelValues:
             3: None,
         }
 
+    def test_clear_by_null_and_by_empty_text(self):
+        """S044 § 8.1: an item's save clears its own value by "" or null, as the model's."""
+        props = {1: _prop(1, "Power"), 2: _prop(2, "Frame", "text")}
+        assert check_values({"1": None, "2": ""}, props, {}, {}) == ([(2, None), (1, None)], None)
+
     def test_an_inactive_option_is_kept_when_unchanged(self):
         props = {2: _prop(2, "Drain", "choice")}
         options = {2: [{"id": 5, "active": 0}]}
-        assert check_model_values({"2": 5}, props, options, {})[1] == ("values.2", CHOOSE_OPTION)
-        assert check_model_values({"2": 5}, props, options, {2: {"option_id": 5}})[1] is None
+        assert check_values({"2": 5}, props, options, {})[1] == ("values.2", CHOOSE_OPTION)
+        assert check_values({"2": 5}, props, options, {2: {"option_id": 5}})[1] is None
 
 
 class TestPropertyView:
@@ -278,3 +283,105 @@ def test_option_label_rules():
     assert validate_option({}, True)[1] == [{"field": "label", "message": ENTER_LABEL}]
     assert validate_option({"label": "x" * 61}, True)[1] == [{"field": "label", "message": LABEL_TOO_LONG}]
     assert validate_option({"active": False}, False) == ({"active": 0}, [])
+
+
+# ---------------------------------------------------------------------------
+# An item's own values (S044 § 5.1, § 5.4, § 8.1)
+# ---------------------------------------------------------------------------
+
+def _columns(**value):
+    """A value row / a change's columns: the four typed columns, one filled."""
+    return {"value_number": None, "value_text": None, "value_bool": None, "option_id": None, **value}
+
+
+class TestItemChanges:
+
+    def test_a_clear_with_no_stored_row_is_dropped(self):
+        assert item_changes([(1, None)], {}) == []
+
+    def test_an_equal_value_is_dropped_per_data_type(self):
+        stored = {1: _columns(value_number=Decimal("5.5000")), 2: _columns(value_text="IP55"),
+                  3: _columns(value_bool=0), 4: _columns(option_id=9)}
+        changes = [(1, _columns(value_number=Decimal("5.5"))), (2, _columns(value_text="IP55")),
+                   (3, _columns(value_bool=0)), (4, _columns(option_id=9))]
+        assert item_changes(changes, stored) == []
+
+    def test_a_set_a_change_and_a_clear_are_kept(self):
+        stored = {2: _columns(value_number=Decimal("7.5000")), 3: _columns(value_text="IP55"),
+                  4: _columns(value_bool=1), 5: _columns(option_id=9)}
+        changes = [(1, _columns(value_number=Decimal("5.5"))), (2, _columns(value_number=Decimal("5.5"))),
+                   (3, _columns(value_text="ip55")), (4, _columns(value_bool=0)), (5, _columns(option_id=8)),
+                   (6, None)]
+        stored[6] = _columns(value_text="132M")
+        assert item_changes(changes, stored) == changes
+
+
+class TestPropertyViewWithItemValues:
+
+    PROPS = [
+        {"id": 1, "name": "Rated power", "data_type": "number", "unit": "kW"},
+        {"id": 2, "name": "Shaft orientation", "data_type": "choice", "unit": None},
+        {"id": 3, "name": "Frame size", "data_type": "text", "unit": None},
+    ]
+
+    def test_the_item_wins_then_the_model_then_none(self):
+        model = {1: _columns(value_number=Decimal("7.5000")), 2: _columns(option_id=9)}
+        item = {1: _columns(value_number=Decimal("5.5000"))}
+        rows = property_view(self.PROPS, model, {9: "Horizontal"}, item)
+        assert [(r["name"], r["value"], r["display"], r["source"]) for r in rows] == [
+            ("Frame size", None, None, None),
+            ("Rated power", "5.5", "5.5 kW", "item"),
+            ("Shaft orientation", 9, "Horizontal", "model"),
+        ]
+
+    def test_a_model_less_item_shows_only_its_own(self):
+        rows = property_view(self.PROPS, {}, {}, {3: _columns(value_text="132M")})
+        assert [(r["display"], r["source"]) for r in rows] == [("132M", "item"), (None, None), (None, None)]
+
+    def test_an_own_value_of_an_unlisted_property_is_not_shown(self):
+        """A class change hides an own value of a property the new class lacks (S044 § 1.7)."""
+        rows = property_view(self.PROPS[:1], {}, {}, {3: _columns(value_text="132M")})
+        assert [r["property_id"] for r in rows] == [1]
+
+
+class TestItemEvents:
+
+    PROPS = {
+        1: {"id": 1, "name": "Rated power", "data_type": "number", "unit": "kW"},
+        2: {"id": 2, "name": "Shaft orientation", "data_type": "choice", "unit": None},
+        3: {"id": 3, "name": "Ex-proof", "data_type": "yes_no", "unit": None},
+    }
+    LABELS = {9: "Horizontal", 8: "Vertical"}
+
+    def _events(self, changes, before=None, model_displays=None, has_model=True):
+        return item_events(self.PROPS, changes, before or {}, model_displays or {}, self.LABELS, has_model)
+
+    def test_set_from_the_model_s_value_with_the_unit(self):
+        assert self._events([(1, _columns(value_number=Decimal("5.5")))], model_displays={1: "7.5 kW"}) == [
+            ("property", "Rated power: 7.5 kW (model)", "Rated power: 5.5 kW")]
+
+    def test_set_from_a_model_with_no_value_and_an_option_label(self):
+        assert self._events([(2, _columns(option_id=9))]) == [
+            ("property", "Shaft orientation: no value (model)", "Shaft orientation: Horizontal")]
+
+    def test_set_on_a_model_less_item(self):
+        assert self._events([(3, _columns(value_bool=1))], has_model=False) == [
+            ("property", "Ex-proof: no value", "Ex-proof: Yes")]
+
+    def test_a_change(self):
+        before = {2: _columns(option_id=9)}
+        assert self._events([(2, _columns(option_id=8))], before=before) == [
+            ("property", "Shaft orientation: Horizontal", "Shaft orientation: Vertical")]
+
+    def test_a_clear_back_to_the_model_s_value(self):
+        before = {1: _columns(value_number=Decimal("5.5000"))}
+        assert self._events([(1, None)], before=before, model_displays={1: "7.5 kW"}) == [
+            ("property", "Rated power: 5.5 kW", "Rated power: 7.5 kW (model)")]
+        assert self._events([(1, None)], before=before, has_model=False) == [
+            ("property", "Rated power: 5.5 kW", "Rated power: no value")]
+
+    def test_one_event_per_change_by_name(self):
+        changes = [(2, _columns(option_id=9)), (1, _columns(value_number=Decimal("5.5"))),
+                   (3, _columns(value_bool=0))]
+        assert [e[1].split(":")[0] for e in self._events(changes)] == ["Ex-proof", "Rated power",
+                                                                        "Shaft orientation"]

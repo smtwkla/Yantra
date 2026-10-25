@@ -2,8 +2,8 @@
 
 A property is a technical datum of a class of equipment (ISO 14224 Annex A equipment-specific
 data), defined once with a data type and, for a number, a unit (IEC 61360: one definition,
-reused across classes).  Its value sits on the model (the maker's design value); S044 adds the
-item's own.  Validators return ``(clean, errors)`` like masters_core; value parsers return
+reused across classes).  Its value sits on the model (the maker's design value), and an item may
+hold its own where its nameplate differs (S044): the item's wins on that item only.  Validators return ``(clean, errors)`` like masters_core; value parsers return
 ``(value, message)``, where ``(None, None)`` means "clear the value".
 """
 
@@ -33,9 +33,10 @@ UNIT_TOO_LONG = f"Use {UNIT_MAX} characters or fewer"
 UNIT_ONLY_NUMBER = "Only a number has a unit"
 DESCRIPTION_TOO_LONG = f"Use {DESCRIPTION_MAX} characters or fewer"
 ACTIVE_FLAG = "Active must be true or false"
-DATA_TYPE_FIXED = ("The data type cannot be changed: the property has options or models hold values of it. "
+# A model's value or an item's own (S044 § 1.6) fixes both
+DATA_TYPE_FIXED = ("The data type cannot be changed: the property has options or values. "
                    "Make a new property instead.")
-UNIT_FIXED = "The unit cannot be changed: models hold values of this property. Make a new property instead."
+UNIT_FIXED = "The unit cannot be changed: the property has values. Make a new property instead."
 ENTER_LABEL = "Enter a label"
 LABEL_TOO_LONG = f"Use {OPTION_LABEL_MAX} characters or fewer"
 OPTION_EXISTS = "An option with this label exists"
@@ -61,7 +62,8 @@ _NUMBER_RE = re.compile(r"-?[0-9]+(\.[0-9]+)?")
 # A key of the values object is a property id: a positive whole number, as a string
 _ID_KEY_RE = re.compile(r"[1-9][0-9]*")
 
-# The typed column each data type's value is stored in (model_property_values, § 4.2)
+# The typed column each data type's value is stored in (model_property_values, § 4.2; an item's
+# own in equipment_property_values, S044 § 4: the same columns)
 VALUE_COLUMNS = {NUMBER: "value_number", TEXT: "value_text", YES_NO: "value_bool", CHOICE: "option_id"}
 
 
@@ -339,6 +341,11 @@ def can_link(prop, active_option_count):
     return bool(prop["active"]) and (prop["data_type"] != CHOICE or active_option_count > 0)
 
 
+def _by_name(prop):
+    """The order of the values checks, the card's rows and the history lines: by name, then id."""
+    return prop["name"].casefold(), prop["id"]
+
+
 def parse_value_keys(values):
     """The ``values`` object of a model save -> ``(ids ascending, None)`` or ``(None, (field, message))``.
     A key that is not a positive whole number names no property of the class."""
@@ -350,13 +357,14 @@ def parse_value_keys(values):
     return sorted(int(key) for key in values), None
 
 
-def check_model_values(values, properties, options, stored):
-    """The changes a model save makes -> ``(changes, None)`` or ``(None, (field, message))``.
+def check_values(values, properties, options, stored):
+    """The changes a values save makes, a model's or an item's (S044 § 5.1) -> ``(changes, None)``
+    or ``(None, (field, message))``.
 
     ``values``: the body's ``{"<property_id>": raw}`` (keys already checked by parse_value_keys);
-    ``properties``: ``{id: {id, name, data_type, active, linked}}`` for the ids found;
-    ``options``: ``{property_id: [{id, active}]}``; ``stored``: ``{property_id: row}`` of the
-    model's current values.  The values are checked by property name and the first refusal
+    ``properties``: ``{id: {id, name, data_type, active, linked}}`` for the ids found (linked to
+    the model's or the item's class); ``options``: ``{property_id: [{id, active}]}``; ``stored``:
+    ``{property_id: row}`` of the owner's current values.  The values are checked by property name and the first refusal
     answers, so nothing is saved (§ 5.3).  An unknown id has no name, so the unknown ones are
     refused first, by id; an inactive or unlinked property is refused in its name's place (CR1-05).
     ``changes`` is ``[(property_id, columns or None to clear)]``."""
@@ -364,7 +372,7 @@ def check_model_values(values, properties, options, stored):
     if unknown:
         return None, (f"values.{unknown[0]}", NOT_ON_CLASS)
     changes = []
-    for key in sorted(values, key=lambda k: (properties[int(k)]["name"].casefold(), int(k))):
+    for key in sorted(values, key=lambda k: _by_name(properties[int(k)])):
         prop = properties[int(key)]
         if not prop["active"] or not prop["linked"]:
             return None, (f"values.{key}", NOT_ON_CLASS)
@@ -382,22 +390,101 @@ def check_model_values(values, properties, options, stored):
     return changes, None
 
 
-def property_view(properties, model_values, option_labels):
+def value_display(prop, row, option_labels):
+    """A stored value row of ``prop`` ({data_type, unit}) for reading, by format_value; None
+    without a row.  ``option_labels``: ``{option_id: label}``."""
+    raw = row[VALUE_COLUMNS[prop["data_type"]]] if row else None
+    return format_value(prop["data_type"], raw, prop["unit"], option_labels.get(raw))
+
+
+def property_view(properties, model_values, option_labels, item_values=None):
     """The Properties card's rows (§ 5.5, § 6.3), by name: each property given (the active ones
-    linked to the item's class) with the model's value -> ``{property_id, name, value, unit,
-    display, source}``; ``display`` and ``source`` are None without a value.
-    ``model_values``: ``{property_id: row}``; ``option_labels``: ``{option_id: label}``."""
+    linked to the item's class) with the value in force -> ``{property_id, name, value, unit,
+    display, source}``.  The item's own value wins (``source`` "item", S044 § 5.5), else the
+    model's ("model"); ``display`` and ``source`` are None without a value.  An own value of a
+    property not given (not on the class now) is not shown.  ``model_values`` and
+    ``item_values``: ``{property_id: row}``; ``option_labels``: ``{option_id: label}``."""
+    item_values = item_values or {}
     rows = []
-    for prop in sorted(properties, key=lambda p: (p["name"].casefold(), p["id"])):
-        row = model_values.get(prop["id"])
-        raw = row[VALUE_COLUMNS[prop["data_type"]]] if row else None
-        display = format_value(prop["data_type"], raw, prop["unit"], option_labels.get(raw))
+    for prop in sorted(properties, key=_by_name):
+        own = item_values.get(prop["id"])
+        row = own if own is not None else model_values.get(prop["id"])
+        display = value_display(prop, row, option_labels)
         rows.append({
             "property_id": prop["id"],
             "name": prop["name"],
             "value": stored_value(prop["data_type"], row),
             "unit": prop["unit"],
             "display": display,
-            "source": "model" if display is not None else None,
+            "source": None if display is None else ("item" if own is not None else "model"),
         })
     return rows
+
+
+# ---------------------------------------------------------------------------
+# An item's own values (S044 § 5.1, § 5.4)
+# ---------------------------------------------------------------------------
+
+PROPERTY_EVENT = "property"      # equipment_events.event (v33)
+NO_VALUE = "no value"
+MODEL_MARK = "(model)"
+
+
+def _same_value(columns, row):
+    """A change's columns hold what the stored row holds: a number as a Decimal against the stored
+    DECIMAL(16,4) (5.5 equals 5.5000), text exactly, yes/no as 0/1, a choice by option id."""
+    for column in VALUE_COLUMNS.values():
+        new, old = columns[column], row[column]
+        if new is None or old is None:
+            if (new is None) != (old is None):
+                return False
+        elif column == VALUE_COLUMNS[NUMBER]:
+            if Decimal(str(old)) != new:
+                return False
+        elif new != old:
+            return False
+    return True
+
+
+def item_changes(changes, stored):
+    """The real changes of an item's save (S044 § 5.1, BR1-02): check_values' ``changes``
+    without a clear of a property with no own row and without a value equal to the own one.
+    ``stored``: ``{property_id: row}`` of the item's own values.  The write and item_events take
+    this list, so a row that did not change writes nothing and logs nothing."""
+    kept = []
+    for property_id, columns in changes:
+        row = stored.get(property_id)
+        if columns is None and row is None:
+            continue
+        if columns is not None and row is not None and _same_value(columns, row):
+            continue
+        kept.append((property_id, columns))
+    return kept
+
+
+def item_events(properties, changes, before, model_displays, option_labels, has_model):
+    """The ``property`` history lines of an item's save (S044 § 5.4) -> ``[(event, old, new)]``,
+    one per change, by property name.  Each side reads "<name>: <display>"; the side with no own
+    value shows the value then in force from the model, marked: "Rated power: 7.5 kW (model)",
+    "Rated power: no value (model)", or "Rated power: no value" on an item without a model.
+
+    ``properties``: ``{id: {id, name, data_type, unit}}``; ``changes``: item_changes' output;
+    ``before``: ``{property_id: row}`` of the own values before the save; ``model_displays``:
+    ``{property_id: display or None}`` of the model's values; ``option_labels``: ``{option_id: label}``."""
+    def own(prop, row):
+        return f"{prop['name']}: {value_display(prop, row, option_labels)}"
+
+    def in_force_from_model(prop):
+        if not has_model:
+            return f"{prop['name']}: {NO_VALUE}"
+        display = model_displays.get(prop["id"])
+        return f"{prop['name']}: {NO_VALUE if display is None else display} {MODEL_MARK}"
+
+    events = []
+    for property_id, columns in sorted(changes, key=lambda change: _by_name(properties[change[0]])):
+        prop = properties[property_id]
+        old_row = before.get(property_id)
+        old = own(prop, old_row) if old_row is not None else in_force_from_model(prop)
+        new = own(prop, columns) if columns is not None else in_force_from_model(prop)
+        events.append((PROPERTY_EVENT, old, new))
+    return events

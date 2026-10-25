@@ -180,6 +180,10 @@ from meters import meters_bp
 # Node meters under /equipment/<id>/meters (S038), beside equipment_bp as documents_bp is
 app.register_blueprint(meters_bp, url_prefix="/api")
 
+from item_properties import item_properties_bp
+# An item's own property values under /equipment/<id>/properties (S044), as meters_bp
+app.register_blueprint(item_properties_bp, url_prefix="/api")
+
 from tickets import tickets_bp
 app.register_blueprint(tickets_bp, url_prefix="/api/tickets")
 

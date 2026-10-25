@@ -161,7 +161,8 @@ def _fresh_access_caches():
 # Tables emptied once per session so tests start from a known state, child tables first
 _TABLES = ("meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
-           "equipment_events", "equipment", "model_property_values", "equipment_models", "manufacturers",
+           "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",
+           "manufacturers",
            "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes",
            "serial_counters")
 

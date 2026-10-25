@@ -3,7 +3,9 @@
  * PropertyInput — one input for one equipment property, by its data type (S043 § 7.3; S044
  * reuses it for an item's own values). The value is what the API takes: a number as typed text,
  * text, an option id, true / false; "" (or "—", Not set) means no value. The parent shows the
- * server's refusal through `error`. The checks themselves are the backend's.
+ * server's refusal through `error`. The checks themselves are the backend's. `hint` (S044) is a
+ * small grey line under the input, after the refusal so the refusal stays beside its field:
+ * the item dialog's "Model: 7.5 kW".
  */
 import { computed } from "vue";
 
@@ -12,6 +14,7 @@ const props = defineProps({
   property: { type: Object, required: true },
   modelValue: { type: [String, Number, Boolean], default: "" },
   error: { type: String, default: "" },
+  hint: { type: String, default: "" },
 });
 const emit = defineEmits(["update:modelValue"]);
 
@@ -71,5 +74,6 @@ const YES_NO = [
       </div>
     </template>
     <div v-if="error" class="invalid-feedback d-block">{{ error }}</div>
+    <div v-if="hint" class="form-text">{{ hint }}</div>
   </div>
 </template>

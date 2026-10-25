@@ -179,7 +179,8 @@ def webkit_server(version):
     handed_over = _docker("run", "--rm", "--user", "root", "-v", f"{WEBKIT_NPM_VOLUME}:{NPM_CACHE}", image,
                           "chown", "pwuser:pwuser", NPM_CACHE)
     if handed_over.returncode != 0:
-        raise WebkitUnavailable(handed_over.stderr.strip() + "\n" + webkit_failure("cache"))
+        docker_error = handed_over.stderr.strip()
+        raise WebkitUnavailable((docker_error + "\n" if docker_error else "") + webkit_failure("cache"))
     LANE_LOGS.mkdir(parents=True, exist_ok=True)
     log = open(WEBKIT_LOG, "w", encoding="utf-8")
     process = subprocess.Popen(webkit_run_command(version), stdout=log, stderr=subprocess.STDOUT)

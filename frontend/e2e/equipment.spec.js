@@ -416,3 +416,129 @@ test("S043: a component-unit with No model shows its class's properties with —
   await expect(properties).not.toContainText("Values from model");
   await expect(properties.getByRole("button", { name: "Edit model values" })).toHaveCount(0);
 });
+
+// This machine's values (S044 § 1.2–1.5, § 8.4): an item's own value of a property, over its model's
+async function setItemValues(node, values) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.put(`/api/equipment/${node.id}/properties`, { data: { values } });
+    expect(res.ok(), await res.text()).toBe(true);
+  } finally {
+    await api.dispose();
+  }
+}
+
+async function adminPutNode(node, data) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.put(`/api/equipment/${node.id}`, { data });
+    expect(res.ok(), await res.text()).toBe(true);
+  } finally {
+    await api.dispose();
+  }
+}
+
+const RATED_POWER = (name) => ({ properties: [{ name, data_type: "number", unit: "kW" }], values: { 0: "7.5" } });
+
+test("S044: engineer sets this machine's rated power; the card marks it and the history shows the model's value before", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { model, node } = await propertySetup(tag, RATED_POWER(name));
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  // This machine's button first, the model's second (BR2-07)
+  await expect(properties.getByRole("button")).toHaveText(["Edit this machine's values", "Edit model values"]);
+  await properties.getByRole("button", { name: "Edit this machine's values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-title")).toHaveText(`This machine's values — ${node.code}`);
+  await expect(dialog.getByLabel(name)).toHaveValue("");
+  await expect(dialog).toContainText("Model: 7.5 kW");
+  await dialog.getByLabel(name).fill("5.5");
+  await saveDialog(page, "Save values");
+
+  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine"]);
+  await expect(properties).toContainText(`Values from model ${model.label}, except those marked this machine.`);
+  await expect(card(page, "History")).toContainText(`Property: ${name}: 7.5 kW (model) → 5.5 kW`);
+});
+
+test("S044: engineer clears this machine's value; the card shows the model's again with no mark", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { model, node, properties: [power] } = await propertySetup(tag, RATED_POWER(name));
+  await setItemValues(node, { [power.id]: "5.5" });
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine"]);
+  await properties.getByRole("button", { name: "Edit this machine's values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel(name)).toHaveValue("5.5");
+  await dialog.getByLabel(name).fill("");
+  await saveDialog(page, "Save values");
+
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  await expect(properties).toContainText(`Values from model ${model.label}.`);
+  await expect(properties).not.toContainText("this machine.");
+  await expect(card(page, "History")).toContainText(`Property: ${name}: 5.5 kW → 7.5 kW (model)`);
+});
+
+test("S044: a component-unit with No model has only Edit this machine's values; its value shows with no mark", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E frame size ${tag}`;
+  const { cls, node } = await propertySetup(tag, { properties: [{ name, data_type: "text" }] });
+  const part = await noModelPart(node, cls, `E2E no-model part ${tag}`);
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.getByRole("button")).toHaveText(["Edit this machine's values"]);
+  await properties.getByRole("button", { name: "Edit this machine's values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog).not.toContainText("Model:");
+  await dialog.getByLabel(name).fill("132M");
+  await saveDialog(page, "Save values");
+
+  await expect(properties.locator("dd")).toHaveText(["132M"]); // no "· this machine"
+  await expect(properties).not.toContainText("Values from model");
+  await expect(card(page, "History")).toContainText(`Property: ${name}: no value → 132M`);
+});
+
+test("S044: the operator sees no Edit this machine's values, nor does anyone on a scrapped machine", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const { node } = await propertySetup(tag, RATED_POWER(`E2E rated power ${tag}`));
+  const api = await apiAs("admin");
+  let mcc2;
+  try {
+    mcc2 = (await (await api.get("/api/masters/units")).json()).items.find((u) => u.full_code === "SMTW.MCC2");
+  } finally {
+    await api.dispose();
+  }
+  await adminPutNode(node, { unit_id: mcc2.id }); // MCC2: the operator's unit
+  await asPerson(page, "operator", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  await expect(properties.getByRole("button")).toHaveCount(0);
+
+  await adminPutNode(node, { lifecycle: "scrapped" });
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await expect(page.getByText("Scrapped — this record is read-only.")).toBeVisible();
+  await expect(card(page, "Properties").getByRole("button", { name: "Edit this machine's values" })).toHaveCount(0);
+});
+
+test("S044: a number with five decimals is refused under its input", async ({ page, consoleWatch }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { node } = await propertySetup(tag, RATED_POWER(name));
+  consoleWatch.allowFailedRequest(`/api/equipment/${node.id}/properties`, 400);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await card(page, "Properties").getByRole("button", { name: "Edit this machine's values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel(name).fill("5.12345");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Use up to 4 decimals");
+  // Beside its field: the input marked, the dialog still open with what was typed
+  await expect(dialog.getByLabel(name)).toHaveClass(/is-invalid/);
+  await expect(dialog.getByLabel(name)).toHaveValue("5.12345");
+});

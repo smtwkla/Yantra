@@ -416,7 +416,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 
 | Term | Meaning |
 |---|---|
-| Property | A technical datum of a class of equipment (ISO 14224 Annex A *equipment-specific data*), with a data type and a unit, defined in *Masters › Properties* (S043). The model holds the maker's rating; an item holds its own only where its nameplate differs (S044). How the equipment is built is its *type*, not a property; values that change in service are readings |
+| Property | A technical datum of a class of equipment (ISO 14224 Annex A *equipment-specific data*), with a data type and a unit, defined in *Masters › Properties* (S043). The model holds the maker's rating; an item holds its own only where its nameplate differs (S044), shown as this machine's and logged in its history. How the equipment is built is its *type*, not a property; values that change in service are readings |
 | TPM | Total Productive Maintenance — the framework this document follows |
 | OEE | Overall Equipment Effectiveness = Availability × Performance × Quality |
 | CIL | Clean, Inspect, Lubricate — the operator's routine care of a piece of equipment |

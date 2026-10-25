@@ -217,7 +217,7 @@ onMounted(reload);
       <label class="form-label" for="property-unit">Unit</label>
       <input id="property-unit" v-model="form.unit" class="form-control" :class="{ 'is-invalid': fieldError('unit') }" maxlength="20" :disabled="unitFixed" />
       <div v-if="fieldError('unit')" class="invalid-feedback d-block">{{ fieldError("unit") }}</div>
-      <div v-if="unitFixed" class="form-text">Models hold values of this property, so its unit is fixed.</div>
+      <div v-if="unitFixed" class="form-text">This property has values, so its unit is fixed.</div>
     </div>
     <div v-else-if="fieldError('unit')" class="invalid-feedback d-block mb-3">{{ fieldError("unit") }}</div>
     <div v-if="form.data_type === 'choice'" class="mb-3">

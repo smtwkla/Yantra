@@ -138,6 +138,30 @@ class TestEdit:
         res = engineer.put(f"{PROPERTIES}/{prop['id']}", json={"name": _name(), "unit": "kW"})
         assert res.status_code == 200
 
+    def test_an_item_s_own_value_keeps_type_and_unit_and_counts_hidden_too(self, admin, engineer, make_property,
+                                                                          make_equipment, link):
+        """S044 § 1.6: a property with only an item's value is frozen as one with a model's, and a
+        value hidden by unlinking still freezes it and counts."""
+        prop = make_property()
+        node = make_equipment()
+        cls = {"id": node["class_id"]}
+        link(cls, prop)
+        res = admin.put(f"/api/equipment/{node['id']}/properties", json={"values": {str(prop["id"]): "5.5"}})
+        assert res.status_code == 200, res.get_json()
+        assert _listed(engineer, prop["id"])["value_count"] == 1
+        assert engineer.delete(f"{_class_path(cls)}/{prop['id']}").status_code == 200   # hidden, kept
+        assert _listed(engineer, prop["id"])["value_count"] == 1
+        res = engineer.put(f"{PROPERTIES}/{prop['id']}", json={"data_type": "text"})
+        assert _refusal(res) == (409, {"error": DATA_TYPE_FIXED, "field": "data_type"})
+        res = engineer.put(f"{PROPERTIES}/{prop['id']}", json={"unit": "W"})
+        assert _refusal(res) == (409, {"error": UNIT_FIXED, "field": "unit"})
+
+    def test_the_freeze_texts(self):
+        """S044 § 1.6 (BR1-08): the texts name values, not only models'."""
+        assert DATA_TYPE_FIXED == ("The data type cannot be changed: the property has options or values. "
+                                   "Make a new property instead.")
+        assert UNIT_FIXED == "The unit cannot be changed: the property has values. Make a new property instead."
+
     def test_a_wrong_type_is_400_on_its_field(self, engineer, make_property):
         prop = make_property()
         assert _refusal(engineer.put(f"{PROPERTIES}/{prop['id']}", json={"name": 5})) == (

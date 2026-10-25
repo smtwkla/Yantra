@@ -1,7 +1,7 @@
 /**
  * Display labels for the equipment register — one vocabulary for every screen
  * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004; model events:
- * S012; meter events: S038). Pure: no imports.
+ * S012; meter events: S038; property events: S044). Pure: no imports.
  */
 
 export const LEVEL_LABELS = {
@@ -51,11 +51,14 @@ const label = (map, value) => map[value] ?? String(value);
 const criticalityText = (value) => (value === INHERIT ? "Inherited" : label(CRITICALITY_LABELS, value));
 const typeText = (value) => (value === NO_TYPE ? "None" : value);
 const change = (name, from, to) => `${name}: ${from} → ${to}`;
-// After "Oil temperature: 10–60 °C", "Oil temperature: up to 55 °C" reads "up to 55 °C": the meter is named once
-function limitsOnly(from, to) {
-  const cut = from.indexOf(": ");
-  const prefix = cut < 0 ? null : from.slice(0, cut + 2);
-  return prefix && to.startsWith(prefix) ? to.slice(prefix.length) : to;
+// The new side without the old side's "<name>: ", so the meter or property is named once:
+// after "Oil temperature: 10–60 °C", "Oil temperature: up to 55 °C" reads "up to 55 °C"
+function secondSide(from, to) {
+  // The shared start of both sides, cut back to the last ": ", so a name that holds ": " stays whole
+  let shared = 0;
+  while (shared < from.length && shared < to.length && from[shared] === to[shared]) shared++;
+  const cut = from.slice(0, shared).lastIndexOf(": ");
+  return cut < 0 ? to : to.slice(cut + 2);
 }
 
 /** One history event ({event, old_value, new_value}) in plain words. */
@@ -84,7 +87,11 @@ export function describeEvent(event) {
     case "meter_removed":
       return `Meter removed: ${oldValue}`;
     case "meter_limits":
-      return change("Meter limits", oldValue, limitsOnly(oldValue, newValue));
+      return change("Meter limits", oldValue, secondSide(oldValue, newValue));
+    // An item's own property value (S044 § 5.4): "<property>: <value>" on each side, the model's
+    // value in force marked "(model)"
+    case "property":
+      return change("Property", oldValue, secondSide(oldValue, newValue));
     default:
       return String(event.event);
   }

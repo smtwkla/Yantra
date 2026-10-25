@@ -995,6 +995,43 @@ _MIGRATIONS = [
             INDEX ix_meter_readings_meter_time (equipment_id, meter_type_id, taken_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]),
+    # S044 — property overrides on equipment items (docs/steps/S044-property-overrides/1-brief.md
+    # § 4): an item's own value of a property of its class, where its nameplate differs from its
+    # model's; it wins over the model's on that item only.  The columns of model_property_values
+    # (v31), keyed by the item: exactly one value column filled (chk_equipment_property_one_value),
+    # the option's composite FK makes "the option is this property's" a database rule.  No row =
+    # no own value.  A model or class change leaves the rows alone (a value of a property the new
+    # class lacks is hidden, not deleted).  equipment_events.event gains 'property' at its end, as
+    # v30 added the meter events.  No _PRECONDITIONS entry: a new table and a widened ENUM touch no
+    # existing row.  IF NOT EXISTS and a MODIFY to the same list make a half-applied v33 re-run.
+    # Rollback: the previous release ignores the table, so items show their models' values again;
+    # a 'property' event shows as its raw name in the history.  Going back after item values exist
+    # loses them from view only; restoring db-server's dump drops them.
+    (33, "Property values on equipment items (S044)", [
+        """CREATE TABLE IF NOT EXISTS equipment_property_values (
+            equipment_id  INT NOT NULL,
+            property_id   INT NOT NULL,
+            value_number  DECIMAL(16,4) NULL,
+            value_text    VARCHAR(100) NULL,
+            value_bool    TINYINT(1) NULL,
+            option_id     INT NULL,
+            updated_at    DATETIME NULL,
+            updated_by    VARCHAR(100) NULL,
+            PRIMARY KEY (equipment_id, property_id),
+            CONSTRAINT fk_equipment_property_values_node FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_equipment_property_values_property FOREIGN KEY (property_id)
+                REFERENCES property_definitions (id),
+            CONSTRAINT fk_equipment_property_values_option FOREIGN KEY (option_id, property_id)
+                REFERENCES property_options (id, property_id),
+            CONSTRAINT chk_equipment_property_one_value CHECK (
+                (value_number IS NOT NULL) + (value_text IS NOT NULL) + (value_bool IS NOT NULL)
+                + (option_id IS NOT NULL) = 1)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model',
+                 'meter_added','meter_removed','meter_limits','property')
+            NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

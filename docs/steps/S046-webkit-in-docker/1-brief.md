@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: light
-Status: Gate B (CR r1: 0 blocker, 0 major, 2 minor, 4 nits — all fixed; verify review r2 running) (approved 25-10-2026 by KLA; open questions 1–5 as proposed, incl. 3: S045's guard skips on a native WebKit run); coded after S045
+Status: Gate B (CR r1: 0 blocker, 0 major, 2 minor, 4 nits — all fixed; verify review r2: 0 blocker, 0 major, 0 minor, 2 nits (CR2-01, CR2-02) — fixed in the tree, tooling 130 passed, lands in S044's snapshot; snapshot refs/steps/S046 15eaa41) (approved 25-10-2026 by KLA; open questions 1–5 as proposed, incl. 3: S045's guard skips on a native WebKit run); coded after S045
 Baseline: refs/steps/S045 67a4b57 (stale check 25-10-2026: since the approved baseline, S045 made its guard in `frontend/e2e/support/test.js` skip with its message, as § Open questions 3 assumes; S040 A1 changed only readings and ticket screens; nothing this brief relies on changed, no staleness review needed)
 ```
 

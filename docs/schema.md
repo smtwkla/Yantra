@@ -16,7 +16,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   `node_meters` with the three meter events (S038), the migration v31
   tables `property_definitions`, `property_options`, `class_properties` and
   `model_property_values` (S043) and the migration v32 table
-  `meter_readings` (S039) were added by hand on 24-10-2026.
+  `meter_readings` (S039) were added by hand on 24-10-2026, and the
+  migration v33 table `equipment_property_values` with the `property` event
+  (S044) on 25-10-2026. The schema described here is at **migration v33**.
 
 ## Conventions
 
@@ -47,8 +49,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `property_definitions` | The property master (S043, v31), edited in Masters › Properties: the technical data a class of equipment has (ISO 14224 Annex A). Name (unique without regard to case, `uq_property_definitions_name`), data type (`number` / `choice` / `text` / `yes_no`; fixed once it has an option or a value), unit (a number's only, `chk_property_unit`; fixed once a value exists), description, active (never deleted). 22 seed rows, `created_by` `migration-v31`, linked to no class |
 | `property_options` | A choice property's options (S043, v31): property, label (unique per property, `uq_property_options_label`), active (never deleted; an inactive one stays on the values that hold it). `uq_property_options_id_property` lets a value's option be checked against its property. The seed's five choices have their options |
 | `class_properties` | Class → property links (S043, v31), one row per pair (primary key). No active flag: *Remove* deletes the link, and the models' values of it stay |
-| `model_property_values` | A model's value of a property (S043, v31), one row per model and property (primary key): exactly one of `value_number` (`DECIMAL(16,4)`), `value_text` (up to 100), `value_bool`, `option_id` is filled (`chk_model_property_one_value`); which one follows the property's data type (checked in the code). The option's foreign key is `(option_id, property_id)`, so it must be this property's. No row = no value. Shown on the equipment page's *Properties* card; an item's own values come in S044 |
-| `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002); since v30 also `meter_added`, `meter_removed` and `meter_limits` (the limits in force on both sides, S038) |
+| `model_property_values` | A model's value of a property (S043, v31), one row per model and property (primary key): exactly one of `value_number` (`DECIMAL(16,4)`), `value_text` (up to 100), `value_bool`, `option_id` is filled (`chk_model_property_one_value`); which one follows the property's data type (checked in the code). The option's foreign key is `(option_id, property_id)`, so it must be this property's. No row = no value. Shown on the equipment page's *Properties* card, where an item's own value (`equipment_property_values`) wins |
+| `equipment_property_values` | An equipment item's own value of a property of its class (S044, v33), where its nameplate differs from its model's; it wins over the model's on that item only. One row per item and property (primary key `(equipment_id, property_id)`); the same value columns, CHECK (`chk_equipment_property_one_value`) and option foreign key `(option_id, property_id)` as `model_property_values`. No row = the model's value applies. A model or class change leaves the rows alone: a value of a property the new class lacks is hidden, not deleted. Each set, change and clear writes a `property` event |
+| `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002); since v30 also `meter_added`, `meter_removed` and `meter_limits` (the limits in force on both sides, S038); since v33 `property` (an item's own property value set, changed or cleared: "<property>: <value>" on each side, the model's value in force marked "(model)", S044) |
 | `equipment_documents` | Files attached to equipment, an equipment model (S012) or a ticket (photos, S017) — exactly one owner: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1); email, copied from the Keycloak login token at each login, never typed, shown only to IT admin and its owner (S032, v27) |
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
@@ -189,6 +192,11 @@ erDiagram
     int property_id PK,FK
     int option_id FK "null"
   }
+  equipment_property_values {
+    int equipment_id PK,FK
+    int property_id PK,FK
+    int option_id FK "null"
+  }
   node_meters {
     int id PK
     int equipment_id FK
@@ -300,6 +308,9 @@ erDiagram
   equipment_models ||--o{ model_property_values : "model_id"
   property_definitions ||--o{ model_property_values : "property_id"
   property_options o|--o{ model_property_values : "option_id"
+  equipment ||--o{ equipment_property_values : "equipment_id"
+  property_definitions ||--o{ equipment_property_values : "property_id"
+  property_options o|--o{ equipment_property_values : "option_id"
   equipment_classes ||--o{ equipment_models : "class_id"
   manufacturers ||--o{ equipment_models : "manufacturer_id"
   equipment_types o|--o{ equipment_models : "type_id"
