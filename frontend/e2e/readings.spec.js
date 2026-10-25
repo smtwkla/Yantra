@@ -666,7 +666,7 @@ test("S040 A1: a full save makes the round read-only, and Enter more readings st
   await expect(rowInput(hours)).toHaveAttribute("readonly", "");
   await expect(rowInput(oil)).toHaveAttribute("readonly", ""); // an empty row is locked too
   await expect(page.locator("input[type=datetime-local]")).toHaveAttribute("readonly", ""); // Time taken is locked
-  await expect(page.getByRole("button", { name: "Change", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeDisabled(); // S051
   await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
   await expect(saveReadings(page)).toHaveCount(0);
   await expect(enterMore(page)).toBeVisible();
@@ -680,7 +680,8 @@ test("S040 A1: a full save makes the round read-only, and Enter more readings st
   await expect(rowInput(oil)).not.toHaveAttribute("readonly", ""); // editable again
   await expect(hours.getByRole("status")).toHaveCount(0);
   await expect(hours.getByRole("button", { name: "Undo" })).toHaveCount(0); // no Undo of the old round
-  await expect(page.getByRole("button", { name: "Change", exact: true })).toBeVisible(); // Time taken is back to Now
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time taken is back to Now (S051)
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeChecked();
   await expect(hours.getByTestId("sheet-last")).toContainText("100.0 h"); // the round just saved is the last reading
   await expect(saveReadings(page)).toBeDisabled(); // nothing typed yet
 
@@ -753,7 +754,7 @@ test("S040 A1: emptying a refused row to retype it does not lock the round (CR4-
   // Backspace to the empty field, as on a phone keypad: the field still takes input
   await rowInput(hours).fill("");
   await expect(rowInput(hours)).not.toHaveAttribute("readonly", "");
-  await expect(page.getByRole("button", { name: "Change", exact: true })).toBeVisible(); // Time taken is not locked
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeEnabled(); // Time taken is not locked (S051)
   await rowInput(hours).pressSequentially("1100");
   await expect(rowInput(hours)).toHaveValue("1100");
   await expect(saveReadings(page)).toBeEnabled();
@@ -826,4 +827,107 @@ test("S040 A1: switching the site after a saved round asks nothing", async ({ pa
   await picker.selectOption({ label: "BRICKS" });
   await expect(page.getByTestId("sheet-heading")).toContainText("BRICKS — ");
   await expect(page.getByTestId("discard-confirm")).toHaveCount(0);
+});
+
+// S051: the time field shows the time, with a Now tick
+const nowBox = (scope) => scope.getByRole("checkbox", { name: "Now", exact: true });
+const timeInput = (scope) => scope.locator("input[type=datetime-local]");
+
+test("S051: Log reading opens with Now ticked and the time read-only; unticking makes it editable, ticking again read-only", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51now", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  const dialog = await openLog(page, "Run hours");
+  await expect(nowBox(dialog)).toBeChecked();
+  await expect(timeInput(dialog)).toHaveAttribute("readonly", "");
+  // the phone's clock to the minute; a minute boundary during the test does not fail it
+  const shown = await timeInput(dialog).inputValue();
+  expect([istLocal(0), istLocal(1)]).toContain(shown);
+
+  await nowBox(dialog).uncheck();
+  await expect(timeInput(dialog)).not.toHaveAttribute("readonly", "");
+  await timeInput(dialog).fill(istLocal(90));
+  await expect(timeInput(dialog)).toHaveValue(istLocal(90));
+
+  await nowBox(dialog).check();
+  await expect(timeInput(dialog)).toHaveAttribute("readonly", "");
+  expect([istLocal(0), istLocal(1)]).toContain(await timeInput(dialog).inputValue());
+});
+
+test("S051: emptying the time to retype it keeps the field unticked and editable (BR1-01)", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51clear", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  const dialog = await openLog(page, "Run hours");
+  await nowBox(dialog).uncheck();
+  await timeInput(dialog).fill(istLocal(90));
+  await timeInput(dialog).fill(""); // what Chrome reports while a part of the date is deleted
+  await expect(nowBox(dialog)).not.toBeChecked();
+  await expect(timeInput(dialog)).not.toHaveAttribute("readonly", "");
+  await timeInput(dialog).fill(istLocal(60));
+  await expect(timeInput(dialog)).toHaveValue(istLocal(60));
+  await expect(nowBox(dialog)).not.toBeChecked();
+});
+
+test("S051: the time field and the Now box fit on one line, and the Now label is a 44 px tap target", { tag: "@device" }, async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51fit", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  const dialog = await openLog(page, "Run hours");
+  await expectDialogFits(page);
+  const input = await timeInput(dialog).boundingBox();
+  const box = await nowBox(dialog).boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(input.x + input.width - 1); // to the right, not below
+  expect(Math.abs((box.y + box.height / 2) - (input.y + input.height / 2))).toBeLessThan(input.height / 2); // one line
+  // The tap target is the label that toggles the box (CR1-02), not a wrapper around it
+  const tap = dialog.locator("label[for=reading-now]");
+  expect((await tap.boundingBox()).height).toBeGreaterThanOrEqual(44);
+  await tap.click({ position: { x: 4, y: 3 } }); // the top edge of the area, away from the word
+  await expect(nowBox(dialog)).not.toBeChecked();
+});
+
+test("S051: untouched and unticked, the time follows the clock and the save sends no taken_at (BR1-02)", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51follow", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await page.clock.install(); // a fake clock, so a minute passes without waiting
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  const dialog = await openLog(page, "Run hours");
+  await nowBox(dialog).uncheck();
+  const before = await timeInput(dialog).inputValue();
+  await page.clock.runFor(60_000);
+  await expect.poll(() => timeInput(dialog).inputValue()).not.toBe(before); // moved on, still editable
+  await expect(timeInput(dialog)).not.toHaveAttribute("readonly", "");
+  await dialog.getByLabel("Value", { exact: true }).fill("55");
+  const sent = page.waitForRequest((req) => req.method() === "POST" && req.url().endsWith(`/api/equipment/${machine.id}/readings`));
+  await saveDialog(page, "Save");
+  expect(JSON.parse((await sent).postData())).not.toHaveProperty("taken_at");
+});
+
+test("S051: Log reading opens again with Now ticked, also after the time was emptied and the dialog closed (CR1-01)", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51reopen", { unit: UNIT, ownMeters: [["Run hours", {}], ["Oil temperature", {}]] });
+  await asPerson(page, "operator", `/equipment/${machine.id}`);
+  let dialog = await openLog(page, "Run hours");
+  await nowBox(dialog).uncheck();
+  await timeInput(dialog).fill(istLocal(90));
+  await timeInput(dialog).fill("");
+  await dialog.locator(".modal-footer").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+
+  dialog = await openLog(page, "Oil temperature");
+  await expect(nowBox(dialog)).toBeChecked();
+  await expect(timeInput(dialog)).toHaveAttribute("readonly", "");
+  expect([istLocal(0), istLocal(1)]).toContain(await timeInput(dialog).inputValue());
+});
+
+test("S051: Enter more readings starts the next round with Now ticked and the time of now (CR1-01)", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "s51more", { unit: UNIT, ownMeters: [["Run hours", {}]] });
+  await openSheet(page, "engineer");
+  const hours = sheetRow(sheetCard(page, machine), "Run hours");
+  const time = page.locator("input[type=datetime-local]");
+  await page.getByRole("checkbox", { name: "Now", exact: true }).uncheck();
+  await time.fill(istLocal(90));
+  await time.fill(""); // emptied: unticked, and the time sent is the server's
+  await rowInput(hours).fill("100");
+  await saveReadings(page).click();
+  await expect(hours.getByRole("status")).toHaveText("Saved");
+  await enterMore(page).click();
+  await expect(page.getByRole("checkbox", { name: "Now", exact: true })).toBeChecked();
+  await expect(time).toHaveAttribute("readonly", "");
+  expect([istLocal(0), istLocal(1)]).toContain(await time.inputValue());
 });

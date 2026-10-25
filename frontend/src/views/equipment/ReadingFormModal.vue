@@ -6,7 +6,7 @@
  * - A Yes / No meter: its question as the title and two large toggles, Yes and No. The user
  *   picks, then saves with the dialog's Save (decision 11), so a note typed after the answer is
  *   kept and a mis-tap is corrected before saving.
- * - Time taken is "Now · Change" (EventFields): Now sends no taken_at, so the server's clock
+ * - Time taken is the time with a Now tick (EventFields, S051): Now sends no taken_at, so the server's clock
  *   decides and a phone a few minutes off is never refused.
  *
  * The rules are the server's (meters_core): a refusal shows beside its field. With the database
@@ -28,6 +28,7 @@ const emit = defineEmits(["saved"]);
 
 const node = ref(null);
 const meter = ref(null);
+const opens = ref(0); // EventFields is keyed on it: every opening starts at "Now" (CR1-01)
 
 const { modal, form, saving, dirty, fieldError, modalError, openCreate, send } = useFormModal({
   path: "/api/equipment",
@@ -53,6 +54,7 @@ const saveDisabledReason = computed(() => (kind.value === "yes_no" && !form.valu
 function open(target, targetMeter) {
   node.value = target;
   meter.value = targetMeter;
+  opens.value++;
   openCreate();
 }
 
@@ -126,6 +128,7 @@ defineExpose({ open });
     </div>
 
     <EventFields
+      :key="opens"
       v-model:time="form.taken_at"
       :with-remark="false"
       time-label="Time taken"

@@ -18,7 +18,7 @@
  * (after resetForm(), which every node change runs), and Save sends repeat_of_id.
  *
  * S018 A1, *Already fixed*: a user holding ticket:restore at the node's site may tick "Already
- * fixed — back in service" and give the back-in-service time ("Now · Change", EventFields
+ * fixed — back in service" and give the back-in-service time (the time with a Now tick, EventFields
  * without the remark), who did the work (PersonPicker; pre-filled with his own person only when
  * he holds ticket:work there and is in the site's people list, BS2-04) and, optionally, when
  * work started (StartedAtFields). Save then sends them as `restore`; the server raises and
@@ -183,6 +183,8 @@ watch([fieldErrors, formError], () => {
   if (Object.keys(fieldErrors.value).length || formError.value) revealError(formEl.value);
 }, { flush: "post" });
 
+const restoreFieldKey = ref(0); // EventFields is keyed on it: a new form starts at "Now" (CR1-01)
+
 function blankForm() {
   return {
     intensity: "", failureModeId: "", description: "", occurredAt: toLocalInputValue(new Date()), reportedById: "",
@@ -193,6 +195,7 @@ function blankForm() {
 
 function resetForm() {
   form.value = blankForm();
+  restoreFieldKey.value++;
   timeTouched.value = false;
   fieldErrors.value = {};
   formError.value = "";
@@ -483,6 +486,7 @@ function done() {
             <div v-show="form.alreadyFixed" class="border-start border-3 ps-3 mt-2">
               <p class="form-text mb-2">Set <em>When did it happen?</em> above to when the machine stopped.</p>
               <EventFields
+                :key="restoreFieldKey"
                 v-model:time="form.restoreAt"
                 :with-remark="false"
                 :time-label="restoreTimeLabel(form.intensity)"

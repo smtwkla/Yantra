@@ -41,6 +41,7 @@ const loading = ref(false);
 const loadError = ref("");
 const now = ref(new Date());
 const takenAt = ref(null); // null = now: the server's clock
+const rounds = ref(0); // EventFields is keyed on it: every round starts at "Now" (CR1-01)
 const timeError = ref("");
 const saving = ref(false);
 const wantedSite = ref(null); // a site picked while typed readings exist, waiting for the answer
@@ -286,6 +287,7 @@ async function saveAll() {
 /** A new round: every row empty, Time taken back to now, the last readings reloaded (A1). */
 function enterMore() {
   takenAt.value = null;
+  rounds.value++;
   timeError.value = "";
   loadSheet(siteId.value);
 }
@@ -345,7 +347,7 @@ async function undo(row) {
       <template v-else-if="sheet">
         <div class="card mb-3">
           <div class="card-body pb-1">
-            <EventFields v-model:time="takenAt" :with-remark="false" time-label="Time taken" :time-error="timeError" :locked="roundDone" id-prefix="sheet" />
+            <EventFields :key="rounds" v-model:time="takenAt" :with-remark="false" time-label="Time taken" :time-error="timeError" :locked="roundDone" id-prefix="sheet" />
           </div>
         </div>
         <div class="small text-secondary mb-2" data-testid="read-today-count">{{ readToday }} of {{ rows.length }} read today</div>

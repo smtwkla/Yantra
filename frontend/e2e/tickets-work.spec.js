@@ -555,3 +555,18 @@ test("S036: open tickets are tinted by intensity (pink, yellow); a closed ticket
   await expect(stateBadge(page)).toHaveText("Closed");
   await expect(titleOf()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
+
+test("S051: a move dialog shows the time with Now ticked; a back-dated time typed after unticking is saved", async ({ page }) => {
+  const base = thisMinute();
+  const ticket = await raiseBreakdown(base, 120, "S051 test: extruder stopped");
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  const dialog = await openAction(page, "Acknowledge");
+  await expect(dialog.getByRole("checkbox", { name: "Now", exact: true })).toBeChecked();
+  await expect(dialog.locator("input[type=datetime-local]")).toHaveAttribute("readonly", "");
+  await expect(dialog.locator("input[type=datetime-local]")).not.toHaveValue("");
+  await setEventTime(dialog, istLocal(100, base)); // unticks Now, then types the time
+  await expect(dialog.locator("input[type=datetime-local]")).not.toHaveAttribute("readonly", "");
+  await saveDialog(page, "Acknowledge");
+  await expect(timeline(page).filter({ hasText: "Acknowledged" })).toContainText(shownTime(istLocal(100, base)));
+});
+

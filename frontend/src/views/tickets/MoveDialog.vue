@@ -4,7 +4,7 @@
  * acknowledge, start, back in service, send back, close, not a fault. The parent opens it
  * with an entry of the detail's `moves` ({name, default_person?, recording_as?}).
  *
- * Every dialog is short: the time as "Now · Change" and the remark (EventFields), plus only
+ * Every dialog is short: the time with a Now tick and the remark (EventFields), plus only
  * what the move needs:
  * - acknowledge / start: "Recording as <name>" (the person this move will assign) or
  *   "Nobody will be assigned" (BR4-04);

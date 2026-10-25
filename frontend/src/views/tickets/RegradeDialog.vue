@@ -2,7 +2,7 @@
 /**
  * Re-grade a ticket's intensity (docs/steps/S018-work-tickets/1-brief.md § 1 Re-grade):
  * - open("stopped"): the operator's *Machine stopped* on a defect — no choice of grades,
- *   "Breakdown from: Now · Change", the optional remark, Save *Machine stopped* (BR4-07);
+ *   "Breakdown from" with a Now tick, the optional remark, Save *Machine stopped* (BR4-07);
  * - open("change"): *Change severity* for ticket:work holders — the raise screen's large
  *   intensity buttons, only the grades the detail's `regrade_to` allows; the remark open and
  *   required when the chosen grade is lower (lowering ends downtime, BR4-01).

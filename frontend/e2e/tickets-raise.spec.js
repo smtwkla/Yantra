@@ -152,7 +152,7 @@ test("S018 A1: Already fixed with a start time; the fields fit and the ticket is
 
   // Who did the work: pre-filled with the technician's own person
   await expect(page.locator(".fw-semibold", { hasText: "Kannan (technician)" })).toBeVisible();
-  await page.locator("form").getByRole("button", { name: "Change", exact: true }).click();
+  await page.locator("#raise-restore-now").uncheck();
   await page.locator("#raise-restore-time").fill(restored);
   await page.getByLabel("Start date").fill(started.slice(0, 10));
   await page.locator("#raise-restore-started-time").fill(started.slice(11));

@@ -89,9 +89,9 @@ export async function openAction(page, name) {
   return openDialog(page);
 }
 
-/** "Now · Change" in a dialog: change the time to `value` ("YYYY-MM-DDTHH:MM"). */
+/** The time field with a Now tick (S051) in `dialog`: untick Now, then set the time to `value` ("YYYY-MM-DDTHH:MM"). */
 export async function setEventTime(dialog, value) {
-  await dialog.getByRole("button", { name: "Change", exact: true }).click();
+  await dialog.getByRole("checkbox", { name: "Now", exact: true }).uncheck();
   await dialog.locator("input[type=datetime-local]").fill(value);
 }
 
