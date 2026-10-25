@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: fix
-Status: Gate B (fix round 1: CR1-01…CR1-07 answered, test-only, no new review needed; suites green; e2e full 296 passed, 154 skipped, 0 failed; CR1-04 open box for KLA at 100 % scale, not blocking)
+Status: Done (committed 67a4b57, 25-10-2026; CR1-04 closed by KLA 25-10-2026: S046's full run shows the guard lets phone-webkit through at 390 px; #2 and #3 stay open flakes, cause unknown)
 Baseline: refs/steps/S039 + S040 (working tree, gate B pending)
 ```
 

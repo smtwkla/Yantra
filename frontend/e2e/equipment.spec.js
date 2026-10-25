@@ -33,7 +33,7 @@ test("S012: IT admin adds a manufacturer and a model of it", async ({ page }, te
   await expect(page.getByRole("row", { name: new RegExp(`${maker} X-100`) })).toBeVisible();
 });
 
-test("S003: the Add equipment dialog fits", async ({ page }) => {
+test("S003: the Add equipment dialog fits", { tag: "@device" }, async ({ page }) => {
   await asPerson(page, "engineer", "/equipment");
   await page.getByRole("button", { name: "Add equipment" }).click();
   await expectDialogFits(page);
@@ -41,7 +41,7 @@ test("S003: the Add equipment dialog fits", async ({ page }) => {
   await expectDialogFits(page);
 });
 
-test("S026: the server's refusal of a field at the bottom of the Add equipment dialog is on screen", async ({ page, consoleWatch }) => {
+test("S026: the server's refusal of a field at the bottom of the Add equipment dialog is on screen", { tag: "@device" }, async ({ page, consoleWatch }) => {
   consoleWatch.allowFailedRequest("/api/equipment", 400);
   await asPerson(page, "engineer", "/equipment");
   await page.getByRole("button", { name: "Add equipment" }).click();
@@ -174,7 +174,7 @@ test("S029: Down now lists only the red row and the URL carries it; Any ticket s
   await expect(rowOf(page, green)).toBeVisible();
 });
 
-test("S029: the bulb is in view without scrolling and the Tickets filter fits the screen", async ({ page }, testInfo) => {
+test("S029: the bulb is in view without scrolling and the Tickets filter fits the screen", { tag: "@device" }, async ({ page }, testInfo) => {
   const { prefix, red } = await lightMachines(testInfo, "fit");
   await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
   const bulb = rowOf(page, red).getByRole("img", { name: "Down — breakdown open" });

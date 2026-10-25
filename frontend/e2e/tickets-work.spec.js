@@ -120,7 +120,7 @@ test("engineer: Close waits for the labour; Add labour, then close with cause an
   }
 });
 
-test("S026: Add labour with no time spent scrolls the dialog to the message and puts the cursor in the hours field", async ({ page }, testInfo) => {
+test("S026: Add labour with no time spent scrolls the dialog to the message and puts the cursor in the hours field", { tag: "@device" }, async ({ page }, testInfo) => {
   const base = thisMinute();
   // Not on the extruder: the raise tests read its open-tickets list, which the API cuts at 50
   const ticket = await raiseByApi("supervisor", {
@@ -488,7 +488,7 @@ test("S034: a breakdown reads Put on hold; waiting for parts asks Check again by
   await expect(page.locator(".plan-line")).toHaveText(`check by ${shownDay(picked)} · waiting for parts`);
 });
 
-test("S034: a production slot labels the date Planned for, without the help; the reason is above the date", async ({ page }) => {
+test("S034: a production slot labels the date Planned for, without the help; the reason is above the date", { tag: "@device" }, async ({ page }) => {
   const ticket = await raiseByApi("operator", {
     equipment_id: seed.extruder.id, intensity: "degraded", description: "S034 test: slot label",
   });

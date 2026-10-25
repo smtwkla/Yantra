@@ -143,13 +143,24 @@ The rules:
   `- [auto] <check> — <test file>::<test name>`. Real-device checks go there as
   boxes, `- [ ] …` (important) or a plain list, and the coder appends them as
   rows to [`device-checks.md`](device-checks.md).
-- **The coder and the code reviewer** run the e2e tests whenever the frontend
-  or an API the screens use changed, and report the real result: the
-  **targeted** specs of the screens the step changed plus `screens.spec.js`;
-  the **full** suite only when the step changes shared frontend code
-  (`FormModal.vue`, `useFormModal.js`, `api.js`, the router, the auth store,
-  `e2e/support/`). The user runs the full suite once before each release
-  (decided 22-10-2026).
+- **The levels** (S047). `tooling/run-e2e-tests.bat` runs at one of three
+  levels. **Basic** (`--level=basic`): the `@smoke` tests (four journeys and
+  `screens.spec.js`) on the Android phone, about 2 minutes. **Normal** (no
+  flag): every test on the Android phone, and the `@device` tests (layout
+  checks, tests that differ by device) on desktop. **Full**
+  (`--level=full`): every test on the Android phone, the iPhone and desktop.
+- **The coder** runs the e2e tests whenever the frontend or an API the
+  screens use changed, and reports the real result. It makes targeted runs
+  (Normal with the spec files of the screens the step changed, plus
+  `screens.spec.js`) as often as it needs, and may run Basic for a quick
+  whole-app check. It runs the whole suite at Normal once, when the coding is
+  done, and again only with a reason it states. In a fix round it makes
+  targeted runs only.
+- **The code reviewer** never runs the whole suite. It re-runs only the
+  specs one of its own findings needs.
+- **The Full level** runs only in the release (`tooling/release-tests.bat`
+  runs it after the unit suites, on the same worktree of HEAD) and when KLA
+  asks.
 - **`device-checks.md`** is the master list of open real-device checks, one row
   per check in plain words: what to do and see, account, network, where (the
   dev server on KLA's laptop, production on the TEST machine, or either) and
@@ -338,13 +349,17 @@ terminal, with each role as a subagent (`.claude/agents/`):
 | S037 | [Meters master](S037-meters-master/1-brief.md) — meter types in Masters: name, unit, counter or gauge | 4 | Done — committed c2c802f (with S038); checks: 4 auto | 24-10-2026 |
 | S038 | [Meters on models and equipment](S038-meters-on-models-equipment/1-brief.md) — a model lists its meters with default gauge limits; every equipment of the model has them, may override limits and add its own | 4 | Done — committed c2c802f (with S037); checks: 6 auto | 24-10-2026 |
 | S039 | [Meter reading entry](S039-meter-reading-entry/1-brief.md) — readings per equipment (page, QR) with their history; counter and limit rules; v32 `meter_readings` | 4 | Committed 984761a; checks: 8 auto; row 32 (important) open | 24-10-2026 |
-| S040 | [End-of-day readings sheet](S040-readings-sheet/1-brief.md) — every meter of a unit on one screen, saved row by row, for the press supervisors and the genset round; a *Readings* nav item; built on S039 | 4 | Committed c6e74a1 (base); row 33 (important) open; A1 at gate B | 24-10-2026 |
+| S040 | [End-of-day readings sheet](S040-readings-sheet/1-brief.md) — every meter of a unit on one screen, saved row by row, for the press supervisors and the genset round; a *Readings* nav item; built on S039 | 4 | Committed c6e74a1, A1 b4af1d0; row 33 (important) open | 24-10-2026 |
 | S041 | [S033's e2e test isolated from the seed extruder](S041-s033-e2e-isolation/1-brief.md) — the S033 test adds its part under its own equipment, not the shared seed extruder that the label checks count (fix lane, from S035 CR2-01) | 3 | Done — committed 7618839 | 24-10-2026 |
 | S042 | [S034's quick-pick e2e test finds its row by serial](S042-s034-e2e-row-by-serial/1-brief.md) — the test counted rows by a shared description, so two projects on one database made it fail (fix lane, from S036 CR2; D13) | 3 | Done — committed d6b305b | 24-10-2026 |
 | S043 | [Equipment properties: master, classes and models](S043-equipment-properties/1-brief.md) — technical data defined once in Masters (number with unit, choice, text, yes/no), linked to classes, valued on models; read-only card on the equipment page; ISO 14224 Annex A seed; v31. Ported from branch `claude/component-unit-hierarchy-tfa3gg` (there S035, v26) | 2 | Done — committed f8998ab; checks: 15 auto | 24-10-2026 |
-| S044 | [Property overrides on equipment items](S044-property-overrides/1-brief.md) — an item's own value of a property where its nameplate differs, shown as this machine's and logged in its history; the only values of a component-unit without a model; v33 `equipment_property_values` | 3 | Gate B | 25-10-2026 |
-| S045 | [The known flaky tests made steady](S045-flaky-tests/1-brief.md) — five tests that failed at random (S016 deactivate, S018 A1 raise, S020 part line, S019 overdue after midnight, the push redirect test on Windows), test code only (fix lane) | 3 | Gate B | 25-10-2026 |
-| S046 | [iPhone browser tests in a Docker container](S046-webkit-in-docker/1-brief.md) — the phone-webkit project connects to a WebKit `run-server` in Playwright's official image (exposeNetwork to the host's lanes), so the Windows display scale no longer narrows the iPhone window; one command as today | — | Gate B | 25-10-2026 |
+| S044 | [Property overrides on equipment items](S044-property-overrides/1-brief.md) — an item's own value of a property where its nameplate differs, shown as this machine's and logged in its history; the only values of a component-unit without a model; v33 `equipment_property_values` | 3 | Done | 25-10-2026 |
+| S045 | [The known flaky tests made steady](S045-flaky-tests/1-brief.md) — five tests that failed at random (S016 deactivate, S018 A1 raise, S020 part line, S019 overdue after midnight, the push redirect test on Windows), test code only (fix lane) | 3 | Done — committed 67a4b57; #2, #3 still open flakes | 25-10-2026 |
+| S046 | [iPhone browser tests in a Docker container](S046-webkit-in-docker/1-brief.md) — the phone-webkit project connects to a WebKit `run-server` in Playwright's official image (exposeNetwork to the host's lanes), so the Windows display scale no longer narrows the iPhone window; one command as today | — | Done | 25-10-2026 |
+| S047 | [Browser test levels: Basic, Normal, Full](S047-test-levels/1-brief.md) — tags `@smoke` / `@device`; logic tests once on the Android phone, layout on every device; four journey tests; lanes planned from measured times; the release runs Full (the iPhone only there) | — | Gate B | 25-10-2026 |
+| S050 | [Meter reading register](S050-reading-register/1-brief.md) — every reading of one node as a table: a row per reading time (newest first), a column per meter (one, some or all); a *Register* tab on *Readings* and a button on the *Meters* card; *Readings* opens to every `equipment:read` holder | 4 | Approved 25-10-2026 | 25-10-2026 |
+| S051 | [The time field shows the time, with a Now tick](S051-time-field-now-tick/1-brief.md) — the shared time field (readings, tickets) always shows a date and time; a *Now* check box to its right makes it read-only and leaves the time to the server (light track) | — | Approved 25-10-2026 | 25-10-2026 |
+| S052 | [Meter readings on the ticket](S052-ticket-meters/1-brief.md) — a *Meters* card on the ticket page: each meter of the machine and the part as it stood when the fault happened (last reading at or before, with its age), a 7-day High / Low / Not OK warning, and a *Register* link to S050; no migration | 4 | Approved 25-10-2026 (coded after S050) | 25-10-2026 |
 
 ## Queued (not yet briefed)
 
@@ -354,7 +369,7 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 | Idea | From | Note |
 |---|---|---|
 | Auth hardening — audit 21-10-2026 [7] key-list evict-and-retry, [8] typed input lost on a failed token refresh and no leave guard on full-page forms, [11] access-change trail, [12] network gate verified in production, [16] token checks, [17] file cache headers, [18] the 503 body shows the DB error, [19] nginx headers and timeouts, [20] dev servers listen on the LAN, and the auth test gaps of [28] | S025 § 1.8, user 21-10-2026 | About a day |
-| Tidy-up — audit 21-10-2026 [13] DRY near-copies and backend rules in the frontend, [14] role fixtures drifted, [21]–[27], and the remaining test gaps of [28]; the Masters tables' active / inactive column headed *Active*, not *Status* (the glossary reserves *Status* since S030; S030 CR1-04, user 23-10-2026) | S025 § 1.8, user 21-10-2026 | About a day |
+| Tidy-up — audit 21-10-2026 [13] DRY near-copies and backend rules in the frontend, [14] role fixtures drifted, [21]–[27], and the remaining test gaps of [28]; the Masters tables' active / inactive column headed *Active*, not *Status* (the glossary reserves *Status* since S030; S030 CR1-04, user 23-10-2026); the ticket page's load-failure button *Retry* renamed *Try again* (S052 § 9 item 5, KLA 25-10-2026) | S025 § 1.8, user 21-10-2026 | About a day |
 | Module and schema docs — audit 21-10-2026 [15]: one current doc per module and one schema doc, instead of ~9 superseding texts per area; "module doc updated" in the Done gate | S025 § 1.8 | About 2 days; until then v20 (`local_db.py`) is the readable schema |
 | Safe migrations — a backup before every deploy through the devops repo's `erp_spanner.py backup` convention (S025 BR3-01 option a), a tested restore (ISO 27001 A 8.13), and guards for migrations that could corrupt existing data | S025 U2, user 21-10-2026 ("we will work on [MIGRATE causing data corruption] later on") | Builds on S025's `_PRECONDITIONS`; the devops repo changes |
 | Image SBOM at build — an SBOM of each built image (base image, OS packages, venv), stored with the image in GHCR. Candidate: Docker's built-in `docker build --sbom=true` (SPDX; needs the containerd image store), no third-party scanner; `BUILDKIT_SBOM_SCAN_STAGE` to see the frontend's bundled libraries | S022 U1, user 18-10-2026 (keep both repo and image checks) | Each repo's build script changes; any shared part in `smtw-common` |
@@ -366,3 +381,6 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 | Shared unit-access helper — the "`accessible_unit_ids` → None / empty set / `IN (…)`" block is repeated in four list routes (equipment list, labels, asset list, removed documents); one helper | S015 CR1-03, user 20-10-2026 | Small tidy-up; S017's ticket list adds a fifth use, so do it with or after S017 |
 | Correct an event time on a ticket — engineer, reason required, a timeline line old → new, the order rule re-checked; the times recompute from the events | S018 BR1-06, 20-10-2026 | Event times are final once written in S018 |
 | Drop the legacy `user_units` table | S011 A1, 16-10-2026 | After S011 is live and a rollback is no longer wanted (S011 A1 rule 3) |
+| S048 What's new — each version's notes, shown once to admin, IT admin and engineers after a deploy (needs a migration: who has seen which version) | user, 25-10-2026 | Before S049, which drafts its text |
+| S049 Pre-flight skill — before a release: `/step check`, then a draft of the next version's What's new text from the commits since the last tag; does not run the tests (the release does) | user, 25-10-2026 | After S048 |
+| S053 Machine check before browser runs — power source, power mode and processor throttling (CPU temperature is not readable without the maker's driver); the lane runner lowers the lane count on battery, energy saver or a slowed processor and says why; an explicit `E2E_LANES` wins. Also sampled every 30 s during a run: the battery draining while on mains (`root/wmi BatteryStatus`: `PowerOnline` with `DischargeRate` > 0) means the charger is too weak (KLA's Thunderbolt dock; full speed only with the barrel adapter) → "The charger is too weak for this load: the battery drains on mains power. Connect the barrel adapter.", recorded in the run's report; the next run takes fewer lanes. On the dock alone Windows shows "Slow charging" (KLA): to verify whether a script can read that flag (the USB-C/UCSI event log, or the laptop maker's WMI adapter wattage); if so, it is the first check, and the drain check the fallback. **CPU temperature: readable from Core Temp** (KLA runs it): its shared memory `CoreTempMappingObject` read from Python stdlib `mmap` worked on 25-10-2026 (i9-13950HX, 24 cores, TjMax 100, one core 100.5 °C at 28 % load; probe `scratch/coretemp-probe.py`); hottest core above about 90 °C → fewer lanes with the reason, the peak during the run in the report; Core Temp not running → the processor-speed check | user, 25-10-2026 (a hot room, energy saver and the dock's USB-C power slowed the tests) | Light; after S047 (same runner) |

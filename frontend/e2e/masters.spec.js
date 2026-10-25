@@ -139,7 +139,7 @@ for (const section of [
   });
 }
 
-test("operator: the failure codes are read-only, and the lists fit a phone", async ({ page }) => {
+test("operator: the failure codes are read-only, and the lists fit a phone", { tag: "@device" }, async ({ page }) => {
   await openFailureCodes(page, "operator");
   for (const list of ["Modes", "Causes", "Actions"]) {
     await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: list }).click();

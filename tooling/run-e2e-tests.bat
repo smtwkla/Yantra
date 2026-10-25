@@ -2,11 +2,20 @@
 :: Browser tests (S024): Playwright drives the real screens on phone and desktop against the
 :: e2e backend (127.0.0.1:5002, database vel_yantra_e2e, rebuilt at every run) and its own
 :: Vite (5177). Needs the dev DB container (tooling\dev\dev-db-up.bat). Not part of
-:: run-tests.bat or the release. Extra arguments go to Playwright (e.g. a spec file, or
-:: --project=phone-chromium). Exit 0 green, 1 a failure (as Playwright).
+:: run-tests.bat; the release runs it at the Full level (tooling\release-tests.bat).
+:: Usage: run-e2e-tests.bat [--level=...] [spec files] [other Playwright arguments]
+:: Levels (S047; tooling\e2e\run_lanes.py):
+::   basic   the @smoke tests (journeys.spec.js, screens.spec.js) on phone-chromium; about 2 min
+::   normal  the default: every test on phone-chromium, the @device tests on desktop-chromium;
+::           with spec files named, the targeted run
+::   full    every test on all three projects, phone-webkit included (the release; KLA asks)
+:: A --project you name wins over the level's devices, with no @device filter. Basic refuses -g.
+:: Exit 0 green, 1 a failure (as Playwright).
 :: Lanes: the tests run in E2E_LANES parallel lanes (default 6), each on its own database,
-:: backend and Vite (tooling\e2e\run_lanes.py; lane logs in scratch\e2e-lanes\). E2E_LANES=1 runs
-:: the single stack above.
+:: backend and Vite, planned from the measured time per spec file and project
+:: (scratch\e2e-timings.json of the main working folder; lane logs in scratch\e2e-lanes\).
+:: E2E_LANES=1 runs the single stack above. One run at a time per machine (scratch\e2e-run.lock
+:: of the main working folder, also for a run from the release's worktree).
 :: iPhone tests (S046): phone-webkit runs in a Docker container (Playwright's image, port 3999 on
 :: 127.0.0.1; the first run pulls about 2.5 GB), so a scaled Windows display cannot shrink the
 :: window. E2E_WEBKIT=native runs WebKit on Windows instead.

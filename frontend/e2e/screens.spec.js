@@ -76,7 +76,7 @@ const screens = () => [
 ];
 
 for (const key of EVERYONE) {
-  test(`every screen opens as ${key}`, async ({ page }) => {
+  test(`every screen opens as ${key}`, { tag: ["@smoke", "@device"] }, async ({ page }) => {
     await asPerson(page, key);
     for (const screen of screens().filter((s) => s.who.includes(key))) {
       await test.step(screen.path, async () => {
@@ -89,7 +89,7 @@ for (const key of EVERYONE) {
   });
 }
 
-test("a request that lost its test headers gets no access, never admin", async ({ page }) => {
+test("a request that lost its test headers gets no access, never admin", { tag: ["@smoke", "@device"] }, async ({ page }) => {
   // No asPerson: the e2e backend's stub user is "nobody" (S024 § 5.1)
   const meResponse = page.waitForResponse((r) => r.url().endsWith("/api/auth/me"));
   await page.goto("/");
@@ -100,7 +100,7 @@ test("a request that lost its test headers gets no access, never admin", async (
 });
 
 // S040 (S039 BR1-14): the manager has six nav items; on a phone the bottom bar shows them all, inside the screen
-test("S040: the manager's bottom bar shows all six items without sideways scroll", async ({ page }) => {
+test("S040: the manager's bottom bar shows all six items without sideways scroll", { tag: ["@smoke", "@device"] }, async ({ page }) => {
   await asPerson(page, "manager");
   const nav = page.locator(".app-bottom-nav");
   test.skip(!(await nav.isVisible()), "the bottom bar is a phone screen");

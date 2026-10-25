@@ -3,6 +3,7 @@ files: the pure functions only."""
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "steps"))
@@ -82,14 +83,30 @@ class TestE2e:
         commands = ['cmd //c "tooling/run-e2e-tests.bat"', "tooling/run-e2e-tests.bat e2e/notifications.spec.js",
                     "tooling/run-tests.bat", "cat tooling/run-e2e-tests.bat", "grep -n lanes tooling/run-e2e-tests.bat",
                     'cd /c/x && cmd //c "tooling/run-e2e-tests.bat e2e/a.spec.js" > out.txt']
-        assert step_stats.e2e_invocations(commands) == (1, 2)
+        assert step_stats.e2e_invocations(commands) == (0, 0, 2, 1)
+        # Before S047 a run with no spec file is the whole suite on three devices: full
+        assert step_stats.e2e_invocations(commands, datetime(2026, 10, 24, 9, 0, tzinfo=timezone.utc)) == (0, 0, 2, 1)
+
+    def test_invocations_by_level_after_s047(self):
+        """BR2-03: from S047 on no flag is Normal; a spec file is targeted at any level."""
+        after = datetime(2026, 10, 26, 9, 0, tzinfo=timezone.utc)
+        commands = ['cmd //c "tooling/run-e2e-tests.bat"', "tooling/run-e2e-tests.bat --level=basic",
+                    "tooling/run-e2e-tests.bat --level=full", "tooling/run-e2e-tests.bat --level=normal",
+                    "tooling/run-e2e-tests.bat --level=full e2e/labels.spec.js",
+                    "tooling/run-e2e-tests.bat e2e/me.spec.js --project=desktop-chromium"]
+        assert step_stats.e2e_invocations(commands, after) == (1, 2, 2, 1)
+
+    def test_the_runs_cell_sums_each_level(self):
+        runs = [step_stats.Run("S047", "coder", "x", e2e_basic=1, e2e_normal=2, e2e_targeted=5),
+                step_stats.Run("S047", "code-reviewer", "y", e2e_targeted=1, e2e_full=1)]
+        assert step_stats.e2e_runs_text(runs) == "1/2/6/1"
 
 
 def test_invocations_in_subshells_and_with_a_timeout():
     commands = ["(tooling/run-e2e-tests.bat > scratch/e2e.log 2>&1; echo EXIT $? >> scratch/e2e.log)",
                 "cd /c/x; timeout 580 tooling/run-e2e-tests.bat e2e/equipment.spec.js e2e/screens.spec.js",
                 "until grep -q EXIT scratch/e2e.log; do sleep 20; done"]
-    assert step_stats.e2e_invocations(commands) == (1, 1)
+    assert step_stats.e2e_invocations(commands) == (0, 0, 1, 1)
 
 
 def test_nits_as_a_short_list_are_counted():

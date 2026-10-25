@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026 (revised 25-10-2026: brief-review r1, r2)
 Track: full
-Status: Gate B (CR r1: 0 blocker, 0 major, 1 minor, 1 nit — all fixed; verify review r2: 0 blocker, 0 major, 0 minor, 1 nit — CR2-01 kept as is by KLA (option A); snapshot refs/steps/S044 ee39fb5; no device checks) (approved 25-10-2026 by KLA; open questions 1–6 accepted as proposed)
+Status: Done (committed 4d89084, 25-10-2026; CR2-01 kept as is by KLA, option A; no device checks) (approved 25-10-2026 by KLA; open questions 1–6 accepted as proposed)
 Baseline: 5731712 (stale check 25-10-2026: since the approved baseline, only S040 A1 and S045 changed code; of the files this brief names, `frontend/e2e/masters.spec.js` changed in S045's deactivate test and `docs/Plan.MD` in S040's line, neither used by S044; no staleness review needed)
 ```
 

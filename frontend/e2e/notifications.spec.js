@@ -101,7 +101,7 @@ test("S021: My notifications opens for every seed person in Team and offers Turn
   await expect(page.getByText(/Notifications are on for this phone|could not turn notifications on/)).toBeVisible();
 });
 
-test("S021: on an iPhone outside the Home Screen the page explains Add to Home Screen, and the bell has its dot", async ({ page }, testInfo) => {
+test("S021: on an iPhone outside the Home Screen the page explains Add to Home Screen, and the bell has its dot", { tag: "@device" }, async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== WEBKIT, "the iPhone 14 project only");
   await asPerson(page, "engineer", "/notifications");
   await expect(page.getByText("Add Yantra to the Home Screen, then open it from the icon.")).toBeVisible();
@@ -109,7 +109,7 @@ test("S021: on an iPhone outside the Home Screen the page explains Add to Home S
   await expect(dot(page)).toBeVisible();
 });
 
-test("S021: a browser that blocked notifications is told how to unblock them", async ({ page }, testInfo) => {
+test("S021: a browser that blocked notifications is told how to unblock them", { tag: "@device" }, async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== DESKTOP, "desktop Chromium: Playwright cannot deny a permission, so it is stubbed");
   await page.addInitScript(() => {
     Object.defineProperty(Notification, "permission", { get: () => "denied" });
@@ -238,7 +238,7 @@ test("S021: Settings › Notifications — IT admin changes B, it stays after a 
   }
 });
 
-test("S021: the manifest is served and parses; the service worker registers", async ({ page }, testInfo) => {
+test("S021: the manifest is served and parses; the service worker registers", { tag: "@device" }, async ({ page }, testInfo) => {
   await asPerson(page, "engineer", "/equipment");
   const res = await page.request.get("/manifest.webmanifest");
   expect(res.ok()).toBe(true);

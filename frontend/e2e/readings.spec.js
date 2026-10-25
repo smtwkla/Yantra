@@ -392,7 +392,7 @@ test("S040: a Yes / No row answered No saves and shows Not OK", async ({ page },
   }
 });
 
-test("S040: Save readings is disabled while saving, and the bar is above the bottom nav", async ({ page }, testInfo) => {
+test("S040: Save readings is disabled while saving, and the bar is above the bottom nav", { tag: "@device" }, async ({ page }, testInfo) => {
   const machine = await meterMachine(testInfo, "s40wait", { unit: UNIT, ownMeters: [["Run hours", {}]] });
   let release;
   const held = new Promise((resolve) => { release = resolve; });

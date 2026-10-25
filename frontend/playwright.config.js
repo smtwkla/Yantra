@@ -2,13 +2,40 @@
 // (tooling/e2e/e2e_backend.py, port 5002, a throw-away database rebuilt at every start)
 // through its own Vite (5177), so the dev servers on 5001 / 5176 keep running untouched.
 // Run with tooling/run-e2e-tests.bat.  Report, traces and screenshots: scratch/e2e-report/.
-// Lanes (tooling/e2e/run_lanes.py): with E2E_LANE=<n> this run is one shard of several, on its
+// Lanes (tooling/e2e/run_lanes.py): with E2E_LANE=<n> this run is one lane of several, on its
 // own stack (stack.js); it writes a blob report that the runner merges into the one HTML report.
+// Levels (S047): E2E_LEVEL=normal (set by run_lanes.py when the level chose the projects) runs only
+// the @device tests on desktop-chromium; the logic tests run on phone-chromium.  E2E_LANE_PLAN
+// (JSON {project: [spec files]}, run_lanes.py's plan for this lane) keeps only the plan's projects,
+// each with its own files.
 import { defineConfig, devices } from "@playwright/test";
 import { BACKEND_URL, FRONTEND_PORT, FRONTEND_URL, LANE_NAME } from "./e2e/support/stack.js";
 
 const REPORT_DIR = "../scratch/e2e-report";
 const LANE_SUFFIX = LANE_NAME ? `-${LANE_NAME}` : "";
+const LANE_PLAN = process.env.E2E_LANE_PLAN ? JSON.parse(process.env.E2E_LANE_PLAN) : null;
+const DEVICE_ONLY = process.env.E2E_LEVEL === "normal" ? ["desktop-chromium"] : [];
+
+const PROJECTS = [
+  { name: "phone-chromium", use: { ...devices["Pixel 7"] } },
+  // WebKit is Safari's engine, not iOS Safari itself: no on-screen keyboard, no camera (§ 7.7)
+  // With E2E_WEBKIT_WS (set by run_lanes.py, S046) the browser runs in a Linux container, where
+  // the window is exactly 390 px; exposeNetwork carries its requests to 127.0.0.1 back to the host
+  {
+    name: "phone-webkit",
+    use: {
+      ...devices["iPhone 14"],
+      ...(process.env.E2E_WEBKIT_WS
+        ? { connectOptions: { wsEndpoint: process.env.E2E_WEBKIT_WS, exposeNetwork: "<loopback>" } }
+        : {}),
+    },
+  },
+  { name: "desktop-chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } } },
+]
+  .map((project) => (DEVICE_ONLY.includes(project.name) ? { ...project, grep: /@device/ } : project))
+  .filter((project) => !LANE_PLAN || project.name in LANE_PLAN)
+  // A plain file name in testMatch matches as **/<name>
+  .map((project) => (LANE_PLAN ? { ...project, testMatch: LANE_PLAN[project.name] } : project));
 
 export default defineConfig({
   testDir: "./e2e",
@@ -32,22 +59,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [
-    { name: "phone-chromium", use: { ...devices["Pixel 7"] } },
-    // WebKit is Safari's engine, not iOS Safari itself: no on-screen keyboard, no camera (§ 7.7)
-    // With E2E_WEBKIT_WS (set by run_lanes.py, S046) the browser runs in a Linux container, where
-    // the window is exactly 390 px; exposeNetwork carries its requests to 127.0.0.1 back to the host
-    {
-      name: "phone-webkit",
-      use: {
-        ...devices["iPhone 14"],
-        ...(process.env.E2E_WEBKIT_WS
-          ? { connectOptions: { wsEndpoint: process.env.E2E_WEBKIT_WS, exposeNetwork: "<loopback>" } }
-          : {}),
-      },
-    },
-    { name: "desktop-chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } } },
-  ],
+  projects: PROJECTS,
   // Never reused: a server left running has not been reset
   webServer: [
     {
@@ -61,7 +73,8 @@ export default defineConfig({
       url: FRONTEND_URL,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { YANTRA_API_URL: BACKEND_URL },
+      // Its own dependency cache per stack (vite.config.js cacheDir, S047)
+      env: { YANTRA_API_URL: BACKEND_URL, E2E_VITE_CACHE_DIR: `../scratch/e2e-vite${LANE_SUFFIX}` },
     },
   ],
 });

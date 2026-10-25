@@ -107,8 +107,9 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
   2. Ask the user only if the cause is unclear, or the bug has two fixes that
      behave differently. Then the step leaves the fix lane.
   3. Spawn `coder` (Sonnet) for the step. It writes the failing test first
-     (*red, then green*), runs the full suite, and runs the targeted e2e
-     specs when a screen changed.
+     (*red, then green*), runs the full unit suites, and makes targeted e2e
+     runs when a screen changed (the whole e2e suite at Normal once at the
+     end, as in § Phase 2 step 3).
   4. One `code-reviewer` round (Opus). Every finding is fixed (§ Phase 2
      step 3). A `blocker` or `major` gets the usual loop.
   5. Gate B, short: the bug, its cause, the change, the tests, "ready to
@@ -311,11 +312,22 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      - Tell the coder this in every spawn prompt. Before gate B, check the
        impl report's `## Docs updated` against the diff yourself.
 3. **Code-review loop.**
-   - **Browser runs are not repeated** (standing rule, 25-10-2026, by KLA).
-     The coder runs the e2e specs the step needs (targeted, or the full suite
-     for shared code) and records the exact counts in the impl report. The
-     reviewer relies on that run and re-runs only the specs a finding of its
-     own needs checked; tell it so in the spawn prompt.
+   - **Browser runs at their level** (standing rule, 25-10-2026, by KLA;
+     levels S047). `tooling/run-e2e-tests.bat` has three levels: **Basic**
+     (`--level=basic`: the `@smoke` journeys and `screens.spec.js` on
+     `phone-chromium`, about 2 minutes), **Normal** (no flag: every test on
+     `phone-chromium`, the `@device` tests on `desktop-chromium`) and
+     **Full** (`--level=full`: every test on all three devices, the iPhone
+     in its container). The coder makes targeted runs (Normal with spec
+     files) as often as it needs, and may run Basic for a quick whole-app
+     check. It runs the whole suite at Normal once, when the coding is done,
+     and again only with a reason it states in the report. In a fix round it
+     makes targeted runs only. It records the exact counts in the impl
+     report. The code reviewer never runs the whole suite: it relies on the
+     coder's run and re-runs only the specs one of its own findings needs;
+     tell it so in the spawn prompt. The Full level runs only in the release
+     (`tooling/release-tests.bat` runs it after the unit suites) and when
+     KLA asks.
    - Spawn `code-reviewer` with the step ID and the round number. From
      round 2 on it verifies the fix round only (its *Round 2 and later* rule):
      name the findings the fix round addressed.
@@ -360,7 +372,7 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      the user asks;
    - each finding held back for the user (step 3), with the question it
      raises;
-   - the e2e result (`tooling/run-e2e-tests.bat`: which specs ran — targeted, or the full suite for shared code — and the result) and the `[auto]` checks as
+   - the e2e result (`tooling/run-e2e-tests.bat`: the coder's whole-suite run at Normal at the end of coding, the targeted runs of the fix rounds, and the results) and the `[auto]` checks as
      passed tests, each with its test;
    - the real-device checks: the **important** ones as the checklist from the
      impl report's `## Manual checks`, the rest as a plain list, and that their
@@ -444,7 +456,8 @@ same time in its own git worktree, so two long steps don't wait on each other.
   Tell the coder its folder; it runs every command there. It needs its own
   test run name (as always) and the repo's dependency set-up (see the repo's
   `CLAUDE.md`; e.g. `uv sync`, and `node_modules` linked by a junction).
-  Browser tests still take turns: the e2e lock is per machine.
+  Browser tests still take turns: the e2e lock is per machine (in the main
+  working folder's `scratch/`, so a worktree's run waits for it too, S047).
 - **Shared step docs.** In a worktree the coder edits no shared step doc:
   not the README index, not `device-checks.md`. It writes the changes it
   needs, word for word, in its impl report under `## Shared docs`; the

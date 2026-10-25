@@ -135,7 +135,7 @@ test("S031: the storekeeper has no Me item, and /me lands on Equipment", async (
   await expect(page).toHaveURL(/\/equipment$/);
 });
 
-test("S031: the three tabs fit the screen width", async ({ page }) => {
+test("S031: the three tabs fit the screen width", { tag: "@device" }, async ({ page }) => {
   await asPerson(page, "technician", "/me");
   for (const name of ["Open work", "Raised by me", "My activity"]) {
     await expect(tabButton(page, name)).toBeInViewport();

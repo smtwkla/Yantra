@@ -19,14 +19,19 @@ Sources:
 
 E2E time is an estimate from what the runs printed: the lane runner's "All lanes done in N s",
 or before the lanes Playwright's "N passed (1.2m)" for a run of 40 tests or more.  A run that
-printed neither counts as a run of unknown time."""
+printed neither counts as a run of unknown time.
+
+E2E runs are counted by level (S047): b/n/t/f = basic / normal / targeted / full.  A run that
+names a spec file is targeted, at any level; otherwise --level=basic, --level=full, or no flag:
+normal from S047's runner on (LEVELS_SINCE), full before it, when the wrapper always ran every
+test on three devices."""
 
 import json
 import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from step_facts import ROOT, STEPS_DIR, gather, header_value
@@ -50,6 +55,10 @@ SEGMENT_LEAD = re.compile(r'^(?:timeout\s+\d+\s+|cmd(?:\.exe)?\s+//?c\s+|call\s+
 E2E_WRAPPER = re.compile(r"^[\w./\\:-]*run-e2e-tests\.bat\b", re.IGNORECASE)
 E2E_MIN_TESTS = 40                         # a smaller "N passed (…)" is a unit-test run
 SPEC_ARG = re.compile(r"\.spec\.js\b")
+LEVEL_ARG = re.compile(r"--level=(basic|normal|full)\b")
+# S047's runner was first used at 11:20 IST on 25-10-2026: a run of the wrapper with no spec file
+# and no --level before it ran the whole suite on three devices (full), after it at Normal
+LEVELS_SINCE = datetime(2026, 10, 25, 5, 50, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -138,19 +147,28 @@ def e2e_seconds(texts):
     return runs
 
 
-def e2e_invocations(commands):
-    """Bash commands -> (full runs, targeted runs) of tooling/run-e2e-tests.bat."""
-    full = targeted = 0
+def e2e_invocations(commands, started=None):
+    """Bash commands of a run that started at `started` -> (basic, normal, targeted, full) runs of
+    tooling/run-e2e-tests.bat.  No --level is normal from LEVELS_SINCE on, full before it."""
+    counts = {"basic": 0, "normal": 0, "targeted": 0, "full": 0}
+    unflagged = "normal" if started is not None and started >= LEVELS_SINCE else "full"
     for command in commands:
         for segment in SEGMENT_SPLIT.split(command):
             segment = SEGMENT_LEAD.sub("", segment.strip())
             if not E2E_WRAPPER.match(segment):
                 continue
+            level = LEVEL_ARG.search(segment)
             if SPEC_ARG.search(segment):
-                targeted += 1
+                counts["targeted"] += 1
             else:
-                full += 1
-    return full, targeted
+                counts[level.group(1) if level else unflagged] += 1
+    return counts["basic"], counts["normal"], counts["targeted"], counts["full"]
+
+
+def e2e_runs_text(runs):
+    """The "b/n/t/f" cell of E2E runs, summed over `runs`."""
+    return "/".join(str(sum(getattr(run, f"e2e_{kind}") for run in runs))
+                    for kind in ("basic", "normal", "targeted", "full"))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -167,8 +185,10 @@ class Run:
     ended: datetime = None
     tokens: dict = field(default_factory=dict)
     tool_calls: int = 0
-    e2e_full: int = 0
+    e2e_basic: int = 0
+    e2e_normal: int = 0
     e2e_targeted: int = 0
+    e2e_full: int = 0
     e2e_seconds: list = field(default_factory=list)
 
     @property
@@ -220,7 +240,7 @@ def read_run(meta_path):
         texts.extend(_tool_texts(content))
     if times:
         run.started, run.ended = min(times), max(times)
-    run.e2e_full, run.e2e_targeted = e2e_invocations(commands)
+    run.e2e_basic, run.e2e_normal, run.e2e_targeted, run.e2e_full = e2e_invocations(commands, run.started)
     run.e2e_seconds = e2e_seconds(texts)
     return run
 
@@ -290,11 +310,11 @@ def build_report(only_step=None):
            f"Built {datetime.now():%d-%m-%Y %H:%M} by `tooling/step-stats.bat` from the step files and "
            f"{len(runs)} stored subagent runs. Findings are blocker / major / minor / nit. Tokens in "
            "millions: *fresh* = new input + cache writes + output (the costly part), *read* = cache "
-           "reads. E2E minutes count only the runs whose total was printed into the transcript (a lower bound: a background run read with grep shows none); E2E runs counts every start of the wrapper.", ""]
+           "reads. E2E minutes count only the runs whose total was printed into the transcript (a lower bound: a background run read with grep shows none); E2E runs counts every start of the wrapper, by level: b/n/t/f = basic / normal / targeted (spec files named) / full.", ""]
 
     out += ["## Per step", "",
             "| Step | Track | BR | BS | CR | Brief findings | Code findings | Rejected | Runs | Agent h | "
-            "Fresh Mtok | Read Mtok | E2E runs (full/targeted) | E2E min |",
+            "Fresh Mtok | Read Mtok | E2E runs (b/n/t/f) | E2E min |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     totals = defaultdict(lambda: defaultdict(int))
     late = []
@@ -322,14 +342,12 @@ def build_report(only_step=None):
             for k, v in run.tokens.items():
                 tokens[k] += v
         hours = sum(r.minutes for r in step_runs) / 60
-        full = sum(r.e2e_full for r in step_runs)
-        targeted = sum(r.e2e_targeted for r in step_runs)
         e2e_min = sum(sum(r.e2e_seconds) for r in step_runs) / 60
         track = header_value(step.header, "Track") or "full"
         out.append(f"| {step.id} | {track} | {kinds['BR']} | {kinds['BS']} | {kinds['CR']} | "
                    f"{counts_text(brief_counts)} | {counts_text(code_counts)} | {rejected_answers(brief_text)} | "
                    f"{len(step_runs)} | {hours:.1f} | {mtok(fresh(tokens))} | {mtok(tokens['cache_read'])} | "
-                   f"{full}/{targeted} | {e2e_min:.0f} |")
+                   f"{e2e_runs_text(step_runs)} | {e2e_min:.0f} |")
 
     out += ["", "## Per role and model", "",
             "| Role | Model | Runs | Mean min | Mean fresh Mtok | Mean read Mtok | Mean tool calls | "
@@ -365,11 +383,11 @@ def build_report(only_step=None):
                 out.append(f"| {day} | {mtok(fresh(tok))} | {mtok(tok['cache_read'])} |")
     else:
         out += ["", f"## {only_step}: every run", "",
-                "| Started | Role | Model | Description | Min | Fresh Mtok | Tool calls | E2E (full/targeted, min) |",
+                "| Started | Role | Model | Description | Min | Fresh Mtok | Tool calls | E2E (b/n/t/f, min) |",
                 "|---|---|---|---|---|---|---|---|"]
         for run in sorted(by_step.get(only_step, []), key=lambda r: r.started or datetime.min):
             out.append(f"| {run.started:%d-%m %H:%M} | {run.role} | {run.model} | {run.description} | {run.minutes:.0f} | "
-                       f"{mtok(fresh(run.tokens))} | {run.tool_calls} | {run.e2e_full}/{run.e2e_targeted}, "
+                       f"{mtok(fresh(run.tokens))} | {run.tool_calls} | {e2e_runs_text([run])}, "
                        f"{sum(run.e2e_seconds) / 60:.0f} |")
     return "\n".join(out) + "\n"
 

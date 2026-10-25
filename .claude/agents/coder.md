@@ -99,19 +99,41 @@ The orchestrator gives you one of three tasks:
   - **get a new test green alone first** (23-10-2026, from S029: browser runs
     were 38 % of the coder's time, and 2 of its 3 runs failed on mistakes in
     its own new tests). While writing it, run only it, on one device, on one
-    lane: `set E2E_LANES=1` then `tooling/run-e2e-tests.bat
-    e2e/<spec>.spec.js --project=desktop-chromium -g "S0NN"` (the other
-    projects are `phone-chromium` and `phone-webkit`). Once it passes there,
-    run the targeted set below once;
-  - run `tooling/run-e2e-tests.bat` whenever the frontend or an API the
-    screens use changed: the **targeted** specs only, never the whole suite unasked
-    (22-10-2026, user): the spec files of the screens and APIs the step
-    changed (the spec-to-step map in `.claude/CLAUDE.md` § SMTW-Review) plus
-    `e2e/screens.spec.js`, e.g. `tooling/run-e2e-tests.bat
-    e2e/tickets-work.spec.js e2e/screens.spec.js`. The **full** suite only when
-    the step changes shared frontend code (`FormModal.vue`, `useFormModal.js`,
-    `api.js`, the router, the auth store, `e2e/support/`) — those faults can
-    show on any screen. The user runs the full suite once before a release.
+    lane, on the logic device: `set E2E_LANES=1` then `tooling/run-e2e-tests.bat
+    e2e/<spec>.spec.js --project=phone-chromium -g "S0NN"` (the other
+    projects are `desktop-chromium` and `phone-webkit`; a `--project` you
+    name runs every matching test there). Once it passes there, run the
+    targeted set below once;
+  - **the levels** (S047; `tooling/run-e2e-tests.bat --level=…`): **Basic**
+    (`--level=basic`) runs the `@smoke` tests, the four journeys and
+    `screens.spec.js`, on `phone-chromium`, about 2 minutes; **Normal** (no
+    flag, the default) runs every test on `phone-chromium` and the `@device`
+    tests on `desktop-chromium`; **Full** (`--level=full`) runs every test on
+    all three devices, the iPhone included;
+  - **tag a new test** `@device` (`test("…", { tag: "@device" }, async …)`)
+    only when its purpose is a layout check (its title names fits, in view,
+    on screen, scrolls to, no sideways scroll, above or below; or its main
+    assertion is a geometry), or it runs only on, or asserts differently on,
+    a project other than `phone-chromium`. A logic test stays untagged, also
+    when it calls `expectDialogFits` or `expectFieldMessage`: the Full level
+    checks those on every device once per release;
+  - run the e2e tests whenever the frontend or an API the screens use
+    changed:
+    - **targeted** runs (Normal with spec files) as often as you need: the
+      spec files of the screens and APIs the step changed (the spec-to-step
+      map in `.claude/CLAUDE.md` § SMTW-Review) plus `e2e/screens.spec.js`,
+      e.g. `tooling/run-e2e-tests.bat e2e/tickets-work.spec.js
+      e2e/screens.spec.js`. You may run Basic when you want a quick
+      whole-app check;
+    - **the whole suite at Normal** (`tooling/run-e2e-tests.bat`, no spec
+      file) **once**, when the coding is done. Run it again only with a
+      reason you state in the report (it found a fault outside the targeted
+      specs, or you then changed shared frontend code: `FormModal.vue`,
+      `useFormModal.js`, `api.js`, the router, the auth store,
+      `e2e/support/`);
+    - in a **fix round**, targeted runs of what the round changed only;
+    - never the Full level: it runs only in the release
+      (`tooling/release-tests.bat`) and when KLA asks.
     Name the specs run and why in the report. It runs in parallel lanes and waits
     if another run holds the machine's lock; run it **in the background** (or
     with the maximum timeout, 600 000 ms) and read the result when it

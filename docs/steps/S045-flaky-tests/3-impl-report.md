@@ -94,4 +94,4 @@ None, because the change is test-only.
 
 None in the brief.
 - Not a check of the brief, for the user: run the full e2e suite once on a host at 100 % display scale to see phone-webkit pass.
-- [ ] Run one phone-webkit spec (for example `e2e/screens.spec.js` with `E2E_LANES=1`) on a host at 100 % Windows display scale and check that the guard lets it through. Account/where: KLA, his laptop at 100 % scale. Not blocking for this fix round.
+- [x] Run one phone-webkit spec (for example `e2e/screens.spec.js` with `E2E_LANES=1`) on a host at 100 % Windows display scale and check that the guard lets it through. Account/where: KLA, his laptop at 100 % scale. Not blocking for this fix round. — closed by KLA, 25-10-2026: S046's full run (phone-webkit in Docker, 390 px window) passed with no guard skip, so the guard lets a correct window through.

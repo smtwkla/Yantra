@@ -84,7 +84,7 @@ test("S017: with no symptom and no description, the description is asked for", a
   await expect(page.getByText("Describe the problem, or pick a symptom")).toBeVisible({ timeout: 3_000 });
 });
 
-test("S026: Save with nothing chosen scrolls the raise form to the first message", async ({ page }) => {
+test("S026: Save with nothing chosen scrolls the raise form to the first message", { tag: "@device" }, async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();
   await page.getByLabel("Which equipment?").fill(seed.extruder.name);
@@ -138,7 +138,7 @@ test("S028: admin raises a ticket 30 days back; the timeline shows that time and
   await expect(timeline(page).last()).toContainText(shownTime(thirtyDaysAgo));
 });
 
-test("S018 A1: Already fixed with a start time; the fields fit and the ticket is back in service", async ({ page }) => {
+test("S018 A1: Already fixed with a start time; the fields fit and the ticket is back in service", { tag: "@device" }, async ({ page }) => {
   const base = thisMinute();
   const stopped = istLocal(60, base);
   const started = istLocal(40, base);

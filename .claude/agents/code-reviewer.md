@@ -47,16 +47,24 @@ review file there.
   that run: check the report names the right specs (rule below) and the real
   counts, and re-run only the specs one of your own findings needs, in the
   background. A missing or red coder run is still a `blocker`.
-- **Which browser tests a step needs** (S024), when the frontend or an API the screens use
-  changed: `tooling/run-e2e-tests.bat`, the **targeted** specs only, never the whole suite unasked
-  (22-10-2026, user): the spec files of the screens and APIs the step
-  changed (the spec-to-step map in `.claude/CLAUDE.md` § SMTW-Review) plus
-  `e2e/screens.spec.js`, e.g. `tooling/run-e2e-tests.bat
-  e2e/tickets-work.spec.js e2e/screens.spec.js`. The **full** suite only when
-  the step changes shared frontend code (`FormModal.vue`, `useFormModal.js`,
-  `api.js`, the router, the auth store, `e2e/support/`) — those faults can
-  show on any screen. The user runs the full suite once before a release.
-  Name the specs run and why in the report (a
+- **Which browser tests a step needs** (S024; levels S047), when the frontend or an API
+  the screens use changed. `tooling/run-e2e-tests.bat` has three levels:
+  Basic (`--level=basic`, the `@smoke` journeys and `screens.spec.js` on
+  `phone-chromium`), Normal (no flag: every test on `phone-chromium`, the
+  `@device` tests on `desktop-chromium`) and Full (`--level=full`: every test
+  on all three devices). The coder runs **targeted** runs (Normal with the
+  spec files of the screens and APIs the step changed, from the spec-to-step
+  map in `.claude/CLAUDE.md` § SMTW-Review, plus `e2e/screens.spec.js`) as
+  often as it needs, and **the whole suite at Normal once** when the coding
+  is done; more whole-suite runs only with a reason it states. Fix rounds run
+  targeted runs only. You never run the whole suite: re-run only the specs
+  one of your own findings needs, at Normal (a `--project` you name runs
+  every matching test on it, e.g. `--project=desktop-chromium
+  e2e/x.spec.js -g "S0NN"`). The Full level runs only in the release
+  (`tooling/release-tests.bat`) and when KLA asks. A new test tagged
+  `@device` without the reason of the rule (a layout check by purpose, or a
+  test that differs by device) is a `nit`; a layout test left untagged is a
+  `minor`. Name the specs run and why in the report (a
   spec the step should have run and did not is a `minor` finding). Run it **in
   the background** or with the maximum timeout (600 000 ms), and record the
   real result; red is a `blocker`. Check that:
@@ -134,9 +142,9 @@ review file there.
     and what that diff touches;
   - don't re-read the rest of the step; anything there you notice in passing
     is reported only if it is a `blocker` or `major`;
-  - tests: `tooling/run-tests.bat`, and the **targeted** e2e specs of what the
-    fix round changed (the full suite only if the fix round changed shared
-    frontend code or `e2e/support/`);
+  - tests: `tooling/run-tests.bat`; check that the coder ran the **targeted**
+    e2e specs of what the fix round changed (re-run only what a finding of
+    yours needs);
   - carry the open findings of earlier rounds by ID and status, without
     re-describing them;
   - say in the verdict which files you re-read.

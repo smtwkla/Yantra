@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Committed c6e74a1 (base, 25-10-2026); checks: 19 auto; important check pending: row 33 of device-checks.md; open for the user: CR1-10; A1 at gate B (first part committed in 5731712; CR r4: 1 major, 1 nit and CR r5: 1 minor — all fixed; verify review r6: 0 findings; snapshot refs/steps/S040 b4af1d0)
+Status: Committed c6e74a1 (base, 25-10-2026) and A1 in 5731712 + b4af1d0 (25-10-2026); checks: 19 auto; important check pending: row 33 of device-checks.md; open for the user: CR1-10
 Baseline: ff9ddb3 + snapshots refs/steps/S038, refs/steps/S043 + S039 (working tree, at gate B); stale check s1 done 24-10-2026
 ```
 

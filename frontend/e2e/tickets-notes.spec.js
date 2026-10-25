@@ -105,7 +105,7 @@ test("S027: the Raised line shows the raise's What is wrong? text, and the page 
   await expect(card(page, "Description")).toHaveCount(0);
 });
 
-test("S027: Save note with an empty field shows Enter a note under the field, in view; nothing is added", async ({ page, consoleWatch }) => {
+test("S027: Save note with an empty field shows Enter a note under the field, in view; nothing is added", { tag: "@device" }, async ({ page, consoleWatch }) => {
   consoleWatch.allowFailedRequest("/notes", 400);
   const ticket = await raiseDefect("Notes test: empty note");
   await asPerson(page, "technician", `/tickets/${ticket.id}`);
