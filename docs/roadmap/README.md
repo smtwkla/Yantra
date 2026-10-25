@@ -5,6 +5,16 @@ an ordered list of items, each the seed of one step. The **roadmapper** (`.claud
 Opus) writes it; KLA, the product owner, approves it at **gate R**; each item becomes a step only
 when KLA takes it up (25-10-2026, by KLA).
 
+## The showcase deck
+
+Each roadmap comes with a slide deck, so KLA sees the feature before deciding on it: the feature,
+its standards, one slide per main screen or report with a screenshot of its mock-up, the items as a
+timeline, and the decisions. The roadmapper writes the mock-ups (`R0N-mockups/NN-<screen>.html`,
+in Yantra's look, sample data, static) and the slide outline (`## Slides`); the orchestrator renders
+the screenshots (`tooling/render-mockups.bat docs\roadmap\R0N-mockups`) and publishes the deck as a
+private artifact page (viewable anywhere, downloadable as .pptx or PDF). Mock-ups show the idea; the
+step's coder builds the real screen from its brief.
+
 ## Numbers
 
 - A roadmap is `R01`, `R02`, …, in `docs/roadmap/R0N-<slug>.md`.

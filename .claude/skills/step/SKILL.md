@@ -433,7 +433,14 @@ KLA); conventions in `docs/roadmap/README.md`.
 - **Numbers:** roadmaps `R0N`, items `R0N.n`. **Only the orchestrator gives out step numbers,**
   and only when KLA takes an item up (`/step plan R0N.n`). Add the roadmap's index row in
   `docs/roadmap/README.md` yourself.
-- **Gate R: STOP.** Show the items table, the order with its reasons, the standards, and every
+- **The deck** (25-10-2026, by KLA): when the roadmapper is done, render its mock-ups with
+  `tooling/render-mockups.bat docs\roadmap\R0N-mockups` (PNGs beside the HTML, the browser
+  tests' Chromium, nothing installed), then build a **private slide-deck artifact** from the
+  roadmap's `## Slides` outline with those screenshots (Artifact tool, `quickstart` with intent
+  `slides`, then the Slides type; the images go up as the artifact's assets). KLA can view it on
+  any device, comment per slide, and download it as .pptx or PDF. Re-render and update the same
+  deck after a re-plan. The roadmap file stays the record; the deck is how KLA reviews it.
+- **Gate R: STOP.** Give the deck's link first, then show the items table, the order with its reasons, the standards, and every
   decision for the user with its options (recommended one marked), then the other sections by
   heading. KLA approves; record his answers in the roadmap (Status `Approved …`), and the lasting
   decisions in Plan.MD.

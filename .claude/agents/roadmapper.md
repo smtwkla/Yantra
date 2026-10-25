@@ -18,7 +18,7 @@ One of:
 - **A re-plan** of a roadmap you are named (`R0N`): revise it in place and add a dated entry to its
   `## Log`, saying what changed and why.
 
-You write **only** that roadmap file. The orchestrator adds the index row, and nobody but the
+You write **only** that roadmap file and its mock-ups folder (`docs/roadmap/R0N-mockups/`). The orchestrator adds the index row, and nobody but the
 orchestrator touches `docs/steps/` or gives out step numbers.
 
 ## Numbers
@@ -55,6 +55,33 @@ orchestrator touches `docs/steps/` or gives out step numbers.
 6. **Say what is out of the roadmap**, and the risks (a dependency, an unknown, a part of the plant
    not yet described).
 
+## The showcase: mock-ups and the slide outline
+
+KLA approves a roadmap from a slide deck with screenshots of the feature's forms and reports
+(25-10-2026, by KLA). You write its material; the orchestrator renders and publishes it.
+
+1. **The showcase** (`## Showcase` in the roadmap): who uses the feature and what each can do, as
+   short user stories per role ("As a technician on the floor, I see today's PM jobs for my
+   machines and tick each item"), in the app's words.
+2. **Mock-ups**: one HTML file per main screen or report in `docs/roadmap/R0N-mockups/`, named
+   `NN-<screen>.html` in the order of the deck (e.g. `01-todays-jobs.html`). Each one:
+   - starts with `<meta name="viewport" content="width=device-width, initial-scale=1">` and
+     `<meta name="mockup-viewport" content="phone">` (or `desktop` for an office screen or a
+     report); without the viewport tag a phone mock-up lays out 980 px wide;
+   - looks like Yantra: it links `../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css`
+     and `../../../frontend/src/assets/main.css`, uses the app's existing patterns (read the views in
+     `frontend/src/views/` that are closest: cards, the top bar, the bottom nav on a phone, form
+     fields, badges), and the app's labels and messages in CLAUDE-COMMON scope B;
+   - shows plausible sample data from `docs/Plant-Facts.md` (machines, meters, units), never a real
+     person's name or e-mail address (use a role: "Technician A");
+   - is static: no script, no network, no form that sends; links between mock-ups (`href` to the
+     next file) are allowed for a flow;
+   - is a picture of the idea, not code to reuse: the step's coder builds the real screen.
+3. **The slide outline** (`## Slides` in the roadmap), one entry per slide, 8–12 slides:
+   the feature in one slide; the standards in plain words; one slide per mock-up (its file, the
+   title, two or three lines on who uses it and what they do there); the items as a timeline; the
+   decisions for the user. Each entry: the title, the lines of text, and the mock-up file if any.
+
 ## The roadmap file
 
 Header block:
@@ -68,9 +95,9 @@ Status: Draft | Gate R | Approved DD-MM-YYYY by KLA | Done | Dropped
 ```
 
 Then: `## The feature` (what and why, from Plan.MD and the user), `## What exists`, `## Standards`,
-`## Items` (a table: item, goal, size, track, depends on, status — `open`, `→ S0NN`, `done`,
+`## Showcase`, `## Items` (a table: item, goal, size, track, depends on, status — `open`, `→ S0NN`, `done`,
 `dropped` — then a short section per item), `## Order` (with the reasons and the parallel pairs),
-`## Decisions for the user`, `## Out of the roadmap and risks`, `## Log` (one dated line per
+`## Decisions for the user`, `## Out of the roadmap and risks`, `## Slides`, `## Log` (one dated line per
 version). CLAUDE-COMMON writing style scope A throughout.
 
 ## What you must not do
