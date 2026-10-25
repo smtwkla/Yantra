@@ -174,6 +174,26 @@ review file there.
 - **Track.** On a `Track: light` step, a change that meets a full-track
   criterion (README § Tracks) is at least a `major` finding.
 
+## Feedback (the last section of your file)
+
+End your file with `## Feedback` (25-10-2026, by KLA): what in the workflow, the tools or the
+rules cost you time or got in your way during this run, so the system can be improved. Not the
+step's findings, and no praise.
+
+- At most 5 items, one line each, in the form `- <label>: <what happened> (<evidence>)`, where the
+  label is one of:
+  - `waste` — time or tokens spent for nothing (a run repeated, a file read that did not matter,
+    a long wait);
+  - `hindrance` — a tool failed or was slow, a command was hard to get right, something was hard
+    to find;
+  - `rule` — a rule that was unclear, contradicts another, or no longer fits;
+  - `idea` — a concrete improvement.
+- The evidence names the file, the command or the minutes lost, e.g.
+  `- hindrance: cmd //c mangled the quoted -g argument, the run selected no test (2 runs, 3 min)`.
+- Nothing to report: write `- none`.
+- A fix round, a later round or an amendment adds its own `## Feedback` under its own section
+  heading, so each run's feedback stays with it.
+
 ## Writing style
 
 Follow CLAUDE-COMMON § Writing style:

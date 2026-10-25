@@ -4,15 +4,15 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: full
-Status: Approved 25-10-2026 by KLA (open questions 1-3 as recommended); not coded yet (after S054)
-Baseline: c32e02f (brief-review r2; uncommitted changes were step documents only)
+Status: Gate B (CR r1: 3 minor, 5 nits — all fixed in fix round 1, with A2; verify review r2: 3 nits — fixed in fix round 2; snapshot refs/steps/S049) (approved 25-10-2026 by KLA; A1, A2 by KLA)
+Baseline: 01d3566 (staleness review s1, 25-10-2026: only S054's sentence in CLAUDE.md § Browser tests changed)
 ```
 
 # S049 — Pre-flight before a release
 
 **The need (KLA, 25-10-2026).** "When I click 'release patch' usually I have to get a maintenance
 window from the users — 'stop using the software, as an update is being released'. Then finding a
-bug costs time." The release runs the full tests (Yantra: about 10 minutes, the unit suites and the
+bug costs time." The release runs the full tests (Yantra: about 8–10 minutes, the unit suites and the
 browser tests at the Full level, S047); a red test sends KLA back to the code with the users
 waiting. So: "if pre-flight checks for bugs, runs full tests, we can create bug reports and spawn
 fix rounds. If no bugs found, there must be a way for pre-flight to mark that 'commit xyzabc does
@@ -70,8 +70,9 @@ The skill and `preflight.py` read the repo's settings from a section `## Pre-fli
   `tooling/run-backend-tests.bat <file>::<test> …`, `tooling/run-frontend-tests.bat <file> -t
   "<name>"`, `tooling/run-e2e-tests.bat --level=full e2e/<spec>:<line> … --project=<the failed project>`, so a
   failure on one device is re-run on that device only; BR2-13).
-- **Known fault**: how the repo marks a test expected to fail. Yantra has no such convention yet
-  (its specs use `test.skip(condition, reason)` only; BR2-03); this step sets one, **strict**, so a
+- **Known fault**: how the repo marks a test expected to fail. Yantra has no expected-to-fail mark yet
+  (its specs skip with `test.skip(condition, reason)`, and two block the service worker with a
+  file-level `test.use({ serviceWorkers: "block" })`, which is not such a mark; BR2-03, BS1-02); this step sets one, **strict**, so a
   known fault that gets fixed turns its test red and the mark is removed, never left silently: a
   browser test gets Playwright's `test.fail()` with a comment naming the fault and its step; a
   backend test `@pytest.mark.xfail(strict=True, reason="<fault, step>")`; a frontend unit test
@@ -384,11 +385,43 @@ with them.
    `xfail(strict=True)`, `it.fails` — so a fixed fault turns its test red until the mark is removed.
    Alternative: non-strict (`test.fixme`, `xfail` without strict): a fixed fault stays marked
    silently.
-4. **Assumption**: Yantra's test command takes about 10–12 minutes (S047: the browser part 320–338 s).
+4. **Assumption**: Yantra's test command takes about 8–10 minutes (the v0.1.9 release, 25-10-2026: the
+   unit suites 88 s, the browser part about 6 minutes; BS1-03).
 
 ## 7. Amendments
 
-None.
+### A1 — deterministic, runnable from PyCharm (KLA, 25-10-2026; approved by his request)
+
+KLA: "The parts that run the tests and make the stamp must be deterministic. I should be able to run
+it from PyCharm run config without using the pre-flight skill. Later, we will make some hook which
+listens for latest commit and runs pre-flight on it."
+
+1. `preflight.py` (already deterministic: no prompt, no AI) reads the test command from the
+   environment variable `TEST_CMD` first, exactly as `release.py` does; only when it is unset, from
+   the `## Pre-flight` section's *Test command* (§ 1.2). A run config then sets the same `TEST_CMD` as
+   the Release run configs, so both test the same command. "Tests a clean copy of HEAD" stays in the
+   section (env `PREFLIGHT_CLEAN_COPY=yes|no` overrides it, same order).
+2. A PyCharm run config **Pre-flight**, `.idea/runConfigurations/Pre_flight.xml` (gitignored, KLA's
+   machine, like the Release ones): `tooling/common/preflight.py`, working folder `$PROJECT_DIR$`,
+   env `PYTHONUNBUFFERED=1` and `TEST_CMD=tooling\release-tests.bat`, the Release run configs' shape.
+3. `preflight.py` prints nothing that needs an answer and never waits for input, so a later
+   post-commit hook can run it unattended (the hook itself is a queued idea, not this step).
+4. Tests: the settings reader with `TEST_CMD` set, unset, and empty (empty = unset).
+
+### A2 — a red run removes the stamp; the release holds the lock (KLA, 25-10-2026)
+
+KLA's answers at code review r1 (both as the coder and the reviewer recommended):
+1. **A red pre-flight removes any stamp on its sha** (`git notes --ref=preflight remove --ignore-missing <sha>`),
+   whatever its test command, so the newest result always decides; the red line adds "Its earlier stamp
+   is removed." when there was one. "HEAD moved" removes nothing (it concerns another commit). A failed
+   remove prints git's message; the exit stays 1.
+2. **`release.py` holds the pre-flight lock around its own `TEST_CMD` run** (CR1-02), so a pre-flight
+   started during the release's tests (by KLA, or later by the post-commit hook) gets "Another
+   pre-flight is running. Wait for it to finish." instead of removing the release's test worktree.
+   Taking the lock never fails the release: if it cannot be taken for an error, the release warns and
+   runs its tests as today; if another pre-flight holds it, the step 0 abort applies.
+3. Tests: the remove on red (a stamp there, none there, git failing), and the release holding the lock
+   while `TEST_CMD` runs (stubbed).
 
 ## Review log
 
@@ -442,3 +475,12 @@ answered against this text.
 ### U4 — approval, 25-10-2026
 
 KLA: "Approved, as recommended." Q1: no dependency audit in pre-flight. Q2: steps not `Done` are information only. Q3: known faults are marked strictly (`test.fail()`, `xfail(strict=True)`, `it.fails`).
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 25-10-2026
+
+| Finding | Answer |
+|---|---|
+| BS1-01 nit: the Status and Baseline | Accepted: Status `Implementing`, Baseline 01d3566 |
+| BS1-02 nit: the known-fault wording | Accepted: the file-level service-worker block named, as no expected-to-fail mark (§ 1.2) |
+| BS1-03 nit: 10–12 minutes | Accepted: 8–10, from the v0.1.9 run (intro, § 6 Q4) |
+| BS1-04 nit: release bullets carry the commit trailers (outside S049) | Deferred: added to the Tidy-up queue row in the README |

@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 25-10-2026
 Track: fix
-Status: Gate B (fix lane; CR r1: 2 nits, fixed; snapshot refs/steps/S054)
+Status: Done (committed b11db2e, 25-10-2026; released in v0.1.9; no device checks)
 Baseline: e08f5bb
 ```
 

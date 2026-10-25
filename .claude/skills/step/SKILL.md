@@ -41,6 +41,10 @@ Read it before starting.
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
+- `/step feedback [S00N …]`: run `tooling/step-feedback.bat` once (every step, or
+  the ones named): the agents' `## Feedback` items, grouped by label (§ Feedback).
+  Report the points that recur or cost real time, and propose the 3–5 changes
+  worth making; change nothing until the user says which.
 - `/step stats [S00N]`: run `tooling/step-stats.bat` once (it writes
   `scratch/step-stats.md`): review rounds, findings by severity, late blockers
   and majors, time, tokens and e2e cost per step and per role, from the step
@@ -433,6 +437,21 @@ readings, `0-advice-power-readings.md`).
   machine) become manual checks of the step, or questions at the next gate.
 - **Not for**: design decisions, reviews, or facts a `grep` or a three-line
   check answers (do those yourself, self-check item 1).
+
+## Feedback
+
+Every agent ends its file with `## Feedback` (25-10-2026, by KLA; README § Folder and files): at
+most 5 one-line items, `waste`, `hindrance`, `rule` or `idea`, each with its evidence, or `- none`.
+
+- **Tell each subagent** in its spawn prompt that its file ends with the section (its agent file
+  gives the form).
+- **At each gate**, read the feedback of the files written since the last gate. When an item
+  recurs or cost real time, name it in one line ("Feedback: the coder lost 3 runs to cmd quoting —
+  see `/step feedback`"). Fix nothing in the workflow without the user's OK.
+- **`/step feedback`** runs `tooling/step-feedback.bat` (all steps, or the IDs given): every item
+  with its step, file and label. Group the items that say the same thing, count them, and propose
+  the few changes that would save the most; the user decides.
+- Feedback is about the workflow, the tools and the rules, never a second list of findings.
 
 ## Snapshots
 

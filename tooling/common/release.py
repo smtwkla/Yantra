@@ -17,6 +17,9 @@ Configuration via tooling/common/release.env (all optional):
     BUILD_SCRIPT=tooling/build.py          # skipped if unset
     DEPLOY_SCRIPT=tooling/deploy.py        # skipped if unset
     GIT_PUSH=skip                          # opt out of the final `git push --follow-tags`
+
+Pre-flight (S049): step 2 skips TEST_CMD when HEAD carries a valid pre-flight stamp
+(preflight_stamp.py, written by /pre-flight); step 4 carries the stamp to the release commit.
 """
 
 import argparse
@@ -26,6 +29,11 @@ import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+
+try:
+    import preflight_stamp
+except ImportError:  # a sync that brought release.py without its sibling: the tests run as before
+    preflight_stamp = None
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
@@ -65,6 +73,23 @@ def abort(msg: str):
     sys.exit(1)
 
 
+PREFLIGHT_RUNNING = ("A pre-flight is still running on this computer, and the release would remove its "
+                     "test worktree. Wait for it to finish, then start the release again.")
+
+
+def run_tests(test_cmd: str) -> subprocess.CompletedProcess:
+    """Run TEST_CMD holding the pre-flight lock (S049 A2), so a pre-flight started meanwhile is
+    refused instead of removing the release's test worktree. A lock error never stops the release."""
+    if preflight_stamp is None:
+        return run(test_cmd)
+    with preflight_stamp.release_lock() as (got_lock, error):
+        if error:
+            print(f"\nWARNING: the pre-flight lock could not be taken: {error}. The tests run without it.")
+        elif not got_lock:
+            abort(PREFLIGHT_RUNNING)
+        return run(test_cmd)
+
+
 def main():
     load_dotenv(SCRIPT_DIR / "release.env")
 
@@ -93,14 +118,29 @@ def main():
     if result.stdout.strip():
         abort("Uncommitted changes detected. Commit or stash before releasing.")
 
-    # --- 2. Run tests ---
+    # --- 2. Run tests (unless pre-flight passed them on this exact commit) ---
     test_cmd = os.getenv("TEST_CMD", "pytest")
+    if preflight_stamp is not None and preflight_stamp.preflight_running():
+        abort(PREFLIGHT_RUNNING)
     if test_cmd == "skip":
         print("\nWARNING: tests skipped (TEST_CMD=skip)")
     else:
-        result = run(test_cmd)
-        if result.returncode != 0:
-            abort("Tests failed.")
+        passed_in_preflight = False
+        if preflight_stamp is None:
+            print("\nThe pre-flight check is not installed. The tests run now.")
+        else:
+            passed_in_preflight, reason = preflight_stamp.release_gate(test_cmd)
+            print(f"\n{reason}")
+        if not passed_in_preflight:
+            tested_sha = preflight_stamp.head_sha() if preflight_stamp is not None else None
+            result = run_tests(test_cmd)
+            if result.returncode != 0:
+                abort("Tests failed.")
+            if preflight_stamp is not None:
+                error = preflight_stamp.write(tested_sha, test_cmd)
+                if error:
+                    print(f"\nWARNING: the pre-flight stamp could not be written: {error}. "
+                          "The release goes on.")
 
     # --- 3. Bump version (skip if no code changes since last release) ---
     # Find commits since the last "release v..." commit using NUL-separated
@@ -152,6 +192,12 @@ def main():
         result = git_commit(commit_msg)
         if result.returncode != 0:
             abort("Git commit failed.")
+
+        # A retry after a failed build or deploy starts from this commit: give it the stamp.
+        if preflight_stamp is not None:
+            carried = preflight_stamp.carry(preflight_stamp.head_sha(), test_cmd)
+            if carried:
+                print(f"\n{carried}")
 
         result = git_tag(f"v{new_ver}", summary)
         if result.returncode != 0:

@@ -15,8 +15,9 @@ setlocal
 ::      Docker Desktop). It runs also when step 3 was red, so one attempt shows every fault. It
 ::      takes the machine's e2e lock in the working folder's scratch\, so it waits for an agent's
 ::      e2e run, and an agent's run waits for it.
-::   5. The e2e report, the lane logs and the backend logs are copied to scratch\release-tests\e2e\
-::      of the working folder, also when the e2e run failed, before the worktree goes.
+::   5. The e2e report (its HTML and results.json, which /pre-flight reads, S049), the lane logs and
+::      the backend logs are copied to scratch\release-tests\e2e\ of the working folder, also when
+::      the e2e run failed, before the worktree goes.
 ::   6. The worktree is removed, also when a suite failed. The junction goes first, on its own, so
 ::      removing the worktree can never reach into the working folder's node_modules.
 :: The worktree is added LOCKED and unlocked only after the junction is gone: while the junction
@@ -77,6 +78,7 @@ mkdir "%E2E_COPY%"
 robocopy "%WT%\scratch\e2e-report\html" "%E2E_COPY%\html" /E /NFL /NDL /NJH /NJS /NP >nul
 robocopy "%WT%\scratch\e2e-lanes" "%E2E_COPY%\e2e-lanes" /E /NFL /NDL /NJH /NJS /NP >nul
 robocopy "%WT%\scratch" "%E2E_COPY%" "e2e-backend*.log" /NFL /NDL /NJH /NJS /NP >nul
+robocopy "%WT%\scratch\e2e-report" "%E2E_COPY%" "results.json" /NFL /NDL /NJH /NJS /NP >nul
 echo E2E report and logs copied to %E2E_COPY%
 exit /b 0
 
