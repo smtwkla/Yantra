@@ -7,7 +7,7 @@ The command's output goes to the console and to the log file as it comes.  At th
 
     == backend: PASSED in 58 s: 2277 passed, 4 skipped (log: C:\\...\\scratch\\backend-tests.log)
 
-When YANTRA_TEST_SUMMARY names a file, the line is also appended to it: run-tests.bat prints
+When TEST_SUMMARY_FILE names a file, the line is also appended to it: run-tests.bat prints
 that file's lines again after the last suite.  The exit code is the command's.  Stdlib only.
 """
 
@@ -60,7 +60,7 @@ def run(label, log_path, command):
         exit_code = process.wait()
     line = summary_line(label, exit_code, time.monotonic() - started, "".join(captured), log_path)
     print(line, flush=True)
-    summary_file = os.environ.get("YANTRA_TEST_SUMMARY")
+    summary_file = os.environ.get("TEST_SUMMARY_FILE")
     if summary_file:
         with open(summary_file, "a", encoding="utf-8") as out:
             out.write(line + "\n")

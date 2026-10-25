@@ -38,7 +38,7 @@ class TestSummaryLine:
 class TestRun:
     def test_logs_the_output_appends_the_summary_and_keeps_the_exit_code(self, tmp_path, monkeypatch, capsys):
         summary = tmp_path / "summary.txt"
-        monkeypatch.setenv("YANTRA_TEST_SUMMARY", str(summary))
+        monkeypatch.setenv("TEST_SUMMARY_FILE", str(summary))
         log = tmp_path / "logs" / "x.log"
         code = run_logged.run("x", log, [sys.executable, "-c", "print('7 passed'); raise SystemExit(3)"])
         assert code == 3

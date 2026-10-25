@@ -104,7 +104,7 @@ text below (CLAUDE-COMMON scope B).
 
 | Item | Goal | Size | Track | Depends on | Status |
 |---|---|---|---|---|---|
-| R01.1 | Check the network gate and the headers in production (manual, KLA) | S | manual check, no step | — | open |
+| R01.1 | Check the network gate and the headers in production (manual, KLA) | S | manual check, no step | — | partly done: checks 1, 3, 5 pass; 2, 4, 6 open |
 | R01.2 | Token checks: no evict-and-retry, a timeout, issuer and claims checked, a login-server outage reads as such | S | full | — | open |
 | R01.3 | Keep typed input: a failed sign-in renewal keeps the screen; a leave guard on the two full-page forms | M | full | — | open |
 | R01.4 | What the server sends: files not served from cache, no DB detail in errors or to managers | S | full | — | open |
@@ -133,6 +133,17 @@ text below (CLAUDE-COMMON scope B).
   6. On the front proxy VM, `ip -4 -br addr`: note the address it connects to Yantra from.
      `vm-register/vm_register.yml:39-40` says only `10.24.0.18` is bound there (to verify). R01.5
      narrows `set_real_ip_from` to it.
+- **Results:**
+  - Checks 1 and 3 pass (KLA, 26-10-2026, on a mobile phone): Settings › Network says
+    "external" on mobile data and "internal" on the plant Wi-Fi.
+  - Check 5 passes (Claude, 26-10-2026, `curl -sI` from KLA's laptop). Both the page and
+    `/assets/index-BY_RE93o.js` carry HSTS, `X-Content-Type-Options`, `X-Frame-Options`,
+    `Referrer-Policy` and `Permissions-Policy`, all from the front proxy. The page also carries
+    Yantra's own three, so they appear twice. That is harmless, and R01.5 can drop the copies
+    the front proxy already sends. The front proxy sends `Permissions-Policy: camera=()`, so a
+    page cannot use the camera. Yantra has no in-page camera today (no `getUserMedia` in
+    `frontend/src`). A later in-app QR scanner needs that header changed in the devops repo.
+  - Checks 2, 4 and 6 are open.
 - **After it:** KLA knows whether a host on the app LAN can fake an address today, and R01.5 has
   the address to trust.
 - **Migrations:** none. **Leaves for later:** the code fixes of [12] (R01.5).
@@ -437,6 +448,9 @@ of it.
 - 25-10-2026 — KLA asked for an explainer deck after all: a private slide deck (one slide per item
   and per question; D1 and D5 split into D1.1/D1.2 and D5.1/D5.2 so each answer has one number),
   https://claude.ai/artifact/QZXkNEQvXWJCXxKsDG6Qte. The roadmap file stays the record.
+- 26-10-2026 — R01.1: checks 1 and 3 pass (KLA, phone), check 5 passes (curl); checks 2, 4 and 6
+  are open. Found: the front proxy's `Permissions-Policy: camera=()` blocks any later in-page
+  camera.
 
 ## Feedback
 

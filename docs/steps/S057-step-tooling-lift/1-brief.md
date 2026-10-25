@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 25-10-2026
 Track: full
-Status: Gate B (CR r1 and r2: 0 blocker, 0 major; fix rounds 1 and 2 done)
+Status: Done — committed 6321983 (adopted 26-10-2026)
 Baseline: db5b803 (brief-review r1; uncommitted changes were S057's own step files and the unrelated R01 roadmap files)
 ```
 
