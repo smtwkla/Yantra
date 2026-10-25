@@ -28,6 +28,8 @@ FILES = [
     (".claude/SMTW-WebApp-Base.md", ".claude/SMTW-WebApp-Base.md"),
     ("tooling/common/bump_ver.py", "tooling/common/bump_ver.py"),
     ("tooling/common/release.py", "tooling/common/release.py"),
+    ("tooling/common/preflight_stamp.py", "tooling/common/preflight_stamp.py"),
+    ("tooling/common/preflight.py", "tooling/common/preflight.py"),
     ("tooling/common/ccssh.py", "tooling/common/ccssh.py"),
     ("tooling/common/ccloki.py", "tooling/common/ccloki.py"),
     ("tooling/common/material_icon.py", "tooling/common/material_icon.py"),

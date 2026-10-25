@@ -106,6 +106,24 @@ Every implementation ends with a written summary — this is mandatory, even whe
 
 I should never discover a feature, abstraction, or design choice by reading the code afterwards. If it isn't in the report, it shouldn't be in the codebase.
 
+### Agents change nothing outside the repo
+
+- **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA). Every
+  agent — orchestrator, advisor, reviewers, coder — changes only the repo's working tree and
+  Claude's memory:
+  - no installing software, packages, browsers, drivers or scripts on the machine; no global
+    npm / pip / uv installs;
+  - no changes to the operating system's settings, the registry, services, scheduled tasks,
+    environment variables, or other repos;
+  - experiments are read-only: read a value, run a small check; any script stays in the
+    session scratchpad or `scratch/`;
+  - allowed, because the repo's own tooling does it as written: what the repo's `tooling/`
+    scripts do when run (e.g. installing Playwright's browsers, starting the e2e containers,
+    the release tests' temporary worktree), installing the repo's own lockfiles when a step
+    changes dependencies, and temporary git worktrees the agent removes itself;
+  - anything else outside the repo: ask the user first.
+  Put this limit in every spawn prompt that runs experiments.
+
 ### Release & deployment authorization
 
 **Never run a release or deployment action without explicit instruction for that specific action in the current request.** This applies to:
@@ -131,7 +149,7 @@ Releases run via `tooling/common/release.py` (PyCharm run configs "Release (patc
 The pipeline, in order:
 
 1. Abort unless on `main` (override with `-B`) with a clean working tree.
-2. Run `TEST_CMD` — the full suite must be 100% green. The frontend build must also complete with no new errors (pre-existing chunk-size warnings are acceptable).
+2. Run `TEST_CMD`, unless HEAD carries a valid pre-flight stamp (`/pre-flight`, `tooling/common/preflight_stamp.py`): the tests passed on this exact commit, on this machine, with this `TEST_CMD`, within 7 days. The full suite must be 100% green. The frontend build must also complete with no new errors (pre-existing chunk-size warnings are acceptable).
 3. Bump `VERSION`, commit `release vX.Y.Z` (body = bullet summary of commits since the last release) and create the annotated tag. Skipped when there are no changes.
 4. Run `BUILD_SCRIPT` if set (typically builds and pushes container images to the registry).
 5. Run `DEPLOY_SCRIPT` if set (deploys the release; which script varies per repo).
@@ -142,6 +160,7 @@ Rules for Claude Code:
 - **Never run a release unless explicitly asked** in the current request — see "Release & deployment authorization" above.
 - Whether a release deploys depends on `DEPLOY_SCRIPT` in that repo's `release.env` — check it before answering deploy questions or running a release.
 - The pipeline itself commits and pushes the release (steps 3 and 6) — the only automated git operations, and they run only as part of a release the user asked for.
+- Run `/pre-flight` before the maintenance window, so a failing test is found before the users stop work. The skill needs a `## Pre-flight` section in the repo's `CLAUDE.md`; the release's gate is on everywhere and does nothing where no stamp exists.
 
 ### Stale bundle detection (web apps)
 

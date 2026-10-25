@@ -1188,6 +1188,12 @@ When an input applies to a group of records (e.g. marking all entries for a supp
   Cancel close at once when the form is unchanged; when it has changed, they first show an in-dialog
   "Discard your changes? Keep editing / Discard". Detect changes by comparing the form with a snapshot taken at open.
   No browser `confirm()`. Implement this once, in the shared form-modal component, not per dialog.
+- **A refusal is always in view.** When a save is refused, by the form's own check or by the server, the dialog
+  scrolls the first field with a message into view and puts the cursor in it. A refusal for a field that is not in
+  the form shows at the top of the dialog, also scrolled into view. Why: a long dialog on a phone hides its lower
+  fields, and a message there makes Save look dead (Yantra, 22-10-2026: *Time spent* empty below the fold). Implement
+  this once, in the shared form logic that holds the error, not per dialog. A browser test checks that the message
+  is on screen (Playwright `toBeInViewport()`), not only that it exists.
 
 ### Print / Export Views
 
@@ -1226,8 +1232,18 @@ cached copy after. Views call it instead of each re-fetching the same payload.
 
 ## Pre-flight Before Every Release
 
-Pre-flight is automated by `release.py` — it runs the test suite and aborts on failure before bumping or tagging. To
-also gate on a clean frontend build, set `BUILD_SCRIPT` in `release.env` so the build step runs before deploy.
+Pre-flight runs in two stages. **Before the maintenance window**, `/pre-flight` (`tooling/common/preflight.py`, or a
+run config that sets the Release run configs' `TEST_CMD`) runs the release's tests on HEAD; a green run stamps that
+commit with a git note (`refs/notes/preflight`, not pushed), and a red run gives one bug report per failure and asks
+what to do (fix the code, fix the test, mark as a known fault, investigate). **In the window**, `release.py` skips
+`TEST_CMD` when HEAD carries a valid stamp (this exact commit, this machine, this `TEST_CMD`, at most 7 days old);
+otherwise it runs the tests and aborts on failure before bumping or tagging, as before, and stamps a green run. The
+release commit (only `VERSION` changed) carries the stamp, so a retry after a failed build or deploy does not test
+again. A release started while a pre-flight runs aborts before anything changes. The repo's settings are a
+`## Pre-flight` section in its `CLAUDE.md`: *Test command*, *Tests a clean copy of HEAD* (`yes` | `no`), *Failure
+logs*, *Re-run failing tests*, *Known fault*.
+
+To also gate on a clean frontend build, set `BUILD_SCRIPT` in `release.env` so the build step runs before deploy.
 
 ---
 
