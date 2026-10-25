@@ -665,21 +665,11 @@ review file).
   snapshot under `refs/steps/` (§ Snapshots; no branch moves, nothing is
   pushed), and committing or adopting when the user asks for it in the
   current request.
-- **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA). Every
-  agent — orchestrator, advisor, reviewers, coder — changes only the repo's working tree and
-  Claude's memory:
-  - no installing software, packages, browsers, drivers or scripts on the machine; no global
-    npm / pip / uv installs;
-  - no changes to the operating system's settings, the registry, services, scheduled tasks,
-    environment variables, or other repos;
-  - experiments are read-only: read a value, run a small check; any script stays in the
-    session scratchpad or `scratch/`;
-  - allowed, because the repo's own tooling does it as written: what the repo's `tooling/`
-    scripts do when run (e.g. installing Playwright's browsers, starting the e2e containers,
-    the release tests' temporary worktree), installing the repo's own lockfiles when a step
-    changes dependencies, and temporary git worktrees the agent removes itself;
-  - anything else outside the repo: ask the user first.
-  Put this limit in every spawn prompt that runs experiments.
+- **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA; an
+  invariant of `CLAUDE-COMMON.md` since the lift): every agent changes only the repo's working
+  tree and Claude's memory; experiments are read-only; the repo's own tooling may do what it is
+  written to do; anything else outside the repo needs the user first. Put this limit in every
+  spawn prompt that runs experiments.
 - **Subagents can't ask the user anything.** Any question they raise comes back
   to you, and you put it to the user.
 - **Never edit a review file**, and never fabricate a subagent's result. Wait
