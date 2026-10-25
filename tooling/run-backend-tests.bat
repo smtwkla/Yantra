@@ -35,5 +35,5 @@ if errorlevel 1 (
 :: -n first: a -n among the arguments wins. loadscope: a module's test functions, or one class's
 :: tests, run together on one worker, in order. (loadfile kept test_alerts.py, 90 s, on one worker;
 :: its classes now spread over the workers.)
-cd /d "%~dp0..\backend" && uv run --no-project python "%~dp0run_logged.py" backend "%LOG%" -- uv run pytest -q --tb=short -n %YANTRA_TEST_WORKERS% --dist loadscope %*
+cd /d "%~dp0..\backend" && uv run --no-project python "%~dp0common\run_test_suite.py" backend "%LOG%" -- uv run pytest -q --tb=short -n %YANTRA_TEST_WORKERS% --dist loadscope %*
 exit /b %ERRORLEVEL%

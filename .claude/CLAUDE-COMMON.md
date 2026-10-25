@@ -21,10 +21,24 @@ Shared development rules across all repos, in two kinds:
 
 - **DRY**: Extract shared logic into reusable functions; never copy-paste code blocks.
 - **Testing**: Write tests for new functionality — happy path plus key failure modes.
+- **Known faults are marked strict**: a test that fails because of a fault you accept for now carries a
+  strict expected-failure mark that names the step and the fault, so the run turns red when the fault
+  is fixed and the mark has to come off. A test that also passes now and then is no known fault: fix
+  the test. The mark's syntax for each test tool is the repo's `## Pre-flight` setting *Known fault*
+  (`SMTW-WebApp-Base.md` § Pre-flight Before Every Release); this rule does not repeat it.
+  (Yantra, S049, 25-10-2026.)
 - **Edge cases**: Consider nulls, empty inputs, boundary values, concurrent access. Clarify ambiguous requirements.
 - **Error handling**: Handle errors at the right level with meaningful messages. Never silently swallow exceptions.
 - **Deprecation**: Never use deprecated APIs/functions/modules. If found in existing code, rewrite to avoid them after consulting me.
 - **Dependency health**: Prefer actively maintained libraries. Flag dependencies that are unmaintained (no release in 12+ months, archived repo), end-of-life, or abandoned, and suggest a maintained alternative.
+- **Software inventory**: keep a CycloneDX software bill of materials (SBOM) for every lockfile
+  (`uv.lock`, `package-lock.json`) in `sbom/`, one file per lockfile named after its folder
+  (`backend.cdx.json`). Generate it with the audit script, never edit it by hand, and commit `sbom/`
+  with every dependency change. The audit (`tooling/deps/audit.py`, wrapper `tooling/run-deps-audit.bat`)
+  looks every library up in OSV and flags direct dependencies with no release in 12 months, as *Dependency
+  health* asks. Exit codes: **0** clean, **1** a critical, high or unknown-severity vulnerability, **2** the
+  check could not be completed. Run it before a release; keep it out of the normal test run (it needs the
+  network). Its report goes to `scratch/dependency-report.md`. (Yantra, S022, 18-10-2026.)
 - **Idle connections**: Pooled DB/HTTP connections die after long idle periods (overnight). Detect a dead connection on first use (`OperationalError`/`InterfaceError` or equivalent) and reconnect, rather than returning a 500 after a quiet night.
 
 ### Migrations & dev databases
@@ -38,6 +52,14 @@ Shared development rules across all repos, in two kinds:
 - **Date formats**: Indian format `DD-MM-YYYY` (preferred) or ISO 8601 `YYYY-MM-DD` for entry, display, and storage. Never US `MM/DD/YYYY`.
 - **Raw SQL over ORM** with the appropriate driver, unless the framework requires an ORM.
 - **Secrets**: Credentials in gitignored `secrets_*.py` files, with `example_secrets_*.py` templates. (Canonical description — repo `CLAUDE.md` links here, doesn't restate.)
+- **Mail relay values and personal addresses never go into a repo**: the host, port and credentials of a
+  mail relay, and any person's email address, appear nowhere in the repo — no code default, example,
+  test value or doc. They come from the deployment's variables (Ansible), through the secrets file.
+  Tests and examples use reserved names (`example.test`). A person's address comes from the login
+  token, is never typed in, and is shown only to its owner and the administrator. A background-task
+  payload carries the person's id, never the address, so the queue and the logs hold no address.
+  (Yantra, S032, 24-10-2026.) This covers the mail relay and people's addresses only; other service
+  URLs, realm names and deployment paths may be in a repo.
 - **Data directories**: App-owned data in a gitignored `data/` folder, organized by tenant/company if multi-tenant. Support env-var overrides for default paths.
 - **Git commit messages**: One line, feature-focused — what changed, brief context after a dash or semicolon. No multi-line bodies or bullet lists.
   Example: `Auto-generated project index: Index.md - triggered on project save and daily materialisation run;`
@@ -76,6 +98,13 @@ Prefer the Bash tool over PowerShell — PowerShell mangles special characters, 
 ### Wrapper scripts
 
 Wrap recurring test/build/query commands in `tooling/*.bat` (or `.sh`) scripts so Claude Code permissions can whitelist them once. Prefer running the wrapper over retyping the raw command.
+
+A test wrapper writes the suite's whole output to `scratch/<suite>-tests.log` (with the run name,
+`scratch/<suite>-tests-<run>.log`, when one is set) and prints one last line:
+PASSED or FAILED, the counts, the time and the log path (`tooling/common/run_test_suite.py` does this for
+any command). Read that line and the log; never run the suite again just to see its summary. A
+wrapper that runs several suites sets `TEST_SUMMARY_FILE` to a file, so each suite appends its line and
+the wrapper prints all lines again at the end.
 
 ### Show the plan before building
 
@@ -165,6 +194,18 @@ Rules for Claude Code:
 ### Stale bundle detection (web apps)
 
 Every SPA must tell an open tab when a newer build is deployed and prompt the user to reload. Pattern: `SMTW-WebApp-Base.md` § Stale bundle detection.
+
+### Working in numbered steps (optional)
+
+A repo may work in numbered steps with `/step`: a brief, a brief review, the code with an impl report,
+and a code review, each in `docs/steps/S0NN-<slug>/`. The skill (`.claude/skills/step/`), the agents
+(`.claude/agents/`), the tools (`tooling/steps/`, `tooling/roadmap/` and the `tooling/step-*.bat` and
+`tooling/render-mockups.bat` wrappers) and the two READMEs (`docs/steps/README.md`,
+`docs/roadmap/README.md`) come from `smtw-common` and are edited there, never in the repo. A repo opts
+in with two things of its own: a `## Step workflow` section in its `.claude/CLAUDE.md` (the entries
+are listed in `docs/steps/README.md` § The repo's settings and index; one line each, in the form of
+`## Pre-flight`) and its `docs/steps/INDEX.md`. The tools' tests live and run in `smtw-common` only
+(`tooling/common/tests`, `tooling/run-common-tests.bat`).
 
 ### RBAC Pattern
 

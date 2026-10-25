@@ -1,10 +1,10 @@
 @echo off
 setlocal
-:: Full test suite: backend (pytest, needs the dev DB up), frontend (vitest), then the dependency-audit
-:: and tooling (deploy.py, steps, run_lanes, run_logged) tests. tooling\release-tests.bat runs this in a
+:: Full test suite: backend (pytest, needs the dev DB up), frontend (vitest), then the tooling
+:: (deploy.py, preflight, run_lanes) tests. tooling\release-tests.bat runs this in a
 :: clean worktree for the release.
 :: Every suite runs, even after one failed; each writes its log to scratch\ (YANTRA_TEST_LOG_DIR) and a
-:: summary line, and the lines of all four are printed again at the end. Exit 1 when any suite failed.
+:: summary line, and the lines of all three are printed again at the end. Exit 1 when any suite failed.
 if not defined YANTRA_TEST_LOG_DIR set "YANTRA_TEST_LOG_DIR=%~dp0..\scratch"
 if not exist "%YANTRA_TEST_LOG_DIR%" mkdir "%YANTRA_TEST_LOG_DIR%"
 set "TEST_SUMMARY_FILE=%YANTRA_TEST_LOG_DIR%\test-summary.txt"
@@ -14,7 +14,6 @@ set "FAILED="
 
 call "%~dp0run-backend-tests.bat" || set "FAILED=1"
 call "%~dp0run-frontend-tests.bat" || set "FAILED=1"
-call "%~dp0run-deps-tests.bat" || set "FAILED=1"
 call "%~dp0run-tooling-tests.bat" || set "FAILED=1"
 
 echo.

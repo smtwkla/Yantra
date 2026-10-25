@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 25-10-2026
 Track: light (the reviewer's major switched it to full; KLA kept light at gate A, U2)
-Status: Gate B (CR r1 and r2: 0 blocker, 0 major; fix rounds 1 and 2 done)
+Status: Done — committed 8f47482 (adopted 26-10-2026)
 Baseline: 6321983 (S057 committed; the review was against db5b803 + uncommitted S057, the same tree)
 ```
 

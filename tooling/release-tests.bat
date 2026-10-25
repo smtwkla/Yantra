@@ -1,6 +1,6 @@
 @echo off
 setlocal
-:: The release's tests (TEST_CMD of the Release run configs): the four unit suites
+:: The release's tests (TEST_CMD of the Release run configs): the three unit suites
 :: (tooling\run-tests.bat) and the browser tests at the Full level (S047) on a clean copy of
 :: HEAD, so nobody's edits in the working folder during the run can change what is tested, and
 :: on databases of its own (YANTRA_TEST_RUN=release: vel_yantra_test_release_<worker>),

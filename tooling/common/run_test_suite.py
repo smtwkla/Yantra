@@ -1,7 +1,7 @@
 """Run one test suite, keep its whole output in a log, and end with one summary line that an
 agent always sees, however much of the output a tool cuts off.
 
-    uv run --no-project python tooling/run_logged.py <label> <log file> -- <command> [args...]
+    uv run --no-project python tooling/common/run_test_suite.py <label> <log file> -- <command> [args...]
 
 The command's output goes to the console and to the log file as it comes.  At the end:
 
@@ -70,7 +70,7 @@ def run(label, log_path, command):
 def main(argv):
     sys.stdout.reconfigure(errors="replace")
     if len(argv) < 4 or argv[2] != "--":
-        print("usage: run_logged.py <label> <log file> -- <command> [args...]", file=sys.stderr)
+        print("usage: run_test_suite.py <label> <log file> -- <command> [args...]", file=sys.stderr)
         return 2
     return run(argv[0], argv[1], argv[3:])
 

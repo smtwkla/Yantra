@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import base64
+import hashlib
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -33,6 +34,21 @@ FILES = [
     ("tooling/common/ccssh.py", "tooling/common/ccssh.py"),
     ("tooling/common/ccloki.py", "tooling/common/ccloki.py"),
     ("tooling/common/material_icon.py", "tooling/common/material_icon.py"),
+    ("tooling/common/run_test_suite.py", "tooling/common/run_test_suite.py"),
+    # Software inventory audit: the scripts only (its tests live in tooling/common/tests)
+    ("tooling/deps/audit.py", "tooling/deps/audit.py"),
+    ("tooling/deps/audit_core.py", "tooling/deps/audit_core.py"),
+    ("tooling/run-deps-audit.bat", "tooling/run-deps-audit.bat"),
+    # Step workflow (/step): wrappers and the two READMEs
+    ("tooling/step-brief-facts.bat", "tooling/step-brief-facts.bat"),
+    ("tooling/step-check.bat", "tooling/step-check.bat"),
+    ("tooling/step-feedback.bat", "tooling/step-feedback.bat"),
+    ("tooling/step-ls.bat", "tooling/step-ls.bat"),
+    ("tooling/step-snapshot.bat", "tooling/step-snapshot.bat"),
+    ("tooling/step-stats.bat", "tooling/step-stats.bat"),
+    ("tooling/render-mockups.bat", "tooling/render-mockups.bat"),
+    ("docs/steps/README.md", "docs/steps/README.md"),
+    ("docs/roadmap/README.md", "docs/roadmap/README.md"),
 ]
 
 # Source directories in smtw-common repo to recursively sync into the project
@@ -40,6 +56,22 @@ FILES = [
 DIRS = [
     (".claude/skills", ".claude/skills"),
     (".claude/hooks", ".claude/hooks"),
+    (".claude/agents", ".claude/agents"),
+    ("tooling/steps", "tooling/steps"),
+    ("tooling/roadmap", "tooling/roadmap"),
+]
+
+# Files this repo once synced and has since renamed or dropped:
+# (path relative to project root, {SHA-256 of each version this repo shipped}).
+# The sync deletes such a file only if its content matches one of the hashes, so
+# a copy the target repo has edited is kept, with a warning. Hash with
+# file_hash() below, i.e. with CRLF turned into LF, e.g.:
+#   git show <commit>:<path> | tr -d '\r' | sha256sum
+REMOVED = [
+    # Renamed to tooling/common/run_test_suite.py
+    ("tooling/common/run_logged.py", {
+        "1429b45df726b460ed34e82c2a4aeb2e22e1ba824ab8a302f8ffd6aaceb6d52b",  # a2147bd
+    }),
 ]
 
 # Target project's CLAUDE.md must start with this banner. The `@CLAUDE-COMMON.md`
@@ -88,6 +120,30 @@ def sync_dir(token: str, src_dir: str, dest_dir: Path):
             content = fetch_file(token, src_path)
             dest_path.write_text(content, encoding="utf-8")
             print(f"Synced {src_path} -> {dest_path}")
+
+
+def file_hash(path: Path) -> str:
+    """SHA-256 of a file's content, with CRLF read as LF: write_text() saves CRLF on
+    Windows, so the same synced file has different bytes on different machines."""
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def remove_old_files(root: Path, removed=None) -> list[str]:
+    """Delete the files in REMOVED that are unchanged copies of what this repo
+    shipped. Return the paths kept because the target repo changed them."""
+    kept = []
+    for rel, hashes in (REMOVED if removed is None else removed):
+        path = root / rel
+        if not path.is_file():
+            continue
+        if file_hash(path) in hashes:
+            path.unlink()
+            print(f"Removed {rel} (no longer in smtw-common)")
+        else:
+            kept.append(rel)
+            print(f"Warning: {rel} is no longer in smtw-common, but it was changed "
+                  f"in this repo, so it is kept. Delete it by hand if not needed.")
+    return kept
 
 
 def report_fetch_error(path: str, e: HTTPError):
@@ -182,6 +238,8 @@ def main():
         except HTTPError as e:
             report_fetch_error(src_dir, e)
             failures += 1
+
+    remove_old_files(PROJECT_ROOT)
 
     check_claude_md_banner()
 
