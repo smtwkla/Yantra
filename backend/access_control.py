@@ -241,8 +241,8 @@ def _record(response):
 
 
 def make_access_log_hook(dev_bypass=False):
-    """Factory for the after_request hook.  Register it before every other after_request hook
-    (CORS's included): Flask runs them in reverse, so it runs last and sees the final
+    """Factory for the after_request hook.  Register it before every other after_request hook:
+    Flask runs them in reverse, so it runs last and sees the final
     status.  It runs on error-handler and 500 responses too.  A logging failure is logged
     and never breaks the request."""
 

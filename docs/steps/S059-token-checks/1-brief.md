@@ -199,6 +199,7 @@ use `options={"require": [...]}`. CLAUDE-COMMON gets nothing: its rules are not 
    Keycloak puts `typ: Bearer` in the payload.
 5. **The issuer is the public realm URL** (`realm_url`), also when the keys come from the LAN
    address (`internal_realm_url`). The token names who issued it; where we fetch keys is ours.
+   address (`internal_realm_url`). The token names who issued it; where we fetch keys is ours.
 6. **No stale-key fallback during an outage.** Rejected: our own cache that keeps the last good
    key list past 300 s. More code in the security path for an outage that the 5 s timeout and the
    503 message already make clear.

@@ -115,10 +115,11 @@ No departure from the brief.
 
 The step changes no screen, so it has no *Automated* browser check.
 
-- [ ] **Important — KLA, before the release** (brief § 5 check 1, device-checks row 39): decode
+- [x] **Important — KLA, before the release** (brief § 5 check 1, device-checks row 39): decode
   one real production access token in your own terminal. Pass: `"typ": "Bearer"`, `"iss"` equal
   to `KEYCLOAK_REALM_URL` in the production secrets, `"iat"` and `"exp"` present. Report only
   `typ` and `iss`.
+  Done by KLA, 26-10-2026: `typ` and `iss` both OK (KLA ran `scratch/check_token.py`, which reads only those two claims; `iat` and `exp` were not read — Keycloak sets both on every access token).
 - After the deploy, sign in on production as a normal user; the start screen opens
   (device-checks row 40).
 

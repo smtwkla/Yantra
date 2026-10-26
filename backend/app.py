@@ -5,7 +5,6 @@ import os
 import time
 
 from flask import Flask, g, jsonify, request
-from flask_cors import CORS
 
 from access_control import client_network, make_access_log_hook, require_network
 from api_common import register_error_handlers
@@ -38,11 +37,10 @@ app.config["SECRET_KEY"] = SECRET_KEY
 # matching Nginx's client_max_body_size 101M (S006 § 5.2)
 app.config["MAX_CONTENT_LENGTH"] = (UPLOAD_MAX_MB_CEILING + 1) * MB
 
-# The access log (S013 § 5.4) is the first after_request hook registered, above CORS(app),
-# which registers one at its call: Flask runs them in reverse, so this one runs last and
-# sees the final status, error handlers' and 500s included.
+# The access log (S013 § 5.4) is the first after_request hook registered, above any later
+# one: Flask runs them in reverse, so this one runs last and sees the final status, error
+# handlers' and 500s included.  No CORS: the app is same-origin (Nginx; Vite's proxy in dev).
 app.after_request(make_access_log_hook(dev_bypass=DEV_AUTH_BYPASS))
-CORS(app, origins=os.environ.get("CORS_ORIGINS", "http://localhost:5176").split(","))
 
 
 # ---------------------------------------------------------------------------

@@ -15,3 +15,12 @@ def test_not_ready_is_still_200_with_no_reason(client, monkeypatch):
     monkeypatch.setattr(app_module, "ensure_schema", lambda _config: "Drop the old equipment table first")
     res = client.get("/api/health")
     assert (res.status_code, res.get_json()) == (200, {"status": "ok", "schema_ready": False})
+
+
+def test_no_cors_headers_are_sent(client):
+    # S060: production served the dev origin in Access-Control-Allow-Origin because Flask-CORS
+    # sends its literal origins when a request has no Origin header.  The app is same-origin
+    # (Nginx in production, Vite's proxy in dev), so no response carries a CORS header.
+    for headers in ({}, {"Origin": "http://localhost:5176"}):
+        res = client.get("/api/health", headers=headers)
+        assert "Access-Control-Allow-Origin" not in res.headers, headers

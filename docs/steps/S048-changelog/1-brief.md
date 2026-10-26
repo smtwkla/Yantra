@@ -383,3 +383,12 @@ Coder: Sonnet.
 prompt and stdin), in the hook's form `commit <short sha>`, subject, body, blank line. CR3-02:
 skill § 1's stop line says "Unattended: print nothing". CR3-03: the hook's docstring re-wrapped.
 Tooling suite 185 passed (`s048f3`).
+
+### KLA on the notes' wording — 26-10-2026 (after gate B)
+
+KLA: "in pre-flight skill, regarding summary generation for release, ask it to include only the
+info relavant for end users. no tech jargon stuff. sometimes, 'Tickets - various bug fixes' is
+ok." The orchestrator added to skill § 3c (smtw-common, uncommitted): only what a reader would
+notice; a list of technical words to avoid, with an example; small fixes in one area may be one
+item, "Tickets: various bug fixes". No Yantra code changes.
+

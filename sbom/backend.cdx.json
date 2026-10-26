@@ -129,112 +129,105 @@
     },
     {
       "type": "library",
-      "bom-ref": "flask-cors-16@6.0.5",
-      "name": "flask-cors",
-      "version": "6.0.5",
-      "purl": "pkg:pypi/flask-cors@6.0.5"
-    },
-    {
-      "type": "library",
-      "bom-ref": "frozenlist-17@1.8.0",
+      "bom-ref": "frozenlist-16@1.8.0",
       "name": "frozenlist",
       "version": "1.8.0",
       "purl": "pkg:pypi/frozenlist@1.8.0"
     },
     {
       "type": "library",
-      "bom-ref": "gunicorn-18@26.2.0",
+      "bom-ref": "gunicorn-17@26.2.0",
       "name": "gunicorn",
       "version": "26.2.0",
       "purl": "pkg:pypi/gunicorn@26.2.0"
     },
     {
       "type": "library",
-      "bom-ref": "http-ece-19@1.2.1",
+      "bom-ref": "http-ece-18@1.2.1",
       "name": "http-ece",
       "version": "1.2.1",
       "purl": "pkg:pypi/http-ece@1.2.1"
     },
     {
       "type": "library",
-      "bom-ref": "idna-20@3.20",
+      "bom-ref": "idna-19@3.20",
       "name": "idna",
       "version": "3.20",
       "purl": "pkg:pypi/idna@3.20"
     },
     {
       "type": "library",
-      "bom-ref": "iniconfig-21@2.3.1",
+      "bom-ref": "iniconfig-20@2.3.1",
       "name": "iniconfig",
       "version": "2.3.1",
       "purl": "pkg:pypi/iniconfig@2.3.1"
     },
     {
       "type": "library",
-      "bom-ref": "itsdangerous-22@2.2.0",
+      "bom-ref": "itsdangerous-21@2.2.0",
       "name": "itsdangerous",
       "version": "2.2.0",
       "purl": "pkg:pypi/itsdangerous@2.2.0"
     },
     {
       "type": "library",
-      "bom-ref": "jinja2-23@3.1.6",
+      "bom-ref": "jinja2-22@3.1.6",
       "name": "jinja2",
       "version": "3.1.6",
       "purl": "pkg:pypi/jinja2@3.1.6"
     },
     {
       "type": "library",
-      "bom-ref": "markupsafe-24@3.0.4",
+      "bom-ref": "markupsafe-23@3.0.4",
       "name": "markupsafe",
       "version": "3.0.4",
       "purl": "pkg:pypi/markupsafe@3.0.4"
     },
     {
       "type": "library",
-      "bom-ref": "multidict-25@7.1.0",
+      "bom-ref": "multidict-24@7.1.0",
       "name": "multidict",
       "version": "7.1.0",
       "purl": "pkg:pypi/multidict@7.1.0"
     },
     {
       "type": "library",
-      "bom-ref": "packaging-26@26.3",
+      "bom-ref": "packaging-25@26.3",
       "name": "packaging",
       "version": "26.3",
       "purl": "pkg:pypi/packaging@26.3"
     },
     {
       "type": "library",
-      "bom-ref": "pillow-27@13.0.0",
+      "bom-ref": "pillow-26@13.0.0",
       "name": "pillow",
       "version": "13.0.0",
       "purl": "pkg:pypi/pillow@13.0.0"
     },
     {
       "type": "library",
-      "bom-ref": "pluggy-28@1.6.0",
+      "bom-ref": "pluggy-27@1.6.0",
       "name": "pluggy",
       "version": "1.6.0",
       "purl": "pkg:pypi/pluggy@1.6.0"
     },
     {
       "type": "library",
-      "bom-ref": "propcache-29@0.5.4",
+      "bom-ref": "propcache-28@0.5.4",
       "name": "propcache",
       "version": "0.5.4",
       "purl": "pkg:pypi/propcache@0.5.4"
     },
     {
       "type": "library",
-      "bom-ref": "py-vapid-30@1.9.6",
+      "bom-ref": "py-vapid-29@1.9.6",
       "name": "py-vapid",
       "version": "1.9.6",
       "purl": "pkg:pypi/py-vapid@1.9.6"
     },
     {
       "type": "library",
-      "bom-ref": "pycparser-31@3.11",
+      "bom-ref": "pycparser-30@3.11",
       "name": "pycparser",
       "version": "3.11",
       "purl": "pkg:pypi/pycparser@3.11",
@@ -247,70 +240,70 @@
     },
     {
       "type": "library",
-      "bom-ref": "pygments-32@2.21.0",
+      "bom-ref": "pygments-31@2.21.0",
       "name": "pygments",
       "version": "2.21.0",
       "purl": "pkg:pypi/pygments@2.21.0"
     },
     {
       "type": "library",
-      "bom-ref": "pyjwt-33@2.15.1",
+      "bom-ref": "pyjwt-32@2.15.1",
       "name": "pyjwt",
       "version": "2.15.1",
       "purl": "pkg:pypi/pyjwt@2.15.1"
     },
     {
       "type": "library",
-      "bom-ref": "pymysql-34@1.2.3",
+      "bom-ref": "pymysql-33@1.2.3",
       "name": "pymysql",
       "version": "1.2.3",
       "purl": "pkg:pypi/pymysql@1.2.3"
     },
     {
       "type": "library",
-      "bom-ref": "pytest-35@9.1.1",
+      "bom-ref": "pytest-34@9.1.1",
       "name": "pytest",
       "version": "9.1.1",
       "purl": "pkg:pypi/pytest@9.1.1"
     },
     {
       "type": "library",
-      "bom-ref": "pytest-xdist-36@3.8.0",
+      "bom-ref": "pytest-xdist-35@3.8.0",
       "name": "pytest-xdist",
       "version": "3.8.0",
       "purl": "pkg:pypi/pytest-xdist@3.8.0"
     },
     {
       "type": "library",
-      "bom-ref": "python-dotenv-37@1.2.4",
+      "bom-ref": "python-dotenv-36@1.2.4",
       "name": "python-dotenv",
       "version": "1.2.4",
       "purl": "pkg:pypi/python-dotenv@1.2.4"
     },
     {
       "type": "library",
-      "bom-ref": "pywebpush-38@2.5.0",
+      "bom-ref": "pywebpush-37@2.5.0",
       "name": "pywebpush",
       "version": "2.5.0",
       "purl": "pkg:pypi/pywebpush@2.5.0"
     },
     {
       "type": "library",
-      "bom-ref": "qrcode-39@8.2",
+      "bom-ref": "qrcode-38@8.2",
       "name": "qrcode",
       "version": "8.2",
       "purl": "pkg:pypi/qrcode@8.2"
     },
     {
       "type": "library",
-      "bom-ref": "requests-40@2.34.2",
+      "bom-ref": "requests-39@2.34.2",
       "name": "requests",
       "version": "2.34.2",
       "purl": "pkg:pypi/requests@2.34.2"
     },
     {
       "type": "library",
-      "bom-ref": "typing-extensions-41@4.16.0",
+      "bom-ref": "typing-extensions-40@4.16.0",
       "name": "typing-extensions",
       "version": "4.16.0",
       "purl": "pkg:pypi/typing-extensions@4.16.0",
@@ -323,21 +316,21 @@
     },
     {
       "type": "library",
-      "bom-ref": "urllib3-42@2.8.0",
+      "bom-ref": "urllib3-41@2.8.0",
       "name": "urllib3",
       "version": "2.8.0",
       "purl": "pkg:pypi/urllib3@2.8.0"
     },
     {
       "type": "library",
-      "bom-ref": "werkzeug-43@3.1.9",
+      "bom-ref": "werkzeug-42@3.1.9",
       "name": "werkzeug",
       "version": "3.1.9",
       "purl": "pkg:pypi/werkzeug@3.1.9"
     },
     {
       "type": "library",
-      "bom-ref": "yarl-44@1.25.1",
+      "bom-ref": "yarl-43@1.25.1",
       "name": "yarl",
       "version": "1.25.1",
       "purl": "pkg:pypi/yarl@1.25.1"
@@ -354,18 +347,18 @@
         "aiohappyeyeballs-2@2.7.1",
         "aiosignal-4@1.4.0",
         "attrs-5@26.1.0",
-        "frozenlist-17@1.8.0",
-        "multidict-25@7.1.0",
-        "propcache-29@0.5.4",
-        "typing-extensions-41@4.16.0",
-        "yarl-44@1.25.1"
+        "frozenlist-16@1.8.0",
+        "multidict-24@7.1.0",
+        "propcache-28@0.5.4",
+        "typing-extensions-40@4.16.0",
+        "yarl-43@1.25.1"
       ]
     },
     {
       "ref": "aiosignal-4@1.4.0",
       "dependsOn": [
-        "frozenlist-17@1.8.0",
-        "typing-extensions-41@4.16.0"
+        "frozenlist-16@1.8.0",
+        "typing-extensions-40@4.16.0"
       ]
     },
     {
@@ -383,7 +376,7 @@
     {
       "ref": "cffi-8@2.1.1",
       "dependsOn": [
-        "pycparser-31@3.11"
+        "pycparser-30@3.11"
       ]
     },
     {
@@ -417,157 +410,150 @@
       "dependsOn": [
         "blinker-6@1.9.0",
         "click-10@8.5.0",
-        "itsdangerous-22@2.2.0",
-        "jinja2-23@3.1.6",
-        "markupsafe-24@3.0.4",
-        "werkzeug-43@3.1.9"
+        "itsdangerous-21@2.2.0",
+        "jinja2-22@3.1.6",
+        "markupsafe-23@3.0.4",
+        "werkzeug-42@3.1.9"
       ]
     },
     {
-      "ref": "flask-cors-16@6.0.5",
-      "dependsOn": [
-        "flask-15@3.1.3",
-        "werkzeug-43@3.1.9"
-      ]
-    },
-    {
-      "ref": "frozenlist-17@1.8.0",
+      "ref": "frozenlist-16@1.8.0",
       "dependsOn": []
     },
     {
-      "ref": "gunicorn-18@26.2.0",
+      "ref": "gunicorn-17@26.2.0",
       "dependsOn": []
     },
     {
-      "ref": "http-ece-19@1.2.1",
+      "ref": "http-ece-18@1.2.1",
       "dependsOn": [
         "cryptography-12@50.0.2"
       ]
     },
     {
-      "ref": "idna-20@3.20",
+      "ref": "idna-19@3.20",
       "dependsOn": []
     },
     {
-      "ref": "iniconfig-21@2.3.1",
+      "ref": "iniconfig-20@2.3.1",
       "dependsOn": []
     },
     {
-      "ref": "itsdangerous-22@2.2.0",
+      "ref": "itsdangerous-21@2.2.0",
       "dependsOn": []
     },
     {
-      "ref": "jinja2-23@3.1.6",
+      "ref": "jinja2-22@3.1.6",
       "dependsOn": [
-        "markupsafe-24@3.0.4"
+        "markupsafe-23@3.0.4"
       ]
     },
     {
-      "ref": "markupsafe-24@3.0.4",
+      "ref": "markupsafe-23@3.0.4",
       "dependsOn": []
     },
     {
-      "ref": "multidict-25@7.1.0",
+      "ref": "multidict-24@7.1.0",
       "dependsOn": []
     },
     {
-      "ref": "packaging-26@26.3",
+      "ref": "packaging-25@26.3",
       "dependsOn": []
     },
     {
-      "ref": "pillow-27@13.0.0",
+      "ref": "pillow-26@13.0.0",
       "dependsOn": []
     },
     {
-      "ref": "pluggy-28@1.6.0",
+      "ref": "pluggy-27@1.6.0",
       "dependsOn": []
     },
     {
-      "ref": "propcache-29@0.5.4",
+      "ref": "propcache-28@0.5.4",
       "dependsOn": []
     },
     {
-      "ref": "py-vapid-30@1.9.6",
-      "dependsOn": [
-        "cryptography-12@50.0.2"
-      ]
-    },
-    {
-      "ref": "pycparser-31@3.11",
-      "dependsOn": []
-    },
-    {
-      "ref": "pygments-32@2.21.0",
-      "dependsOn": []
-    },
-    {
-      "ref": "pyjwt-33@2.15.1",
+      "ref": "py-vapid-29@1.9.6",
       "dependsOn": [
         "cryptography-12@50.0.2"
       ]
     },
     {
-      "ref": "pymysql-34@1.2.3",
+      "ref": "pycparser-30@3.11",
       "dependsOn": []
     },
     {
-      "ref": "pytest-35@9.1.1",
+      "ref": "pygments-31@2.21.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pyjwt-32@2.15.1",
+      "dependsOn": [
+        "cryptography-12@50.0.2"
+      ]
+    },
+    {
+      "ref": "pymysql-33@1.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pytest-34@9.1.1",
       "dependsOn": [
         "colorama-11@0.4.6",
-        "iniconfig-21@2.3.1",
-        "packaging-26@26.3",
-        "pluggy-28@1.6.0",
-        "pygments-32@2.21.0"
+        "iniconfig-20@2.3.1",
+        "packaging-25@26.3",
+        "pluggy-27@1.6.0",
+        "pygments-31@2.21.0"
       ]
     },
     {
-      "ref": "pytest-xdist-36@3.8.0",
+      "ref": "pytest-xdist-35@3.8.0",
       "dependsOn": [
         "execnet-14@2.1.2",
-        "pytest-35@9.1.1"
+        "pytest-34@9.1.1"
       ]
     },
     {
-      "ref": "python-dotenv-37@1.2.4",
+      "ref": "python-dotenv-36@1.2.4",
       "dependsOn": []
     },
     {
-      "ref": "pywebpush-38@2.5.0",
+      "ref": "pywebpush-37@2.5.0",
       "dependsOn": [
         "aiohttp-3@3.14.5",
         "cryptography-12@50.0.2",
-        "http-ece-19@1.2.1",
-        "py-vapid-30@1.9.6",
-        "requests-40@2.34.2"
+        "http-ece-18@1.2.1",
+        "py-vapid-29@1.9.6",
+        "requests-39@2.34.2"
       ]
     },
     {
-      "ref": "qrcode-39@8.2",
+      "ref": "qrcode-38@8.2",
       "dependsOn": [
         "colorama-11@0.4.6"
       ]
     },
     {
-      "ref": "requests-40@2.34.2",
+      "ref": "requests-39@2.34.2",
       "dependsOn": [
         "certifi-7@2026.10.19",
         "charset-normalizer-9@3.5.2",
-        "idna-20@3.20",
-        "urllib3-42@2.8.0"
+        "idna-19@3.20",
+        "urllib3-41@2.8.0"
       ]
     },
     {
-      "ref": "typing-extensions-41@4.16.0",
+      "ref": "typing-extensions-40@4.16.0",
       "dependsOn": []
     },
     {
-      "ref": "urllib3-42@2.8.0",
+      "ref": "urllib3-41@2.8.0",
       "dependsOn": []
     },
     {
-      "ref": "werkzeug-43@3.1.9",
+      "ref": "werkzeug-42@3.1.9",
       "dependsOn": [
-        "markupsafe-24@3.0.4"
+        "markupsafe-23@3.0.4"
       ]
     },
     {
@@ -575,25 +561,24 @@
       "dependsOn": [
         "dbutils-13@3.2.0",
         "flask-15@3.1.3",
-        "flask-cors-16@6.0.5",
-        "gunicorn-18@26.2.0",
-        "pillow-27@13.0.0",
-        "pyjwt-33@2.15.1",
-        "pymysql-34@1.2.3",
-        "pytest-35@9.1.1",
-        "pytest-xdist-36@3.8.0",
-        "python-dotenv-37@1.2.4",
-        "pywebpush-38@2.5.0",
-        "qrcode-39@8.2",
-        "urllib3-42@2.8.0"
+        "gunicorn-17@26.2.0",
+        "pillow-26@13.0.0",
+        "pyjwt-32@2.15.1",
+        "pymysql-33@1.2.3",
+        "pytest-34@9.1.1",
+        "pytest-xdist-35@3.8.0",
+        "python-dotenv-36@1.2.4",
+        "pywebpush-37@2.5.0",
+        "qrcode-38@8.2",
+        "urllib3-41@2.8.0"
       ]
     },
     {
-      "ref": "yarl-44@1.25.1",
+      "ref": "yarl-43@1.25.1",
       "dependsOn": [
-        "idna-20@3.20",
-        "multidict-25@7.1.0",
-        "propcache-29@0.5.4"
+        "idna-19@3.20",
+        "multidict-24@7.1.0",
+        "propcache-28@0.5.4"
       ]
     }
   ]

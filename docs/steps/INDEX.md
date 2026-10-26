@@ -66,6 +66,7 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S057 | [The step tools name no repo, and the lift list](S057-step-tooling-lift/1-brief.md) — `brief_facts.py` and `step_stats.py` read six new settings entries (*Code folders* and five *Browser-test …* entries); the step tools' tests leave Yantra through the staging folder; the lift list to smtw-common in the impl report (second of two steps for the lift; S056 the prose) | — | Done — committed 6321983 | 26-10-2026 |
 | S058 | [Yantra's general lessons, written for CLAUDE-COMMON and the base](S058-lift-lessons-to-common/1-brief.md) — ready-to-paste texts for 12 points of CLAUDE.md (SMTP policy, SBOM audit, test output, strict known faults; DB down, migration preconditions, parallel test DBs, worktree builds, deploy check, browser testing, secrets fallback, npm pitfall, worker without APScheduler); `YANTRA_TEST_SUMMARY` renamed for the lift (light track) | — | Done — committed 8f47482 | 26-10-2026 |
 | S059 | [Token checks](S059-token-checks/1-brief.md) — R01.2: no evict-and-retry, a 5 s key-fetch timeout, issuer and `exp`/`iat`/`iss` required, `typ` Bearer, a Keycloak outage answers 503 with its own message (full track) | — | Gate B | 26-10-2026 |
+| S060 | [Remove flask-cors](S060-remove-cors/1-brief.md) — production sent `Access-Control-Allow-Origin: http://localhost:5176`; the app is same-origin, so CORS goes (fix lane) | — | Gate B | 26-10-2026 |
 
 ## Queued (not yet briefed)
 
