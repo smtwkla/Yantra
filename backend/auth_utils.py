@@ -20,6 +20,7 @@ A database that is down then raises DBUnavailable (503), as the route would anyw
 """
 
 import functools
+import json
 import logging
 from urllib.parse import urlparse, urlunparse
 
@@ -49,6 +50,21 @@ ADMIN_REALM_ROLES = {"admin", "mspv-apps-admin"}
 # Cached PyJWKClient per JWKS URI
 _jwk_clients = {}
 
+# urllib's limit on each connect and each read of a key-list fetch, not on the whole fetch
+# (a DNS lookup has none); PyJWT's default is 30 s (S059 § 1.1, CR1-02)
+JWKS_TIMEOUT_S = 5
+
+# Clock difference allowed between this server and Keycloak on exp and iat (S059 § 1.3)
+TOKEN_LEEWAY_S = 30
+
+# The answer when Keycloak's key list cannot be fetched (503, S059 § 1.2)
+LOGIN_SERVER_DOWN_TEXT = "Sign-in cannot be checked right now. The login server does not answer. Try again in a minute."
+
+
+class LoginServerUnavailable(Exception):
+    """Keycloak's key list could not be fetched, so the token cannot be checked: an outage
+    (503), not a refused token (401)."""
+
 
 def _make_internal_url(realm_url, host_ip):
     """Replace the hostname in a Keycloak realm URL with a LAN IP for
@@ -76,17 +92,29 @@ def _get_jwk_client(realm_url):
     """Return a cached PyJWKClient for the given realm URL."""
     jwks_uri = f"{realm_url}/protocol/openid-connect/certs"
     if jwks_uri not in _jwk_clients:
-        _jwk_clients[jwks_uri] = jwt.PyJWKClient(jwks_uri)
+        # PyJWT refetches the key list itself for a key id it does not hold, at most once per
+        # cooldown_duration (30 s): that covers key rotation, so no retry of our own (S059 § 1.1)
+        _jwk_clients[jwks_uri] = jwt.PyJWKClient(jwks_uri, timeout=JWKS_TIMEOUT_S)
     return _jwk_clients[jwks_uri]
 
 
-def _decode(token, jwks_url):
-    """Verify the token signature against the realm's JWKS and return its payload."""
+def _decode(token, jwks_url, issuer):
+    """Verify the token signature against the realm's JWKS and return its payload: RS256
+    only, iss equal to ``issuer``, exp, iat and iss required, TOKEN_LEEWAY_S on the times."""
     # Keycloak sets aud="account" by default, not the client_id, so we
     # skip audience verification and check azp (authorized party) instead.
-    decode_opts = {"verify_exp": True, "verify_aud": False}
-    signing_key = _get_jwk_client(jwks_url).get_signing_key_from_jwt(token)
-    return jwt.decode(token, signing_key.key, algorithms=["RS256"], options=decode_opts)
+    # "require" must go in options: PyJWT 2.x takes a require= keyword with only a
+    # deprecation warning and ignores it (S059 § 1.3).
+    decode_opts = {"verify_aud": False, "require": ["exp", "iat", "iss"]}
+    try:
+        signing_key = _get_jwk_client(jwks_url).get_signing_key_from_jwt(token)
+    except (json.JSONDecodeError, OSError) as exc:
+        # PyJWT wraps only URLError, TimeoutError and HTTPException in PyJWKClientConnectionError:
+        # a 200 HTML page or a connection reset mid-body escapes as these.  Both are an outage
+        # (503).  Kept this narrow so a token error (DecodeError, a PyJWTError) stays a 401 (CR1-01).
+        raise jwt.exceptions.PyJWKClientConnectionError(f"key list unreadable: {exc!r}") from exc
+    return jwt.decode(token, signing_key.key, algorithms=["RS256"], issuer=issuer, leeway=TOKEN_LEEWAY_S,
+                      options=decode_opts)
 
 
 def make_user(username, name, roles, memberships=None, stale_roles=(), session_id=None, email=""):
@@ -118,9 +146,13 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
         internal_realm_url: LAN URL for fetching JWKS (if different from public).
 
     Returns the g.user dict (make_user) on success, or None if the token is missing or
-    invalid, or carries none of admin, it_admin, maintenance_team.  On None, g.access_detail
-    holds one fixed code for the access log (S013 § 5.4): no_token, invalid_token,
-    wrong_client or no_role — never the JWT library's message, which differs per probe.
+    invalid, is not an access token, or carries none of admin, it_admin, maintenance_team.
+    On None, g.access_detail holds one fixed code for the access log (S013 § 5.4): no_token,
+    invalid_token, wrong_client, wrong_type or no_role — never the JWT library's message,
+    which differs per probe.
+
+    Raises LoginServerUnavailable when Keycloak's key list cannot be fetched (S059 § 1.2);
+    require_auth answers it with 503 and the detail code login_server_down.
     """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -132,23 +164,31 @@ def validate_keycloak_token(realm_url, client_id, internal_realm_url=None):
     jwks_url = internal_realm_url or realm_url
 
     try:
-        payload = _decode(token, jwks_url)
+        # The issuer is the public realm URL, where the browser signs in, also when the keys
+        # come from the LAN address (S059 decision 5)
+        payload = _decode(token, jwks_url, realm_url)
+    except jwt.exceptions.PyJWKClientConnectionError as exc:
+        # Before PyJWTError, its base class.  PyJWT's message carries the urllib error, not the URL.
+        logger.warning("Keycloak key list not reachable at %s: %s", jwks_url, exc)
+        raise LoginServerUnavailable(jwks_url) from exc
     except jwt.exceptions.PyJWTError as exc:
         logger.warning("JWT validation failed: %s", exc)
-        # Retry once with fresh JWKS in case keys were rotated
-        _jwk_clients.pop(f"{jwks_url}/protocol/openid-connect/certs", None)
-        try:
-            payload = _decode(token, jwks_url)
-        except jwt.exceptions.PyJWTError as exc:
-            logger.warning("JWT validation failed after JWKS refresh: %s", exc)
-            g.access_detail = "invalid_token"
-            return None
+        g.access_detail = "invalid_token"
+        return None
 
     # Verify the token was issued for this client (azp = authorized party)
     if payload.get("azp") != client_id:
         logger.warning("Token azp '%s' does not match client_id '%s'",
                        payload.get("azp"), client_id)
         g.access_detail = "wrong_client"
+        return None
+
+    # Only an access token opens the API: an ID or refresh token signed by the same realm key
+    # has another typ (S059 § 1.3, RFC 8725 § 3.11).  The claim's value is logged, cut short,
+    # never the token.
+    if payload.get("typ") != "Bearer":
+        logger.warning("Token typ %s is not Bearer", repr(payload.get("typ"))[:20])
+        g.access_detail = "wrong_type"
         return None
 
     # Extract role — check both realm roles and client roles
@@ -242,7 +282,13 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
             g.user = _get_dev_stub_user()
             return None
 
-        user = validate_keycloak_token(realm_url, client_id, internal_realm_url)
+        try:
+            user = validate_keycloak_token(realm_url, client_id, internal_realm_url)
+        except LoginServerUnavailable:
+            # An outage, not a refusal of the person: auth_failed with its own detail (S059 § 1.2)
+            g.access_outcome = "auth_failed"
+            g.access_detail = "login_server_down"
+            return jsonify({"error": LOGIN_SERVER_DOWN_TEXT}), 503
         if user is None:
             logger.warning("Auth failed for %s %s", request.method, request.path)
             g.access_outcome = "auth_failed"

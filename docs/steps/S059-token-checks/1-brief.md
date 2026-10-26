@@ -5,7 +5,7 @@ Author: Orchestrator (Opus)
 Date: 26-10-2026
 From: R01.2
 Track: full
-Status: Approved (KLA, 26-10-2026)
+Status: Gate B (code review r1 fixed)
 Baseline: c7803b1
 ```
 
@@ -279,3 +279,11 @@ None.
 KLA: "S059 approved". Important check 1 (a real token's `typ` and `iss`) was not reported at the
 gate: it stays open and must pass before the release (a mismatch refuses every user). Coder: Opus
 (sign-in code). Plan.MD § 1 Security hardening row gains the clause (BR1-14).
+
+### Code review r1 — `4-code-review-r1.md` (Opus), 26-10-2026
+
+0 blocker, 0 major, 1 minor, 1 nit; both fixed in fix round 1 (Opus). CR1-01: a key list that is
+not JSON, or a connection reset mid-body, now answers 503 `login_server_down` (the catch wraps only
+the key fetch; a junk token header stays 401, tested). CR1-02: the 5 s limit is per connect and per
+read, stated in the comment and `docs/Keycloak.md`. Unit suites green (`s059f1`: backend 3098,
+frontend 189, tooling 185). The orchestrator checked the fix; no second review round (minor only).

@@ -37,9 +37,26 @@ fails with "no role"):
   copies it onto the person's Team record at each page load; a token without
   it clears the address, and Masters › Team shows "none yet" to IT admin.
 
-The backend checks the token's signature against the realm's keys, its
-expiry, and that `azp` (authorized party) is `vel-yantra-master`. It does not
-check `aud`.
+The backend checks (S059):
+
+- the signature against the realm's keys, with `RS256` only;
+- the issuer: `iss` must equal the **public** realm URL (`KEYCLOAK_REALM_URL`),
+  also when the keys are fetched from the LAN address;
+- `exp`, `iat` and `iss` must be present; `exp` and `iat` are checked with a
+  30 s allowance for clock difference;
+- `typ` must be `Bearer`: an ID token or a refresh token is refused;
+- `azp` (authorized party) must be `vel-yantra-master`.
+
+It does not check `aud` (Keycloak sets `aud=account`). It fetches the realm's
+key list with a 5 s limit on each connect and each read (not on the whole
+fetch; a DNS lookup has no limit) and caches it for 5 minutes; a token that
+names an unknown key id makes PyJWT fetch the list again, at most once per
+30 s (that covers a key rotation). When the key list cannot be fetched or read
+(no answer, an error status, a page that is not JSON, a connection that
+drops), the API answers
+**503** "Sign-in cannot be checked right now. The login server does not
+answer. Try again in a minute.", and the access log shows a failed login with
+the detail `login_server_down`.
 
 **Development.** The dev backend normally runs with `DEV_AUTH_BYPASS=1` and
 never contacts Keycloak. To test real login locally, add

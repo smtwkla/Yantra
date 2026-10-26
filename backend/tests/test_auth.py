@@ -5,11 +5,16 @@ so these run without a Keycloak server.  From S011 a token's maintenance roles a
 ignored: maintenance_team lets a user log in, and the roles come from memberships.
 """
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import time
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 import auth_utils
@@ -22,12 +27,41 @@ _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
+# The real factory, taken before the autouse stub replaces it (S059 BR1-11)
+_REAL_GET_JWK_CLIENT = auth_utils._get_jwk_client
+
+# The issuer the app checks: app.py passes config.KEYCLOAK_REALM_URL to require_auth (S059 BR1-01)
+ISSUER = config.KEYCLOAK_REALM_URL
+
+# Passed for a claim, _token leaves that claim out of the payload
+OMIT = object()
+
+
 class _StubJWKClient:
     def __init__(self, key):
         self._key = key
+        self.calls = 0
 
     def get_signing_key_from_jwt(self, _token):
+        self.calls += 1
         return type("SigningKey", (), {"key": self._key.public_key()})()
+
+
+class _DownJWKClient:
+    """Keycloak's key list cannot be fetched, for any token (S059 § 1.2)."""
+
+    def get_signing_key_from_jwt(self, _token):
+        raise jwt.exceptions.PyJWKClientConnectionError("Fail to fetch data from the url, err: timed out")
+
+
+class _RaisingJWKClient:
+    """The key-list fetch fails with an error PyJWT does not wrap (S059 CR1-01)."""
+
+    def __init__(self, exc):
+        self._exc = exc
+
+    def get_signing_key_from_jwt(self, _token):
+        raise self._exc
 
 
 @pytest.fixture(autouse=True)
@@ -35,20 +69,48 @@ def stub_jwks(monkeypatch):
     monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _StubJWKClient(_KEY))
 
 
+@pytest.fixture
+def jwks_down(monkeypatch):
+    monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _DownJWKClient())
+
+
 def _token(realm_roles=(), client_roles=(), azp=CLIENT_ID, exp_in=300, key=_KEY, username="jdoe", sid=None,
-           email=None):
+           email=None, iss=ISSUER, iat_in=0, typ="Bearer", headers=None):
+    """A signed token.  exp_in, iat_in (seconds from now), iss and typ default to a valid
+    access token; OMIT for any of them leaves that claim out."""
+    now = int(time.time())
+    claims = {"exp": exp_in, "iat": iat_in, "iss": iss, "typ": typ}
     payload = {
         "sid": sid,
         "preferred_username": username,
         "name": "John Doe",
         "azp": azp,
-        "exp": int(time.time()) + exp_in,
         "realm_access": {"roles": list(realm_roles)},
         "resource_access": {CLIENT_ID: {"roles": list(client_roles)}},
     }
+    for claim, value in claims.items():
+        if value is not OMIT:
+            payload[claim] = now + value if claim in ("exp", "iat") else value
     if email is not None:
         payload["email"] = email
-    return jwt.encode(payload, key, algorithm="RS256")
+    return jwt.encode(payload, key, algorithm="RS256", headers=headers)
+
+
+def _b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _hs256_token_keyed_by_public_pem():
+    """The algorithm-confusion attack, made by hand (PyJWT refuses to sign HMAC with an
+    asymmetric key): HS256 with the realm's public key, as PEM, for the secret."""
+    secret = _KEY.public_key().public_bytes(serialization.Encoding.PEM,
+                                            serialization.PublicFormat.SubjectPublicKeyInfo)
+    now = int(time.time())
+    payload = {"preferred_username": "jdoe", "azp": CLIENT_ID, "exp": now + 300, "iat": now, "iss": ISSUER,
+               "typ": "Bearer", "realm_access": {"roles": ["maintenance_team"]}}
+    signing_input = f"{_b64(json.dumps({'alg': 'HS256', 'typ': 'JWT'}).encode())}.{_b64(json.dumps(payload).encode())}"
+    signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    return f"{signing_input}.{_b64(signature)}"
 
 
 def _bearer(token):
@@ -58,7 +120,14 @@ def _bearer(token):
 def _validate(app, token):
     headers = _bearer(token) if token else {}
     with app.test_request_context("/api/auth/me", headers=headers):
-        return auth_utils.validate_keycloak_token("https://sso.example/realms/R", CLIENT_ID)
+        return auth_utils.validate_keycloak_token(ISSUER, CLIENT_ID)
+
+
+def _detail(app, token):
+    """(the validator's result, g.access_detail)."""
+    from flask import g
+    with app.test_request_context("/api/auth/me", headers=_bearer(token)):
+        return auth_utils.validate_keycloak_token(ISSUER, CLIENT_ID), g.get("access_detail")
 
 
 class TestValidateToken:
@@ -117,6 +186,121 @@ class TestValidateToken:
         assert _validate(app, _token(client_roles=["maintenance_team"], email=" Priya@Example.TEST"))["email"] == (
             " Priya@Example.TEST")
         assert _validate(app, _token(client_roles=["maintenance_team"]))["email"] == ""
+
+
+class TestTokenChecks:
+    """S059 § 1.3, § 5: issuer, required claims, leeway, the token's kind, the algorithm."""
+
+    def test_another_issuer_is_refused(self, app):
+        token = _token(realm_roles=["maintenance_team"], iss="https://sso.example.test/realms/Other")
+        assert _detail(app, token) == (None, "invalid_token")
+
+    @pytest.mark.parametrize("claim", ["exp_in", "iat_in", "iss"])
+    def test_a_required_claim_left_out_is_refused(self, app, claim):
+        assert _detail(app, _token(realm_roles=["maintenance_team"], **{claim: OMIT})) == (None, "invalid_token")
+
+    @pytest.mark.parametrize("typ", ["ID", "Refresh", OMIT])
+    def test_a_token_that_is_not_an_access_token_is_refused(self, app, typ):
+        assert _detail(app, _token(realm_roles=["maintenance_team"], typ=typ)) == (None, "wrong_type")
+
+    def test_the_typ_is_logged_cut_short_never_the_token(self, app, caplog):
+        token = _token(realm_roles=["maintenance_team"], typ="X" * 50)
+        with caplog.at_level(logging.WARNING):
+            _detail(app, token)
+        [line] = [r.getMessage() for r in caplog.records if "is not Bearer" in r.getMessage()]
+        assert "'" + "X" * 19 in line and "X" * 20 not in line and token not in line
+
+    def test_hs256_signed_with_the_public_key_is_refused(self, app):
+        assert _detail(app, _hs256_token_keyed_by_public_pem()) == (None, "invalid_token")
+
+    @pytest.mark.parametrize("times, accepted", [
+        ({"iat_in": 20}, True),     # issued 20 s ahead of this clock: within the leeway
+        ({"iat_in": 60}, False),
+        ({"exp_in": -20}, True),    # expired 20 s ago: within the leeway
+        ({"exp_in": -40}, False),
+    ])
+    def test_the_clock_leeway(self, app, times, accepted):
+        user, _code = _detail(app, _token(realm_roles=["maintenance_team"], **times))
+        assert (user is not None) == accepted
+
+    def test_a_bad_token_is_decoded_once(self, app, monkeypatch):
+        """No evict-and-retry: a bad token costs one key lookup (§ 1.1)."""
+        stub = _StubJWKClient(_KEY)
+        monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: stub)
+        assert _detail(app, _token(realm_roles=["maintenance_team"], key=_OTHER_KEY)) == (None, "invalid_token")
+        assert stub.calls == 1
+
+    def test_the_key_list_fetch_times_out_after_5_s(self):
+        url = "https://sso.example.test/realms/S059"
+        uri = f"{url}/protocol/openid-connect/certs"
+        auth_utils._jwk_clients.pop(uri, None)
+        try:
+            client = _REAL_GET_JWK_CLIENT(url)   # builds the client; fetches nothing yet
+            assert isinstance(client, jwt.PyJWKClient)
+            assert client.timeout == auth_utils.JWKS_TIMEOUT_S == 5
+        finally:
+            auth_utils._jwk_clients.pop(uri, None)
+
+
+class TestLoginServerDown:
+    """S059 § 1.2: a key-list fetch failure answers 503 with its own message and detail."""
+
+    def test_the_validator_raises(self, app, jwks_down):
+        with app.test_request_context("/api/auth/me", headers=_bearer(_token(realm_roles=["maintenance_team"]))):
+            with pytest.raises(auth_utils.LoginServerUnavailable):
+                auth_utils.validate_keycloak_token(ISSUER, CLIENT_ID)
+
+    @pytest.mark.parametrize("headers", [None, {"kid": "unknown-key"}])
+    def test_the_handler_answers_503_and_marks_the_outcome(self, app, jwks_down, headers):
+        """A token with an unknown key id (junk) gets the same 503 during an outage (BR1-03)."""
+        from flask import g
+        token = _token(client_roles=["maintenance_team"], headers=headers)
+        with app.test_request_context("/api/auth/me", headers=_bearer(token)):
+            body, status = auth_utils.require_auth(ISSUER, CLIENT_ID)()
+            assert status == 503
+            assert body.get_json() == {"error": auth_utils.LOGIN_SERVER_DOWN_TEXT}
+            assert (g.access_outcome, g.access_detail) == ("auth_failed", "login_server_down")
+
+    @pytest.mark.parametrize("exc", [
+        ConnectionResetError(10054, "connection reset mid-body"),
+        json.JSONDecodeError("Expecting value", "<html>maintenance</html>", 0),   # an HTML page with 200
+    ], ids=["connection_reset", "html_page"])
+    def test_an_unreadable_key_list_answers_503(self, app, monkeypatch, exc):
+        """PyJWT wraps only URLError, TimeoutError and HTTPException; the others are an outage too (CR1-01)."""
+        from flask import g
+        monkeypatch.setattr(auth_utils, "_get_jwk_client", lambda _url: _RaisingJWKClient(exc))
+        with app.test_request_context("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"]))):
+            body, status = auth_utils.require_auth(ISSUER, CLIENT_ID)()
+            assert status == 503
+            assert body.get_json() == {"error": auth_utils.LOGIN_SERVER_DOWN_TEXT}
+            assert (g.access_outcome, g.access_detail) == ("auth_failed", "login_server_down")
+
+    def test_a_token_with_a_junk_header_stays_401(self, app, monkeypatch):
+        """The real client reads the header before any fetch: a header that is not JSON is a
+        token error (DecodeError), never the outage's 503 (CR1-01)."""
+        url = "https://sso.example.test/realms/S059junk"
+        uri = f"{url}/protocol/openid-connect/certs"
+        auth_utils._jwk_clients.pop(uri, None)
+        monkeypatch.setattr(auth_utils, "_get_jwk_client", _REAL_GET_JWK_CLIENT)
+        junk = f"{_b64(b'not json')}.{_b64(b'{}')}.{_b64(b'sig')}"
+        try:
+            with app.test_request_context("/api/auth/me", headers=_bearer(junk)):
+                assert auth_utils.validate_keycloak_token(url, CLIENT_ID) is None
+                from flask import g
+                assert g.access_detail == "invalid_token"
+        finally:
+            auth_utils._jwk_clients.pop(uri, None)
+
+    def test_through_the_app_and_the_access_log(self, client, jwks_down, db_rows, uniq):
+        n = int(uniq.username()[4:])
+        address = f"198.18.{n // 250 % 250}.{n % 250 + 1}"   # a range of its own, apart from test_access_log_api's
+        res = client.get("/api/auth/me", headers={**_bearer(_token(client_roles=["maintenance_team"])),
+                                                  "X-Real-IP": address})
+        assert res.status_code == 503
+        assert res.get_json() == {"error": auth_utils.LOGIN_SERVER_DOWN_TEXT}
+        rows = db_rows("SELECT outcome, detail, username FROM access_log WHERE client_ip = %s", (address,))
+        assert [(r["outcome"], r["detail"], r["username"]) for r in rows] == [
+            ("auth_failed", "login_server_down", None)]
 
 
 class TestMiddleware:
@@ -240,7 +424,7 @@ class TestAccessLogMarks:
     def test_failure_codes(self, app, make_headers, code):
         from flask import g
         with app.test_request_context("/api/auth/me", headers=make_headers()):
-            assert auth_utils.validate_keycloak_token("https://sso.example/realms/R", CLIENT_ID) is None
+            assert auth_utils.validate_keycloak_token(ISSUER, CLIENT_ID) is None
             assert g.access_detail == code
 
     def test_sid_is_the_session(self, app):
