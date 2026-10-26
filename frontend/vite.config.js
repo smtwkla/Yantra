@@ -12,6 +12,8 @@ const nodeModules = realpathSync(new URL("./node_modules", import.meta.url));
 
 // Inject app version from the root VERSION file (single source of truth)
 const appVersion = readFileSync("../VERSION", "utf-8").trim();
+// The change log (S048): required, like VERSION; the Docker build copies it too
+const appChangelog = readFileSync("../CHANGELOG.md", "utf-8");
 
 export default defineConfig({
   plugins: [vue()],
@@ -26,6 +28,7 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_CHANGELOG__: JSON.stringify(appChangelog),
   },
   server: {
     host: "0.0.0.0",

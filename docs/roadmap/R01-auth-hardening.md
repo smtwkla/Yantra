@@ -105,7 +105,7 @@ text below (CLAUDE-COMMON scope B).
 | Item | Goal | Size | Track | Depends on | Status |
 |---|---|---|---|---|---|
 | R01.1 | Check the network gate and the headers in production (manual, KLA) | S | manual check, no step | — | partly done: checks 1, 3, 5 pass; 2, 4, 6 open |
-| R01.2 | Token checks: no evict-and-retry, a timeout, issuer and claims checked, a login-server outage reads as such | S | full | — | open |
+| R01.2 | Token checks: no evict-and-retry, a timeout, issuer and claims checked, a login-server outage reads as such | S | full | — | → S059, 26-10-2026 |
 | R01.3 | Keep typed input: a failed sign-in renewal keeps the screen; a leave guard on the two full-page forms | M | full | — | open |
 | R01.4 | What the server sends: files not served from cache, no DB detail in errors or to managers | S | full | — | open |
 | R01.5 | Web server and network: headers on every response, a CSP, timeouts, a narrower trusted proxy, a range check, dev servers off the LAN | M | full | R01.1 | open |

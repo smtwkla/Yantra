@@ -5,10 +5,11 @@
  * Nav items are data-driven (not hardcoded markup). Items are excluded
  * from the DOM entirely if the user lacks the required permission.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { userPermissions } from "../../stores/auth";
 import { navItems, canSeeNavItem, isActivePath } from "../../stores/navigation";
+import ChangelogModal from "./ChangelogModal.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -16,6 +17,10 @@ const route = useRoute();
 const visibleItems = computed(() =>
   navItems.filter((item) => canSeeNavItem(item, userPermissions.value))
 );
+
+// The version opens the change log for IT Admin and Admin (S048); Admin holds every key
+const canSeeChangelog = computed(() => userPermissions.value.includes("settings:edit"));
+const changelog = ref(null);
 
 function navigate(path) {
   router.push(path);
@@ -38,8 +43,16 @@ function navigate(path) {
     </nav>
 
     <div class="sidebar-footer">
-      <small>v{{ $appVersion }}</small>
+      <button
+        v-if="canSeeChangelog"
+        type="button"
+        class="version-btn"
+        title="See what changed"
+        @click="changelog.open()"
+      >v{{ $appVersion }}</button>
+      <small v-else>v{{ $appVersion }}</small>
     </div>
+    <ChangelogModal v-if="canSeeChangelog" ref="changelog" />
   </aside>
 </template>
 
@@ -105,6 +118,16 @@ export default {
   padding: 0.5rem;
   color: var(--text-muted);
   font-size: 0.7rem;
+}
+
+.version-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
 }
 
 @media (max-width: 576px) {
