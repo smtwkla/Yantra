@@ -5,7 +5,7 @@ Author: Orchestrator (Opus)
 Date: 26-10-2026
 From: R01.2
 Track: full
-Status: Gate B (code review r1 fixed)
+Status: Done (committed 6b72834; checks: 1 important done by KLA; device-checks row 40 after the deploy)
 Baseline: c7803b1
 ```
 

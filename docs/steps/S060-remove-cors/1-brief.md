@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 26-10-2026
 Track: fix
-Status: Gate B (code review r1: 1 nit, fixed)
+Status: Done (committed 5434273; checks: 2 auto)
 Baseline: c7803b1 (working tree also holds the uncommitted S048 and S059, snapshots refs/steps/S048, refs/steps/S059)
 ```
 

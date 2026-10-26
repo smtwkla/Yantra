@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 26-10-2026
 Track: light
-Status: Gate B (A1 coded, code review r3 fixed)
+Status: Done (committed 730ec22; checks: 5 auto)
 Baseline: c7803b1
 ```
 
