@@ -4,7 +4,9 @@
  * type filter and the search in notes and type names: S004; ticks for QR labels: S014).
  * The filters live in the URL query, so Back returns to the same page and a filtered list
  * can be bookmarked. The route is the single source of truth: controls write to it with
- * router.replace and the list reloads when it changes.
+ * router.replace and the list reloads when it changes. The property filter (S062) is one key,
+ * `props`, built in its dialog; applying or clearing it is a history step (router.push), so Back
+ * brings back a filter that took a dialog to build.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -17,13 +19,16 @@ import { useDebounced } from "../composables/useDebounced";
 import { userPermissions } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
 import {
-  ensureEquipmentClasses, ensureEquipmentTypes, ensureSites, ensureUnits, equipmentClasses, equipmentTypes, sites, units,
+  ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, ensureSites, ensureUnits, equipmentClasses,
+  equipmentTypes, properties, sites, units,
 } from "../stores/masters";
 import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
+import { decodeFilter, describeFilter, encodeFilter, propsChanges } from "../utils/propertyFilter";
 import { TICKET_FILTER_CHOICES } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
+import PropertyFilterModal from "./equipment/PropertyFilterModal.vue";
 
 const PAGE_SIZE = 50; // the API default
 const DEFAULT_LEVEL = "equipment";
@@ -42,6 +47,7 @@ const canEdit = computed(() => userPermissions.value.includes("equipment:edit"))
 // over their sites; the API answers a dash for the rows of the other sites)
 const canSeeTickets = computed(() => userPermissions.value.includes("ticket:read"));
 const formModal = ref(null);
+const filterModal = ref(null);
 
 const page = ref(null); // {items, total, page, per_page}
 const loading = ref(true);
@@ -58,8 +64,11 @@ const showScrapped = computed(() => query.value.scrapped === "1" || query.value.
 const hasFilters = computed(() => Object.keys(query.value).some((k) => k !== "page"));
 const noUnits = computed(() => myUnits.value && !myUnits.value.all_units && myUnits.value.unit_ids.length === 0);
 
-/** Merge `changes` into the query; defaults and empty values are left out of the URL. */
-function update(changes) {
+/**
+ * Merge `changes` into the query; defaults and empty values are left out of the URL. `push`: a
+ * history step (the property filter), else the entry is replaced.
+ */
+function update(changes, { push = false } = {}) {
   const merged = { ...query.value, ...changes };
   if (!("page" in changes)) delete merged.page; // a filter change goes back to page 1
   for (const key of Object.keys(merged)) {
@@ -67,7 +76,8 @@ function update(changes) {
   }
   if (merged.level === DEFAULT_LEVEL) delete merged.level;
   if (merged.page === 1) delete merged.page;
-  router.replace({ query: merged });
+  if (push) router.push({ query: merged });
+  else router.replace({ query: merged });
 }
 
 const unitChoices = computed(() => {
@@ -129,6 +139,28 @@ function toggleScrapped(on) {
   update(changes);
 }
 
+// ---- the property filter (S062): one key, props; the line shows whenever the URL has it ----
+
+const hasProps = computed(() => query.value.props !== undefined && query.value.props !== null);
+const propertyFilter = computed(() => decodeFilter(query.value.props));
+// A hand-edited or cut bookmark: the line says so and the list is not asked (it would only refuse)
+const propsUnreadable = computed(() => hasProps.value && propertyFilter.value === null);
+const conditionCount = computed(() => propertyFilter.value?.rules.length ?? 0);
+const filterLineText = computed(() => describeFilter(propertyFilter.value, properties.value));
+
+function openPropertyFilter() {
+  filterModal.value.open(propertyFilter.value, query.value.class_id);
+}
+
+// The first property filter at the default level also shows every level (D11)
+function applyPropertyFilter(filter) {
+  update(propsChanges(query.value, encodeFilter(filter)), { push: true });
+}
+
+function clearPropertyFilter() {
+  update({ props: null }, { push: true });
+}
+
 // ---- search: SEARCH_DELAY_MS after the last keystroke ----
 
 const searchText = ref(query.value.q ?? "");
@@ -154,7 +186,7 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q"]) {
+  for (const key of ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q", "props"]) {
     // A bookmarked ?tickets= must not filter invisibly for a user who has no ticket column or filter
     if (key === "tickets" && !canSeeTickets.value) continue;
     if (query.value[key]) params.set(key, query.value[key]);
@@ -170,7 +202,10 @@ async function load() {
   loadError.value = "";
   try {
     const [result] = await Promise.all([
-      apiGet(listUrl()), ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureEquipmentTypes(), ensureMyUnits(),
+      propsUnreadable.value ? null : apiGet(listUrl()),
+      ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureEquipmentTypes(), ensureMyUnits(),
+      // The filter line names the properties
+      hasProps.value ? ensureProperties() : null,
     ]);
     if (seq === loadSeq) page.value = result;
   } catch (err) {
@@ -283,6 +318,9 @@ function printAssetList() {
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
       <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, model, notes…" aria-label="Search" />
+      <button class="btn btn-sm" :class="conditionCount ? 'btn-primary' : 'btn-outline-primary'" @click="openPropertyFilter">
+        <i class="fa-solid fa-sliders me-1"></i>{{ conditionCount ? `Properties (${conditionCount})` : "Filter by property" }}
+      </button>
       <button class="btn btn-sm btn-outline-primary ms-auto" :disabled="selected.size === 0" @click="printLabels">
         <i class="fa-solid fa-qrcode me-1"></i>Print labels ({{ selected.size }})
       </button>
@@ -293,6 +331,20 @@ function printAssetList() {
         <i class="fa-solid fa-plus me-1"></i>Add equipment
       </button>
     </div>
+    <div v-if="hasProps" class="d-flex align-items-center gap-2 mb-2">
+      <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none" @click="openPropertyFilter">
+        {{ filterLineText }}
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline-secondary"
+        title="Clear property filter"
+        aria-label="Clear property filter"
+        @click="clearPropertyFilter"
+      >
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
     <div class="form-check form-switch mb-3">
       <input id="eq-show-scrapped" :checked="showScrapped" class="form-check-input" type="checkbox" @change="toggleScrapped($event.target.checked)" />
       <label class="form-check-label small" for="eq-show-scrapped">Show scrapped</label>
@@ -300,7 +352,8 @@ function printAssetList() {
     <div v-if="selectionHint" class="text-warning-emphasis small mb-2">{{ selectionHint }}</div>
 
     <div v-if="loading && page" class="text-secondary small mb-1">Loading…</div>
-    <div v-if="loadError" class="alert alert-danger d-flex justify-content-between align-items-center">
+    <div v-if="propsUnreadable" class="alert alert-warning">The property filter cannot be read. Clear it and make it again.</div>
+    <div v-else-if="loadError" class="alert alert-danger d-flex justify-content-between align-items-center">
       <span>{{ loadError }}</span>
       <button class="btn btn-sm btn-outline-danger" @click="load">Retry</button>
     </div>
@@ -374,6 +427,7 @@ function printAssetList() {
     />
 
     <EquipmentFormModal ref="formModal" @saved="({ result }) => openNode(result.id)" />
+    <PropertyFilterModal ref="filterModal" @apply="applyPropertyFilter" />
   </div>
 </template>
 

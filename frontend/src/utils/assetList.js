@@ -4,9 +4,11 @@
  */
 
 import { LIFECYCLE_LABELS } from "./equipmentLabels";
+import { decodeFilter, describeFilter } from "./propertyFilter";
 
-// The list's filter keys that choose machines; level, q and page are deliberately not here (§ 4)
-const FILTER_KEYS = ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality"];
+// The list's filter keys that choose machines; level, q and page are deliberately not here (§ 4).
+// props: the property filter (S062), which the API applies to the machines
+const FILTER_KEYS = ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "props"];
 
 const text = (value) => (typeof value === "string" ? value : "");
 
@@ -40,7 +42,8 @@ export function parseAssetListQuery(query) {
 /**
  * The filter line of a section header, e.g. "Class: RPP · Lifecycle: In service"; "All equipment"
  * with no filter. Site and unit are not named (the header has them). `lookups` is
- * `{ classes, types }`, the masters lists (either may be null while loading).
+ * `{ classes, types, properties }`, the masters lists (any may be null while loading); the
+ * property filter reads as the equipment list's filter line (S062).
  */
 export function filtersLabel(params, lookups = {}) {
   const parts = [];
@@ -54,6 +57,7 @@ export function filtersLabel(params, lookups = {}) {
   }
   if (params.lifecycle) parts.push(`Lifecycle: ${LIFECYCLE_LABELS[params.lifecycle] ?? params.lifecycle}`);
   if (params.criticality) parts.push(`Criticality: ${params.criticality}`);
+  if (params.props) parts.push(describeFilter(decodeFilter(params.props), lookups.properties));
   // lifecycle=scrapped already says it
   if (params.include_scrapped && params.lifecycle !== "scrapped") parts.push("scrapped included");
   return parts.length ? parts.join(" · ") : "All equipment";

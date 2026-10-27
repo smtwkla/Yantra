@@ -4,7 +4,8 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 27-10-2026
 Track: full
-Status: In review (round 2 answered; gate A)
+Status: Gate B — verify review r3 clean, no finding open; D-1 (Back button) open for KLA (approved 27-10-2026 by KLA: D11 widen the level; Q1 a; A1–A4 as written)
+Baseline: d6431f1 (brief reviews); staleness check s1 done against refs/steps/S061 fb6a025 (no blocker or major)
 ```
 
 # S062 — Filter the equipment list by property
@@ -143,11 +144,18 @@ user input, two list routes changed, about 19 files (with the shared test fixtur
 - `backend/tests/test_property_filter_core.py` (new).
 - `backend/tests/test_property_filter_api.py` (new): the list and the asset list with `props`.
 - `backend/tests/conftest.py` (shared test fixtures, BR1-06): the fixtures `make_property` and
-  `link` move here from `backend/tests/test_item_properties_api.py:58-74`, beside the other
+  `link` move here from `backend/tests/test_item_properties_api.py` (`make_property` lines
+  65-74, `link` 77-81, `_numbers` line 18; BS1-03), beside the other
   `make_*` fixtures; that module then uses the shared ones and drops its `_numbers` counter.
   The names come from a new method `Uniq.property_name(prefix)` on the existing `Uniq` class
-  (`conftest.py:283`), so the moved fixture is `make_property(admin, uniq)` and no second
-  counter is added (BR2-01).
+  (`conftest.py:284`), so the moved fixture is `make_property(admin, uniq)` and no second
+  counter is added (BR2-01). It keeps S061's body: `**overrides`, and `unit` dropped for a
+  type that is not a number (BS1-04).
+  The `every_class` fixture moves to `conftest.py` too (now in both
+  `test_item_properties_api.py:355` and `test_properties_api.py:424`): a test that makes an
+  every-class property turns the flag off afterwards, or the property leaks onto every later
+  test's machine in the shared database (S061 impl report D-10; BS1-02). The two modules then
+  use the shared one.
   `backend/tests/test_properties_api.py` keeps its own `make_property` and `link` (another
   signature, by `engineer`): pytest's module fixture overrides the conftest one of the same
   name, so that module is unchanged.
@@ -256,7 +264,8 @@ The checks, in order, with the field and the message (scope B):
   guard applies (S007).
 - **Property select.** The active properties by name, from `ensureProperties`
   (`GET /api/masters/properties?include_inactive=1`, each with its options). With a class
-  filter on the list, only the ids that class shows
+  filter on the list, only the active ids that class shows (the class route lists inactive
+  rows too since S061, so the dialog intersects it with the active list; BS1-05)
   (`GET /api/masters/equipment-classes/<id>/properties`, which after S061 includes the
   every-class ones; it carries no options, so the details come from the first list). A line whose property is not in that
   list (a bookmark, a class changed afterwards) still shows its property, listed last, so the
@@ -301,15 +310,19 @@ filter, or `(None, [])` for an empty one. `like` is `api_common.like_pattern`, p
 shell, so the core imports no Flask (it escapes `%`, `_` and `\`).
 
 For each rule, with `P` the property id and `col` the value column of its data type
-(`properties_core.VALUE_COLUMNS`; for Location after S061, `value_lat`):
+(`properties_core.VALUE_COLUMNS` for number, text, yes/no and choice; for Location,
+`properties_core.GEO_COLUMNS[0]`, `value_lat`: `VALUE_COLUMNS` has no `geo` key as S061 built it,
+so the core builds its own column table from both, BS1-01):
 
 - **applies** — the node shows the property (S061 § 5.3):
   - the property has `all_classes`: no class condition; otherwise
     `EXISTS (SELECT 1 FROM class_properties cp WHERE cp.class_id = e.class_id AND
     cp.property_id = %s)`;
-  - a Location property: also `e.level = 'equipment'`.
+  - a Location property: also `e.level = %s` with `properties_core.GEO_LEVEL` (BS1-06).
   - This rule then lives in two places: S061's `properties.linked_properties` and this SQL.
-    Each carries a comment naming the other, so a change to one is made in both (BR1-11).
+    As built, S061's rule lives in `properties.linked_properties`, `properties_core.on_level`
+    and `properties.lock_value_properties`. Each of them and this SQL carries a comment naming
+    the others, so a change to one is made in all (BR1-11, BS1-06).
 - **value** — the value in force, the item's own first (S044 § 5.5):
   `COALESCE((SELECT iv.col FROM equipment_property_values iv WHERE iv.equipment_id = e.id AND
   iv.property_id = %s), (SELECT mv.col FROM model_property_values mv WHERE mv.model_id =
@@ -447,7 +460,8 @@ As today: `get_db()` raises `DBUnavailable` → 503. The dialog's check request 
 
 ### 8.2 API (`backend/tests/test_property_filter_api.py`)
 
-Fixtures: the `make_*` fixtures of `conftest.py`, with `make_property` and `link` moved there
+Fixtures: the `make_*` fixtures of `conftest.py`, with `make_property`, `link` and
+`every_class` moved there (an every-class property is turned off after its test, BS1-02)
 (§ 3 Tests, BR1-06).
 
 - A number property on a model, 7.5 and 15: `gt 10` lists the 15 machine only; `between 5 10`
@@ -484,7 +498,10 @@ Fixtures: the `make_*` fixtures of `conftest.py`, with `make_property` and `link
 
 ### 8.4 Automated (e2e, targeted: `frontend/e2e/equipment.spec.js`, `frontend/e2e/asset-list.spec.js`, `frontend/e2e/screens.spec.js`)
 
-Each test starts with "S062:". Set-up by API with `propertySetup`
+Each test starts with "S062:". A test's choice property is never named "Mobility"
+(`properties_core.MOBILITY` exists; names are unique without regard to case; BS1-06). An
+every-class property made by a test has its flag turned off in a `finally` (BS1-02); the
+Location `has` test may use the seeded "GPS location". Set-up by API with `propertySetup`
 (`frontend/e2e/support/properties.js`). Untagged unless said.
 
 - **important** An engineer opens *Filter by property* on the default list (level
@@ -553,3 +570,19 @@ None.
 |---|---|
 | BR2-01 minor — a second name counter in `conftest.py` | Accepted: `Uniq.property_name(prefix)` on the existing `Uniq`; the moved fixture is `make_property(admin, uniq)` (§ 3 Tests). |
 | BR2-02…BR2-04 nits | All accepted: the level rule reads "no `level` in the URL" (§ 1 item 4a, § 8.3); an unreadable `props` skips the list request and shows one message (§ 1 item 3, D12, § 8.4); the e2e set-up named: `propertySetup`, `noModelPart`, the part's own value (§ 8.4). |
+
+### Staleness check s1 — `2-brief-review-s1.md` (Fable), answered 27-10-2026
+
+Against S061 as coded (`refs/steps/S061` fb6a025). No blocker or major, so the approval stands.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor — Location column is `GEO_COLUMNS`, not in `VALUE_COLUMNS` | Accepted: § 5.4 names both; the core builds its own column table. |
+| BS1-02 minor — an every-class test property leaks | Accepted: `every_class` moves to `conftest.py`; tests turn the flag off; § 3 Tests, § 8.2, § 8.4. |
+| BS1-03…BS1-06 nits | All accepted: line numbers updated (§ 3 Tests); the moved fixture keeps S061's body; the dialog intersects the class list with the active list (§ 5.3); the cross-comment names `linked_properties`, `on_level` and `lock_value_properties`, the core uses `GEO_LEVEL`, and no test property is named "Mobility" (§ 5.4, § 8.4). |
+
+### Approval — gate A, 27-10-2026
+
+KLA approved the brief with every recommended option: D11 (the first property filter widens
+the level to *All levels*), Q1 (a) (one check request before the dialog closes), and A1–A4 as
+written.

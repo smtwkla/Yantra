@@ -284,12 +284,26 @@ def remove_class_property(class_id, property_id):
 
 def linked_properties(cur, class_id, level):
     """The active properties a node of ``level`` and ``class_id`` shows, by name: those linked to
-    the class or on every class, a Location only on top-level equipment (S061 § 5.3)."""
+    the class or on every class, a Location only on top-level equipment (S061 § 5.3).  The same
+    rule lives in properties_core.on_level, lock_value_properties below and the list's property
+    filter (property_filter_core._applies, S062): a change to one is made in all four."""
     cur.execute("SELECT p.id, p.name, p.data_type, p.unit, p.per_item_only FROM property_definitions p"
                 " WHERE p.active = 1 AND (p.all_classes = 1 OR EXISTS ("
                 "SELECT 1 FROM class_properties cp WHERE cp.class_id = %s AND cp.property_id = p.id))"
                 " ORDER BY p.name", (class_id,))
     return on_level(cur.fetchall(), level)
+
+
+def filter_properties(cur, property_ids):
+    """The properties an equipment list's property filter names (S062 § 5.2), plain reads ->
+    ``(properties, options)``: ``{id: {id, name, data_type, unit, active, all_classes}}`` for the
+    ids found, and options_by_property's answer for them.  No ids, no query."""
+    if not property_ids:
+        return {}, {}
+    cur.execute("SELECT id, name, data_type, unit, active, all_classes FROM property_definitions"
+                f" WHERE id IN ({', '.join(['%s'] * len(property_ids))})", list(property_ids))
+    properties = {row["id"]: row for row in cur.fetchall()}
+    return properties, options_by_property(cur, list(properties))
 
 
 def _values(cur, table, owner_column, owner_id, property_ids=None, lock=""):
@@ -399,7 +413,8 @@ def lock_value_properties(cur, class_id, property_ids, level):
     unit, active, all_classes, per_item_only, linked}}`` for the ids found, and
     options_by_property's answer for them.  ``linked``: shown on a node of ``class_id`` and
     ``level`` (S061 § 5.3): linked to the class or on every class, the flag read from the row
-    locked here; a Location only on top-level equipment."""
+    locked here; a Location only on top-level equipment.  The same rule as linked_properties
+    (whose note names the other places it lives)."""
     placeholders = ", ".join(["%s"] * len(property_ids))
     cur.execute(f"SELECT id, name, data_type, unit, active, all_classes, per_item_only FROM property_definitions"
                 f" WHERE id IN ({placeholders}) ORDER BY id FOR UPDATE", property_ids)   # (2), ascending

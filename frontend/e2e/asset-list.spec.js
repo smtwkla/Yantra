@@ -4,6 +4,7 @@
 // only, and the empty case.  Paper (100 %, page 2's header) stays a device check.
 import { test, expect } from "./support/test.js";
 import { asPerson, seedIds } from "./support/people.js";
+import { propertySetup, propertyTag } from "./support/properties.js";
 
 let seed;
 
@@ -67,4 +68,27 @@ test("operator of one unit: only that unit's section", async ({ page }) => {
 test("filters that match nothing say so", async ({ page }) => {
   await asPerson(page, "manager", "/asset-list?lifecycle=out_of_use");
   await expect(page.getByText("Nothing to list for these filters")).toBeVisible();
+});
+
+test("S062: Print asset list with a property filter lists only the matching machine and names the filter", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { node, properties: [power] } = await propertySetup(tag, {
+    properties: [{ name, data_type: "number", unit: "kW" }], values: { 0: "15" },
+  });
+  const props = encodeURIComponent(JSON.stringify({ match: "all", rules: [{ property_id: power.id, op: "gt", value: "10" }] }));
+  await asPerson(page, "manager", `/equipment?level=all&props=${props}`);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  // The print page opens in a new tab with the list's filters
+  const [sheet] = await Promise.all([
+    page.context().waitForEvent("page"),
+    page.getByRole("button", { name: "Print asset list" }).click(),
+  ]);
+  await expect(sheet.locator("section.unit-section")).toHaveCount(1);
+  const mcc1 = section(sheet, "SMTW.MCC1");
+  await expect(mcc1.locator("tbody tr")).toHaveCount(1);
+  await expect(mcc1.locator("tbody tr")).toContainText(node.code);
+  await expect(mcc1.locator(".header-line").first()).toHaveText(`Properties: ${name} more than 10 kW`);
+  await sheet.close();
 });

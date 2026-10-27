@@ -675,3 +675,191 @@ test("S061: a Portable machine with a GPS location shows the hint under it", asy
     }
   }
 });
+
+// S062: Filter by property — lines of property, operator and value; All / Any; props in the URL
+const filterButton = (page) => page.getByRole("button", { name: /^(Filter by property|Properties \(\d+\))$/ });
+
+/** Another machine of `model` in the unit of `node`, made as admin. */
+async function machineLike(node, model, name) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.post("/api/equipment", { data: { level: "equipment", unit_id: node.unit_id, model_id: model.id, name } });
+    expect(res.ok(), await res.text()).toBe(true);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+async function openPropertyFilter(page, opener = filterButton(page)) {
+  await opener.click();
+  await expectDialogFits(page);
+  return openDialog(page);
+}
+
+/** One condition: line `n` (1-based), its property by the option's text, the operator, a value. */
+async function setCondition(dialog, n, propertyText, operator, value) {
+  await dialog.getByLabel(`Property ${n}`, { exact: true }).selectOption({ label: propertyText });
+  await dialog.getByLabel(`Operator ${n}`, { exact: true }).selectOption({ label: operator });
+  if (value !== undefined) await dialog.getByLabel(`Value ${n}`, { exact: true }).fill(value);
+}
+
+const propsQuery = (rules, match = "all") => encodeURIComponent(JSON.stringify({ match, rules }));
+
+test("S062: engineer filters the default list by a part's rated power; the level widens and Clear brings the full list back", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { cls, node, properties: [power] } = await propertySetup(tag, { properties: [{ name, data_type: "number", unit: "kW" }] });
+  const motor = await noModelPart(node, cls, `E2E filter motor ${tag}`);
+  await setItemValues(motor, { [power.id]: "15" });
+
+  await asPerson(page, "engineer", "/equipment");
+  await expect(page.getByRole("combobox", { name: "Level" })).toHaveValue("equipment");
+  const dialog = await openPropertyFilter(page);
+  await setCondition(dialog, 1, `${name} (kW)`, "more than", "10");
+  await saveDialog(page, "Apply filter");
+
+  await expect(page).toHaveURL(/props=/);
+  await expect(page).toHaveURL(/level=all/);
+  await expect(page.getByRole("combobox", { name: "Level" })).toHaveValue("all");
+  await expect(rowOf(page, motor)).toBeVisible();
+  // The motor's Path names its machine, so the machine is looked for by its own code link
+  await expect(page.getByRole("link", { name: node.code, exact: true })).toHaveCount(0);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: `Properties: ${name} more than 10 kW` })).toBeVisible();
+  await expect(filterButton(page)).toHaveText("Properties (1)");
+
+  await page.getByRole("button", { name: "Clear property filter" }).click();
+  await expect(page).not.toHaveURL(/props=/);
+  await expect(page.getByRole("button", { name: /^Properties:/ })).toHaveCount(0);
+  await expect(filterButton(page)).toHaveText("Filter by property");
+  await expect.poll(() => page.locator("tbody tr").count()).toBeGreaterThan(1);
+});
+
+test("S062: a hand-broken props shows the line cannot be read and one message, and Clear brings the list back", async ({ page }) => {
+  await asPerson(page, "engineer", "/equipment?props=%7Bcut");
+  await expect(page.getByRole("button", { name: "Properties: cannot be read" })).toBeVisible();
+  await expect(page.getByText("The property filter cannot be read. Clear it and make it again.")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await expect(page.locator("table")).toHaveCount(0);
+  // A tap on the line opens the dialog with one empty line
+  const dialog = await openPropertyFilter(page, page.getByRole("button", { name: "Properties: cannot be read" }));
+  await expect(dialog.locator("[data-test=condition]")).toHaveCount(1);
+  await expect(dialog.getByLabel("Property 1", { exact: true }).locator("option:checked")).toHaveText("Choose a property");
+  await dialog.locator(".modal-footer").getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Clear property filter" }).click();
+  await expect(page).not.toHaveURL(/props=/);
+  await expect(page.getByText("The property filter cannot be read.")).toHaveCount(0);
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+});
+
+test("S062: two lines with Any condition list both machines; with All conditions none", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const power = `E2E rated power ${tag}`;
+  const frame = `E2E frame size ${tag}`;
+  const { model, node, properties: [powerProp, frameProp] } = await propertySetup(tag, {
+    properties: [{ name: power, data_type: "number", unit: "kW" }, { name: frame, data_type: "text" }],
+  });
+  const other = await machineLike(node, model, `E2E frame machine ${tag}`);
+  await setItemValues(node, { [powerProp.id]: "15" });
+  await setItemValues(other, { [frameProp.id]: "IE3 132M" });
+
+  await asPerson(page, "engineer", "/equipment");
+  let dialog = await openPropertyFilter(page);
+  await setCondition(dialog, 1, `${power} (kW)`, "more than", "10");
+  await expect(dialog.getByText("Match", { exact: true })).toHaveCount(0); // shown from two lines
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  await setCondition(dialog, 2, frame, "contains", "IE3");
+  await dialog.getByLabel("Any condition").check();
+  await saveDialog(page, "Apply filter");
+  await expect(rowOf(page, node)).toBeVisible();
+  await expect(rowOf(page, other)).toBeVisible();
+  await expect(page.getByRole("button", { name: `Properties (any of): ${power} more than 10 kW · ${frame} contains "IE3"` })).toBeVisible();
+  await expect(filterButton(page)).toHaveText("Properties (2)");
+
+  dialog = await openPropertyFilter(page, page.getByRole("button", { name: /^Properties \(any of\)/ }));
+  await expect(dialog.getByLabel("Any condition")).toBeChecked();
+  await dialog.getByLabel("All conditions").check();
+  await saveDialog(page, "Apply filter");
+  await expect(page.getByText("No equipment matches these filters.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Properties \(all of\)/ })).toBeVisible();
+});
+
+test("S062: a value 7,5 is refused under its line and the dialog stays open", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/api/equipment", 400);
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  await propertySetup(tag, { properties: [{ name, data_type: "number", unit: "kW" }] });
+  await asPerson(page, "engineer", "/equipment");
+  const dialog = await openPropertyFilter(page);
+  await setCondition(dialog, 1, `${name} (kW)`, "more than", "7,5");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Enter a number");
+  await expect(dialog.getByLabel("Value 1", { exact: true })).toHaveClass(/is-invalid/);
+  await expect(dialog.getByLabel("Value 1", { exact: true })).toHaveValue("7,5");
+  await expect(page.locator(".modal.show")).toHaveCount(1);
+  await expect(page).not.toHaveURL(/props=/);
+});
+
+test("S062: a choice line with is not says machines with no value are not included", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E mount ${tag}`;
+  await propertySetup(tag, { properties: [{ name, data_type: "choice", options: ["Fixed", "Mobile"] }] });
+  await asPerson(page, "engineer", "/equipment");
+  const dialog = await openPropertyFilter(page);
+  await dialog.getByLabel("Property 1", { exact: true }).selectOption({ label: name });
+  await expect(dialog.getByLabel("Operator 1", { exact: true })).toHaveValue("in");
+  await expect(dialog.getByText("Machines with no value are not included.")).toHaveCount(0);
+  await dialog.getByLabel("Operator 1", { exact: true }).selectOption({ label: "is not" });
+  await expect(dialog.getByText("Machines with no value are not included.")).toBeVisible();
+  await dialog.getByLabel("Fixed").check();
+  await saveDialog(page, "Apply filter");
+  await expect(page.getByRole("button", { name: `Properties: ${name} is not Fixed` })).toBeVisible();
+});
+
+test("S062: a reload keeps the filter, and Back after Clear property filter brings it back", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E rated power ${tag}`;
+  const { node, properties: [power] } = await propertySetup(tag, { properties: [{ name, data_type: "number", unit: "kW" }], values: { 0: "15" } });
+  const line = `Properties: ${name} more than 10 kW`;
+  await asPerson(page, "engineer", `/equipment?level=all&props=${propsQuery([{ property_id: power.id, op: "gt", value: "10" }])}`);
+  await expect(rowOf(page, node)).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: line })).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Clear property filter" }).click();
+  await expect(page.getByRole("button", { name: line })).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole("button", { name: line })).toBeVisible();
+  await expect(page).toHaveURL(/props=/);
+  await expect(rowOf(page, node)).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+});
+
+test("S062: the Filter by property dialog with three lines fits the screen, its buttons in view", { tag: "@device" }, async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const power = `E2E rated power ${tag}`;
+  const mount = `E2E mount ${tag}`;
+  const frame = `E2E frame size ${tag}`;
+  await propertySetup(tag, {
+    properties: [
+      { name: power, data_type: "number", unit: "kW" },
+      { name: mount, data_type: "choice", options: ["Fixed", "Mobile", "Portable"] },
+      { name: frame, data_type: "text" },
+    ],
+  });
+  await asPerson(page, "engineer", "/equipment");
+  const dialog = await openPropertyFilter(page);
+  await setCondition(dialog, 1, `${power} (kW)`, "between");
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  await setCondition(dialog, 2, mount, "is");
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  await setCondition(dialog, 3, frame, "contains", "IE3");
+  await expect(dialog.locator("[data-test=condition]")).toHaveCount(3);
+  await expectDialogFits(page);
+});

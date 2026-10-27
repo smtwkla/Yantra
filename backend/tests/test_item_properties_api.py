@@ -1,9 +1,7 @@
 """An equipment item's own property values (S044 § 5, § 6, § 8.2): GET and PUT
 /api/equipment/<id>/properties, the card's rows and the history, against the test DB.  Needs the
 dev MariaDB container (tooling/dev/dev-db-up.bat).  Every test makes its own properties, classes,
-models and nodes; names come from a counter of this module."""
-
-import itertools
+models and nodes; the property fixtures (make_property, link, every_class) are conftest.py's."""
 
 import pytest
 
@@ -14,8 +12,6 @@ from properties_core import (
 EQUIPMENT = "/api/equipment"
 MASTERS = "/api/masters"
 SCRAPPED = "This record is scrapped and cannot be changed"
-
-_numbers = itertools.count(1)
 
 
 def _url(node):
@@ -60,25 +56,6 @@ def _own_rows(db_rows, node):
 def engineer(at_unit):
     """An engineer holding the node's unit."""
     return at_unit("maint_engineer")
-
-
-@pytest.fixture
-def make_property(admin):
-    """make_property("A power") -> a number property in kW named "<prefix> <n>"; data_type= etc."""
-    def make(prefix, **overrides):
-        body = {"name": f"{prefix} {next(_numbers):04d}", "data_type": "number", "unit": "kW", **overrides}
-        if body["data_type"] != "number":
-            body.pop("unit")
-        return _ok(admin.post(f"{MASTERS}/properties", json=body), 201)
-    return make
-
-
-@pytest.fixture
-def link(admin):
-    def add(class_id, *props):
-        _ok(admin.post(f"{MASTERS}/equipment-classes/{class_id}/properties",
-                       json={"property_ids": [p["id"] for p in props]}))
-    return add
 
 
 def _set_model(admin, model_id, values):
@@ -352,26 +329,11 @@ def _card_row(admin, node, prop):
                  if p["property_id"] == prop["id"]), None)
 
 
-@pytest.fixture
-def every_class(admin, make_property):
-    """A Yes / No property on every class; the flag is turned off afterwards, so it does not show
-    on the later tests' machines."""
-    made = []
-
-    def make(prefix, **overrides):
-        prop = make_property(prefix, data_type="yes_no", all_classes=True, **overrides)
-        made.append(prop)
-        return prop
-    yield make
-    for prop in made:
-        _ok(admin.put(f"{MASTERS}/properties/{prop['id']}", json={"all_classes": False}))
-
-
 class TestEveryClass:
 
     def test_shown_and_saved_on_an_unlinked_class_and_hidden_when_turned_off(self, engineer, admin, node,
                                                                              every_class, db_rows):
-        prop = every_class("S061 every")
+        prop = every_class("S061 every", data_type="yes_no")
         assert _card_row(admin, node, prop)["display"] is None
         assert prop["id"] in [i["property_id"] for i in _ok(engineer.get(_url(node)))["items"]]
         _ok(engineer.put(_url(node), json={"values": {_key(prop): True}}))

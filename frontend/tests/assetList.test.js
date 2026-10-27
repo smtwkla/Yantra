@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { assetListPath, filtersLabel, parseAssetListQuery } from "../src/utils/assetList.js";
 
+const PROPS = JSON.stringify({ match: "all", rules: [{ property_id: 12, op: "gt", value: "7.5" }] });
+
 describe("parseAssetListQuery", () => {
   it("keeps the list's filters and drops unknown keys", () => {
     const { params } = parseAssetListQuery({ site_id: "1", unit_id: "2", class_id: "3", type_id: "4", lifecycle: "standby",
@@ -20,6 +22,10 @@ describe("parseAssetListQuery", () => {
     expect(parseAssetListQuery({ lifecycle: "standby" }).params.include_scrapped).toBeUndefined();
   });
 
+  it("carries the property filter (S062)", () => {
+    expect(parseAssetListQuery({ props: PROPS }).params).toEqual({ props: PROPS });
+  });
+
   it("copes with a missing query", () => {
     expect(parseAssetListQuery(undefined)).toEqual({ params: {}, withParts: false, checklist: false });
   });
@@ -33,6 +39,12 @@ describe("assetListPath", () => {
 
   it("adds the switches", () => {
     expect(assetListPath({ unit_id: "2" }, true, true)).toBe("/asset-list?unit_id=2&parts=1&check=1");
+  });
+
+  it("carries the property filter, encoded (S062)", () => {
+    const path = assetListPath({ class_id: "3", props: PROPS, level: "all" });
+    expect(path).toBe(`/asset-list?class_id=3&props=${encodeURIComponent(PROPS).replace(/%20/g, "+")}`);
+    expect(new URLSearchParams(path.split("?")[1]).get("props")).toBe(PROPS);
   });
 
   it("is the bare page for an unfiltered list", () => {
@@ -56,6 +68,13 @@ describe("filtersLabel", () => {
   it("reads All equipment with no filter, site and unit not repeated", () => {
     expect(filtersLabel({}, lookups)).toBe("All equipment");
     expect(filtersLabel({ site_id: "1", unit_id: "2" }, lookups)).toBe("All equipment");
+  });
+
+  it("names the property filter in the words of the list's filter line (S062)", () => {
+    const properties = [{ id: 12, name: "Rated power", data_type: "number", unit: "kW", options: [] }];
+    expect(filtersLabel({ class_id: "3", props: PROPS }, { ...lookups, properties }))
+      .toBe("Class: RPP · Properties: Rated power more than 7.5 kW");
+    expect(filtersLabel({ props: "{cut" }, lookups)).toBe("Properties: cannot be read");
   });
 
   it("falls back to the id while the masters load", () => {

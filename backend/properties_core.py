@@ -533,7 +533,9 @@ def property_view(properties, model_values, option_labels, item_values=None):
 
 def on_level(properties, level):
     """The properties a node of ``level`` shows (S061 § 5.3, D5): a location only on top-level
-    equipment, since a part is where its machine is."""
+    equipment, since a part is where its machine is.  The same rule lives in
+    properties.linked_properties, properties.lock_value_properties and the list's property filter
+    (property_filter_core._applies, S062): a change to one is made in all four."""
     return [prop for prop in properties if prop["data_type"] != GEO or level == GEO_LEVEL]
 
 

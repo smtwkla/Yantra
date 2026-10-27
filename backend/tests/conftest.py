@@ -332,6 +332,10 @@ class Uniq:
     def meter_type_name(self):
         return f"Test meter {self._next():04d}"
 
+    def property_name(self, prefix):
+        """A property name, unique without regard to case (S043): "<prefix> <n>"."""
+        return f"{prefix} {self._next():04d}"
+
 
 @pytest.fixture(scope="session")
 def uniq():
@@ -534,6 +538,52 @@ def db_rows():
         finally:
             conn.close()
     return query
+
+
+# ---------------------------------------------------------------------------
+# Equipment properties (S044, S061, S062; shared by the item-values, property-master and
+# property-filter tests; test_properties_api.py keeps its own make_property and link, which
+# override these by name in that module)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def make_property(admin, uniq):
+    """make_property("A power") -> a number property in kW named "<prefix> <n>"; data_type= etc."""
+    def make(prefix, **overrides):
+        body = {"name": uniq.property_name(prefix), "data_type": "number", "unit": "kW", **overrides}
+        if body["data_type"] != "number":
+            body.pop("unit")
+        res = admin.post(f"{MASTERS}/properties", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def link(admin):
+    """link(class_id, *props) -> the props added to the class."""
+    def add(class_id, *props):
+        res = admin.post(f"{MASTERS}/equipment-classes/{class_id}/properties",
+                         json={"property_ids": [p["id"] for p in props]})
+        assert res.status_code == 200, res.get_json()
+    return add
+
+
+@pytest.fixture
+def every_class(admin, make_property):
+    """every_class(...) -> make_property(..., all_classes=True), with the module's make_property.
+    The flag is turned off afterwards: the test database is shared by the tests of a worker, and
+    the property would otherwise show on every later test's machines (S061 D-10, S062 BS1-02)."""
+    made = []
+
+    def make(*args, **overrides):
+        prop = make_property(*args, all_classes=True, **overrides)
+        made.append(prop)
+        return prop
+    yield make
+    for prop in made:
+        res = admin.put(f"{MASTERS}/properties/{prop['id']}", json={"all_classes": False})
+        assert res.status_code == 200, res.get_json()
 
 
 # ---------------------------------------------------------------------------

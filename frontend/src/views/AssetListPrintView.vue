@@ -7,7 +7,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
-import { ensureEquipmentClasses, ensureEquipmentTypes, equipmentClasses, equipmentTypes } from "../stores/masters";
+import {
+  ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, equipmentClasses, equipmentTypes, properties,
+} from "../stores/masters";
 import { filtersLabel, parseAssetListQuery } from "../utils/assetList";
 import { formatDateTime } from "../utils/datetime";
 import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
@@ -22,7 +24,9 @@ let loadSeq = 0;
 
 const parsed = computed(() => parseAssetListQuery(route.query));
 const filterLine = computed(() =>
-  filtersLabel(parsed.value.params, { classes: equipmentClasses.value, types: equipmentTypes.value })
+  filtersLabel(parsed.value.params, {
+    classes: equipmentClasses.value, types: equipmentTypes.value, properties: properties.value,
+  })
 );
 const printedOn = computed(() => formatDateTime(result.value?.printed_at));
 const hasUnits = computed(() => (result.value?.units.length ?? 0) > 0);
@@ -37,6 +41,8 @@ async function load() {
     if (parsed.value.withParts) params.set("with_parts", "1");
     const [data] = await Promise.all([
       apiGet(`/api/equipment/asset-list?${params}`), ensureEquipmentClasses(), ensureEquipmentTypes(),
+      // The header names the property filter's properties; a plain print asks for nothing more (S062)
+      parsed.value.params.props ? ensureProperties() : null,
     ]);
     if (seq === loadSeq) result.value = data;
   } catch (err) {

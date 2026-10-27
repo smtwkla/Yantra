@@ -419,19 +419,7 @@ class TestDatabaseDown:
 # S061: the flags, per-machine properties and the class table (§ 5.1, § 5.3, § 5.4, § 8.2)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def every_class(engineer, make_property):
-    """make_property(all_classes=True, ...); the flag is turned off afterwards, so the property
-    does not show on the later tests' classes."""
-    made = []
-
-    def make(**overrides):
-        prop = make_property(all_classes=True, **overrides)
-        made.append(prop)
-        return prop
-    yield make
-    for prop in made:
-        assert engineer.put(f"{PROPERTIES}/{prop['id']}", json={"all_classes": False}).status_code == 200
+# every_class: conftest.py's, which takes this module's make_property (S062 BS1-02)
 
 
 class TestFlags:

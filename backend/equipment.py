@@ -119,8 +119,9 @@ from equipment_core import (
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
 from masters import lock_type_of_class
 from masters_core import model_label
-from properties import equipment_properties
+from properties import equipment_properties, filter_properties
 from properties_core import moving_hint
+from property_filter_core import check_property_filter, filter_condition, read_property_filter
 from settings import label_base_url
 from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
 
@@ -518,10 +519,25 @@ def _this_year():
 # List
 # ---------------------------------------------------------------------------
 
-def _list_filters():
+def _property_filter(cur):
+    """The ``props`` filter (S062 § 5.2, § 5.4) -> ``(sql or None, params)``: read its shape, load
+    the properties it names (plain reads), check each line against its property, then build the
+    condition; 400 on the first refusal, naming the line and its field."""
+    parsed, refusal = read_property_filter(request.args.get("props"))
+    if refusal is None:
+        properties, options = filter_properties(cur, parsed["property_ids"])
+        checked, refusal = check_property_filter(parsed, properties, options)
+    if refusal:
+        field, message = refusal
+        raise ApiError(message, 400, field)
+    return filter_condition(checked, like_pattern)
+
+
+def _list_filters(cur):
     """The conditions and parameters of the filters the list and the printed asset list share
-    (site, unit, class, type, lifecycle, criticality, scrapped), read from the request.  One
-    place decides what a filter means, so the print can never disagree with the list."""
+    (site, unit, class, type, lifecycle, criticality, scrapped, the property filter), read from
+    the request.  One place decides what a filter means, so the print can never disagree with
+    the list.  ``cur`` reads the properties the property filter names."""
     conditions, params = [], []
     for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
                          ("type_id", "e.type_id")):
@@ -539,6 +555,10 @@ def _list_filters():
         params.append(criticality)
     if request.args.get("include_scrapped") != "1":
         conditions.append("e.lifecycle <> 'scrapped'")
+    condition, condition_params = _property_filter(cur)
+    if condition:
+        conditions.append(condition)
+        params.extend(condition_params)
     return conditions, params
 
 
@@ -547,24 +567,24 @@ def _list_filters():
 def list_equipment():
     page = int_arg("page", 1, minimum=1, maximum=MAX_PAGE)
     per_page = int_arg("per_page", DEFAULT_PER_PAGE, minimum=1, maximum=MAX_PER_PAGE)
-    conditions, params = _list_filters()
     level = enum_arg("level", (*LEVELS, "all")) or "equipment"
-    if level != "all":
-        conditions.append("e.level = %s")
-        params.append(level)
     q = (request.args.get("q") or "").strip()
-    if q:
-        # The type name too, so "closed" finds closed-execution pumps whatever their names say;
-        # and the model label (manufacturer and designation, S012), so "GA37", "Atlas" and
-        # "Atlas Copco GA37" all find it
-        conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s"
-                          " OR CONCAT(mf.name, ' ', m.designation) LIKE %s)")
-        params.extend([like_pattern(q)] * 5)
-
     tickets = enum_arg("tickets", tuple(_TICKET_FILTERS))
 
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
     with get_db().cursor() as cur:
+        # Before the unit check, so a bad property filter is 400 for everyone (S062 § 5.5)
+        conditions, params = _list_filters(cur)
+        if level != "all":
+            conditions.append("e.level = %s")
+            params.append(level)
+        if q:
+            # The type name too, so "closed" finds closed-execution pumps whatever their names say;
+            # and the model label (manufacturer and designation, S012), so "GA37", "Atlas" and
+            # "Atlas Copco GA37" all find it
+            conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s"
+                              " OR CONCAT(mf.name, ' ', m.designation) LIKE %s)")
+            params.extend([like_pattern(q)] * 5)
         unit_ids = accessible_unit_ids(cur)
         if unit_ids is not None:
             if not unit_ids:
@@ -719,13 +739,13 @@ def _asset_list_row(node):
 def asset_list():
     """The machines the filters choose, grouped by unit, with their parts when with_parts=1.
     Filters choose machines; parts come only with their machine, whatever their own class
-    (S015 § 4).  Unit access is applied as in the list."""
-    conditions, params = _list_filters()
+    (S015 § 4); the property filter too (S062 D9).  Unit access is applied as in the list."""
     with_parts = request.args.get("with_parts") == "1"
-    conditions.append("e.level = 'equipment'")
     printed = {"printed_at": datetime.now(IST).isoformat(timespec="seconds"),
                "printed_by": g.user.get("name") or actor()}
     with get_db().cursor() as cur:
+        conditions, params = _list_filters(cur)   # before the unit check (S062 § 5.5)
+        conditions.append("e.level = 'equipment'")
         unit_ids = accessible_unit_ids(cur)
         if unit_ids is not None:
             if not unit_ids:
