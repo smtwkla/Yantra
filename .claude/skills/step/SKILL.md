@@ -23,6 +23,11 @@ in the `## Step workflow` section of its `.claude/CLAUDE.md`, "the settings";
 section: stop with the message of README § The repo's settings and index.
 The steps are listed in `docs/steps/INDEX.md`.
 
+**One session per step** (27-10-2026, by KLA): every command that writes a
+step's files (`plan`, `amend`, `implement`, `review`, `fix`, answering
+findings) first takes the step's claim, and a refused claim stops the command
+(§ Claims and the watchdog).
+
 ## Commands
 
 - `/step roadmap <feature>`: spawn the **roadmapper** to cut a big feature into a
@@ -255,7 +260,11 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    - Spawn `brief-reviewer` with the brief's path, the round number and the
      facts file (`scratch/brief-facts-S0NN.md`, from a run on the current
      draft).
-   - Read its review file. Answer **every** finding in the brief's Review log
+   - Read its review file. **First copy the brief** to
+     `scratch/S0NN-brief-rN.md` (N = this review's round), so the next round can
+     diff your answers (27-10-2026, from the brief reviewers' feedback: an
+     untracked brief has no older version to compare). Then answer **every**
+     finding in the brief's Review log
      (`Accepted` / `Rejected` / `Deferred`) and revise the brief text. Answer
      the review's `## Nits` list in **one** Review-log row ("BR2-06…BR2-09:
      accepted", naming any rejected one with its reason), not a row each.
@@ -322,7 +331,16 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    round where that applies. Give every coder and code reviewer its own test
    run name (the repo's test run name variable, settings: *Unit tests*), so
    agents running tests at the same time never share a database.
-   - If it returns **QUESTIONS FOR THE USER**, stop and ask them.
+   - **Snapshot every coder hand-back** (27-10-2026, from the reviewers'
+     feedback): when the coder of the step or of a fix round hands back,
+     run `snapshot` for the step (§ Snapshots). Each run keeps a round ref
+     (`refs/step-rounds/S00N-<n>`). Tell the next code reviewer its diff:
+     `diff S00N` in round 1, `diff S00N --from-round <n>` from round 2 on,
+     with `<n>` the round before the fix round.
+   - If it returns **QUESTIONS FOR THE USER**, stop and ask them. This
+     includes anything outside the repo a check would need (pulling an
+     image, installing, a setting): agents never do it and never skip it
+     silently (27-10-2026, by KLA); the user decides.
    - If it returns **ADVICE NEEDED**, spawn `advisor` with its question and
      what it tried (§ Advice), then resume the coder with the advice file.
      If the answer changes the design, it goes to the user as an amendment,
@@ -377,8 +395,8 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      minor-only fix round changed production code, the verify review does
      not block: set the step to gate B, snapshot it, and start the next
      step's coder; spawn the verify review at the same time (it only reads
-     code). Tell the reviewer the snapshot to diff against (the step's own
-     `refs/steps/S00N` and its parent). If it finds a `blocker` or `major`,
+     code). Tell the reviewer its diff, `diff S00N --from-round <n>` (the
+     round before the fix round). If it finds a `blocker` or `major`,
      stop the next step's coder at its next hand-back and fix it first. Its
      minor findings and nits are fixed in the next fix round on the tree,
      land in the next step's snapshot, and are answered in the older step's
@@ -513,6 +531,12 @@ next step's coder carries on in the same working tree.
   `cmd //c` garbles a quoted message on its way to the `.bat`.
   A fix after gate B re-runs `snapshot` for the same step; only the newest
   snapshot can be replaced.
+- **Rounds** (27-10-2026): `snapshot` also runs after every coder hand-back
+  before gate B (§ Phase 2 step 2), and each run keeps its commit as a round
+  ref, `refs/step-rounds/S00N-<n>`. `rounds S00N` lists them; `adopt` removes
+  them. `diff S00N [--from-round <n>] [--stat]` shows the step's change from
+  what it builds on, or from round `<n>`, with new untracked files as added:
+  a plain `git diff refs/steps/…` lists them as deleted.
 - **One coder writes at a time.** A snapshot holds whatever is in the tree,
   so two coders writing at once mix their steps. Reviews and brief work are
   read-only for code and may overlap. Don't start a coder while another is
@@ -532,6 +556,45 @@ next step's coder carries on in the same working tree.
   or stage each step's own files and commit them one step at a time; never
   push.
 - `/step ls` lists the snapshots not yet adopted, and any stale ones.
+
+## Claims and the watchdog
+
+Standing rule (27-10-2026, by KLA, after two sessions worked on S061 at once):
+one orchestrator session at a time works on a step. The rule is kept by this
+skill, not by a hook (the user's choice). The tool is `tooling/step-claim.bat`;
+from the Bash tool call `uv run --no-project python tooling/steps/step_claim.py …`
+(it reads the session's `CLAUDE_PID`, which a `cmd //c` call also passes on).
+
+- **Take** the step before any command writes its files:
+  `take S00N "<phase>"` (e.g. "brief review r2", "coding", "fix round 1").
+  Taking it again in the same session only updates the phase; a session
+  after `/clear` is the same process and keeps its claims.
+- **Refused** (exit 1): another live session holds the step. Stop, show the
+  user the refusal's line (who, which phase, since when, the agent running),
+  and ask: wait, or take it over. Use `take … --force` only on the user's
+  word for this step.
+- **Before every agent you spawn** for the step: `agent S00N <role>
+  [<minutes>]`, then start `watch S00N` as a background command
+  (`run_in_background`). Roles and budgets (about twice each role's usual
+  time, `/step stats` 27-10-2026): `coder` 60, `fix` 20 (a fix round's
+  coder), `code-reviewer` 20, `brief-reviewer` 20, `advisor` 30,
+  `roadmapper` 45.
+- **When the agent hands back**: `agent-done S00N`; the watch then ends by
+  itself (exit 0).
+- **When the watch exits 3** (the agent passed its budget): check whether the
+  agent is still running, and tell the user in one line with its minutes.
+  Never stop it without the user's word. To wait longer, run `agent` again
+  with the extra minutes and start a new `watch`.
+- **Release** the claim at gate A, at gate B, when the user stops or parks
+  the step, and after a refused or failed command you started: `release
+  S00N`. A long stretch of your own work with no agent (answering a review)
+  runs `touch S00N` at least every 30 minutes.
+- **A dead claim** (its session's process ended, 30 minutes with no command
+  and no agent, or an agent 15 minutes past its budget) is taken without
+  `--force`; the take names whom it was taken from. Tell the user, and read
+  the step's files to see where the other session stopped.
+- `/step ls` shows every claim; `/step check` flags dead claims and claims
+  on Done or Dropped steps (check 11).
 
 ## Parallel steps
 
@@ -590,7 +653,8 @@ verdict paragraph, the commits whose subject names the step, whether an impl
 report exists, and the working-tree changes in the step's folder (and, for an
 uncommitted step, among the files its impl report names); then the queued
 items with a step ID, the shared docs changed (`INDEX.md`, the device-check list), the
-snapshots not yet adopted (`refs/steps/`), and
+snapshots not yet adopted (`refs/steps/`), the step claims (§ Claims and the
+watchdog), and
 the working-tree changes no step claims. It judges nothing: the bulb, the
 stage, the next action and the notes below the table are yours. Open a file
 only when the facts leave a question (a verdict cut short, a mismatch to
@@ -626,7 +690,9 @@ explain). Columns:
   `4-code-review-*` after) with its open `blocker`/`major` count and minor/nit
   count, then the next action in a few words: "ready to commit", "ready for
   `/step implement`", "answer CR3-02", etc. Flag a mismatch, e.g. Stage says
-  "In code review" but the step is committed → "set Status to Done".
+  "In code review" but the step is committed → "set Status to Done". A step
+  held by another session's live claim says so here ("S0NN held by another
+  session: coding, coder 12 min"), and a dead claim is flagged.
 
 Below the table, list the unclaimed working-tree changes, grouped by the step
 you think they belong to (say it is a guess) or as "no step", so the user can
@@ -653,7 +719,8 @@ the check's number, and changes nothing:
    twice;
 9. a stage's files are missing (an impl report, a code review), or an impl
    report exists before approval;
-10. working-tree changes no step claims.
+10. working-tree changes no step claims;
+11. a step claim is dead, or is held on a Done or Dropped step.
 
 Then add what the script cannot judge, opening only the files a problem points
 to: a Status that contradicts the latest verdict, a gate shown with findings

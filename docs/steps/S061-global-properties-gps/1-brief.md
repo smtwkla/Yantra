@@ -3,7 +3,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 27-10-2026 (revised 27-10-2026: brief-review r1)
 Track: full
-Status: Gate B — ready to commit; verify review r2 clean (approved 27-10-2026 by KLA: Q1 a, Q2 a, Q3 as proposed; A1 answered: production runs MariaDB 11.8.8; A2 confirmed)
+Status: Committed fb6a025 (adopted 27-10-2026); checks left: device-checks rows 41–43 for IT Admin (approved 27-10-2026 by KLA: Q1 a, Q2 a, Q3 as proposed; A1 answered: production runs MariaDB 11.8.8; A2 confirmed)
 Baseline: d6431f1
 
 # S061 — Properties for every class, and a GPS location

@@ -304,6 +304,19 @@ terminal, with each role as a subagent (`.claude/agents/`):
 - **Each review loop is capped at 3 rounds,** then the orchestrator asks the
   user.
 - **The stale brief check** (above) runs before each `/step implement`.
+- **One session per step** (27-10-2026): the orchestrator takes a claim on a
+  step before it writes the step's files (`tooling/step-claim.bat`, files in
+  the main working folder's `scratch/step-claims/`), and a second session is
+  refused while the claim is live. A claim dies when its session's process
+  ends, after 30 minutes with no command and no agent, or 15 minutes after a
+  running agent's budget. A background `watch` wakes the orchestrator when
+  an agent passes its budget; it never stops the agent. The skill's
+  § Claims and the watchdog has the commands and the budgets. `scratch/`
+  must be ignored by git, as it is for the browser-test lock.
+- **Snapshot rounds** (27-10-2026): every coder hand-back is snapshotted, and
+  each snapshot keeps a round ref (`refs/step-rounds/S00N-<n>`), so a verify
+  review reads only the fix round: `tooling/step-snapshot.bat diff S00N
+  --from-round <n>`.
 - **The files and conventions above are unchanged.** The separate terminals
   below still work.
 

@@ -70,6 +70,21 @@ The orchestrator gives you one of three tasks:
     return **ADVICE NEEDED**: the question in one sentence, why it matters,
     and what you tried with its result. The orchestrator runs the advisor and
     resumes you with its answer. Do not guess and build on the guess.
+  - **Anything outside the repo goes back to the orchestrator** (27-10-2026,
+    KLA, from S061: a check needed an image pulled, and the coder skipped it
+    on its own). When a check or a step needs anything outside the repo's
+    working tree that the repo's own tooling does not do (pulling an image,
+    installing, a setting, another repo, a service), do not do it and do not
+    skip it silently: stop and return it under **QUESTIONS FOR THE USER**,
+    with what it would do and why the step needs it.
+- **Shell text** (27-10-2026, from the agents' feedback on S061 and S062:
+  runs lost to quoting, and one test run that ran nothing and exited 0):
+  - write multi-line text (code, tests, Markdown) with the Edit or Write
+    tool, never through a heredoc, `echo` or `python -c` with quotes in it;
+  - from the Bash tool, run a `.bat` wrapper quoted, with backslashes:
+    `cmd //c "tooling\run-tests.bat …"`;
+  - read a test run's summary line before you call it green: it must name
+    the tests that ran. A run that ran nothing is a failed run.
 - **Design and structure** (CLAUDE-COMMON principles):
   - put each rule in its layer: business rules and calculations in the pure
     core, fetching, locking and storing in the route and DB shell, display

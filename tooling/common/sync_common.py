@@ -42,6 +42,7 @@ FILES = [
     # Step workflow (/step): wrappers and the two READMEs
     ("tooling/step-brief-facts.bat", "tooling/step-brief-facts.bat"),
     ("tooling/step-check.bat", "tooling/step-check.bat"),
+    ("tooling/step-claim.bat", "tooling/step-claim.bat"),
     ("tooling/step-feedback.bat", "tooling/step-feedback.bat"),
     ("tooling/step-ls.bat", "tooling/step-ls.bat"),
     ("tooling/step-snapshot.bat", "tooling/step-snapshot.bat"),

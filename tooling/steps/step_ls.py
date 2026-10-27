@@ -9,12 +9,14 @@ of reading every step file one call at a time.
 Per step: the index title and folder, the brief's Status line, the latest review and its
 verdict paragraph, the commits whose subject names the step, whether an impl report exists,
 and the working-tree changes in the step's folder or among the files its impl report names.
-Then the shared docs changed, the step snapshots not yet adopted (refs/steps/), and the
+Then the shared docs changed, the step snapshots not yet adopted (refs/steps/), the step claims
+(which session works on which step, live or dead; tooling/steps/step_claim.py), and the
 working-tree changes no step claims.  It judges
 nothing: no bulb, no next action."""
 
 import sys
 
+import step_claim
 import step_snapshot
 from step_facts import ROOT, SHARED_DOCS, gather, latest_review, verdict_line
 
@@ -60,6 +62,9 @@ def main(argv):
             print("  stale (HEAD moved another way): " + ", ".join(i for i, _, _ in snaps["stale"]))
     except step_snapshot.SnapshotError as error:
         print(f"snapshots: could not read ({error})")
+    print("step claims (sessions at work):")
+    for line in step_claim.cmd_show(None, step_claim.me_from_env()).splitlines():
+        print(f"  {line}")
     print("unclaimed working-tree changes:" + ("" if facts.unclaimed else " none"))
     for path in facts.unclaimed:
         print(f"  {facts.changed[path]} {path}")

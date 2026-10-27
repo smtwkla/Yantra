@@ -4,6 +4,9 @@ own while the next step's coder carries on in the same working tree (decided 24-
     python tooling/steps/step_snapshot.py snapshot S038 "S038: meters on models and equipment; v30;"
     python tooling/steps/step_snapshot.py list
     python tooling/steps/step_snapshot.py adopt S038
+    python tooling/steps/step_snapshot.py diff S038 [--stat]               the step's change so far
+    python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] the change since round 1
+    python tooling/steps/step_snapshot.py rounds S038
 
 A snapshot is the whole working tree (tracked and untracked, .gitignore respected) written as a
 commit under refs/steps/<step>, whose parent is the previous unmerged snapshot or HEAD. It never
@@ -15,7 +18,17 @@ its files (``git reset --mixed``); the working files stay as they are.  A plain
 ``git merge --ff-only`` would refuse here, because the step's new files are still untracked.
 
 Re-running ``snapshot`` for the newest unmerged step replaces it (a fix after gate B).  A step
-already merged into HEAD, or one with a newer snapshot on top, is refused."""
+already merged into HEAD, or one with a newer snapshot on top, is refused.
+
+Rounds (27-10-2026, from the agents' feedback on S061 and S062): every ``snapshot`` also keeps its
+commit as refs/step-rounds/<step>-<n>, n = 1, 2, … So when a fix round replaces the step's
+snapshot, the earlier round is still there, and a verify review sees exactly the fix round's
+change: ``diff S038 --from-round 1``. ``adopt`` removes the step's round refs.
+
+``diff`` compares a tree of the working files (tracked and untracked, .gitignore respected, made
+like a snapshot's, nothing written to the user's index) with the step's base: the snapshot it
+builds on (or HEAD), or the round named. A plain ``git diff <ref>`` lists the step's untracked
+files as deleted; this does not."""
 
 import os
 import re
@@ -25,6 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REF_PREFIX = "refs/steps/"
+ROUND_PREFIX = "refs/step-rounds/"
 STEP_ID = re.compile(r"^S\d{3}$")
 WRITTEN_BREAK = "\\n"  # the two characters backslash and n
 
@@ -71,6 +85,59 @@ def unmerged_chain(repo, head):
     return on_head, stale
 
 
+def working_tree(repo, base):
+    """A tree object of the working files (tracked and untracked, .gitignore respected), built in
+    a private index that starts from `base`; the user's index is not touched."""
+    index = Path(git(repo, "rev-parse", "--git-path", "step-snapshot-index"))
+    if not index.is_absolute():
+        index = Path(repo) / index
+    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+    try:
+        git(repo, "read-tree", base, env=env)
+        git(repo, "add", "-A", env=env)
+        return git(repo, "write-tree", env=env)
+    finally:
+        index.unlink(missing_ok=True)
+
+
+def rounds(repo, step_id):
+    """[(round number, sha)] of the step's round refs, in round order."""
+    out = git(repo, "for-each-ref", "--format=%(refname) %(objectname)", f"{ROUND_PREFIX}{step_id}-*")
+    found = []
+    for line in out.splitlines():
+        name, sha = line.split(" ", 1)
+        number = name.rsplit("-", 1)[1]
+        if number.isdigit():
+            found.append((int(number), sha))
+    return sorted(found)
+
+
+def step_base(repo, step_id):
+    """What the step builds on: its snapshot's parent, or the newest unmerged snapshot of another
+    step, or HEAD."""
+    existing = {row[0]: row[1] for row in snapshots(repo)}
+    head = git(repo, "rev-parse", "HEAD")
+    if step_id in existing and not is_ancestor(repo, existing[step_id], head):
+        return git(repo, "rev-parse", f"{REF_PREFIX}{step_id}^")
+    chain, _ = unmerged_chain(repo, head)
+    others = [sha for i, sha, _ in chain if i != step_id]
+    return others[-1] if others else head
+
+
+def diff(repo, step_id, from_round=None, stat=False):
+    """The diff from the step's base (or the round named) to the working files."""
+    if from_round is None:
+        base = step_base(repo, step_id)
+    else:
+        found = dict(rounds(repo, step_id))
+        if from_round not in found:
+            raise SnapshotError(f"{step_id} has no round {from_round}; it has: "
+                                + (", ".join(str(n) for n in found) or "none"))
+        base = found[from_round]
+    tree = working_tree(repo, base)
+    return git(repo, "diff", *(["--stat"] if stat else []), base, tree)
+
+
 def snapshot(repo, step_id, message):
     if not STEP_ID.match(step_id):
         raise SnapshotError(f"step id must look like S038, got {step_id!r}")
@@ -90,23 +157,16 @@ def snapshot(repo, step_id, message):
     else:
         parent = chain[-1][1] if chain else head
 
-    index = Path(git(repo, "rev-parse", "--git-path", "step-snapshot-index"))
-    if not index.is_absolute():
-        index = Path(repo) / index
-    env = {**os.environ, "GIT_INDEX_FILE": str(index)}
-    try:
-        git(repo, "read-tree", parent, env=env)
-        git(repo, "add", "-A", env=env)
-        tree = git(repo, "write-tree", env=env)
-    finally:
-        index.unlink(missing_ok=True)
+    tree = working_tree(repo, parent)
     if tree == git(repo, "rev-parse", f"{parent}^{{tree}}"):
         raise SnapshotError(f"nothing new since {parent[:7]}: the working tree matches it")
     # a .bat argument cannot hold a line break: a written backslash-n stands for one (the trailers)
     commit = git(repo, "commit-tree", tree, "-p", parent, "-m", message.replace(WRITTEN_BREAK, "\n"))
     git(repo, "update-ref", f"{REF_PREFIX}{step_id}", commit)
+    round_no = len(rounds(repo, step_id)) + 1
+    git(repo, "update-ref", f"{ROUND_PREFIX}{step_id}-{round_no}", commit)
     stat = git(repo, "diff", "--stat", parent, commit).splitlines()
-    return {"ref": f"{REF_PREFIX}{step_id}", "commit": commit, "parent": parent,
+    return {"ref": f"{REF_PREFIX}{step_id}", "commit": commit, "parent": parent, "round": round_no,
             "summary": stat[-1].strip() if stat else "", "stale": [row[0] for row in stale]}
 
 
@@ -122,6 +182,8 @@ def adopt(repo, step_id):
     if git(repo, "diff", "--cached", "--name-only"):
         raise SnapshotError("the index has staged changes; commit or unstage them first")
     git(repo, "reset", "-q", "--mixed", sha)
+    for number, _ in rounds(repo, step_id):
+        git(repo, "update-ref", "-d", f"{ROUND_PREFIX}{step_id}-{number}")
     return sha
 
 
@@ -136,13 +198,27 @@ def main(argv, repo=ROOT):
     try:
         if argv[:1] == ["snapshot"] and len(argv) == 3:
             r = snapshot(repo, argv[1], argv[2])
-            print(f"{r['ref']} = {r['commit'][:7]} (parent {r['parent'][:7]}): {r['summary']}")
+            print(f"{r['ref']} = {r['commit'][:7]} (parent {r['parent'][:7]}, round {r['round']}): {r['summary']}")
             if r["stale"]:
                 print("note: unmerged snapshots that no longer build on HEAD: " + ", ".join(r["stale"]))
             print(f"adopt with: tooling/step-snapshot.bat adopt {argv[1]}")
             return 0
         if argv[:1] == ["adopt"] and len(argv) == 2:
             print(f"adopted {argv[1]}: HEAD is now {adopt(repo, argv[1])[:7]}")
+            return 0
+        if argv[:1] == ["diff"] and len(argv) >= 2:
+            rest, stat, from_round = argv[2:], "--stat" in argv, None
+            rest = [a for a in rest if a != "--stat"]
+            if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
+                from_round = int(rest[1])
+            elif rest:
+                print(__doc__)
+                return 2
+            print(diff(repo, argv[1], from_round, stat))
+            return 0
+        if argv[:1] == ["rounds"] and len(argv) == 2:
+            found = rounds(repo, argv[1])
+            print(", ".join(f"{argv[1]}-{n} {s[:7]}" for n, s in found) or f"{argv[1]}: no rounds")
             return 0
         if argv == ["list"]:
             r = listing(repo)

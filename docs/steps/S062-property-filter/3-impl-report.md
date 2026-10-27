@@ -130,8 +130,8 @@ Changed:
   check § 8.4 asks "Back after *Clear property filter* brings it back". With `replace`, as
   every other filter uses, *Back* would leave the list instead. A filter built in a dialog is
   also costlier to make again than a select. `update()` gained an option `{ push }`; nothing
-  else uses it. If the user wants the list's one rule kept (`replace`), the § 8.4 check must
-  change instead.
+  else uses it. **Decided by KLA, 27-10-2026: keep `push`.** (Had the user chosen `replace`, the § 8.4 check would
+  have changed instead.)
 - **D-2:** The core checks line by line (checks 4, 5, 6 of line 1, then of line 2), so the first
   refusal is the first line's. The brief orders the checks but does not say whether by check or by
   line.

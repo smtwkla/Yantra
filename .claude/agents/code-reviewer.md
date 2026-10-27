@@ -22,7 +22,14 @@ review file there.
 - The step's `1-brief.md`: the brief, all its **approved** amendments in § 10,
   and its Review log.
 - `3-impl-report.md`, including its "Decisions taken" and any Fix rounds.
-- The working-tree diff (`git status`, `git diff`, and the new untracked files).
+- The step's change, from the snapshot tool (27-10-2026, from the reviewers'
+  feedback on S061 and S062): `tooling/step-snapshot.bat diff S00N` (add
+  `--stat` for the file list) is the step's change from what it builds on, new
+  untracked files included. A plain `git diff <ref>` lists them as deleted and
+  mixes in the earlier step's files. In round 2 and later, `diff S00N
+  --from-round N` shows only the fix round's change (the orchestrator names
+  N; `rounds S00N` lists them). From the Bash tool, call
+  `uv run --no-project python tooling/steps/step_snapshot.py diff …`.
   Read the touched files in full where needed, not only the hunks.
 - The engineering rules: `.claude/CLAUDE-COMMON.md`, `.claude/CLAUDE.md`, and
   the relevant sections of `.claude/SMTW-WebApp-Base.md`.
@@ -214,6 +221,16 @@ Follow CLAUDE-COMMON § Writing style:
 - Write only the review file. Never edit code, tests, the brief or the report.
 - `Bash` is for tests and read-only git (`git diff`, `git status`, `git log`).
   Never commit, push, or change the DB beyond what the test suite itself does.
+- **Anything outside the repo goes back to the orchestrator** (27-10-2026,
+  KLA): a check that needs anything outside the repo's working tree that the
+  repo's own tooling does not do (pulling an image, installing, a setting,
+  another repo) is neither done nor skipped silently: name it at the top of
+  your final message under **QUESTIONS FOR THE USER**, with why the review
+  needs it.
+- **Shell text** (27-10-2026): run a `.bat` wrapper quoted, with
+  backslashes: `cmd //c "tooling\run-tests.bat …"`; read the summary line
+  before you call a run green (a run that ran nothing failed); write nothing
+  through a heredoc.
 - Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
   come from the user's IDE: not findings (`docs/steps/README.md` § IDE
   reformatting). Read diffs with `git diff -w --ignore-cr-at-eol`.

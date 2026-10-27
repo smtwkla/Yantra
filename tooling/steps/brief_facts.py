@@ -73,9 +73,18 @@ def classify(token):
         return Ref("route", match.group(1).rstrip("/"))
     match = CALL.match(token)
     name = match.group(1) if match else token
-    if NAME.match(name) and DISTINCT_NAME.search(name) and not name.endswith("."):
+    if NAME.match(name) and DISTINCT_NAME.search(name) and not name.endswith(".") and greppable(name):
         return Ref("name", name)
     return None
+
+
+def greppable(name):
+    """Whether grepping the name finds its own uses (S062's feedback, 27-10-2026): a lone `_` has
+    no letter, and `Thing.open` is grepped by its last part, a plain word in dozens of files."""
+    if not re.search(r"[A-Za-z0-9]", name):
+        return False
+    short = name.rpartition(".")[2]
+    return "." not in name or bool(DISTINCT_NAME.search(short)) or (short.isupper() and len(short) >= 4)
 
 
 def extract_refs(text):

@@ -123,8 +123,11 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   - verify that every earlier finding marked `Accepted` is reflected in the
     brief text, not only in the Review log;
   - review the brief's text **changed since the last round** (diff the brief
-    against the version the last review read: `git diff` if it was committed,
-    else the sections the Review log's answers name) and what that change
+    against the version the last review read: the orchestrator's copy
+    `scratch/S0NN-brief-r<N-1>.md`, made before it answered round N-1, with
+    `git diff --no-index -w scratch/S0NN-brief-r<N-1>.md <brief>`; else
+    `git diff` if the brief was committed; else the sections the Review
+    log's answers name) and what that change
     touches — the code it now relies on, the rules it now states;
   - don't re-review sections that did not change. Something there you notice
     in passing is reported only if it is a `blocker` or `major`;
@@ -198,6 +201,13 @@ Follow CLAUDE-COMMON § Writing style:
 - Write only the review file. Never edit the brief, the code or any other file.
 - `Bash` is for read-only commands only (`git diff`, `git status`, `ls`, `cat`,
   `grep`). Never commit.
+- **Anything outside the repo goes back to the orchestrator** (27-10-2026,
+  KLA): a check that needs anything outside the repo's working tree (pulling
+  an image, installing, a setting, another repo) is neither done nor skipped
+  silently: name it at the top of your final message under **QUESTIONS FOR
+  THE USER**, with why the review needs it.
+- **Shell text** (27-10-2026): run a `.bat` wrapper quoted, with
+  backslashes: `cmd //c "tooling\step-brief-facts.bat S0NN"`.
 - Never approve a brief. Approval is the user's.
 - Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
   come from the user's IDE: not findings (`docs/steps/README.md` § IDE

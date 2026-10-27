@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 27-10-2026
 Track: full
-Status: Gate B — verify review r3 clean, no finding open; D-1 (Back button) open for KLA (approved 27-10-2026 by KLA: D11 widen the level; Q1 a; A1–A4 as written)
+Status: Done (committed 24556c4, adopted 27-10-2026; checks: 8 auto; D-1 decided by KLA 27-10-2026: keep `router.push`) (approved 27-10-2026 by KLA: D11 widen the level; Q1 a; A1–A4 as written)
 Baseline: d6431f1 (brief reviews); staleness check s1 done against refs/steps/S061 fb6a025 (no blocker or major)
 ```
 

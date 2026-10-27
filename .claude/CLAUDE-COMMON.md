@@ -205,7 +205,9 @@ and a code review, each in `docs/steps/S0NN-<slug>/`. The skill (`.claude/skills
 in with two things of its own: a `## Step workflow` section in its `.claude/CLAUDE.md` (the entries
 are listed in `docs/steps/README.md` § The repo's settings and index; one line each, in the form of
 `## Pre-flight`) and its `docs/steps/INDEX.md`. The tools' tests live and run in `smtw-common` only
-(`tooling/common/tests`, `tooling/run-common-tests.bat`).
+(`tooling/common/tests`, `tooling/run-common-tests.bat`). One orchestrator session at a time works on a
+step: the skill takes a claim on it (`tooling/step-claim.bat`) and refuses a second session, and its
+watchdog tells the user when an agent runs past its budget (27-10-2026, by KLA; no hook enforces it).
 
 ### RBAC Pattern
 

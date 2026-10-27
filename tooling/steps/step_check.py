@@ -15,11 +15,13 @@ The checks (the numbers are the skill's § Check):
  7. device-checks.md's Done column and the impl report's ticks agree (skipped without the file);
  8. every folder has an index row and every row a folder; no step ID is used twice;
  9. the files a stage needs exist (impl report, code review);
-10. working-tree changes no step claims."""
+10. working-tree changes no step claims;
+11. a step claim is dead (its session ended or went quiet), or claims a Done or Dropped step."""
 
 import re
 import sys
 
+import step_claim
 from step_facts import SHARED_DOCS, STEP_ID, STEPS_DIR, gather, header_value
 
 # The stage a Status (or INDEX.md status cell) is in: its first words, in this order
@@ -147,6 +149,16 @@ def check_folders(index_folders, folders):
     return problems
 
 
+def check_claim(claim, live, reason, status):
+    """Check 11 for one step claim: dead, or on a step that is closed."""
+    problems = []
+    if not live:
+        problems.append(f"its claim is dead ({reason}): release it, or take it to carry on (11)")
+    if stage(status) in ("done", "dropped"):
+        problems.append(f"\"{stage(status)}\" but a claim is still held: release it (11)")
+    return problems
+
+
 def check_stage_files(status, names, has_impl_report):
     current = stage(status)
     problems = []
@@ -185,6 +197,11 @@ def run():
         problems += [(step.id, p) for p in found]
     problems += [("index", p) for p in check_folders([s.folder for s in facts.steps], facts.folders)]
     problems += [("tree", f"{facts.changed[p]} {p}: no step claims it (10)") for p in facts.unclaimed]
+    statuses = {step.id: step.status for step in facts.steps}
+    me, now = step_claim.me_from_env(), step_claim.now_utc()
+    for claim in step_claim.all_claims():
+        live, reason = step_claim.liveness(claim, now, step_claim.owner_running(claim, me))
+        problems += [(claim["step"], p) for p in check_claim(claim, live, reason, statuses.get(claim["step"], ""))]
     return problems, facts
 
 
