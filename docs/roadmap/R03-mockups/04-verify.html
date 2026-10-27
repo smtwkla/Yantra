@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R02 mock-up 04 — Verify a PM job</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span class="active"><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">PM</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item"><a class="nav-link">Due</a></li>
+      <li class="nav-item"><a class="nav-link">Upcoming</a></li>
+      <li class="nav-item"><a class="nav-link active">To verify (3)</a></li>
+      <li class="nav-item"><a class="nav-link">Done</a></li>
+    </ul>
+    <div class="row g-3">
+      <div class="col-4">
+        <div class="list-group">
+          <a class="list-group-item list-group-item-action active">
+            <div class="d-flex gap-2"><span class="fw-semibold">PM-2026-10-014</span><span class="ms-auto small">Done 27-10-2026 11:05</span></div>
+            <div>HP003 — Monthly hydraulic check</div>
+            <div class="small">2 Not OK · 1 ticket raised</div>
+          </a>
+          <a class="list-group-item list-group-item-action">
+            <div class="d-flex gap-2"><span class="fw-semibold">PM-2026-10-011</span><span class="ms-auto small text-secondary">Done 26-10-2026 16:40</span></div>
+            <div>HP007 — Monthly hydraulic check</div>
+            <div class="small text-secondary">All OK</div>
+          </a>
+          <a class="list-group-item list-group-item-action">
+            <div class="d-flex gap-2"><span class="fw-semibold">PM-2026-10-009</span><span class="ms-auto small text-secondary">Done 26-10-2026 10:15</span></div>
+            <div>CMP001 — A check (AMC visit)</div>
+            <div class="small text-secondary">All OK · vendor report attached</div>
+          </a>
+        </div>
+      </div>
+      <div class="col-8">
+        <div class="card">
+          <div class="card-header d-flex flex-wrap align-items-center gap-2">
+            <span class="badge text-bg-success">Done</span>
+            <span class="fw-semibold">PM-2026-10-014 · HP003 — Hydraulic press 3</span>
+            <span class="ms-auto small text-secondary">Due 24-10-2026 · done 3 days late</span>
+          </div>
+          <div class="card-body pb-0">
+            <div class="small text-secondary mb-2">Performed by Technician A · started 27-10-2026 09:10 · done 11:05 · 1 h 55 min</div>
+          </div>
+          <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>#</th><th>Item</th><th>Result</th><th>Remark / evidence</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Oil level above min</td><td><span class="badge text-bg-success">OK</span></td><td></td></tr>
+              <tr class="row-notok"><td>2</td><td>No leaks at cylinder seals and pipe joints</td><td><span class="badge text-bg-danger">Not OK</span></td><td>Oil seeping at the left cylinder's rod seal <span class="mk-photo ms-2" style="width:40px;height:40px"><i class="fa-solid fa-image"></i></span><br><a href="#">TK-2026-10-031</a> <span class="small text-secondary">defect raised from this item</span></td></tr>
+              <tr><td>3</td><td>Power-pack oil temperature</td><td>48.5 °C</td><td class="small text-secondary">within 30–60 · logged on the meter</td></tr>
+              <tr class="row-notok"><td>4</td><td>Main pressure at full load</td><td>212 bar <span class="badge text-bg-danger">High</span></td><td>Relief valve set high after the last repair; reset to 195 bar</td></tr>
+              <tr><td>5</td><td>Return filter indicator</td><td><span class="badge text-bg-success">Done</span></td><td><span class="mk-photo" style="width:40px;height:40px"><i class="fa-solid fa-image"></i></span></td></tr>
+              <tr><td>6</td><td>Press stops when the safety door opens</td><td><span class="badge text-bg-success">OK</span></td><td></td></tr>
+              <tr><td>7</td><td>Blow the dust out of the PLC panel</td><td><span class="badge text-bg-success">Done</span></td><td></td></tr>
+            </tbody>
+          </table>
+          <div class="card-body border-top">
+            <label class="form-label">Remark (needed to send back)</label>
+            <input class="form-control mb-3" placeholder="What must be done again, and why">
+            <div class="d-flex gap-2 justify-content-end">
+              <button class="btn btn-outline-danger">Send back</button>
+              <button class="btn btn-success">Verify job</button>
+            </div>
+            <div class="small text-secondary mt-2">The next job is due 27-11-2026 or at 2,254.6 h: one month and 250 h from this job's done time (run hours then 2,004.6 h).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

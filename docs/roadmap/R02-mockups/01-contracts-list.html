@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mockup-viewport" content="desktop">
+  <title>Mock-up 01 — Masters › Contracts (R02.1)</title>
+  <link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+  <link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+  <style>
+    .app-shell { display: flex; min-height: 100vh; }
+    .sidebar { position: fixed; top: 0; left: 0; width: var(--sidebar-width); height: 100vh; background: var(--sidebar-bg); display: flex; flex-direction: column; justify-content: space-between; z-index: 100; }
+    .sidebar-nav { display: flex; flex-direction: column; align-items: center; padding-top: 1rem; gap: 0.25rem; }
+    .sidebar-btn { width: 42px; height: 42px; border: none; border-radius: 8px; background: transparent; color: var(--sidebar-icon-color); font-size: 1.2rem; display: flex; align-items: center; justify-content: center; }
+    .sidebar-btn.active { background: var(--sidebar-icon-active-bg); color: var(--sidebar-icon-active-color); }
+    .sidebar-footer { text-align: center; padding: 0.5rem; color: var(--text-muted); font-size: 0.7rem; }
+    .app-main { flex: 1; display: flex; flex-direction: column; margin-left: var(--sidebar-width); min-width: 0; }
+    .topbar { height: var(--topbar-height); min-height: var(--topbar-height); background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-border); display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; }
+    .topbar-center { font-weight: 600; font-size: 1rem; }
+    .app-content { flex: 1; padding: 0.5rem 1.5rem 1.5rem; }
+    .mock-note { font-size: 0.75rem; color: var(--text-muted); border-top: 1px dashed var(--bs-border-color); margin-top: 1.5rem; padding-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <nav class="sidebar-nav">
+      <span class="sidebar-btn" title="Me"><i class="fa-solid fa-user"></i></span>
+      <span class="sidebar-btn" title="Equipment"><i class="fa-solid fa-gears"></i></span>
+      <span class="sidebar-btn" title="Tickets"><i class="fa-solid fa-triangle-exclamation"></i></span>
+      <span class="sidebar-btn" title="Readings"><i class="fa-solid fa-gauge"></i></span>
+      <span class="sidebar-btn active" title="Masters"><i class="yi-icon yi-table-edit"></i></span>
+      <span class="sidebar-btn" title="Settings"><i class="fa-solid fa-gear"></i></span>
+    </nav>
+    <div class="sidebar-footer"><small>v0.1.12</small></div>
+  </aside>
+  <div class="app-main">
+    <header class="topbar">
+      <strong>Yantra</strong>
+      <div class="topbar-center">Masters</div>
+      <div class="d-flex align-items-center">
+        <span class="text-secondary px-2"><i class="fa-solid fa-bell"></i></span>
+        <span class="text-secondary me-2">Manager A</span>
+        <span class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-right-from-bracket"></i></span>
+      </div>
+    </header>
+    <main class="app-content">
+      <ul class="nav nav-tabs flex-nowrap overflow-auto mt-2 mb-3 small">
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-location-dot me-1"></i>Sites</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-warehouse me-1"></i>Units</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-shapes me-1"></i>Equip Class</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-tag me-1"></i>Models</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-list-ul me-1"></i>Properties</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-gauge me-1"></i>Meter types</span></li>
+        <li class="nav-item"><span class="nav-link"><i class="fa-solid fa-people-group me-1"></i>Team</span></li>
+        <li class="nav-item"><span class="nav-link active"><i class="fa-solid fa-file-signature me-1"></i>Contracts</span></li>
+      </ul>
+
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <select class="form-select form-select-sm w-auto" aria-label="Site"><option>SMTW</option></select>
+        <select class="form-select form-select-sm w-auto" aria-label="Type"><option>All types</option></select>
+        <select class="form-select form-select-sm w-auto" aria-label="Status"><option>In force or ending</option></select>
+        <input class="form-control form-control-sm w-auto" type="search" placeholder="Search title, vendor, number…" aria-label="Search">
+        <a href="02-contract-dialog.html" class="btn btn-sm btn-primary ms-auto"><i class="fa-solid fa-plus me-1"></i>Add contract</a>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Type</th><th>Contract</th><th>Vendor</th><th>From</th><th>To</th><th>Status</th>
+              <th class="text-end">Machines</th><th class="text-end">Cost (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge text-bg-primary">AMC</span></td>
+              <td><a href="03-contract-page.html">Atlas Copco AMC 2026–27</a><div class="small text-secondary">AC/IN/AMC/2604-118</div></td>
+              <td>Atlas Copco (India)</td>
+              <td>01-04-2026</td><td>31-03-2027</td>
+              <td><span class="badge text-bg-success">In force</span></td>
+              <td class="text-end">2</td><td class="text-end">1,85,000</td>
+            </tr>
+            <tr>
+              <td><span class="badge text-bg-info">CMC</span></td>
+              <td>Toyota MH pallet truck CMC<div class="small text-secondary">TMH-SV-2025-0457</div></td>
+              <td>Toyota Material Handling</td>
+              <td>16-11-2025</td><td>15-11-2026</td>
+              <td><span class="badge text-bg-warning">Ends in 19 days</span></td>
+              <td class="text-end">1</td><td class="text-end">62,500</td>
+            </tr>
+            <tr>
+              <td><span class="badge text-bg-secondary">On call</span></td>
+              <td>Sartorius moisture analyser service<div class="small text-secondary">—</div></td>
+              <td>Sartorius</td>
+              <td>01-01-2026</td><td>31-12-2026</td>
+              <td><span class="badge text-bg-success">In force</span></td>
+              <td class="text-end">1</td><td class="text-end">18,000</td>
+            </tr>
+            <tr>
+              <td><span class="badge text-bg-light border">Warranty</span></td>
+              <td>Main drive motor warranty<div class="small text-secondary">Invoice 2219, 12-06-2026</div></td>
+              <td>Motor repair firm</td>
+              <td>12-06-2026</td><td>11-06-2027</td>
+              <td><span class="badge text-bg-success">In force</span></td>
+              <td class="text-end">1</td><td class="text-end">—</td>
+            </tr>
+            <tr>
+              <td><span class="badge text-bg-primary">AMC</span></td>
+              <td>Packing machines AMC 2026–27<div class="small text-secondary">PK/AMC/26/031</div></td>
+              <td>Packing machine vendor</td>
+              <td>01-05-2027</td><td>30-04-2028</td>
+              <td><span class="badge text-bg-light border text-secondary">Starts on 01-05-2027</span></td>
+              <td class="text-end">7</td><td class="text-end">2,40,000</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="small text-secondary mt-2">5 contracts. Ended contracts: choose <em>Ended</em> in Status.</div>
+
+      <p class="mock-note">Mock-up for R02.1 (draft, 27-10-2026). The <em>Cost</em> column shows only for managers of the site and admin (<code>contract:read_senior</code>). Sample data; vendor names from Plant-Facts § 4.</p>
+    </main>
+  </div>
+</div>
+</body>
+</html>

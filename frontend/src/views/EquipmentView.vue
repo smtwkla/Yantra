@@ -6,7 +6,8 @@
  * can be bookmarked. The route is the single source of truth: controls write to it with
  * router.replace and the list reloads when it changes. The property filter (S062) is one key,
  * `props`, built in its dialog; applying or clearing it is a history step (router.push), so Back
- * brings back a filter that took a dialog to build.
+ * brings back a filter that took a dialog to build. The category (S063) narrows the class select
+ * to its classes; like the class, it does not change the level.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -19,11 +20,12 @@ import { useDebounced } from "../composables/useDebounced";
 import { userPermissions } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits } from "../stores/equipment";
 import {
-  ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, ensureSites, ensureUnits, equipmentClasses,
-  equipmentTypes, properties, sites, units,
+  ensureEquipmentCategories, ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, ensureSites, ensureUnits,
+  equipmentCategories, equipmentClasses, equipmentTypes, properties, sites, units,
 } from "../stores/masters";
 import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
+import { activeFirstBy, classChoicesFor, classOutsideCategory } from "../utils/equipmentFilters";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
 import { decodeFilter, describeFilter, encodeFilter, propsChanges } from "../utils/propertyFilter";
 import { TICKET_FILTER_CHOICES } from "../utils/ticketLabels";
@@ -85,10 +87,10 @@ const unitChoices = computed(() => {
   const mine = filterableUnits(units.value, myUnits.value);
   return query.value.site_id ? mine.filter((u) => String(u.site_id) === query.value.site_id) : mine;
 });
-// Active classes first, then inactive ones (marked)
-const classChoices = computed(() =>
-  [...(equipmentClasses.value ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.code.localeCompare(b.code))
-);
+// Active categories by name, then inactive ones (marked)
+const categoryChoices = computed(() => activeFirstBy(equipmentCategories.value, "name"));
+// Active classes first, then inactive ones (marked); with a category, only its classes (S063)
+const classChoices = computed(() => classChoicesFor(equipmentClasses.value, query.value.category_id, query.value.class_id));
 // Shown with a class, or with a type_id in the URL alone, so a bookmarked type filter is never applied
 // invisibly. Inactive types stay listed (marked): equipment can still carry them.
 const showTypeFilter = computed(() => Boolean(query.value.class_id || query.value.type_id));
@@ -119,6 +121,16 @@ const filterModel = (key, fallback = "", set = (value) => update({ [key]: value 
   computed({ get: () => query.value[key] ?? fallback, set });
 const siteModel = filterModel("site_id", "", chooseSite);
 const unitModel = filterModel("unit_id");
+// A class outside the new category goes, with its type; a class inside it stays
+function chooseCategory(value) {
+  const changes = { category_id: value };
+  if (classOutsideCategory(equipmentClasses.value, value, query.value.class_id)) {
+    changes.class_id = null;
+    changes.type_id = null;
+  }
+  update(changes);
+}
+const categoryModel = filterModel("category_id", "", chooseCategory);
 // A type belongs to one class, so choosing a class always clears the type
 const classModel = filterModel("class_id", "", (value) => update({ class_id: value, type_id: null }));
 const typeModel = filterModel("type_id");
@@ -186,7 +198,7 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q", "props"]) {
+  for (const key of ["site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q", "props"]) {
     // A bookmarked ?tickets= must not filter invisibly for a user who has no ticket column or filter
     if (key === "tickets" && !canSeeTickets.value) continue;
     if (query.value[key]) params.set(key, query.value[key]);
@@ -203,7 +215,8 @@ async function load() {
   try {
     const [result] = await Promise.all([
       propsUnreadable.value ? null : apiGet(listUrl()),
-      ensureSites(), ensureUnits(), ensureEquipmentClasses(), ensureEquipmentTypes(), ensureMyUnits(),
+      ensureSites(), ensureUnits(), ensureEquipmentCategories(), ensureEquipmentClasses(), ensureEquipmentTypes(),
+      ensureMyUnits(),
       // The filter line names the properties
       hasProps.value ? ensureProperties() : null,
     ]);
@@ -294,6 +307,10 @@ function printAssetList() {
       <select v-model="unitModel" class="form-select form-select-sm w-auto" aria-label="Unit">
         <option value="">All units</option>
         <option v-for="u in unitChoices" :key="u.id" :value="u.id">{{ u.full_code }}{{ u.active ? "" : " (inactive)" }}</option>
+      </select>
+      <select v-model="categoryModel" class="form-select form-select-sm w-auto" aria-label="Category">
+        <option value="">All categories</option>
+        <option v-for="c in categoryChoices" :key="c.id" :value="c.id">{{ c.name }}{{ c.active ? "" : " (inactive)" }}</option>
       </select>
       <select v-model="classModel" class="form-select form-select-sm w-auto" aria-label="Class">
         <option value="">All classes</option>

@@ -66,6 +66,15 @@ class TestFilters:
         assert admin.put(f"{EQUIPMENT}/{b['id']}", json={"lifecycle": "standby"}).status_code == 200
         assert _codes(_get(admin, unit_id=unit["id"], lifecycle="standby")) == [b["code"]]
 
+    def test_category(self, admin, make_equipment, make_class, make_category, unit):
+        """S063 § 5.4: machines by their class's category; a bad value is 400 on its field."""
+        category = make_category()
+        a = make_equipment(unit=unit, cls=make_class(category_id=category["id"]))
+        make_equipment(unit=unit)
+        assert _codes(_get(admin, unit_id=unit["id"], category_id=category["id"])) == [a["code"]]
+        res = _get(admin, category_id="x")
+        assert (res.status_code, res.get_json()["field"]) == (400, "category_id")
+
     def test_scrapped_machines_only_when_included(self, admin, make_equipment, unit):
         node = make_equipment(unit=unit)
         _scrap(admin, node)
@@ -92,6 +101,15 @@ class TestParts:
         assert rows[0]["number"] == 1 and all(r["number"] is None for r in rows[1:])
         assert res.get_json()["units"][0]["part_count"] == 4
         assert res.get_json()["total_rows"] == 5
+
+    def test_parts_come_with_their_machine_whatever_their_category(self, admin, make_equipment, make_class,
+                                                                   make_category, unit):
+        """S063 § 5.4: the category chooses the machine; its parts come with it."""
+        category = make_category()
+        press = make_equipment(unit=unit, cls=make_class(category_id=category["id"]))
+        gearbox = make_equipment(parent=press, name="Gearbox")
+        res = _get(admin, unit_id=unit["id"], category_id=category["id"], with_parts=1)
+        assert [r["id"] for r in _rows(res)] == [press["id"], gearbox["id"]]
 
     def test_parts_sit_under_their_parent_depth_first(self, admin, tree, unit):
         rows = _rows(_get(admin, unit_id=unit["id"], with_parts=1))

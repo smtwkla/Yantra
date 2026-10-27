@@ -20,8 +20,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   migration v33 table `equipment_property_values` with the `property` event
   (S044) on 25-10-2026, and the migration v34 columns (`all_classes`,
   `per_item_only`, the `geo` data type, `value_lat` / `value_lng` and their
-  CHECKs, S061) on 27-10-2026. The schema described here is at
-  **migration v34**.
+  CHECKs, S061) on 27-10-2026, and the migration v35 table
+  `equipment_categories` with `equipment_classes.category_id` (S063) on
+  27-10-2026. The schema described here is at **migration v35**.
 
 ## Conventions
 
@@ -40,7 +41,8 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 |---|---|
 | `sites` | Code (e.g. `SMTW`, `BRICKS`), name, address, active |
 | `units` | `site_id`, code (the part after the dot; the full `SITE.UNIT` code is derived), name, optional OneERP warehouse code, active |
-| `equipment_classes` | Code (= the equipment-code prefix, e.g. `VBM`), name, active |
+| `equipment_categories` | A group of equipment classes (ISO 14224 equipment category, S063 v35): name (unique without regard to case), active. Nothing seeded; deactivating is refused while an active class is in it |
+| `equipment_classes` | Code (= the equipment-code prefix, e.g. `VBM`), name, `category_id` (optional, S063 v35), active |
 | `equipment_types` | Per class: name, active (S004); `equipment.type_id` must be a type of the equipment's class |
 | `equipment` | Register fields, `level` (equipment / component-unit / component), `parent_id` for the tree, `unit_id` (equipment only), `model_id` (required on equipment and components, optional on component-units, S033 v28 CHECK), `class_id` and `type_id` (copied from the model, S012; picked directly when a component-unit has no model, S033), lifecycle (S030), criticality |
 | `manufacturers` | Makers: name (unique without regard to case), active (S012). Generic and in-house makers are ordinary rows |
@@ -128,9 +130,14 @@ erDiagram
     int type_id FK "null"
     int model_id FK "null"
   }
+  equipment_categories {
+    int id PK
+    varchar name UK
+  }
   equipment_classes {
     int id PK
     varchar code UK
+    int category_id FK "null"
   }
   equipment_documents {
     int id PK
@@ -291,6 +298,7 @@ erDiagram
     int unit_id PK,FK
   }
   equipment_classes ||--o{ equipment : "class_id"
+  equipment_categories o|--o{ equipment_classes : "category_id"
   equipment_models o|--o{ equipment : "model_id"
   equipment o|--o{ equipment : "parent_id"
   equipment_types o|--o{ equipment : "type_id"

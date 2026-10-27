@@ -440,6 +440,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Failure mechanism | The physical process of the failure: wear, corrosion, short circuit (ISO 14224) — not recorded in v1 |
 | Maintenance action | What was done: replace, repair, adjust, check, … (ISO 14224 maintenance activity) |
 | PM | Preventive maintenance — planned work from a PM plan (job `PM-YYYY-MM-NNN`) |
+| Equipment category | A group of equipment classes, e.g. Lifting equipment (EOT crane, hoist, chain block); each class in at most one (ISO 14224 equipment category, S063). Not a taxonomy level: a grouping of classes |
 | Equipment class | What a piece of equipment is (hydraulic press, ball mill, …) |
 | Equipment type | How equipment of a class is built, e.g. a radial piston pump in closed or open execution (ISO 14224 type within class) |
 | PM template | Reusable work definition applied to many equipment |

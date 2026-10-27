@@ -163,7 +163,7 @@ _TABLES = ("meter_readings", "node_meters", "model_meters", "access_log", "task_
            "equipment_documents", "tickets",
            "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",
            "manufacturers",
-           "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes",
+           "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes", "equipment_categories",
            "serial_counters")
 
 # The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
@@ -310,6 +310,9 @@ class Uniq:
     def type_name(self):
         return f"Type {self._next():04d}"
 
+    def category_name(self):
+        return f"Category {self._next():04d}"
+
     def trade_name(self):
         return f"Trade {self._next():04d}"
 
@@ -400,6 +403,17 @@ def make_class(admin, uniq):
     def make(**overrides):
         body = {"code": uniq.class_code(), "name": "Test class", **overrides}
         res = admin.post(f"{MASTERS}/equipment-classes", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_category(admin, uniq):
+    """make_category() -> a fresh active equipment category (S063)."""
+    def make(**overrides):
+        body = {"name": uniq.category_name(), **overrides}
+        res = admin.post(f"{MASTERS}/equipment-categories", json=body)
         assert res.status_code == 201, res.get_json()
         return res.get_json()
     return make

@@ -27,6 +27,11 @@ equipment.py's order; no model meter write takes a manufacturer, class or type. 
 type update locks the meter type alone, then counts its model_meters and node_meters rows
 LOCK IN SHARE MODE (the freeze, S038 § 5.3): link rows are touched only by link writes,
 which hold the meter type's lock first, so the share locks join no cycle.
+Equipment categories (S063 § 5.3) come after the class: a class update locks its row, then the
+category it moves into or is reactivated in; a class create locks only that category.  A
+category deactivate locks its row, then makes a plain count of its active classes (a concurrent
+class write that would put an active class in it waits on the category lock).  No category
+write takes a class lock, so no cycle.
 """
 
 import logging
@@ -43,9 +48,9 @@ from meters_core import (
 )
 from tickets_core import CLOSED, close_tickets_first
 from masters_core import (
-    model_label, no_login_role_error, normalise_username, technician_only, validate_equipment_class,
-    validate_equipment_model, validate_equipment_type, validate_failure_cause, validate_failure_mode,
-    validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
+    CLASS_CATEGORY_INACTIVE, category_in_use, model_label, no_login_role_error, normalise_username, technician_only,
+    validate_equipment_category, validate_equipment_class, validate_equipment_model, validate_equipment_type,
+    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
     validate_meter_type, validate_site_rows, validate_trade, validate_unit,
 )
 
@@ -59,6 +64,8 @@ UNIQUE_KEY_ERRORS.update({
     "uq_units_site_code": ("code", "A unit with this code already exists at this site"),
     "uq_units_warehouse": ("oneerp_warehouse", "This OneERP warehouse is already mapped to another unit"),
     "uq_equipment_classes_code": ("code", "An equipment class with this code already exists"),
+    # Migration v35 (S063)
+    "uq_equipment_categories_name": ("name", "A category with this name already exists"),
     "uq_sites_default": ("is_default", "Another site was made the default at the same time; reload and try again"),
     # Migration v5 (S004)
     "uq_equipment_types_class_name": ("name", "A type with this name already exists in this class"),
@@ -90,6 +97,18 @@ _SITE_SELECT = (
 _UNIT_SELECT = (
     "SELECT u.*, s.code AS site_code, CONCAT(s.code, '.', u.code) AS full_code "
     "FROM units u JOIN sites s ON s.id = u.site_id"
+)
+
+# A class with its category's name (S063 § 5.2); category_name is NULL with no category
+_CLASS_SELECT = (
+    "SELECT c.*, cat.name AS category_name FROM equipment_classes c"
+    " LEFT JOIN equipment_categories cat ON cat.id = c.category_id"
+)
+
+# class_count: the active classes in the category, the number that blocks deactivation (S063 D8)
+_CATEGORY_SELECT = (
+    "SELECT cat.*, (SELECT COUNT(*) FROM equipment_classes c WHERE c.category_id = cat.id AND c.active = 1)"
+    " AS class_count FROM equipment_categories cat"
 )
 
 _TYPE_SELECT = (
@@ -315,24 +334,78 @@ def update_unit(unit_id):
 
 
 # ---------------------------------------------------------------------------
+# Equipment categories (S063) — a group of equipment classes (ISO 14224 Annex A); a name only
+# ---------------------------------------------------------------------------
+
+@masters_bp.route("/equipment-categories")
+@require_perm("masters:read")
+def list_equipment_categories():
+    where = "" if _include_inactive() else " WHERE cat.active = 1"
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"{_CATEGORY_SELECT}{where} ORDER BY cat.name")
+
+
+def _fetch_category(cur, category_id):
+    return fetch_one(cur, f"{_CATEGORY_SELECT} WHERE cat.id = %s", (category_id,))
+
+
+@masters_bp.route("/equipment-categories", methods=["POST"])
+@require_perm("equipment:edit")
+def create_equipment_category():
+    clean = clean_body(validate_equipment_category, creating=True)
+    with get_db().cursor() as cur:
+        category_id = insert_row(cur, "equipment_categories", clean, actor())
+        return jsonify(_fetch_category(cur, category_id)), 201
+
+
+@masters_bp.route("/equipment-categories/<int:category_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_equipment_category(category_id):
+    """Rename, deactivate or reactivate.  Deactivating is refused while an active class is in
+    the category (S063 § 5.1); inactive classes may keep it."""
+    clean = clean_body(validate_equipment_category, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_row(cur, "equipment_categories", category_id)
+        if clean.get("active") == 0:
+            # The transaction's first plain read: its snapshot starts after the lock is held
+            active_classes = count(cur, "SELECT COUNT(*) AS n FROM equipment_classes"
+                                        " WHERE category_id = %s AND active = 1", (category_id,))
+            if active_classes:
+                raise ApiError(category_in_use(active_classes), 409, "active")
+        update_row(cur, "equipment_categories", category_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_category(cur, category_id))
+
+
+# ---------------------------------------------------------------------------
 # Equipment classes
 # ---------------------------------------------------------------------------
+
+def _fetch_class(cur, class_id):
+    return fetch_one(cur, f"{_CLASS_SELECT} WHERE c.id = %s", (class_id,))
+
 
 @masters_bp.route("/equipment-classes")
 @require_perm("masters:read")
 def list_equipment_classes():
-    where = "" if _include_inactive() else "WHERE active = 1 "
+    where = "" if _include_inactive() else " WHERE c.active = 1"
     with get_db().cursor() as cur:
-        return _list_response(cur, f"SELECT * FROM equipment_classes {where}ORDER BY code")
+        return _list_response(cur, f"{_CLASS_SELECT}{where} ORDER BY c.code")
 
 
 @masters_bp.route("/equipment-classes", methods=["POST"])
 @require_perm("equipment:edit")
 def create_equipment_class():
     clean = clean_body(validate_equipment_class, creating=True)
-    with get_db().cursor() as cur:
+    conn = get_db()
+    # A transaction, so the category's lock holds until the insert commits (S063 § 5.3)
+    with transaction(conn), conn.cursor() as cur:
+        if clean.get("category_id") is not None:
+            _lock_active_parent(cur, "equipment_categories", clean["category_id"], "category_id", "category")
         class_id = insert_row(cur, "equipment_classes", clean, actor())
-        return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,))), 201
+    with conn.cursor() as cur:
+        return jsonify(_fetch_class(cur, class_id)), 201
 
 
 @masters_bp.route("/equipment-classes/<int:class_id>", methods=["PUT"])
@@ -351,9 +424,27 @@ def update_equipment_class(class_id):
         if clean.get("active") == 0 and count(
                 cur, "SELECT COUNT(*) AS n FROM equipment_models WHERE class_id = %s AND active = 1", (class_id,)):
             raise ApiError("Deactivate this class's models first", 409, "active")
+        _lock_category_of_class(cur, clean, record)
         update_row(cur, "equipment_classes", class_id, clean, actor())
     with conn.cursor() as cur:
-        return jsonify(fetch_one(cur, "SELECT * FROM equipment_classes WHERE id = %s", (class_id,)))
+        return jsonify(_fetch_class(cur, class_id))
+
+
+def _lock_category_of_class(cur, clean, record):
+    """Lock the category a class save moves the class into, or reactivates it in (S063 § 5.2):
+    it must exist (400) and be active (409).  A save that keeps the category of an active
+    class, or leaves the class inactive in its category, does not read it."""
+    new_category = clean.get("category_id")
+    if new_category is not None and new_category != record["category_id"]:
+        _lock_active_parent(cur, "equipment_categories", new_category, "category_id", "category")
+        return
+    reactivating = clean.get("active") == 1 and not record["active"]
+    kept_category = clean.get("category_id", record["category_id"])
+    if reactivating and kept_category is not None:
+        # The stored category exists (the foreign key); its refusal says what to do (KLA, CR1-03)
+        cur.execute("SELECT active FROM equipment_categories WHERE id = %s FOR UPDATE", (kept_category,))
+        if not cur.fetchone()["active"]:
+            raise ApiError(CLASS_CATEGORY_INACTIVE, 409, "active")
 
 
 # ---------------------------------------------------------------------------
@@ -466,9 +557,10 @@ def _fetch_model(cur, model_id):
 
 
 def _lock_active_parent(cur, table, record_id, field, label):
-    """Lock the manufacturer or class a model is created or reactivated under: it must exist
-    (400 Unknown …) and be active (409).  ``table`` is a code constant, never client input;
-    ``field`` is the id field on create, active on reactivation."""
+    """Lock the manufacturer or class a model is created or reactivated under, or the category
+    a class is put in or reactivated in (S063): it must exist (400 Unknown …) and be active
+    (409).  ``table`` is a code constant, never client input; ``field`` is the id field on
+    create, active on reactivation."""
     cur.execute(f"SELECT id, active FROM {table} WHERE id = %s FOR UPDATE", (record_id,))
     row = cur.fetchone()
     if row is None:

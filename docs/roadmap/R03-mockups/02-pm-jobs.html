@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R02 mock-up 02 — PM jobs on the phone</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">PM</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Technician A</span>
+</header>
+<main class="mk-content">
+  <ul class="nav nav-tabs nav-fill mb-3">
+    <li class="nav-item"><a class="nav-link active px-1" href="03-pm-job.html">Due</a></li>
+    <li class="nav-item"><a class="nav-link px-1">Upcoming</a></li>
+    <li class="nav-item"><a class="nav-link px-1">Done</a></li>
+  </ul>
+  <div class="d-flex gap-2 mb-2">
+    <select class="form-select"><option>All my units</option></select>
+    <select class="form-select"><option>Assigned to me</option></select>
+  </div>
+  <div class="text-secondary small mb-2">4 due · 1 overdue</div>
+
+  <div class="list-group">
+    <a href="03-pm-job.html" class="list-group-item list-group-item-action">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-danger">Overdue 3 days</span>
+        <span class="fw-semibold">PM-2026-10-014</span>
+        <span class="ms-auto small text-secondary"><i class="fa-regular fa-calendar me-1"></i>24-10-2026</span>
+      </div>
+      <div class="mt-1">HP003 — Hydraulic press 3</div>
+      <div>Monthly hydraulic check · 7 items</div>
+      <div class="small text-secondary">SSVT.SHOP · Due · <i class="fa-solid fa-user"></i> Technician A</div>
+    </a>
+    <a class="list-group-item list-group-item-action">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-warning">Due</span>
+        <span class="fw-semibold">PM-2026-10-021</span>
+        <span class="ms-auto small text-secondary"><i class="fa-solid fa-gauge me-1"></i>at 5,000 h</span>
+      </div>
+      <div class="mt-1">GBX001 — Extruder main gearbox</div>
+      <div>Gearbox oil change · 5 items</div>
+      <div class="small text-secondary">SMTW.MCC2 · Run hours now 5,006.5 h · <i class="fa-solid fa-user"></i> Technician A</div>
+    </a>
+    <a class="list-group-item list-group-item-action">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-primary">In progress</span>
+        <span class="fw-semibold">PM-2026-10-019</span>
+        <span class="ms-auto small text-secondary"><i class="fa-regular fa-calendar me-1"></i>27-10-2026</span>
+      </div>
+      <div class="mt-1">VBM001 — Vertical blade mill</div>
+      <div>Weekly blade and guard check · 4 items, 2 filled</div>
+      <div class="small text-secondary">SMTW.FWMILL · <i class="fa-solid fa-user"></i> Technician B</div>
+    </a>
+    <a class="list-group-item list-group-item-action">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-warning">Due</span>
+        <span class="fw-semibold">PM-2026-10-022</span>
+        <span class="ms-auto small text-secondary"><i class="fa-regular fa-calendar me-1"></i>27-10-2026</span>
+      </div>
+      <div class="mt-1">CMP001 — Screw compressor 1</div>
+      <div>A check (AMC visit) · 6 items</div>
+      <div class="small text-secondary">SMTW.MCC2 · <i class="fa-solid fa-user"></i> Compressor AMC vendor</div>
+    </a>
+  </div>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-calendar-check"></i><span>PM</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-table"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

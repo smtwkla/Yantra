@@ -69,6 +69,7 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S060 | [Remove flask-cors](S060-remove-cors/1-brief.md) — production sent `Access-Control-Allow-Origin: http://localhost:5176`; the app is same-origin, so CORS goes (fix lane) | — | Done (committed 5434273; checks: 2 auto) | 26-10-2026 |
 | S061 | [Properties for every class, and a GPS location](S061-global-properties-gps/1-brief.md) — a *Location* data type (latitude, longitude; *Use my current location*, *Open in Maps*); property flags *Applies to every class* and *Value set on each machine*; seed "GPS location"; a hint on portable machines; v34 (full track) | 3 | Committed fb6a025; rows 41–43 left | 27-10-2026 |
 | S062 | [Filter the equipment list by property](S062-property-filter/1-brief.md) — a *Filter by property* dialog: lines of property, operator, value; *All* / *Any*; the value in force (own, then model's); `props` in the URL; the printed asset list takes it too; coded after S061 (full track) | 3 | Done (committed 24556c4; 8 auto) | 27-10-2026 |
+| S063 | [Equipment category above the class](S063-equipment-category/1-brief.md) — ISO 14224's category: a master of names (a starting list seeded), one optional category per class, a Category filter on the equipment list and the printed asset list; v35 (full track) | — | Gate B | 27-10-2026 |
 
 ## Queued (not yet briefed)
 

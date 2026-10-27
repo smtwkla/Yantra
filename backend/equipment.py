@@ -535,12 +535,13 @@ def _property_filter(cur):
 
 def _list_filters(cur):
     """The conditions and parameters of the filters the list and the printed asset list share
-    (site, unit, class, type, lifecycle, criticality, scrapped, the property filter), read from
-    the request.  One place decides what a filter means, so the print can never disagree with
-    the list.  ``cur`` reads the properties the property filter names."""
+    (site, unit, category, class, type, lifecycle, criticality, scrapped, the property filter),
+    read from the request.  One place decides what a filter means, so the print can never
+    disagree with the list.  ``cur`` reads the properties the property filter names.  The
+    category is the node's own class's (S063 § 5.4), as the class filter is."""
     conditions, params = [], []
-    for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("class_id", "e.class_id"),
-                         ("type_id", "e.type_id")):
+    for name, column in (("site_id", "u.site_id"), ("unit_id", "u.id"), ("category_id", "c.category_id"),
+                         ("class_id", "e.class_id"), ("type_id", "e.type_id")):
         value = int_arg(name, None, minimum=1)
         if value is not None:
             conditions.append(f"{column} = %s")

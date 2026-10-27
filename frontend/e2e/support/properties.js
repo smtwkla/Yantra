@@ -49,6 +49,23 @@ export async function propertySetup(tag, { properties = [], link = true, values 
   }
 }
 
+/**
+ * An equipment category of its own (S063), named `E2E category <tag>`, with the classes `classes`
+ * put in it, made as admin.  The e2e database has no categories (nothing is seeded, S063 Q1).
+ */
+export async function categorySetup(tag, classes = []) {
+  const api = await apiAs("admin");
+  try {
+    const category = await ok(await api.post("/api/masters/equipment-categories", { data: { name: `E2E category ${tag}` } }));
+    for (const cls of classes) {
+      await ok(await api.put(`/api/masters/equipment-classes/${cls.id}`, { data: { category_id: category.id } }));
+    }
+    return category;
+  } finally {
+    await api.dispose();
+  }
+}
+
 /** A component-unit with no model (S033) of class `cls` under `parent`, made as admin (BS1-01). */
 export async function noModelPart(parent, cls, name) {
   const api = await apiAs("admin");

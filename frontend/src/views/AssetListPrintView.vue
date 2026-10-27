@@ -8,7 +8,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import {
-  ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, equipmentClasses, equipmentTypes, properties,
+  ensureEquipmentCategories, ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, equipmentCategories,
+  equipmentClasses, equipmentTypes, properties,
 } from "../stores/masters";
 import { filtersLabel, parseAssetListQuery } from "../utils/assetList";
 import { formatDateTime } from "../utils/datetime";
@@ -25,7 +26,8 @@ let loadSeq = 0;
 const parsed = computed(() => parseAssetListQuery(route.query));
 const filterLine = computed(() =>
   filtersLabel(parsed.value.params, {
-    classes: equipmentClasses.value, types: equipmentTypes.value, properties: properties.value,
+    categories: equipmentCategories.value, classes: equipmentClasses.value, types: equipmentTypes.value,
+    properties: properties.value,
   })
 );
 const printedOn = computed(() => formatDateTime(result.value?.printed_at));
@@ -43,6 +45,8 @@ async function load() {
       apiGet(`/api/equipment/asset-list?${params}`), ensureEquipmentClasses(), ensureEquipmentTypes(),
       // The header names the property filter's properties; a plain print asks for nothing more (S062)
       parsed.value.params.props ? ensureProperties() : null,
+      // and the category by name (S063)
+      parsed.value.params.category_id ? ensureEquipmentCategories() : null,
     ]);
     if (seq === loadSeq) result.value = data;
   } catch (err) {

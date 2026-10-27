@@ -3,9 +3,9 @@
 import pytest
 
 from masters_core import (
-    CAUSE_GROUPS, NO_LOGIN_ROLE_MESSAGE, model_label, no_login_role_error, normalise_username, technician_only,
-    validate_equipment_class, validate_equipment_model, validate_failure_cause, validate_failure_mode,
-    validate_maintenance_action, validate_equipment_type, validate_manufacturer, validate_meter_type,
+    CAUSE_GROUPS, NO_LOGIN_ROLE_MESSAGE, category_in_use, model_label, no_login_role_error, normalise_username,
+    technician_only, validate_equipment_category, validate_equipment_class, validate_equipment_model,
+    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_equipment_type, validate_manufacturer, validate_meter_type,
     validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
     optional_text_parser, validate_unit_ids, validate_username,
 )
@@ -31,6 +31,40 @@ class TestEquipmentClassCode:
         clean, errors = validate_equipment_class({"code": " vbm ", "name": "x"}, creating=True)
         assert errors == []
         assert clean["code"] == "VBM"
+
+
+class TestEquipmentCategory:
+    """S063 § 5.1, § 5.2: the category's name and the class's optional category."""
+
+    @pytest.mark.parametrize("name, ok", [("", False), ("  ", False), ("x", True), ("x" * 50, True),
+                                          ("x" * 51, False), (None, False), (5, False)])
+    def test_name_boundaries(self, name, ok):
+        clean, errors = validate_equipment_category({"name": name}, creating=True)
+        assert (errors == []) is ok
+        if not ok:
+            assert _fields(errors) == ["name"]
+
+    def test_name_is_trimmed_and_active_is_optional(self):
+        assert validate_equipment_category({"name": " Lifting equipment "}, creating=True) == (
+            {"name": "Lifting equipment"}, [])
+        assert validate_equipment_category({"active": False}, creating=False) == ({"active": 0}, [])
+
+    @pytest.mark.parametrize("value, ok", [(None, True), (1, True), (0, False), (-2, False), (True, False),
+                                           ("3", False), (2.0, False)])
+    def test_class_category_id(self, value, ok):
+        clean, errors = validate_equipment_class({"category_id": value}, creating=False)
+        if ok:
+            assert (clean, errors) == ({"category_id": value}, [])
+        else:
+            assert errors == [{"field": "category_id", "message": "Category must be a record id"}]
+
+    def test_class_category_is_not_required(self):
+        clean, errors = validate_equipment_class({"code": "VBM", "name": "Mill"}, creating=True)
+        assert errors == [] and "category_id" not in clean
+
+    def test_category_in_use_message(self):
+        assert category_in_use(1) == "1 active class is in this category. Move it to another category first."
+        assert category_in_use(3) == "3 active classes are in this category. Move them to another category first."
 
 
 class TestEquipmentType:

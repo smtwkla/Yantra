@@ -542,7 +542,7 @@ class TestPermissions:
                                       "maint_engineer", "maint_manager", "it_admin", "admin"])
     def test_every_role_can_read_the_pick_lists(self, role_client, role):
         client = role_client(role)
-        for path in ("sites", "units", "equipment-classes", "equipment-types"):
+        for path in ("sites", "units", "equipment-categories", "equipment-classes", "equipment-types"):
             assert client.get(f"{BASE}/{path}").status_code == 200, (role, path)
 
     def test_unknown_role_is_forbidden(self, role_client):
@@ -563,6 +563,8 @@ class TestPermissions:
         assert client.put(f"{BASE}/equipment-classes/1", json={"name": "x"}).status_code == 403
         assert client.post(f"{BASE}/equipment-types", json={"class_id": 1, "name": "x"}).status_code == 403
         assert client.put(f"{BASE}/equipment-types/1", json={"name": "x"}).status_code == 403
+        assert client.post(f"{BASE}/equipment-categories", json={"name": "x"}).status_code == 403
+        assert client.put(f"{BASE}/equipment-categories/1", json={"name": "x"}).status_code == 403
 
     @pytest.mark.parametrize("role", ["maint_engineer", "maint_manager", "it_admin", "admin"])
     def test_class_writers(self, role_client, role, uniq):
@@ -736,3 +738,157 @@ class TestErrorMapping:
         res = admin.get(f"{BASE}/sites")
         assert res.status_code == 503
         assert "Database unavailable" in res.get_json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# S063: equipment categories and the class's category (§ 5.1, § 5.2, § 8.2).  Every test makes its
+# own categories (make_category, uniq), so no run meets an earlier run's rows.
+# ---------------------------------------------------------------------------
+
+CATEGORIES = f"{BASE}/equipment-categories"
+CLASSES = f"{BASE}/equipment-classes"
+
+
+def _refusal(res):
+    body = res.get_json()
+    return res.status_code, body.get("field"), body["error"]
+
+
+class TestEquipmentCategories:
+
+    def test_create_list_rename(self, engineer, uniq):
+        name = uniq.category_name()
+        created = engineer.post(CATEGORIES, json={"name": f"  {name} "})
+        assert created.status_code == 201
+        category = created.get_json()
+        assert (category["name"], category["active"], category["class_count"]) == (name, 1, 0)
+        listed = engineer.get(CATEGORIES).get_json()["items"]
+        assert name in [c["name"] for c in listed]
+        renamed = engineer.put(f"{CATEGORIES}/{category['id']}", json={"name": f"{name} B"})
+        assert (renamed.status_code, renamed.get_json()["name"]) == (200, f"{name} B")
+
+    def test_the_list_is_ordered_by_name(self, engineer, make_category):
+        make_category()
+        make_category()
+        names = [c["name"] for c in engineer.get(CATEGORIES).get_json()["items"]]
+        assert names == sorted(names, key=str.lower)
+
+    def test_duplicate_name_in_another_case_is_refused_beside_the_name(self, engineer, make_category):
+        category = make_category()
+        res = engineer.post(CATEGORIES, json={"name": category["name"].upper()})
+        assert _refusal(res) == (409, "name", "A category with this name already exists")
+
+    @pytest.mark.parametrize("name, message", [("", "Name is required"), ("   ", "Name is required"),
+                                               ("x" * 51, "Name must be at most 50 characters")])
+    def test_bad_names_are_400(self, engineer, name, message):
+        assert _refusal(engineer.post(CATEGORIES, json={"name": name})) == (400, "name", message)
+
+    def test_a_missing_name_is_400(self, engineer):
+        assert _refusal(engineer.post(CATEGORIES, json={})) == (400, "name", "Name is required")
+
+    def test_fifty_characters_are_allowed(self, engineer, uniq):
+        name = (uniq.category_name() + " " + "x" * 50)[:50]
+        assert engineer.post(CATEGORIES, json={"name": name}).status_code == 201
+
+    def test_unknown_category_is_404(self, engineer):
+        assert engineer.put(f"{CATEGORIES}/999999", json={"name": "x"}).status_code == 404
+
+    def test_deactivate_is_refused_while_an_active_class_is_in_it(self, engineer, make_category, make_class):
+        category = make_category()
+        make_class(category_id=category["id"])
+        res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
+        assert _refusal(res) == (409, "active", "1 active class is in this category. Move it to another category first.")
+        make_class(category_id=category["id"])
+        res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
+        assert _refusal(res) == (409, "active",
+                                 "2 active classes are in this category. Move them to another category first.")
+
+    def test_inactive_classes_do_not_block_deactivation(self, engineer, make_category, make_class):
+        category = make_category()
+        cls = make_class(category_id=category["id"])
+        assert engineer.put(f"{CLASSES}/{cls['id']}", json={"active": False}).status_code == 200
+        res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
+        assert (res.status_code, res.get_json()["active"]) == (200, 0)
+        assert category["id"] not in [c["id"] for c in engineer.get(CATEGORIES).get_json()["items"]]
+        listed = engineer.get(f"{CATEGORIES}?include_inactive=1").get_json()["items"]
+        assert category["id"] in [c["id"] for c in listed]
+        res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": True})
+        assert (res.status_code, res.get_json()["active"]) == (200, 1)
+
+    def test_class_count_counts_active_classes_only(self, engineer, make_category, make_class):
+        category = make_category()
+        make_class(category_id=category["id"])
+        inactive = make_class(category_id=category["id"])
+        engineer.put(f"{CLASSES}/{inactive['id']}", json={"active": False})
+        listed = {c["id"]: c for c in engineer.get(CATEGORIES).get_json()["items"]}
+        assert listed[category["id"]]["class_count"] == 1
+
+    def test_the_list_is_503_while_the_database_is_down(self, admin, db_down):
+        assert admin.get(CATEGORIES).status_code == 503
+
+
+class TestClassCategory:
+
+    def test_create_with_a_category_and_with_none(self, engineer, make_category, uniq):
+        category = make_category()
+        res = engineer.post(CLASSES, json={"code": uniq.class_code(), "name": "x", "category_id": category["id"]})
+        assert res.status_code == 201
+        assert (res.get_json()["category_id"], res.get_json()["category_name"]) == (category["id"], category["name"])
+        res = engineer.post(CLASSES, json={"code": uniq.class_code(), "name": "x", "category_id": None})
+        assert (res.status_code, res.get_json()["category_id"], res.get_json()["category_name"]) == (201, None, None)
+        listed = {c["code"]: c for c in engineer.get(CLASSES).get_json()["items"]}
+        assert listed[res.get_json()["code"]]["category_name"] is None
+
+    @pytest.mark.parametrize("value", [True, "3", 0, -1, 1.5])
+    def test_a_category_id_that_is_not_a_record_id_is_400(self, engineer, uniq, value):
+        res = engineer.post(CLASSES, json={"code": uniq.class_code(), "name": "x", "category_id": value})
+        assert _refusal(res) == (400, "category_id", "Category must be a record id")
+
+    @pytest.mark.parametrize("active", [True, False])
+    def test_an_unknown_category_is_400_on_create(self, engineer, uniq, active):
+        res = engineer.post(CLASSES, json={"code": uniq.class_code(), "name": "x", "category_id": 999999,
+                                           "active": active})
+        assert _refusal(res) == (400, "category_id", "Unknown category")
+
+    def test_an_unknown_category_is_400_on_an_inactive_class(self, engineer, make_class):
+        cls = make_class()
+        engineer.put(f"{CLASSES}/{cls['id']}", json={"active": False})
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"category_id": 999999})
+        assert _refusal(res) == (400, "category_id", "Unknown category")
+
+    def test_an_inactive_category_is_409_on_the_category(self, engineer, uniq, make_category, make_class):
+        category = make_category()
+        engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
+        res = engineer.post(CLASSES, json={"code": uniq.class_code(), "name": "x", "category_id": category["id"]})
+        assert _refusal(res) == (409, "category_id", "The category is inactive")
+        cls = make_class()
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"category_id": category["id"]})
+        assert _refusal(res) == (409, "category_id", "The category is inactive")
+
+    def test_a_put_without_the_category_keeps_it_and_null_clears_it(self, engineer, make_category, make_class):
+        category = make_category()
+        cls = make_class(category_id=category["id"])
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"name": "Renamed"})
+        assert (res.get_json()["name"], res.get_json()["category_id"]) == ("Renamed", category["id"])
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"category_id": None})
+        assert (res.status_code, res.get_json()["category_id"]) == (200, None)
+
+    def test_moving_a_class_to_another_category(self, engineer, make_category, make_class):
+        first, second = make_category(), make_category()
+        cls = make_class(category_id=first["id"])
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"category_id": second["id"]})
+        assert (res.status_code, res.get_json()["category_name"]) == (200, second["name"])
+
+    def test_reactivating_a_class_in_an_inactive_category(self, engineer, make_category, make_class):
+        category = make_category()
+        cls = make_class(category_id=category["id"])
+        engineer.put(f"{CLASSES}/{cls['id']}", json={"active": False})
+        assert engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False}).status_code == 200
+        # The inactive class keeps its inactive category through an edit that sends it back unchanged
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"name": "Still off", "category_id": category["id"]})
+        assert res.status_code == 200
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"active": True})
+        assert _refusal(res) == (409, "active", "This class's category is inactive. Pick another category or "
+                                                "No category, then reactivate.")
+        res = engineer.put(f"{CLASSES}/{cls['id']}", json={"active": True, "category_id": None})
+        assert (res.status_code, res.get_json()["active"], res.get_json()["category_id"]) == (200, 1, None)

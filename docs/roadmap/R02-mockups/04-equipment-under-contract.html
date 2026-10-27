@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mockup-viewport" content="phone">
+  <title>Mock-up 04 — Equipment page with the contract card (R02.2)</title>
+  <link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+  <link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+  <style>
+    .topbar { height: var(--topbar-height); background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-border); display: flex; align-items: center; justify-content: space-between; padding: 0 0.75rem; font-size: 0.8rem; }
+    .topbar-center { font-weight: 600; font-size: 0.85rem; }
+    .app-content { padding: 0.5rem 0.75rem 72px; }
+    .app-bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 56px; background: var(--sidebar-bg); align-items: center; justify-content: space-around; z-index: 1040; }
+    .bottom-nav-item { display: flex; flex-direction: column; align-items: center; flex: 1; color: var(--sidebar-icon-color); font-size: 0.65rem; gap: 2px; }
+    .bottom-nav-item i { font-size: 1.25rem; }
+    .bottom-nav-item.active { color: var(--sidebar-icon-active-color); }
+    .contract-card { border-left: 4px solid var(--bs-primary); }
+    .mock-note { font-size: 0.7rem; color: var(--text-muted); border-top: 1px dashed var(--bs-border-color); margin-top: 1rem; padding-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <strong>Yantra</strong><span class="topbar-center">Equipment</span>
+  <span class="d-flex align-items-center text-secondary"><i class="fa-solid fa-bell me-2"></i>Technician B</span>
+</header>
+<main class="app-content py-3">
+  <nav class="small mb-2"><span class="text-secondary">SMTW › MCC2 › CMP001</span></nav>
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h5 class="mb-0 me-2">CMP001 — Screw compressor 1</h5>
+    <span class="badge text-bg-success">In service</span>
+    <span class="badge text-bg-danger">A</span>
+  </div>
+  <span class="btn btn-danger mb-3"><i class="fa-solid fa-triangle-exclamation me-1"></i>Raise ticket</span>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between"><span>Open tickets</span><span class="small text-primary">All its tickets</span></div>
+    <div class="card-body text-secondary">No open tickets.</div>
+  </div>
+
+  <div class="card mb-3 contract-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="fa-solid fa-file-signature me-1"></i>Under contract</span>
+      <a href="03-contract-page.html" class="small">Open contract</a>
+    </div>
+    <div class="card-body">
+      <div class="fw-semibold">Under AMC with Atlas Copco until 31-03-2027</div>
+      <div class="small mt-1"><i class="fa-regular fa-clock me-1 text-secondary"></i>Response time: 24 hours</div>
+      <div class="small mt-1"><i class="fa-solid fa-check me-1 text-success"></i>Covered: labour, consumables, breakdown calls.</div>
+      <div class="small"><i class="fa-solid fa-xmark me-1 text-danger"></i>Not covered: spare parts.</div>
+      <div class="small text-secondary mt-2">For a breakdown, raise a ticket. The engineer calls the vendor.</div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">Details</div>
+    <div class="card-body small">
+      <dl class="row mb-0">
+        <dt class="col-5">Class</dt><dd class="col-7">CMP — Compressor</dd>
+        <dt class="col-5">Manufacturer</dt><dd class="col-7">Atlas Copco</dd>
+        <dt class="col-5">Model</dt><dd class="col-7">GA 37</dd>
+        <dt class="col-5">Unit</dt><dd class="col-7 mb-0">SMTW.MCC2</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">Meters</div>
+    <div class="card-body small">Run hours · 18,452 h · 26-10-2026 18:00</div>
+  </div>
+
+  <p class="mock-note">Mock-up for R02.2 (draft). Every role with <code>contract:read</code> at the site sees the card (Q1.2). Model and readings are sample data.</p>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="yi-icon yi-table-edit"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

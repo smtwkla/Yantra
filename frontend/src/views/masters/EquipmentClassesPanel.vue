@@ -6,12 +6,15 @@
  * Properties (S043 § 7.2): a row's Properties button replaces the table with that class's
  * properties, as Models shows a model's Documents; Back brings the table back. Shown to every
  * reader; the view hides Add property… and Remove without equipment:edit (U8, BS1-04).
+ *
+ * Category (S063 § 5.2): each class may be in one equipment category. The dialog lists the active
+ * categories, plus the class's own when it is inactive, so an edit of the name never clears it.
  */
 import { computed, onMounted, ref } from "vue";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import { userPermissions } from "../../stores/auth";
-import { ensureEquipmentClasses, equipmentClasses } from "../../stores/masters";
+import { ensureEquipmentCategories, ensureEquipmentClasses, equipmentCategories, equipmentClasses } from "../../stores/masters";
 import ClassPropertiesView from "./ClassPropertiesView.vue";
 import { useMasterForm } from "./useMasterForm";
 
@@ -25,7 +28,7 @@ const rows = computed(() => (equipmentClasses.value ?? []).filter((c) => showIna
 async function reload() {
   loadError.value = "";
   try {
-    await ensureEquipmentClasses({ refresh: true });
+    await Promise.all([ensureEquipmentClasses({ refresh: true }), ensureEquipmentCategories({ refresh: true })]);
   } catch (err) {
     loadError.value = err.message;
   }
@@ -37,10 +40,24 @@ const {
 } =
   useMasterForm({
     path: "/api/masters/equipment-classes",
-    blank: () => ({ code: "", name: "" }),
-    fromRecord: (c) => ({ code: c.code, name: c.name }),
+    blank: () => ({ code: "", name: "", category_id: "" }),
+    fromRecord: (c) => ({ code: c.code, name: c.name, category_id: c.category_id ?? "" }),
+    toBody,
     reload,
   });
+
+// "No category" is sent as null
+function toBody(body) {
+  return { ...body, category_id: body.category_id === "" ? null : body.category_id };
+}
+
+// Active categories by name; the class's own inactive one last, marked, so it is kept on save
+const categoryChoices = computed(() => {
+  const all = equipmentCategories.value ?? [];
+  const choices = all.filter((c) => c.active);
+  const own = all.find((c) => c.id === form.value.category_id && !c.active);
+  return own ? [...choices, own] : choices;
+});
 
 onMounted(reload);
 </script>
@@ -67,12 +84,13 @@ onMounted(reload);
       <div v-else-if="rows.length" class="table-responsive">
         <table class="table table-sm align-middle mb-0">
           <thead>
-            <tr><th>Code (prefix)</th><th>Name</th><th>Status</th><th></th></tr>
+            <tr><th>Code (prefix)</th><th>Name</th><th>Category</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="c in rows" :key="c.id" :class="{ 'text-secondary': !c.active }">
               <td class="fw-semibold">{{ c.code }}</td>
               <td>{{ c.name }}</td>
+              <td>{{ c.category_name ?? "—" }}</td>
               <td><span class="badge" :class="c.active ? 'text-bg-success' : 'text-bg-secondary'">{{ c.active ? "Active" : "Inactive" }}</span></td>
               <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-outline-secondary me-1" title="Properties" aria-label="Properties" @click="propertiesFor = c">
@@ -107,10 +125,19 @@ onMounted(reload);
       <div v-if="fieldError('code')" class="invalid-feedback d-block">{{ fieldError("code") }}</div>
       <div class="form-text">2–4 letters; becomes the prefix of equipment codes (e.g. VBM001). Cannot be changed once in use.</div>
     </div>
-    <div class="mb-0">
+    <div class="mb-3">
       <label class="form-label" for="class-name">Name</label>
       <input id="class-name" v-model="form.name" class="form-control" :class="{ 'is-invalid': fieldError('name') }" maxlength="100" />
       <div v-if="fieldError('name')" class="invalid-feedback d-block">{{ fieldError("name") }}</div>
+    </div>
+    <div class="mb-0">
+      <label class="form-label" for="class-category">Category</label>
+      <select id="class-category" v-model="form.category_id" class="form-select" :class="{ 'is-invalid': fieldError('category_id') }">
+        <option value="">No category</option>
+        <option v-for="c in categoryChoices" :key="c.id" :value="c.id">{{ c.name }}{{ c.active ? "" : " (inactive)" }}</option>
+      </select>
+      <div v-if="fieldError('category_id')" class="invalid-feedback d-block">{{ fieldError("category_id") }}</div>
+      <div class="form-text">The group this class belongs to, e.g. Lifting equipment. Add categories in Equip Category.</div>
     </div>
   </FormModal>
 </template>

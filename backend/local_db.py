@@ -1070,6 +1070,28 @@ _MIGRATIONS = [
                     'Where the machine stands. Tap Use my current location next to the machine, or paste from Google Maps.',
                     1, 1, 'migration-v34')""",
     ]),
+    # S063 — equipment categories (docs/steps/S063-equipment-category/1-brief.md § 4.1).  A
+    # category groups equipment classes (ISO 14224 Annex A); each class is in at most one, so
+    # equipment_classes gains a nullable category_id.  Every existing class gets NULL; nothing is
+    # seeded (KLA, Q1).  IF NOT EXISTS on the table, the column and the key make a half-applied
+    # v35 re-run.  No precondition: a new table and a nullable column meet no production row.
+    # Rollback: the previous release reads classes with SELECT * and ignores the column.
+    (35, "Equipment categories (S063)", [
+        """CREATE TABLE IF NOT EXISTS equipment_categories (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(50) NOT NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_equipment_categories_name UNIQUE (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_classes
+            ADD COLUMN IF NOT EXISTS category_id INT NULL AFTER name,
+            ADD CONSTRAINT fk_equipment_classes_category
+                FOREIGN KEY IF NOT EXISTS (category_id) REFERENCES equipment_categories (id)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

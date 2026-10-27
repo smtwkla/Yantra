@@ -10,6 +10,7 @@ import { computed, ref } from "vue";
 import ModuleToolbar from "../components/layout/ModuleToolbar.vue";
 import { userPermissions } from "../stores/auth";
 import { canSeeNavItem } from "../stores/navigation";
+import EquipmentCategoriesPanel from "./masters/EquipmentCategoriesPanel.vue";
 import EquipmentClassesPanel from "./masters/EquipmentClassesPanel.vue";
 import EquipmentTypesPanel from "./masters/EquipmentTypesPanel.vue";
 import FailureCodesPanel from "./masters/FailureCodesPanel.vue";
@@ -25,6 +26,7 @@ import UnitsPanel from "./masters/UnitsPanel.vue";
 const sections = [
   { key: "sites", icon: "fa-solid fa-location-dot", label: "Sites", perm: "masters:read" },
   { key: "units", icon: "fa-solid fa-warehouse", label: "Units", perm: "masters:read" },
+  { key: "categories", icon: "fa-solid fa-layer-group", label: "Equip Category", perm: "masters:read" },
   { key: "classes", icon: "fa-solid fa-shapes", label: "Equip Class", perm: "masters:read" },
   { key: "types", icon: "fa-solid fa-sitemap", label: "Equip Type", perm: "masters:read" },
   { key: "manufacturers", icon: "fa-solid fa-industry", label: "Manufacturers", perm: "masters:read" },
@@ -38,6 +40,7 @@ const sections = [
 const panels = {
   sites: SitesPanel,
   units: UnitsPanel,
+  categories: EquipmentCategoriesPanel,
   classes: EquipmentClassesPanel,
   types: EquipmentTypesPanel,
   manufacturers: ManufacturersPanel,

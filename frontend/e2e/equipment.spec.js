@@ -7,7 +7,7 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
 import { logByApi, meterMachine } from "./support/meters.js";
-import { noModelPart, propertySetup, propertyTag } from "./support/properties.js";
+import { categorySetup, noModelPart, propertySetup, propertyTag } from "./support/properties.js";
 import { card, istLocal, raiseByApi, saveDialog, shownTime } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
@@ -20,7 +20,8 @@ test("S012: IT admin adds a manufacturer and a model of it", async ({ page }, te
   await expectDialogFits(page);
   await (await openDialog(page)).getByLabel("Name").fill(maker);
   await saveDialog(page, "Save");
-  await expect(page.getByRole("row", { name: new RegExp(maker) })).toBeVisible();
+  // The maker's cell exactly: propertySetup's makers ("E2E maker <project> <random>") start with this name
+  await expect(page.getByRole("row").filter({ has: page.getByRole("cell", { name: maker, exact: true }) })).toBeVisible();
 
   await page.getByRole("button", { name: "Models" }).click();
   await page.getByRole("button", { name: "Add model" }).click();
@@ -862,4 +863,25 @@ test("S062: the Filter by property dialog with three lines fits the screen, its 
   await setCondition(dialog, 3, frame, "contains", "IE3");
   await expect(dialog.locator("[data-test=condition]")).toHaveCount(3);
   await expectDialogFits(page);
+});
+
+test("S063: engineer picks a category; the class select lists only its classes, the list only their machines, and a reload keeps it", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const inside = await propertySetup(`${tag} in`);
+  const outside = await propertySetup(`${tag} out`);
+  const category = await categorySetup(tag, [inside.cls]);
+  await asPerson(page, "engineer", "/equipment");
+  await expect(rowOf(page, outside.node)).toBeVisible();
+
+  await page.getByLabel("Category", { exact: true }).selectOption({ label: category.name });
+  await expect(page).toHaveURL(new RegExp(`category_id=${category.id}`));
+  const classSelect = page.getByLabel("Class", { exact: true });
+  await expect(classSelect.locator("option")).toHaveText(["All classes", inside.cls.code]);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(rowOf(page, inside.node)).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel("Category", { exact: true })).toHaveValue(String(category.id));
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(rowOf(page, inside.node)).toBeVisible();
 });

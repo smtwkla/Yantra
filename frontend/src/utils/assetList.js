@@ -7,8 +7,8 @@ import { LIFECYCLE_LABELS } from "./equipmentLabels";
 import { decodeFilter, describeFilter } from "./propertyFilter";
 
 // The list's filter keys that choose machines; level, q and page are deliberately not here (§ 4).
-// props: the property filter (S062), which the API applies to the machines
-const FILTER_KEYS = ["site_id", "unit_id", "class_id", "type_id", "lifecycle", "criticality", "props"];
+// props: the property filter (S062), which the API applies to the machines; category_id: S063
+const FILTER_KEYS = ["site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "props"];
 
 const text = (value) => (typeof value === "string" ? value : "");
 
@@ -40,13 +40,17 @@ export function parseAssetListQuery(query) {
 }
 
 /**
- * The filter line of a section header, e.g. "Class: RPP · Lifecycle: In service"; "All equipment"
- * with no filter. Site and unit are not named (the header has them). `lookups` is
- * `{ classes, types, properties }`, the masters lists (any may be null while loading); the
+ * The filter line of a section header, e.g. "Category: Lifting equipment · Class: EOT · Lifecycle:
+ * In service"; "All equipment" with no filter. Site and unit are not named (the header has them).
+ * `lookups` is `{ categories, classes, types, properties }`, the masters lists (any may be null while loading); the
  * property filter reads as the equipment list's filter line (S062).
  */
 export function filtersLabel(params, lookups = {}) {
   const parts = [];
+  if (params.category_id) {
+    const found = (lookups.categories ?? []).find((c) => String(c.id) === String(params.category_id));
+    parts.push(`Category: ${found ? found.name : `#${params.category_id}`}`);
+  }
   if (params.class_id) {
     const found = (lookups.classes ?? []).find((c) => String(c.id) === String(params.class_id));
     parts.push(`Class: ${found ? found.code : `#${params.class_id}`}`);

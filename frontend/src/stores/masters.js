@@ -1,5 +1,5 @@
 /**
- * Masters cache — sites, units, equipment classes and types, manufacturers and equipment
+ * Masters cache — sites, units, equipment categories (S063), classes and types, manufacturers and equipment
  * models (S012), trades, meter types (S037), failure modes, causes and maintenance actions (S016),
  * equipment properties (S043), fetched once and shared.
  *
@@ -16,6 +16,7 @@ import { apiGet } from "../api";
 
 export const sites = ref(null);
 export const units = ref(null);
+export const equipmentCategories = ref(null);
 export const equipmentClasses = ref(null);
 export const equipmentTypes = ref(null);
 export const manufacturers = ref(null);
@@ -43,6 +44,10 @@ export function ensureSites({ refresh = false } = {}) {
 
 export function ensureUnits({ refresh = false } = {}) {
   return ensure(units, "units", refresh);
+}
+
+export function ensureEquipmentCategories({ refresh = false } = {}) {
+  return ensure(equipmentCategories, "equipment-categories", refresh);
 }
 
 export function ensureEquipmentClasses({ refresh = false } = {}) {
@@ -93,6 +98,7 @@ export function defaultSiteId() {
 export function resetMasters() {
   sites.value = null;
   units.value = null;
+  equipmentCategories.value = null;
   equipmentClasses.value = null;
   equipmentTypes.value = null;
   manufacturers.value = null;

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mockup-viewport" content="phone">
+  <title>Mock-up 05 — Ticket on a machine under contract (R02.6)</title>
+  <link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+  <link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+  <style>
+    .topbar { height: var(--topbar-height); background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-border); display: flex; align-items: center; justify-content: space-between; padding: 0 0.75rem; font-size: 0.8rem; }
+    .topbar-center { font-weight: 600; font-size: 0.85rem; }
+    .app-content { padding: 0.5rem 0.75rem 72px; background: #fdecef; min-height: 100vh; }
+    .app-bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 56px; background: var(--sidebar-bg); align-items: center; justify-content: space-around; z-index: 1040; }
+    .bottom-nav-item { display: flex; flex-direction: column; align-items: center; flex: 1; color: var(--sidebar-icon-color); font-size: 0.65rem; gap: 2px; }
+    .bottom-nav-item i { font-size: 1.25rem; }
+    .bottom-nav-item.active { color: var(--sidebar-icon-active-color); }
+    .timeline-line { border-left: 2px solid var(--bs-border-color); padding-left: 0.75rem; margin-left: 0.25rem; }
+    .mock-note { font-size: 0.7rem; color: var(--text-muted); border-top: 1px dashed var(--bs-border-color); margin-top: 1rem; padding-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <strong>Yantra</strong><span class="topbar-center">Ticket</span>
+  <span class="d-flex align-items-center text-secondary"><i class="fa-solid fa-bell me-2"></i>Engineer A</span>
+</header>
+<main class="app-content py-3">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+    <h5 class="mb-0">TK-2026-10-014</h5>
+    <span class="badge text-bg-danger">Critical</span>
+    <span class="badge text-bg-warning">On hold</span>
+  </div>
+  <div class="mb-1"><span class="fw-semibold text-primary">CMP001</span> — Screw compressor 1 · SMTW.MCC2</div>
+  <div class="alert alert-primary py-2 px-2 small mb-3">
+    <i class="fa-solid fa-file-signature me-1"></i>Under AMC with Atlas Copco until 31-03-2027 · response 24 hours · breakdown calls included (2 of 4 used)
+    <div><a href="03-contract-page.html" class="alert-link">Open contract</a></div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body small">
+      <div><span class="text-secondary">What is wrong:</span> Trips on high temperature after 10 minutes.</div>
+      <div><span class="text-secondary">Waiting:</span> At or waiting for a vendor, garage or maker · check again by 22-10-2026</div>
+      <div><span class="text-secondary">Down for:</span> 6 h 20 min, of which waiting 3 h 05 min</div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Assigned to</span><span class="btn btn-sm btn-outline-primary py-0"><i class="fa-solid fa-user-plus me-1"></i>Assign</span>
+    </div>
+    <div class="list-group list-group-flush small">
+      <div class="list-group-item">Atlas Copco (India) <span class="badge text-bg-light border">contractor</span></div>
+      <div class="list-group-item">Technician B</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Timeline</div>
+    <div class="card-body small">
+      <div class="timeline-line mb-2"><div class="text-secondary">21-10-2026 10:45 · Engineer A</div>Put on hold — waiting for a vendor, garage or maker</div>
+      <div class="timeline-line mb-2"><div class="text-secondary">21-10-2026 10:40 · Engineer A</div>Assigned Atlas Copco (India)</div>
+      <div class="timeline-line mb-2"><div class="text-secondary">21-10-2026 08:05 · Technician B</div>Acknowledged</div>
+      <div class="timeline-line"><div class="text-secondary">21-10-2026 07:40 · Operator C</div>Raised — the machine has stopped</div>
+    </div>
+  </div>
+
+  <p class="mock-note">Mock-up for R02.6 (draft). The contract line is new; the rest is today's ticket page (S018, S019) in short. Once Atlas Copco is assigned or on a labour row, the ticket counts as a breakdown call on the contract.</p>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="yi-icon yi-table-edit"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

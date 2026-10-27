@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R02 mock-up 03 — Fill a PM job on the phone</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+<style>.mk-phone .mk-content { padding-bottom: 140px; }</style>
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">PM job</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Technician A</span>
+</header>
+<main class="mk-content">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+    <span class="badge text-bg-primary">In progress</span>
+    <span class="fw-semibold">PM-2026-10-014</span>
+    <span class="badge text-bg-danger">Overdue 3 days</span>
+  </div>
+  <div class="fw-semibold">HP003 — Hydraulic press 3</div>
+  <div class="small text-secondary mb-2">Monthly hydraulic check · SSVT.SHOP · due 24-10-2026 or 2,090.0 h</div>
+
+  <div class="card mb-2">
+    <div class="card-body py-2">
+      <div class="row g-2 small">
+        <div class="col-6"><label class="form-label mb-0">Performed by</label><select class="form-select form-select-sm"><option>Technician A</option></select></div>
+        <div class="col-6"><label class="form-label mb-0">Started</label><input class="form-control form-control-sm" value="27-10-2026 09:10"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="text-secondary small mb-1">3 of 7 filled</div>
+  <ul class="list-group mb-2">
+    <li class="list-group-item">
+      <div class="fw-semibold mb-1">1. Oil level in the sight glass is above min</div>
+      <div class="mk-choice"><button class="btn btn-success">OK</button><button class="btn btn-outline-danger">Not OK</button><button class="btn btn-outline-secondary">NA</button></div>
+    </li>
+    <li class="list-group-item row-notok">
+      <div class="fw-semibold mb-1">2. No leaks at cylinder seals and pipe joints</div>
+      <div class="mk-choice"><button class="btn btn-outline-success">OK</button><button class="btn btn-danger">Not OK</button><button class="btn btn-outline-secondary">NA</button></div>
+      <input class="form-control form-control-sm mt-2" value="Oil seeping at the left cylinder's rod seal">
+      <div class="d-flex align-items-center gap-2 mt-2">
+        <span class="mk-photo"><i class="fa-solid fa-image"></i></span>
+        <button class="btn btn-sm btn-outline-secondary touch-target"><i class="fa-solid fa-camera me-1"></i>Add photo</button>
+      </div>
+      <div class="small mt-2"><i class="fa-solid fa-triangle-exclamation text-danger me-1"></i>Not OK. A defect ticket can be raised when you mark the job done.</div>
+    </li>
+    <li class="list-group-item">
+      <div class="fw-semibold mb-1">3. Power-pack oil temperature <span class="text-secondary small">· 30–60 °C</span></div>
+      <div class="input-group"><input class="form-control" value="48.5"><span class="input-group-text">°C</span></div>
+      <div class="small text-secondary mt-1">Also logged as an <em>Oil temperature</em> reading of HP003.</div>
+    </li>
+    <li class="list-group-item row-notok">
+      <div class="fw-semibold mb-1">4. Main pressure at full load <span class="text-secondary small">· 180–200 bar</span></div>
+      <div class="input-group"><input class="form-control is-invalid" value="212"><span class="input-group-text">bar</span></div>
+      <div class="small mt-1"><span class="badge text-bg-danger">High</span> Above 200 bar. Write what you saw.</div>
+    </li>
+    <li class="list-group-item">
+      <div class="fw-semibold mb-1">5. Check the return filter's clogging indicator; change the element if red</div>
+      <div class="small text-secondary mb-1"><i class="fa-solid fa-circle-info me-1"></i>Green is good. The spare element is in the SSVT store.</div>
+      <div class="d-grid gap-2" style="grid-template-columns:1fr 1fr"><button class="btn btn-outline-success touch-target">Done</button><button class="btn btn-outline-secondary touch-target">Not done</button></div>
+      <div class="small mt-1"><i class="fa-solid fa-camera me-1"></i>A photo is needed for this item.</div>
+    </li>
+    <li class="list-group-item text-secondary">6. The press stops when the safety door opens</li>
+    <li class="list-group-item text-secondary">7. Blow the dust out of the PLC panel</li>
+  </ul>
+</main>
+<div class="mk-sticky">
+  <button class="btn btn-primary w-100 touch-target" disabled>Mark job done</button>
+  <div class="small text-secondary text-center mt-1">Fill all 7 items first. Your entries are saved as you go.</div>
+</div>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-calendar-check"></i><span>PM</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-table"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

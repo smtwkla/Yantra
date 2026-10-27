@@ -80,4 +80,18 @@ describe("filtersLabel", () => {
   it("falls back to the id while the masters load", () => {
     expect(filtersLabel({ class_id: "9" }, {})).toBe("Class: #9");
   });
+
+  it("names the category first, by name or by id (S063)", () => {
+    const categories = [{ id: 7, name: "Lifting equipment" }];
+    expect(filtersLabel({ category_id: "7", class_id: "3" }, { ...lookups, categories }))
+      .toBe("Category: Lifting equipment · Class: RPP");
+    expect(filtersLabel({ category_id: "8" }, lookups)).toBe("Category: #8");
+  });
+});
+
+describe("the category filter (S063)", () => {
+  it("is carried to the print page and read back", () => {
+    expect(assetListPath({ category_id: "7", class_id: "3", level: "all" })).toBe("/asset-list?category_id=7&class_id=3");
+    expect(parseAssetListQuery({ category_id: "7" }).params).toEqual({ category_id: "7" });
+  });
 });

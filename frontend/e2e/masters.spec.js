@@ -4,7 +4,7 @@
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
-import { propertySetup, propertyTag } from "./support/properties.js";
+import { categorySetup, propertySetup, propertyTag } from "./support/properties.js";
 import { card, causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const PRESS_CLASS = "HP"; // Hydraulic press, from the dev seed's classes
@@ -117,15 +117,21 @@ for (const kind of [
 
 // The Masters sections no other test opens (S024 CR1-04): each one shows its table, and its Add
 // dialog fits the screen and shows the server's refusal beside the field when saved empty.
+// `before` makes a row first, for a list the seed leaves empty (Equip Category, S063).
 for (const section of [
   { button: "Units", add: "Add unit", api: "/api/masters/units", person: "it_admin" },
+  {
+    button: "Equip Category", add: "Add category", api: "/api/masters/equipment-categories", person: "engineer",
+    message: "Name is required", before: (testInfo) => categorySetup(propertyTag(testInfo)),
+  },
   { button: "Equip Class", add: "Add class", api: "/api/masters/equipment-classes", person: "engineer" },
   { button: "Equip Type", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
   { button: "Trades", add: "Add trade", api: "/api/masters/trades", person: "engineer", message: "Name is required" },
   { button: "Meter types", add: "Add meter type", api: "/api/masters/meter-types", person: "engineer", message: "Name is required" },
 ]) {
-  test(`${section.person}: the ${section.button} section opens, and an empty ${section.add.toLowerCase()} is refused beside its field`, async ({ page, consoleWatch }) => {
+  test(`${section.person}: the ${section.button} section opens, and an empty ${section.add.toLowerCase()} is refused beside its field`, async ({ page, consoleWatch }, testInfo) => {
     consoleWatch.allowFailedRequest(section.api, 400);
+    if (section.before) await section.before(testInfo);
     await asPerson(page, section.person, "/masters");
     await page.getByRole("button", { name: section.button, exact: true }).click();
     await expect(rows(page).first()).toBeVisible();
@@ -531,4 +537,36 @@ test("S061: engineer makes a Yes / No property for every class; a machine of an 
       await api.dispose();
     }
   }
+});
+
+test("S063: engineer adds a category, puts a class in it, and cannot deactivate it while the class is active", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/api/masters/equipment-categories", 409);
+  const tag = propertyTag(testInfo);
+  const { cls } = await propertySetup(tag);
+  const name = `E2E lifting ${tag}`;
+  await asPerson(page, "engineer", "/masters");
+
+  await openSection(page, "Equip Category");
+  await page.getByRole("button", { name: "Add category" }).click();
+  await expectDialogFits(page);
+  await (await openDialog(page)).getByLabel("Name").fill(name);
+  await saveDialog(page, "Save");
+  await expect(rows(page).filter({ hasText: name }).locator("td").nth(1)).toHaveText("0");
+
+  await openSection(page, "Equip Class");
+  await rows(page).filter({ hasText: cls.code }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  await (await openDialog(page)).getByLabel("Category").selectOption({ label: name });
+  await saveDialog(page, "Save");
+  await expect(rows(page).filter({ hasText: cls.code }).locator("td").nth(2)).toHaveText(name);
+
+  await openSection(page, "Equip Category");
+  const row = rows(page).filter({ hasText: name });
+  await expect(row.locator("td").nth(1)).toHaveText("1");
+  await row.getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Deactivate" }).click();
+  await dialog.getByRole("button", { name: "Yes" }).click();
+  await expect(dialog.locator(".alert-danger")).toHaveText("1 active class is in this category. Move it to another category first.");
 });

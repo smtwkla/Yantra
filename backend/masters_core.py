@@ -18,6 +18,11 @@ USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._@-]{0,99}$")
 
 NAME_MAX = 100
 TRADE_NAME_MAX = 50
+# An equipment category's name (S063 § 5.1); the column is VARCHAR(50)
+CATEGORY_NAME_MAX = 50
+# A class reactivated in an inactive category (S063 § 5.2, text by KLA at gate B, CR1-03)
+CLASS_CATEGORY_INACTIVE = ("This class's category is inactive. Pick another category or No category, "
+                           "then reactivate.")
 # A model's designation (S012 § 4.1): "<manufacturer> <designation>" then fits the events'
 # VARCHAR(200) (100 + 1 + 80)
 DESIGNATION_MAX = 80
@@ -90,6 +95,10 @@ def model_label(manufacturer_name, designation):
 
 def _parse_trade_name(raw):
     return _parse_bounded_name(raw, TRADE_NAME_MAX)
+
+
+def _parse_category_name(raw):
+    return _parse_bounded_name(raw, CATEGORY_NAME_MAX)
 
 
 def _parse_type_name(raw):
@@ -166,6 +175,14 @@ _UNIT_FIELDS = {
 _CLASS_FIELDS = {
     "code": (_code_parser(CLASS_CODE_RE, "Class", "2–4 capital letters"), True),
     "name": (parse_name, True),
+    # Optional: null is "no category" (S063 § 5.2)
+    "category_id": (_parse_optional_id("Category"), False),
+    "active": (_parse_active, False),
+}
+
+# An equipment category groups classes (S063 § 5.1): a name only, no code
+_CATEGORY_FIELDS = {
+    "name": (_parse_category_name, True),
     "active": (_parse_active, False),
 }
 
@@ -302,6 +319,17 @@ def validate_unit(data, creating):
 
 def validate_equipment_class(data, creating):
     return _validate(data, _CLASS_FIELDS, creating)
+
+
+def validate_equipment_category(data, creating):
+    return _validate(data, _CATEGORY_FIELDS, creating)
+
+
+def category_in_use(active_classes):
+    """The refusal of a category deactivation while active classes are in it (S063 § 5.1)."""
+    if active_classes == 1:
+        return "1 active class is in this category. Move it to another category first."
+    return f"{active_classes} active classes are in this category. Move them to another category first."
 
 
 def validate_equipment_type(data, creating):

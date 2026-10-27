@@ -57,10 +57,12 @@ findings) first takes the step's claim, and a refused claim stops the command
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
-- `/step feedback [S00N …]`: run `tooling/step-feedback.bat` once (every step, or
-  the ones named): the agents' `## Feedback` items, grouped by label (§ Feedback).
-  Report the points that recur or cost real time, and propose the 3–5 changes
-  worth making; change nothing until the user says which.
+- `/step feedback [all] [S00N …]`: run `tooling/step-feedback.bat --new` once
+  (every step, or the ones named): the agents' `## Feedback` items not yet in the
+  feedback log, grouped by label (§ Feedback); `all` drops `--new`, to see the
+  read items too. Report the points that recur or cost real time, and propose the
+  3–5 changes worth making; change nothing until the user says which. Then log
+  every item shown (§ Feedback).
 - `/step stats [S00N]`: run `tooling/step-stats.bat` once (it writes
   `scratch/step-stats.md`): review rounds, findings by severity, late blockers
   and majors, time, tokens and browser-test cost per step and per role, from the step
@@ -509,9 +511,16 @@ most 5 one-line items, `waste`, `hindrance`, `rule` or `idea`, each with its evi
 - **At each gate**, read the feedback of the files written since the last gate. When an item
   recurs or cost real time, name it in one line ("Feedback: the coder lost 3 runs to cmd quoting —
   see `/step feedback`"). Fix nothing in the workflow without the user's OK.
-- **`/step feedback`** runs `tooling/step-feedback.bat` (all steps, or the IDs given): every item
-  with its step, file and label. Group the items that say the same thing, count them, and propose
-  the few changes that would save the most; the user decides.
+- **`/step feedback`** runs `tooling/step-feedback.bat --new` (all steps, or the IDs given): every
+  unread item with its step, file and label. Group the items that say the same thing, count them,
+  and propose the few changes that would save the most; the user decides.
+- **The feedback log** (27-10-2026, by KLA): `docs/steps/feedback-log.md`, one table row per item
+  read, `| Step | File | Label | Item | Decision |`. An item is read when its row is there. Once
+  the user has decided, run `tooling/step-feedback.bat --rows` (the unread items as rows, the
+  decision cell empty), fill each decision and append the rows under a heading with the date:
+  `acted: <the change>`, `dropped: <the reason>`, or `noted` (read, no change; a later item
+  saying the same thing comes back as unread). Copy the rows as printed: the item cell is the
+  key. Feedback read only at a gate is not logged.
 - Feedback is about the workflow, the tools and the rules, never a second list of findings.
 
 ## Snapshots

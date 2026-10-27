@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R02 mock-up 06 — CIL due today, for a supervisor</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">PM</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Supervisor A</span>
+</header>
+<main class="mk-content">
+  <ul class="nav nav-tabs nav-fill mb-3">
+    <li class="nav-item"><a class="nav-link active px-1">CIL today</a></li>
+    <li class="nav-item"><a class="nav-link px-1">Due</a></li>
+    <li class="nav-item"><a class="nav-link px-1">Done</a></li>
+  </ul>
+  <select class="form-select mb-2"><option>SMTW.SORT — Sorting and packing line</option></select>
+  <div class="d-flex justify-content-between small text-secondary mb-1"><span>3 of 6 done today</span><span>Tuesday 27-10-2026</span></div>
+  <div class="mk-bar mb-3"><div class="bg-success" style="width:50%"></div></div>
+
+  <div class="list-group">
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-solid fa-circle-check text-success"></i><span class="fw-semibold">APK001 — Packing machine 1</span></div>
+      <div class="small text-secondary">Done 07:40 · performed by Operator B · recorded by Supervisor A</div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-solid fa-circle-check text-success"></i><span class="fw-semibold">APK002 — Packing machine 2</span></div>
+      <div class="small text-secondary">Done 07:45 · performed by Operator C · <span class="text-danger">1 Not OK · TK-2026-10-033</span></div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-solid fa-circle-check text-success"></i><span class="fw-semibold">APK003 — Packing machine 3</span></div>
+      <div class="small text-secondary">Done 07:52 · performed by Operator B</div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-regular fa-circle text-secondary"></i><span class="fw-semibold">APK004 — Packing machine 4</span></div>
+      <div class="small text-secondary mb-2">Clean 3 · Inspect 4 · Lubricate 2 · before use</div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-success flex-fill touch-target"><i class="fa-solid fa-check me-1"></i>All OK</button>
+        <button class="btn btn-outline-primary flex-fill touch-target">Fill item by item</button>
+      </div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-regular fa-circle text-secondary"></i><span class="fw-semibold">APK005 — Packing machine 5</span></div>
+      <div class="small text-secondary mb-2">Clean 3 · Inspect 4 · before use</div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-success flex-fill touch-target"><i class="fa-solid fa-check me-1"></i>All OK</button>
+        <button class="btn btn-outline-primary flex-fill touch-target">Fill item by item</button>
+      </div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex align-items-center gap-2"><i class="fa-regular fa-circle text-secondary"></i><span class="fw-semibold">APK006 — Packing machine 6</span></div>
+      <div class="small text-secondary">Not running today? Leave it: a before-use check is due only on a day the machine runs.</div>
+    </div>
+  </div>
+
+  <div class="card mt-3">
+    <div class="card-body small">
+      <label class="form-label mb-1">Performed by (for <em>All OK</em>)</label>
+      <select class="form-select form-select-sm mb-2"><option>Operator D</option></select>
+      <label class="form-label mb-1">When</label>
+      <div class="input-group input-group-sm"><input class="form-control" value="27-10-2026 08:05" disabled><span class="input-group-text"><input class="form-check-input me-1" type="checkbox" checked>Now</span></div>
+    </div>
+  </div>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-calendar-check"></i><span>PM</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-table"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

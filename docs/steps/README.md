@@ -45,7 +45,10 @@ progress:
 **Feedback** (25-10-2026, by KLA). Every file an agent writes — advice, brief review, impl report,
 code review — ends with `## Feedback`: at most 5 one-line items labelled `waste`, `hindrance`,
 `rule` or `idea`, each with its evidence, or `- none` (the agents' instructions give the form).
-`/step feedback` collects them across steps (`tooling/step-feedback.bat`).
+`/step feedback` collects them across steps (`tooling/step-feedback.bat`), by default only the
+items not yet in the repo's **feedback log** `docs/steps/feedback-log.md` (27-10-2026): one row
+per item read, with what was decided (`acted`, `dropped` or `noted`). The log is the repo's own
+file, like the index; the step skill § Feedback gives its form.
 
 ## Header block
 

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R02 mock-up 01 — PM plan on a machine</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span class="active"><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit" style="mask-image:url('../../../frontend/src/assets/icons/table_edit.svg')"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Equipment</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="text-secondary small mb-1">Equipment › HP003 — Hydraulic press 3 › PM plans</div>
+    <h5 class="mb-3">New PM plan</h5>
+
+    <div class="row g-3">
+      <div class="col-5">
+        <div class="card mb-3">
+          <div class="card-header">Plan</div>
+          <div class="card-body">
+            <label class="form-label">Title</label>
+            <input class="form-control mb-2" value="Monthly hydraulic check">
+            <label class="form-label">Equipment</label>
+            <input class="form-control mb-2" value="HP003 — Hydraulic press 3 · SSVT.SHOP" disabled>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">Done by</label>
+                <select class="form-select"><option>Maintenance</option></select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Assign jobs to</label>
+                <select class="form-select"><option>Technician A</option></select>
+              </div>
+            </div>
+            <div class="form-check mt-3">
+              <input class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label">An engineer verifies each job</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">When is it due?</div>
+          <div class="card-body">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label">By calendar: every
+                <input class="form-control form-control-sm d-inline-block mx-1" style="width:4rem" value="1">
+                <select class="form-select form-select-sm d-inline-block" style="width:7rem"><option>months</option></select>
+              </label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" checked>
+              <label class="form-check-label">By meter: every
+                <input class="form-control form-control-sm d-inline-block mx-1" style="width:5rem" value="250">
+                h of <select class="form-select form-select-sm d-inline-block" style="width:11rem"><option>Run hours · HP003</option></select>
+              </label>
+            </div>
+            <div class="text-secondary small mb-3">Both ticked: the job is due at whichever comes first.</div>
+            <label class="form-label">Last done</label>
+            <div class="d-flex gap-2 mb-2">
+              <input class="form-control" value="02-10-2026">
+              <input class="form-control" value="1,840.0 h">
+            </div>
+            <div class="mk-note">Next due: <strong>02-11-2026</strong> or at <strong>2,090.0 h</strong>, whichever comes first. Run hours now: 1,996.4 h (26-10-2026 18:00).</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-7">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Items (7)</span>
+            <button class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-plus me-1"></i>Add item</button>
+          </div>
+          <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>#</th><th>Type</th><th>Item</th><th>Limits / meter</th><th>Photo</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><span class="badge text-bg-light border">Check</span></td><td>Oil level in the sight glass is above min</td><td></td><td>Optional</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>2</td><td><span class="badge text-bg-light border">Check</span></td><td>No leaks at cylinder seals and pipe joints</td><td></td><td>Optional</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>3</td><td><span class="badge text-bg-info">Reading</span></td><td>Power-pack oil temperature</td><td>30–60 °C · writes the meter <em>Oil temperature</em></td><td>None</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>4</td><td><span class="badge text-bg-info">Reading</span></td><td>Main pressure at full load</td><td>180–200 bar</td><td>None</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>5</td><td><span class="badge text-bg-secondary">Task</span></td><td>Check the return filter's clogging indicator; change the element if red</td><td></td><td><strong>Required</strong></td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>6</td><td><span class="badge text-bg-light border">Check</span></td><td>The press stops when the safety door opens</td><td></td><td>None</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+              <tr><td>7</td><td><span class="badge text-bg-secondary">Task</span></td><td>Blow the dust out of the PLC panel</td><td></td><td>Optional</td><td><i class="fa-solid fa-grip-vertical text-secondary"></i></td></tr>
+            </tbody>
+          </table>
+          <div class="card-body small text-secondary border-top">
+            <strong>Task</strong>: done or not done. <strong>Check</strong>: OK, Not OK or NA. <strong>Reading</strong>: a value with limits; a reading that names a meter also logs a meter reading.
+          </div>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+          <button class="btn btn-outline-secondary">Cancel</button>
+          <button class="btn btn-primary">Save plan</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

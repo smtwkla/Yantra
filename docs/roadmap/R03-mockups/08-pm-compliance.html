@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R02 mock-up 08 — PM compliance report</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span class="active"><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">PM</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Manager A</span>
+  </header>
+  <main class="mk-content">
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item"><a class="nav-link">Due</a></li>
+      <li class="nav-item"><a class="nav-link">Upcoming</a></li>
+      <li class="nav-item"><a class="nav-link">To verify</a></li>
+      <li class="nav-item"><a class="nav-link">Done</a></li>
+      <li class="nav-item"><a class="nav-link active">Compliance</a></li>
+    </ul>
+    <div class="d-flex gap-2 mb-3 align-items-end">
+      <div><label class="form-label small mb-0">Month</label><select class="form-select"><option>October 2026</option></select></div>
+      <div><label class="form-label small mb-0">Site</label><select class="form-select"><option>All my sites</option></select></div>
+      <div><label class="form-label small mb-0">Done by</label><select class="form-select"><option>Maintenance and operators</option></select></div>
+      <button class="btn btn-outline-secondary ms-auto"><i class="fa-solid fa-print me-1"></i>Print</button>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-3"><div class="card"><div class="card-body"><div class="text-secondary small">PM compliance</div><div class="fs-3 fw-semibold">78 %</div><div class="small text-secondary">71 of 91 jobs done on time</div></div></div></div>
+      <div class="col-3"><div class="card"><div class="card-body"><div class="text-secondary small">Done late</div><div class="fs-3 fw-semibold">12</div><div class="small text-secondary">after the on-time window</div></div></div></div>
+      <div class="col-3"><div class="card"><div class="card-body"><div class="text-secondary small">Still open, overdue</div><div class="fs-3 fw-semibold text-danger">6</div><div class="small text-secondary">oldest 11 days</div></div></div></div>
+      <div class="col-3"><div class="card"><div class="card-body"><div class="text-secondary small">Rescheduled / skipped</div><div class="fs-3 fw-semibold">3 / 2</div><div class="small text-secondary">each with a reason</div></div></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">By unit</div>
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Unit</th><th class="text-end">Due</th><th class="text-end">On time</th><th class="text-end">Late</th><th class="text-end">Skipped</th><th class="text-end">Open</th><th style="width:28%">Compliance</th></tr></thead>
+        <tbody>
+          <tr><td>SSVT.SHOP</td><td class="text-end">26</td><td class="text-end">17</td><td class="text-end">5</td><td class="text-end">1</td><td class="text-end">3</td><td><div class="d-flex align-items-center gap-2"><div class="mk-bar flex-fill"><div class="bg-warning" style="width:65%"></div></div><span class="small">65 %</span></div></td></tr>
+          <tr><td>SMTW.MCC2</td><td class="text-end">18</td><td class="text-end">16</td><td class="text-end">2</td><td class="text-end">0</td><td class="text-end">0</td><td><div class="d-flex align-items-center gap-2"><div class="mk-bar flex-fill"><div class="bg-success" style="width:89%"></div></div><span class="small">89 %</span></div></td></tr>
+          <tr><td>SMTW.MCC1</td><td class="text-end">14</td><td class="text-end">12</td><td class="text-end">1</td><td class="text-end">0</td><td class="text-end">1</td><td><div class="d-flex align-items-center gap-2"><div class="mk-bar flex-fill"><div class="bg-success" style="width:86%"></div></div><span class="small">86 %</span></div></td></tr>
+          <tr><td>SMTW.SORT</td><td class="text-end">27</td><td class="text-end">22</td><td class="text-end">3</td><td class="text-end">1</td><td class="text-end">1</td><td><div class="d-flex align-items-center gap-2"><div class="mk-bar flex-fill"><div class="bg-success" style="width:81%"></div></div><span class="small">81 %</span></div></td></tr>
+          <tr><td>SMTW.FWMILL</td><td class="text-end">6</td><td class="text-end">4</td><td class="text-end">1</td><td class="text-end">0</td><td class="text-end">1</td><td><div class="d-flex align-items-center gap-2"><div class="mk-bar flex-fill"><div class="bg-warning" style="width:67%"></div></div><span class="small">67 %</span></div></td></tr>
+        </tbody>
+      </table>
+      <div class="card-body small text-secondary border-top">PM compliance (SMRP): jobs done within their on-time window ÷ jobs that fell due in the month. A rescheduled job is measured against its new date. Skipped and still-open jobs count as not done. Before-use CIL checks are left out: Yantra cannot tell which days a machine ran.</div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

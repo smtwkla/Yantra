@@ -4,7 +4,7 @@
 // only, and the empty case.  Paper (100 %, page 2's header) stays a device check.
 import { test, expect } from "./support/test.js";
 import { asPerson, seedIds } from "./support/people.js";
-import { propertySetup, propertyTag } from "./support/properties.js";
+import { categorySetup, propertySetup, propertyTag } from "./support/properties.js";
 
 let seed;
 
@@ -90,5 +90,24 @@ test("S062: Print asset list with a property filter lists only the matching mach
   await expect(mcc1.locator("tbody tr")).toHaveCount(1);
   await expect(mcc1.locator("tbody tr")).toContainText(node.code);
   await expect(mcc1.locator(".header-line").first()).toHaveText(`Properties: ${name} more than 10 kW`);
+  await sheet.close();
+});
+
+test("S063: Print asset list with a category filter names the category in the section header", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const { cls, node } = await propertySetup(tag);
+  const category = await categorySetup(tag, [cls]);
+  await asPerson(page, "manager", `/equipment?category_id=${category.id}`);
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+
+  const [sheet] = await Promise.all([
+    page.context().waitForEvent("page"),
+    page.getByRole("button", { name: "Print asset list" }).click(),
+  ]);
+  const mcc1 = section(sheet, "SMTW.MCC1");
+  await expect(sheet.locator("section.unit-section")).toHaveCount(1);
+  await expect(mcc1.locator("tbody tr")).toHaveCount(1);
+  await expect(mcc1.locator("tbody tr")).toContainText(node.code);
+  await expect(mcc1.locator(".header-line").first()).toHaveText(`Category: ${category.name}`);
   await sheet.close();
 });

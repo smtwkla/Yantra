@@ -751,6 +751,31 @@ class TestListing:
         assert _ids(admin, class_id=cls["id"]) == [a["id"]]
         assert _ids(admin, site_id=site["id"], lifecycle="standby") == [b["id"]]
 
+    def test_category_filter(self, admin, make_unit, make_class, make_category, make_equipment):
+        """S063 § 5.4: the nodes of every class in the category, at the level asked, by their own
+        class; with class_id both apply."""
+        unit = make_unit()
+        category = make_category()
+        crane, hoist, other = (make_class(category_id=category["id"]), make_class(category_id=category["id"]),
+                               make_class())
+        a = make_equipment(unit=unit, cls=crane)
+        b = make_equipment(unit=unit, cls=hoist)
+        c = make_equipment(unit=unit, cls=other)
+        part = make_equipment(parent=c, cls=hoist)
+        assert set(_ids(admin, unit_id=unit["id"], category_id=category["id"])) == {a["id"], b["id"]}
+        assert set(_ids(admin, unit_id=unit["id"], category_id=category["id"], level="all")) == {
+            a["id"], b["id"], part["id"]}
+        assert _ids(admin, unit_id=unit["id"], category_id=category["id"], class_id=crane["id"]) == [a["id"]]
+        assert _ids(admin, unit_id=unit["id"], category_id=category["id"], class_id=other["id"]) == []
+        assert _ids(admin, category_id=999999) == []
+
+    @pytest.mark.parametrize("value", ["abc", "0", "-1"])
+    def test_a_bad_category_filter_is_400(self, admin, value):
+        res = admin.get(EQUIPMENT, query_string={"category_id": value})
+        assert res.status_code == 400
+        assert (res.get_json()["field"], res.get_json()["error"]) == (
+            "category_id", "category_id must be a whole number at least 1")
+
     def test_search_escapes_wildcards(self, admin, make_unit, make_equipment):
         unit = make_unit()
         pct = make_equipment(unit=unit, name="Fan 50% duty")

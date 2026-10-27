@@ -1,0 +1,70 @@
+/* R02 mock-ups only: the app's layout chrome (sidebar, top bar), which lives in scoped Vue
+   styles and so is not in main.css. A picture of the idea, not code to reuse. */
+
+.mk-topbar {
+  height: var(--topbar-height);
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--topbar-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+}
+.mk-topbar .mk-title { font-weight: 600; }
+.mk-topbar .mk-user { color: var(--text-secondary); font-size: 0.9rem; }
+.mk-phone .mk-topbar { padding: 0 0.75rem; font-size: 0.85rem; }
+.mk-phone .mk-topbar strong { font-size: 0.8rem; }
+
+.mk-sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  display: flex; flex-direction: column; align-items: center;
+  padding-top: 1rem; gap: 0.25rem;
+}
+.mk-sidebar span {
+  width: 42px; height: 42px; border-radius: 8px;
+  color: var(--sidebar-icon-color); font-size: 1.2rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.mk-sidebar span.active { background: var(--sidebar-icon-active-bg); color: #fff; }
+.mk-desktop .mk-main { margin-left: var(--sidebar-width); }
+.mk-desktop .mk-content { padding: 0.75rem 1.5rem 1.5rem; }
+.mk-phone .mk-content { padding: 0.75rem 0.75rem 76px; }
+
+/* The bottom nav is main.css's .app-bottom-nav; shown at every width in a phone mock-up */
+.mk-phone .app-bottom-nav {
+  display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 56px;
+  background: var(--sidebar-bg); z-index: 1040; align-items: center; justify-content: space-around;
+}
+.mk-phone .bottom-nav-item {
+  display: flex; flex-direction: column; align-items: center; flex: 1;
+  color: var(--sidebar-icon-color); font-size: 0.65rem; gap: 2px;
+}
+.mk-phone .bottom-nav-item i { font-size: 1.25rem; }
+.mk-phone .bottom-nav-item.active { color: #fff; }
+
+/* A 44 px tap target, as the app's touch-target buttons */
+.touch-target { min-height: 44px; }
+
+/* OK / Not OK / NA: three large buttons in a row */
+.mk-choice { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.4rem; }
+.mk-choice .btn { min-height: 44px; }
+
+.mk-photo {
+  width: 64px; height: 64px; border-radius: 6px;
+  background: repeating-linear-gradient(45deg, #dbe3ec, #dbe3ec 6px, #e9eef4 6px, #e9eef4 12px);
+  display: inline-flex; align-items: center; justify-content: center; color: var(--text-secondary);
+}
+.mk-sticky {
+  position: fixed; left: 0; right: 0; bottom: 56px;
+  background: #fff; border-top: 1px solid var(--topbar-border);
+  padding: 0.5rem 0.75rem; z-index: 1030;
+}
+.mk-note {
+  border-left: 3px solid var(--bs-info); background: #eef8fb;
+  padding: 0.4rem 0.6rem; font-size: 0.85rem; color: var(--text-secondary);
+}
+.mk-bar { height: 10px; border-radius: 5px; background: #e9eef4; overflow: hidden; }
+.mk-bar > div { height: 100%; }
+.row-notok { background: #fdeaea; }
