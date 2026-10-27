@@ -4,6 +4,7 @@
 import { test, expect } from "./support/test.js";
 import { expectNoSidewaysScroll } from "./support/dialogs.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
+import { navItem } from "./support/nav.js";
 import { causeId, moveByApi, raiseByApi } from "./support/tickets.js";
 
 let seed;
@@ -37,9 +38,9 @@ async function raiseDefect(description, key = "operator") {
   return ticket;
 }
 
-/** Open Me from the bottom bar (phone) or the sidebar (desktop): the one visible "Me" button. */
+/** Open Me from the bottom bar (phone) or the sidebar (desktop): the one visible "Me" item. */
 async function openMe(page) {
-  await page.getByRole("button", { name: "Me", exact: true }).click();
+  await navItem(page, "Me").click();
   await expect(page).toHaveURL(/\/me(\?|$)/);
 }
 
@@ -130,7 +131,7 @@ test("S035: a technician opening / lands on Me, and Me is the first nav item", a
 
 test("S031: the storekeeper has no Me item, and /me lands on Equipment", async ({ page }) => {
   await asPerson(page, "storekeeper", "/equipment");
-  await expect(page.getByRole("button", { name: "Me", exact: true })).toHaveCount(0);
+  await expect(navItem(page, "Me")).toHaveCount(0);
   await page.goto("/me");
   await expect(page).toHaveURL(/\/equipment$/);
 });

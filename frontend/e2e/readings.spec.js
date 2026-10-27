@@ -10,6 +10,7 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { logByApi, meterMachine } from "./support/meters.js";
 import { apiAs, asPerson } from "./support/people.js";
+import { navItem } from "./support/nav.js";
 import { card, istLocal, saveDialog, setEventTime, shownTime } from "./support/tickets.js";
 
 const UNIT = "SMTW.MCC2";
@@ -640,7 +641,7 @@ test("S040: a 404 with no site left shows the no-units message, not an empty pic
     status: 404, contentType: "application/json", body: JSON.stringify({ error: "Not found" }),
   }));
   await asPerson(page, "operator", "/readings");
-  await expect(page.getByText("You have no units assigned — ask IT admin for unit access.")).toBeVisible();
+  await expect(page.getByText("No units are given to you yet. Ask your engineer or IT.")).toBeVisible();
   await expect(page.getByLabel("Site", { exact: true })).toHaveCount(0);
   await expect(page.getByText("This site is no longer available.")).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), SITE_KEY)).toBeNull();
@@ -1095,7 +1096,7 @@ test("S050: the storekeeper sees Readings in the nav with only the Register tab,
   const machine = await meterMachine(testInfo, "s50store", { unit: UNIT, ownMeters: [["Run hours", {}]] });
   await logReadings(machine, [["Run hours", "250", istLocal(30)]]);
   await asPerson(page, "storekeeper", "/");
-  await page.getByRole("button", { name: "Readings", exact: true }).filter({ visible: true }).click();
+  await navItem(page, "Readings").click();
   await expect(page).toHaveURL(/\/readings$/);
   await expect(picker(page)).toBeVisible();
   await expect(tabButton(page, "Sheet")).toHaveCount(0);

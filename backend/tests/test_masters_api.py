@@ -737,7 +737,8 @@ class TestErrorMapping:
         monkeypatch.setattr(db_helpers, "get_pooled_db", refuse)
         res = admin.get(f"{BASE}/sites")
         assert res.status_code == 503
-        assert "Database unavailable" in res.get_json()["error"]
+        assert res.get_json()["error"] == "Yantra can't reach its database. Try again in a few minutes."
+        assert "Can't connect" not in res.get_json()["error"]
 
 
 # ---------------------------------------------------------------------------

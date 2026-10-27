@@ -76,7 +76,7 @@ _HTTP_ERROR_TEXT = {
     405: "Not allowed",
     500: "Something went wrong — try again",
 }
-DB_LOST_TEXT = "Database unavailable — try again shortly"
+DB_LOST_TEXT = "Yantra can't reach its database. Try again in a few minutes."
 
 
 def _http_error(exc):

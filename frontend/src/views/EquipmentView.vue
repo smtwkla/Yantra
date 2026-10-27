@@ -8,6 +8,9 @@
  * `props`, built in its dialog; applying or clearing it is a history step (router.push), so Back
  * brings back a filter that took a dialog to build. The category (S063) narrows the class select
  * to its classes; like the class, it does not change the level.
+ * On a phone (below md, S064 UX-08) the search comes first, the filters fold behind one counted
+ * Filters (n) button, the office's ticks and print buttons are hidden, and each row is a two-line
+ * card: a second template over the same rows, so the table stays as it is from md up.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -23,10 +26,11 @@ import {
   ensureEquipmentCategories, ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, ensureSites, ensureUnits,
   equipmentCategories, equipmentClasses, equipmentTypes, properties, sites, units,
 } from "../stores/masters";
-import { LIFECYCLE_LABELS } from "../utils/equipmentLabels";
+import { CRITICALITY_OPTIONS, LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
 import { activeFirstBy, classChoicesFor, classOutsideCategory } from "../utils/equipmentFilters";
 import { labelsPath, MAX_LABELS } from "../utils/labelSheets";
+import { NO_UNITS_TEXT } from "../utils/messages";
 import { decodeFilter, describeFilter, encodeFilter, propsChanges } from "../utils/propertyFilter";
 import { TICKET_FILTER_CHOICES } from "../utils/ticketLabels";
 import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
@@ -144,6 +148,20 @@ const lifecycleModel = filterModel("lifecycle", "", chooseLifecycle);
 const criticalityModel = filterModel("criticality");
 const levelModel = filterModel("level", DEFAULT_LEVEL);
 const ticketsModel = filterModel("tickets");
+
+// ---- the phone's folded filters (S064 UX-08): closed on load (D5); the count says what is set ----
+
+const filtersOpen = ref(false);
+// Each select set, Show scrapped when on, the property filter as one; not the search, the page or
+// the default level.  The keys the list sends (listUrl), so a filter that does not apply is not counted.
+const FILTER_KEYS = ["site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "tickets"];
+const filterCount = computed(() => {
+  let count = FILTER_KEYS.filter((key) => query.value[key] && (key !== "tickets" || canSeeTickets.value)).length;
+  if (level.value !== DEFAULT_LEVEL) count += 1;
+  if (showScrapped.value) count += 1;
+  if (hasProps.value) count += 1;
+  return count;
+});
 
 function toggleScrapped(on) {
   const changes = { scrapped: on ? "1" : null };
@@ -300,6 +318,28 @@ function printAssetList() {
 <template>
   <div class="py-3">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <input
+        v-model="searchText"
+        class="form-control search-box order-md-1"
+        type="search"
+        placeholder="Search code, name, model, notes…"
+        aria-label="Search"
+      />
+      <button v-if="canEdit" class="btn btn-sm btn-primary order-md-3" @click="formModal.openCreateEquipment()">
+        <i class="fa-solid fa-plus me-1"></i>Add equipment
+      </button>
+      <div class="w-100 d-md-none"></div>
+      <button
+        type="button"
+        class="btn btn-outline-secondary tap-target d-md-none"
+        :aria-expanded="filtersOpen"
+        aria-controls="eq-filters"
+        @click="filtersOpen = !filtersOpen"
+      >
+        <i class="fa-solid fa-filter me-1"></i>Filters ({{ filterCount }})
+        <i class="fa-solid ms-1" :class="filtersOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+      </button>
+      <div id="eq-filters" class="filters-block" :class="{ open: filtersOpen }">
       <select v-model="siteModel" class="form-select form-select-sm w-auto" aria-label="Site">
         <option value="">All sites</option>
         <option v-for="s in sites ?? []" :key="s.id" :value="s.id">{{ s.code }}{{ s.active ? "" : " (inactive)" }}</option>
@@ -326,7 +366,7 @@ function printAssetList() {
       </select>
       <select v-model="criticalityModel" class="form-select form-select-sm w-auto" aria-label="Criticality">
         <option value="">Any criticality</option>
-        <option v-for="g in ['A', 'B', 'C']" :key="g" :value="g">{{ g }}</option>
+        <option v-for="(text, grade) in CRITICALITY_OPTIONS" :key="grade" :value="grade">{{ text }}</option>
       </select>
       <select v-if="canSeeTickets" v-model="ticketsModel" class="form-select form-select-sm w-auto" aria-label="Tickets">
         <option v-for="[value, text] in TICKET_FILTER_CHOICES" :key="value" :value="value">{{ text }}</option>
@@ -334,18 +374,20 @@ function printAssetList() {
       <select v-model="levelModel" class="form-select form-select-sm w-auto" aria-label="Level">
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
-      <input v-model="searchText" class="form-control form-control-sm w-auto" type="search" placeholder="Search code, name, model, notes…" aria-label="Search" />
       <button class="btn btn-sm" :class="conditionCount ? 'btn-primary' : 'btn-outline-primary'" @click="openPropertyFilter">
         <i class="fa-solid fa-sliders me-1"></i>{{ conditionCount ? `Properties (${conditionCount})` : "Filter by property" }}
       </button>
-      <button class="btn btn-sm btn-outline-primary ms-auto" :disabled="selected.size === 0" @click="printLabels">
+      <div class="form-check form-switch mb-0">
+        <input id="eq-show-scrapped" :checked="showScrapped" class="form-check-input" type="checkbox" @change="toggleScrapped($event.target.checked)" />
+        <label class="form-check-label small" for="eq-show-scrapped">Show scrapped</label>
+      </div>
+      </div>
+      <!-- The office's buttons: hidden on a phone (S064 UX-08, D12) -->
+      <button class="btn btn-sm btn-outline-primary ms-auto d-none d-md-inline-block order-md-2" :disabled="selected.size === 0" @click="printLabels">
         <i class="fa-solid fa-qrcode me-1"></i>Print labels ({{ selected.size }})
       </button>
-      <button class="btn btn-sm btn-outline-primary" @click="printAssetList">
+      <button class="btn btn-sm btn-outline-primary d-none d-md-inline-block order-md-2" @click="printAssetList">
         <i class="fa-solid fa-list-check me-1"></i>Print asset list
-      </button>
-      <button v-if="canEdit" class="btn btn-sm btn-primary" @click="formModal.openCreateEquipment()">
-        <i class="fa-solid fa-plus me-1"></i>Add equipment
       </button>
     </div>
     <div v-if="hasProps" class="d-flex align-items-center gap-2 mb-2">
@@ -362,10 +404,6 @@ function printAssetList() {
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
-    <div class="form-check form-switch mb-3">
-      <input id="eq-show-scrapped" :checked="showScrapped" class="form-check-input" type="checkbox" @change="toggleScrapped($event.target.checked)" />
-      <label class="form-check-label small" for="eq-show-scrapped">Show scrapped</label>
-    </div>
     <div v-if="selectionHint" class="text-warning-emphasis small mb-2">{{ selectionHint }}</div>
 
     <div v-if="loading && page" class="text-secondary small mb-1">Loading…</div>
@@ -375,12 +413,13 @@ function printAssetList() {
       <button class="btn btn-sm btn-outline-danger" @click="load">Retry</button>
     </div>
     <div v-else-if="loading && !page" class="text-secondary">Loading…</div>
-    <div v-else-if="noUnits" class="text-secondary">You have no units assigned — ask IT admin for unit access.</div>
+    <div v-else-if="noUnits" class="text-secondary">{{ NO_UNITS_TEXT }}</div>
     <div v-else-if="page && page.total === 0" class="text-secondary">
       {{ hasFilters ? "No equipment matches these filters." : "No equipment yet." }}
     </div>
     <div v-else-if="page && page.items.length === 0" class="text-secondary">No equipment on this page.</div>
-    <div v-else-if="page" class="table-responsive">
+    <template v-else-if="page">
+    <div class="table-responsive d-none d-md-block">
       <table class="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
@@ -405,6 +444,7 @@ function printAssetList() {
           <tr
             v-for="e in page.items"
             :key="e.id"
+            data-test="equipment-row"
             role="link"
             style="cursor: pointer"
             :class="{ 'text-secondary': e.lifecycle === 'scrapped' }"
@@ -435,6 +475,29 @@ function printAssetList() {
         </tbody>
       </table>
     </div>
+    <!-- A phone: the same rows as two-line cards, each a link to the equipment page (S064 UX-08) -->
+    <div class="list-group d-md-none">
+      <router-link
+        v-for="e in page.items"
+        :key="e.id"
+        :to="`/equipment/${e.id}`"
+        data-test="equipment-row"
+        class="list-group-item list-group-item-action"
+        :class="{ 'text-secondary': e.lifecycle === 'scrapped' }"
+      >
+        <div class="d-flex align-items-center gap-2 min-w-0">
+          <TicketLight v-if="canSeeTickets && e.lifecycle !== 'scrapped'" :light="e.ticket_light" />
+          <span class="fw-semibold text-nowrap">{{ e.code }}</span>
+          <span class="text-truncate">{{ e.name }}</span>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-1 small">
+          <LifecycleBadge :lifecycle="e.lifecycle" />
+          <CriticalityBadge :grade="e.effective_criticality" />
+          <span class="text-secondary text-break">{{ level === "equipment" ? e.unit : e.full_path }}</span>
+        </div>
+      </router-link>
+    </div>
+    </template>
     <PagerBar
       v-if="page && !loadError"
       :page="pageNumber"
@@ -451,5 +514,39 @@ function printAssetList() {
 <style scoped>
 .tick-cell {
   width: 2rem;
+}
+.min-w-0 {
+  min-width: 0;
+}
+/* A phone: the search fills the first line beside Add equipment; the filters fold (S064 UX-08) */
+.search-box {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.filters-block {
+  display: none;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.filters-block.open {
+  display: flex;
+}
+/* From md up: the filters sit inline in the toolbar as before, and the search is the small one */
+@media (min-width: 768px) {
+  .filters-block,
+  .filters-block.open {
+    display: contents;
+  }
+  /* The values of Bootstrap 5.3's .form-control-sm, copied: the box carries its own class below md */
+  .search-box {
+    flex: 0 1 auto;
+    width: auto;
+    min-height: calc(1.5em + 0.5rem + calc(var(--bs-border-width) * 2));
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    border-radius: var(--bs-border-radius-sm);
+  }
 }
 </style>

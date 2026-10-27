@@ -83,7 +83,7 @@ async function loadProfile() {
     // 401 after a successful Keycloak login = signed in, but without the maintenance_team role
     authError.value = err.status === 401
       ? "Your account is not in the maintenance team. Ask IT to add you in Keycloak."
-      : `Could not load your profile: ${err.message}`;
+      : err.message; // plain already: api.js and the server word every text that reaches here (S064 UX-13 row 7)
     return;
   }
   authenticated.value = true;
@@ -108,7 +108,8 @@ export async function initAuth() {
     if (!configRes.ok) throw new Error("Backend returned " + configRes.status);
     config = await configRes.json();
   } catch (err) {
-    authError.value = `Cannot reach the server (${err.message}). Try again shortly.`;
+    console.error("Loading /api/auth/config failed", err);
+    authError.value = "Cannot reach Yantra. Check the network and try again.";
     return;
   }
 

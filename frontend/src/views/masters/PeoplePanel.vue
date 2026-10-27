@@ -15,6 +15,13 @@
  * IT admin any role, an engineer Technician rows at their own site. Rows are saved one by
  * one after the person; the save stops at the first refusal and shows it on that row.
  * A login change (IT admin) sends the whole set with the login, in one request.
+ *
+ * S064: Add person takes sites and roles too (UX-14): the list's own `assignable_site_ids` says
+ * where the viewer may add a row for someone new.  The rows go with the login when one is set,
+ * else one by one after the person is created; a row that fails then turns the dialog into Edit
+ * person, still dirty, with the error on that row.  More than two rows fold to their one-line
+ * text.  Removing a row or changing its role shows what the save will take away (UX-15).
+ * The list has a search (name or login) and a site filter (UX-18).
  */
 import { computed, onMounted, ref } from "vue";
 import { apiDelete, apiGet, apiPost, apiPut } from "../../api";
@@ -33,7 +40,22 @@ const showInactive = ref(false);
 const loadError = ref("");
 const people = ref(null);
 
-const rows = computed(() => (people.value ?? []).filter((p) => showInactive.value || p.active));
+// Where the viewer may add a row for a new person (S064 § 5.6 rule 1); editors only
+const assignableForAdd = ref([]);
+
+// The list's search (name or login; the login is sent to IT admin only) and site filter, on the
+// client: the list is loaded whole.  A site filters by the rows the server lets the viewer see.
+const searchText = ref("");
+const siteFilter = ref("");
+const matchesSearch = (p, text) =>
+  p.name.toLowerCase().includes(text) || (p.username ?? "").toLowerCase().includes(text);
+const rows = computed(() => {
+  const text = searchText.value.trim().toLowerCase();
+  return (people.value ?? []).filter((p) =>
+    (showInactive.value || p.active)
+    && (text === "" || matchesSearch(p, text))
+    && (siteFilter.value === "" || (p.sites ?? []).some((s) => s.site_id === Number(siteFilter.value))));
+});
 
 const EMPLOYMENT_BADGE = { direct: "Direct", contractor: "Contractor" };
 
@@ -57,6 +79,7 @@ async function reload() {
       apiGet(`${PATH}?include_inactive=1`), ensureTrades(refresh), ensureSites(refresh), ensureUnits(refresh),
     ]);
     people.value = list.items;
+    assignableForAdd.value = list.assignable_site_ids ?? [];
   } catch (err) {
     loadError.value = err.message;
   }
@@ -99,9 +122,10 @@ function unitChoices(row) {
 // Fixed when the dialog opens, as the trades above
 const rowHeldUnits = ref(new Map());
 
+// Edit: the person's own field; Add: the list's (no person yet)
 const addableSites = computed(() => {
   const present = new Set(form.value.sites.map((r) => r.site_id));
-  return (editing.value?.assignable_site_ids ?? [])
+  return (editing.value ? editing.value.assignable_site_ids ?? [] : assignableForAdd.value)
     .filter((id) => !present.has(id))
     .map((id) => (sites.value ?? []).find((s) => s.id === id))
     .filter(Boolean);
@@ -114,8 +138,34 @@ function addSite() {
   form.value.sites = [...form.value.sites, {
     site_id: site.id, site_code: site.code, role: TECHNICIAN, all_units: false, unit_ids: [], editable: true,
   }];
+  openRows.value = new Set([...openRows.value, site.id]); // a new row is open
   siteToAdd.value = "";
 }
+
+// More than two rows fold to their one-line text with an Edit link (S064 § 5.6 rule 3); a new
+// row and a row with an error stay open
+const FOLD_ABOVE = 2;
+const openRows = ref(new Set());
+const isRowOpen = (row) =>
+  form.value.sites.length <= FOLD_ABOVE || openRows.value.has(row.site_id) || rowError.value?.siteId === row.site_id;
+function openRow(row) {
+  openRows.value = new Set([...openRows.value, row.site_id]);
+}
+
+// What the save takes away, compared with the rows as loaded (S064 § 5.6 rule 4): a removed row,
+// or a row whose role changed.  No ranking of roles: SITE_ROLES is the dialog's order, not a ladder.
+const accessLines = computed(() => {
+  const now = new Map(form.value.sites.map((r) => [r.site_id, r]));
+  const lines = [];
+  for (const before of editing.value?.sites ?? []) {
+    if (!before.editable) continue;
+    const old = rowForm(before);
+    const current = now.get(before.site_id);
+    if (!current) lines.push(`Saving removes access: ${rowText(old)}.`);
+    else if (current.role !== old.role) lines.push(`Saving changes access: ${rowText(old)} → ${roleLabel(current.role)}.`);
+  }
+  return lines;
+});
 
 function removeSite(row) {
   form.value.sites = form.value.sites.filter((r) => r !== row);
@@ -160,7 +210,8 @@ function toBody(f) {
     body.username = login === "" ? null : login;
   }
   const loginChanges = "username" in body && (editing.value !== null || body.username !== null);
-  if (loginChanges) body.sites = editing.value ? siteRows.map((r) => ({ site_id: r.site_id, ...rowBody(r) })) : [];
+  // The typed rows go with the login, on Add too (S064 UX-14)
+  if (loginChanges) body.sites = siteRows.map((r) => ({ site_id: r.site_id, ...rowBody(r) }));
   return body;
 }
 
@@ -190,13 +241,23 @@ const sameRow = (before, row) =>
   (before.role ?? "") === row.role && before.all_units === row.all_units
   && before.units.map((u) => u.id).sort(byId).join() === row.unit_ids.join();
 
-// Rows already saved stay saved: reload the person so a retry compares with what the server has
-async function refreshEditing(personId) {
+// Rows already saved stay saved: reload the person so a retry compares with what the server has.
+// After Add the person exists now, so the dialog becomes Edit person (S064 § 5.6 rule 2): the
+// form keeps what was typed and stays dirty, so Cancel still asks.
+// The switch does not depend on the list reload: with no connection the reload fails too, and a
+// dialog still reading Add person would create the person a second time on the next Save.
+async function refreshEditing(person) {
   await reload();
-  editing.value = (people.value ?? []).find((p) => p.id === personId) ?? editing.value;
+  editing.value = (people.value ?? []).find((p) => p.id === person.id) ?? person;
+  if (editingId.value === null) {
+    editingId.value = person.id;
+    editingLabel.value = person.name;
+    editingActive.value = Boolean(person.active);
+  }
 }
 
-async function saveRows(personId) {
+async function saveRows(person) {
+  const personId = person.id;
   const original = new Map((editing.value?.sites ?? []).map((r) => [r.site_id, r]));
   const current = new Set(form.value.sites.map((r) => r.site_id));
   const steps = [];
@@ -213,7 +274,7 @@ async function saveRows(personId) {
       await request();
     } catch (err) {
       rowError.value = { siteId, message: err.message };
-      await refreshEditing(personId);
+      await refreshEditing(person);
       err.field = "sites"; // shown on the row, not at the top of the dialog
       throw err;
     }
@@ -225,7 +286,8 @@ function save() {
   const body = toBody(form.value);
   return send(async () => {
     const person = editingId.value === null ? await apiPost(PATH, body) : await apiPut(`${PATH}/${editingId.value}`, body);
-    if (editingId.value !== null && !("sites" in body)) await saveRows(person.id);
+    // Without a login the rows are saved one by one after the person, on Add too (S064 UX-14)
+    if (!("sites" in body)) await saveRows(person);
     return person;
   });
 }
@@ -235,6 +297,8 @@ function add() {
   heldInactiveIds.value = new Set();
   rowHeldUnits.value = new Map();
   rowError.value = null;
+  openRows.value = new Set();
+  siteToAdd.value = "";
   openCreate();
 }
 
@@ -243,6 +307,7 @@ function edit(p) {
   heldInactiveIds.value = new Set(p.trades.filter((x) => !x.active).map((x) => x.id));
   rowHeldUnits.value = new Map((p.sites ?? []).map((r) => [r.site_id, r.units.map((u) => u.id)]));
   rowError.value = null;
+  openRows.value = new Set();
   siteToAdd.value = "";
   openEdit(p);
 }
@@ -259,9 +324,20 @@ onMounted(reload);
 
 <template>
   <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span><i class="fa-solid fa-people-group me-2"></i>Team</span>
-      <div class="d-flex align-items-center gap-3">
+      <div class="d-flex align-items-center flex-wrap gap-3">
+        <input
+          v-model="searchText"
+          class="form-control form-control-sm w-auto"
+          type="search"
+          :placeholder="canEditLogin ? 'Search name or login' : 'Search name'"
+          aria-label="Search people"
+        />
+        <select v-if="canEdit" v-model="siteFilter" class="form-select form-select-sm w-auto" aria-label="Filter by site">
+          <option value="">All sites</option>
+          <option v-for="s in sites ?? []" :key="s.id" :value="s.id">{{ s.code }}</option>
+        </select>
         <div class="form-check form-switch mb-0">
           <input id="people-inactive" v-model="showInactive" class="form-check-input" type="checkbox" />
           <label class="form-check-label small" for="people-inactive">Show inactive</label>
@@ -274,7 +350,9 @@ onMounted(reload);
     <div class="card-body">
       <div v-if="loadError" class="alert alert-danger">{{ loadError }}</div>
       <div v-if="people === null && !loadError" class="text-secondary">Loading…</div>
-      <div v-else-if="rows.length === 0 && !loadError" class="text-secondary">No people yet.</div>
+      <div v-else-if="rows.length === 0 && !loadError" class="text-secondary">
+        {{ searchText.trim() || siteFilter ? "No one matches this search." : "No people yet." }}
+      </div>
       <div v-else-if="rows.length" class="table-responsive">
         <table class="table table-sm align-middle mb-0">
           <thead>
@@ -388,65 +466,67 @@ onMounted(reload);
 
     <div class="mb-0">
       <div class="form-label">Sites and roles</div>
-      <div v-if="editingId === null" class="text-secondary small">Save the person first, then add their sites and roles.</div>
-      <template v-else>
-        <div v-if="fieldError('sites') && !rowError" class="alert alert-danger py-2">{{ fieldError("sites") }}</div>
-        <div v-if="form.sites.length === 0" class="text-secondary small mb-2">No sites.</div>
-        <div v-for="row in form.sites" :key="row.site_id" class="border rounded p-2 mb-2">
-          <template v-if="row.editable">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <strong>{{ row.site_code }}</strong>
-              <select
-                class="form-select form-select-sm w-auto"
-                :aria-label="`Role at ${row.site_code}`"
-                :value="row.role"
-                @change="changeRole(row, $event.target.value)"
-              >
-                <option v-if="!roleChoices.some((r) => r.value === row.role)" :value="row.role" disabled>
-                  {{ row.role ? roleLabel(row.role) : "Choose a role" }}
-                </option>
-                <option v-for="r in roleChoices" :key="r.value" :value="r.value">{{ r.label }}</option>
-              </select>
-              <div class="form-check form-switch mb-0">
-                <input :id="`site-${row.site_id}-all`" class="form-check-input" type="checkbox" :checked="row.all_units" @change="toggleAllUnits(row)" />
-                <label class="form-check-label small" :for="`site-${row.site_id}-all`">All units</label>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-danger ms-auto" title="Remove this site" @click="removeSite(row)">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
+      <div v-if="fieldError('sites') && !rowError" class="alert alert-danger py-2">{{ fieldError("sites") }}</div>
+      <div v-if="form.sites.length === 0" class="text-secondary small mb-2">No sites.</div>
+      <div v-for="row in form.sites" :key="row.site_id" class="border rounded p-2 mb-2">
+        <div v-if="row.editable && !isRowOpen(row)" class="d-flex align-items-center gap-2">
+          <span class="small">{{ rowText(row) }}</span>
+          <button type="button" class="btn btn-link btn-sm p-0 ms-auto" @click="openRow(row)">Edit</button>
+        </div>
+        <template v-else-if="row.editable">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <strong>{{ row.site_code }}</strong>
+            <select
+              class="form-select form-select-sm w-auto"
+              :aria-label="`Role at ${row.site_code}`"
+              :value="row.role"
+              @change="changeRole(row, $event.target.value)"
+            >
+              <option v-if="!roleChoices.some((r) => r.value === row.role)" :value="row.role" disabled>
+                {{ row.role ? roleLabel(row.role) : "Choose a role" }}
+              </option>
+              <option v-for="r in roleChoices" :key="r.value" :value="r.value">{{ r.label }}</option>
+            </select>
+            <div class="form-check form-switch mb-0">
+              <input :id="`site-${row.site_id}-all`" class="form-check-input" type="checkbox" :checked="row.all_units" @change="toggleAllUnits(row)" />
+              <label class="form-check-label small" :for="`site-${row.site_id}-all`">All units</label>
             </div>
-            <div class="d-flex flex-wrap gap-3">
-              <div v-for="u in unitChoices(row)" :key="u.id" class="form-check mb-0" :class="{ 'text-secondary': !u.active }">
-                <input
-                  :id="`site-${row.site_id}-unit-${u.id}`"
-                  class="form-check-input"
-                  type="checkbox"
-                  :checked="row.unit_ids.includes(u.id)"
-                  :disabled="row.all_units"
-                  @change="toggleUnit(row, u.id)"
-                />
-                <label class="form-check-label small" :for="`site-${row.site_id}-unit-${u.id}`">{{ u.code }}<span v-if="!u.active"> (inactive)</span></label>
-              </div>
+            <button type="button" class="btn btn-sm btn-outline-danger ms-3" @click="removeSite(row)">Remove</button>
+          </div>
+          <div class="d-flex flex-wrap gap-3">
+            <div v-for="u in unitChoices(row)" :key="u.id" class="form-check mb-0" :class="{ 'text-secondary': !u.active }">
+              <input
+                :id="`site-${row.site_id}-unit-${u.id}`"
+                class="form-check-input"
+                type="checkbox"
+                :checked="row.unit_ids.includes(u.id)"
+                :disabled="row.all_units"
+                @change="toggleUnit(row, u.id)"
+              />
+              <label class="form-check-label small" :for="`site-${row.site_id}-unit-${u.id}`">{{ u.code }}<span v-if="!u.active"> (inactive)</span></label>
             </div>
-          </template>
-          <div v-else class="small">{{ rowText(row) }}</div>
-          <div v-if="rowError?.siteId === row.site_id" class="invalid-feedback d-block mt-1">{{ rowError.message }}</div>
-        </div>
-        <div v-if="rowError && !form.sites.some((r) => r.site_id === rowError.siteId)" class="invalid-feedback d-block mb-2">
-          {{ rowError.message }}
-        </div>
-        <div v-if="addableSites.length" class="d-flex gap-2">
-          <select v-model="siteToAdd" class="form-select form-select-sm w-auto" aria-label="Site to add">
-            <option value="">Add a site…</option>
-            <option v-for="s in addableSites" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
-          </select>
-          <button type="button" class="btn btn-sm btn-outline-primary" :disabled="!siteToAdd" @click="addSite">Add</button>
-        </div>
-        <div v-if="loginChanging" class="alert alert-warning py-2 mt-2 mb-0 small">
-          Adding this login gives access as:
-          {{ form.sites.length ? form.sites.map(rowText).join("; ") : "nothing yet (no sites)" }}.
-        </div>
-      </template>
+          </div>
+        </template>
+        <div v-else class="small">{{ rowText(row) }}</div>
+        <div v-if="rowError?.siteId === row.site_id" class="invalid-feedback d-block mt-1">{{ rowError.message }}</div>
+      </div>
+      <div v-if="rowError && !form.sites.some((r) => r.site_id === rowError.siteId)" class="invalid-feedback d-block mb-2">
+        {{ rowError.message }}
+      </div>
+      <div v-if="addableSites.length" class="d-flex gap-2">
+        <select v-model="siteToAdd" class="form-select form-select-sm w-auto" aria-label="Site to add">
+          <option value="">Add a site…</option>
+          <option v-for="s in addableSites" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-outline-primary" :disabled="!siteToAdd" @click="addSite">Add</button>
+      </div>
+      <div v-if="loginChanging" class="alert alert-warning py-2 mt-2 mb-0 small">
+        Adding this login gives access as:
+        {{ form.sites.length ? form.sites.map(rowText).join("; ") : "nothing yet (no sites)" }}.
+      </div>
+      <div v-if="accessLines.length" class="alert alert-warning py-2 mt-2 mb-0 small" data-test="access-lines">
+        <div v-for="line in accessLines" :key="line">{{ line }}</div>
+      </div>
     </div>
   </FormModal>
 </template>

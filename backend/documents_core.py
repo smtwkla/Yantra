@@ -29,7 +29,7 @@ _KIND_TYPES = {
     "photo": ("jpeg", "png", "webp"),
 }
 
-TYPE_REFUSED = "Only PDF documents and JPEG, PNG or WebP photos"
+TYPE_REFUSED = "This file can't be added. Use a PDF, or a JPEG, PNG or WebP photo."
 
 # How many first bytes detect_file_type needs (WebP: RIFF, 4 size bytes, WEBP)
 SIGNATURE_BYTES = 12
@@ -161,13 +161,14 @@ def make_thumbnail(data):
         img = Image.open(BytesIO(data), formats=["JPEG", "PNG", "WEBP"])
     except Image.DecompressionBombError as exc:
         # Pillow's own limit (about 179 MP) — a backstop behind the cap below
-        raise PhotoTooLarge(f"Photo too large (over {MAX_MEGAPIXELS} megapixels)") from exc
+        raise PhotoTooLarge("Photo too large. Take it at a lower resolution.") from exc
     except (OSError, ValueError, SyntaxError):
         return None
     with img:
         width, height = img.size
         if width * height > _MAX_PIXELS:
-            raise PhotoTooLarge(f"Photo too large ({_megapixels(width * height)} megapixels)")
+            raise PhotoTooLarge(f"Photo too large ({_megapixels(width * height)} megapixels). "
+                               "Take it at a lower resolution.")
         try:
             img.thumbnail(THUMB_BOX)
             upright = ImageOps.exif_transpose(img)

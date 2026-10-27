@@ -59,6 +59,10 @@ TOKEN_LEEWAY_S = 30
 
 # The answer when Keycloak's key list cannot be fetched (503, S059 § 1.2)
 LOGIN_SERVER_DOWN_TEXT = "Sign-in cannot be checked right now. The login server does not answer. Try again in a minute."
+# The plain texts of a 403 and a 401 (S064 UX-13): the key needed goes to the log and the access
+# log (_log_denied), never to the screen
+FORBIDDEN_TEXT = "You don't have permission for this. Ask your engineer or IT."
+SIGN_IN_EXPIRED_TEXT = "Your sign-in has expired. Sign out, then sign in again."
 
 
 class LoginServerUnavailable(Exception):
@@ -274,7 +278,7 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
             factory = current_app.config.get("TEST_USER_FACTORY")
             if factory is None:
                 g.access_outcome = "auth_failed"
-                return jsonify({"error": "Unauthorized"}), 401
+                return jsonify({"error": SIGN_IN_EXPIRED_TEXT}), 401
             g.user = factory(test_role, request.headers.get("X-Test-User"), request.headers.get("X-Test-Email", ""))
             return None
 
@@ -292,7 +296,7 @@ def require_auth(realm_url, client_id, internal_realm_url=None, dev_bypass=False
         if user is None:
             logger.warning("Auth failed for %s %s", request.method, request.path)
             g.access_outcome = "auth_failed"
-            return jsonify({"error": "Unauthorized"}), 401
+            return jsonify({"error": SIGN_IN_EXPIRED_TEXT}), 401
 
         g.user = user
         return None  # continue to the route
@@ -488,10 +492,6 @@ def _log_denied(perm_key):
     g.access_outcome, g.access_detail = "denied_perm", perm_key
 
 
-def _forbidden_message(perm_key):
-    return f"Forbidden: requires '{perm_key}'"
-
-
 def require_perm(perm_key):
     """Route decorator — returns 403 if the user lacks the permission everywhere.
     Place immediately after @bp.route().  Site-scoped keys are checked again at the
@@ -502,7 +502,7 @@ def require_perm(perm_key):
         def wrapper(*args, **kwargs):
             if not has_perm(perm_key):
                 _log_denied(perm_key)
-                return jsonify({"error": _forbidden_message(perm_key)}), 403
+                return jsonify({"error": FORBIDDEN_TEXT}), 403
             return fn(*args, **kwargs)
         return wrapper
     return decorator
@@ -514,4 +514,4 @@ def check_perm(perm_key):
     from api_common import ApiError
     if not has_perm(perm_key):
         _log_denied(perm_key)
-        raise ApiError(_forbidden_message(perm_key), 403)
+        raise ApiError(FORBIDDEN_TEXT, 403)

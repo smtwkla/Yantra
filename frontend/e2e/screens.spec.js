@@ -9,6 +9,8 @@ const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager",
 // ticket:read and ticket:raise: every site role but the storekeeper, and IT admin (config_rbac)
 const TICKET_ROLES = EVERYONE.filter((key) => key !== "storekeeper");
 const SETTINGS_ROLES = ["manager", "it_admin"];
+// S064 UX-12: Masters is for the holders of an edit key on masters data
+const MASTERS_ROLES = ["engineer", "manager", "it_admin"];
 
 let seed;
 let ticket;
@@ -31,7 +33,8 @@ function topbarTitle(page) {
 
 // path, title in the top bar, what else must show (given the page and the role), who may open it
 const screens = () => [
-  { path: "/equipment", title: "Equipment", shows: (page) => page.getByRole("button", { name: /Print asset list/ }), who: EVERYONE },
+  // S064: the search shows on every width (Print asset list is the office's, from md up)
+  { path: "/equipment", title: "Equipment", shows: (page) => page.getByRole("searchbox", { name: "Search" }), who: EVERYONE },
   {
     path: `/equipment/${seed.extruder.id}`, title: "Equipment",
     shows: (page) => page.getByRole("heading", { name: `${seed.extruder.code} — ${seed.extruder.name}` }), who: EVERYONE,
@@ -67,8 +70,9 @@ const screens = () => [
   },
   { path: `/labels?ids=${seed.extruder.id}&parts=1`, title: "QR labels", shows: (page) => page.getByText("2 labels on 1 sheet"), who: EVERYONE },
   { path: "/asset-list", title: "Asset list", shows: (page) => page.getByRole("heading", { name: "SMTW.MCC2", exact: false }), who: EVERYONE },
-  { path: "/masters", title: "Masters", shows: (page) => page.getByRole("button", { name: "Sites" }), who: EVERYONE },
-  { path: "/settings", title: "Settings", shows: (page) => page.getByText("Database", { exact: true }).first(), who: SETTINGS_ROLES },
+  { path: "/masters", title: "Masters", shows: (page) => page.getByRole("button", { name: "Sites" }), who: MASTERS_ROLES },
+  // S064 UX-19: a card every settings role sees (Database is IT's alone now)
+  { path: "/settings", title: "Settings", shows: (page) => page.getByText("Removed documents").first(), who: SETTINGS_ROLES },
   // S021: push:subscribe is every role's ('*'); the card shows for every state of the device
   {
     path: "/notifications", title: "My notifications",

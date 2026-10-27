@@ -17,11 +17,11 @@ const pages = computed(() => Math.ceil(props.total / props.perPage));
 
 <template>
   <div v-if="total > 0" class="d-flex justify-content-end align-items-center gap-3 mt-3">
-    <button class="btn btn-sm btn-outline-secondary" :disabled="page <= 1" @click="emit('page', Math.min(page - 1, pages))">
+    <button type="button" class="btn btn-outline-secondary tap-target" :disabled="page <= 1" @click="emit('page', Math.min(page - 1, pages))">
       <i class="fa-solid fa-chevron-left me-1"></i>Prev
     </button>
     <span class="small">Page {{ page }} of {{ pages }} ({{ total }})</span>
-    <button class="btn btn-sm btn-outline-secondary" :disabled="page >= pages" @click="emit('page', page + 1)">
+    <button type="button" class="btn btn-outline-secondary tap-target" :disabled="page >= pages" @click="emit('page', page + 1)">
       Next<i class="fa-solid fa-chevron-right ms-1"></i>
     </button>
   </div>

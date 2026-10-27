@@ -10,15 +10,21 @@ import { apiGet } from "../../api";
 import PagerBar from "../../components/PagerBar.vue";
 import { useDebounced } from "../../composables/useDebounced";
 import { formatDateTime } from "../../utils/datetime";
+import { displayRoleLabel } from "../../utils/siteRoles";
 
 const PAGE_SIZE = 50; // sent explicitly, so the pager and the request agree if the API default changes
 
 const OUTCOME_LABELS = {
-  ok: { text: "Let in", badge: "text-bg-success" },
+  ok: { text: "Allowed", badge: "text-bg-success" },
   auth_failed: { text: "Login failed", badge: "text-bg-warning" },
   denied_network: { text: "Refused: network", badge: "text-bg-danger" },
   denied_perm: { text: "Refused: permission", badge: "text-bg-secondary" },
 };
+
+// A refusal by permission logs the key it needed (auth_utils._log_denied); a business refusal its
+// own text, shown as it is (S064 UX-26)
+const PERMISSION_KEY = /^[a-z_]+:[a-z_]+$/;
+const detailText = (detail) => (PERMISSION_KEY.test(detail) ? `Needed: ${detail}` : detail);
 
 const result = ref(null); // {items, total, page, per_page}
 const loading = ref(false);
@@ -135,7 +141,7 @@ onMounted(load);
                 <td>
                   <span v-if="item.username">{{ item.username }}</span>
                   <span v-else class="text-secondary">—</span>
-                  <div v-if="item.role" class="small text-secondary">{{ item.role }}</div>
+                  <div v-if="item.role" class="small text-secondary">{{ displayRoleLabel(item.role) }}</div>
                 </td>
                 <td class="text-nowrap">
                   {{ item.client_ip || "unknown" }}
@@ -145,7 +151,7 @@ onMounted(load);
                 </td>
                 <td>
                   <span class="badge" :class="outcome(item).badge">{{ outcome(item).text }}</span>
-                  <div v-if="item.detail" class="small text-secondary text-break">{{ item.detail }}</div>
+                  <div v-if="item.detail" class="small text-secondary text-break">{{ detailText(item.detail) }}</div>
                 </td>
                 <td class="text-break">
                   <span class="small">{{ item.method }} {{ item.path }}</span>

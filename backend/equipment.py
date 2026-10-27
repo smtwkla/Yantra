@@ -128,7 +128,7 @@ from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets
 equipment_bp = Blueprint("equipment", __name__)
 
 UNIQUE_KEY_ERRORS.update({
-    "uq_equipment_code": (None, "Code collision — retry"),
+    "uq_equipment_code": (None, "Could not give a code. Press Save again."),
 })
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -383,7 +383,7 @@ def _lock_target_unit(cur, unit_id, key):
     cur.execute(_LOCK_UNIT, (unit_id,))
     unit = cur.fetchone()
     if unit is None:
-        raise ApiError("Unknown unit", 400, "unit_id")
+        raise ApiError("That unit no longer exists. Reload and try again.", 400, "unit_id")
     if not unit["active"]:
         raise ApiError("The unit is inactive", 409, "unit_id")
     if not _can_access(cur, unit_id):

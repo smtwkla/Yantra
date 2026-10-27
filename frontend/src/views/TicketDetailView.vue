@@ -161,7 +161,7 @@ async function load() {
     // A failed reload (e.g. after a 409) keeps the ticket shown, so the open dialog is not torn
     // down mid-modal (CR4-03); only "gone" or "not allowed" clears it. Another ticket's data is never kept.
     if (err.status === 404) { ticket.value = null; notFound.value = true; }
-    else if (err.status === 403) { ticket.value = null; forbidden.value = true; } // no ticket:read: the API's text names a permission key
+    else if (err.status === 403) { ticket.value = null; forbidden.value = true; } // no ticket:read: the screen says it in its own words
     else {
       if (String(ticket.value?.id) !== String(id)) ticket.value = null;
       loadError.value = err.message;

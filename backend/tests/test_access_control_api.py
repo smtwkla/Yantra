@@ -197,7 +197,7 @@ class TestNetworkSetting:
         networks_setting(DEFAULT_INTERNAL_NETWORKS)
         res = role_client("it_admin").put(NETWORK, json={"networks": "192.168.0.0/16"})
         assert res.status_code == 400
-        assert "This would block your own address (10.0.0.5)" in res.get_json()["error"]
+        assert res.get_json()["error"] == "Your own address 10.0.0.5 is not in the list. Add its range."
         stored = db_rows("SELECT setting_value FROM app_settings WHERE setting_key = 'internal_networks'")
         assert stored[0]["setting_value"] == DEFAULT_INTERNAL_NETWORKS
 

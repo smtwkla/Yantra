@@ -1,8 +1,11 @@
 <script setup>
 /**
- * Topbar — page title, the notifications bell, username, and logout.
+ * Topbar — page title, the notifications bell, username, and Sign out.
  * The bell (S021 § 1.3) opens My notifications. It shows to people with push:subscribe, and its
  * dot when this device needs turning on (stores/notifications.js decides).
+ * Yantra runs on shared phones and kiosks, so the name is plain dark text and Sign out a
+ * labelled 44 px button on every width (S064 UX-02; Plan.MD § 3 Shared-device login), a
+ * deliberate departure from the base's "logout as an icon button" Topbar rule.
  */
 import { computed } from "vue";
 import { useRoute } from "vue-router";
@@ -32,9 +35,9 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
         <i class="fa-solid fa-bell"></i>
         <span v-if="showDot" class="bell-dot"><span class="visually-hidden">Turn notifications on</span></span>
       </router-link>
-      <span class="user-name text-secondary me-2">{{ userName }}</span>
-      <button class="btn btn-sm btn-outline-secondary" @click="logout" title="Logout">
-        <i class="fa-solid fa-right-from-bracket"></i>
+      <span class="user-name text-body me-2" data-test="user-name">{{ userName }}</span>
+      <button type="button" class="btn btn-outline-secondary tap-target sign-out" @click="logout">
+        <i class="fa-solid fa-right-from-bracket me-1"></i>Sign out
       </button>
     </div>
   </header>
@@ -55,20 +58,31 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
   font-weight: 600;
   font-size: 1rem;
   color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .topbar-right {
   display: flex;
   align-items: center;
   min-width: 0;
 }
-/* A long name gives way, so the bell and Logout always fit a phone's width */
+/* A long name gives way, so the bell and Sign out always fit a phone's width */
 .user-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A 44 px tap target (a gloved thumb), drawn without a border so it sits in the 42 px bar */
+/* The button never loses its word (S064 § 5.2 rule 1) */
+.sign-out {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+/* A 44 px tap target (a gloved thumb), drawn without a border so it sits in the 48 px bar */
 .bell {
   position: relative;
   display: inline-flex;

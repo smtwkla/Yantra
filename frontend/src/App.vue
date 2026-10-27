@@ -45,12 +45,12 @@ watch(userPermissions, (perms) => {
     <div class="card auth-error-card">
       <div class="card-body text-center">
         <h5 class="card-title"><i class="fa-solid fa-network-wired me-2 text-secondary"></i>Yantra</h5>
-        <p class="card-text">{{ networkDenied.message }}.</p>
+        <p class="card-text">{{ networkDenied.message }}</p>
         <p class="card-text text-secondary small">
           The server saw your address as <strong>{{ networkDenied.ip || "unknown" }}</strong>.
           Connect to the plant network (Wi-Fi or VPN) and reload the page.
         </p>
-        <button class="btn btn-sm btn-outline-secondary" @click="logout">
+        <button type="button" class="btn btn-outline-secondary tap-target" @click="logout">
           <i class="fa-solid fa-right-from-bracket me-1"></i>Sign out
         </button>
       </div>
@@ -75,7 +75,7 @@ watch(userPermissions, (perms) => {
       <div class="card-body text-center">
         <h5 class="card-title">Yantra</h5>
         <p class="card-text text-secondary">{{ authError }}</p>
-        <button class="btn btn-sm btn-outline-secondary" @click="logout">
+        <button type="button" class="btn btn-outline-secondary tap-target" @click="logout">
           <i class="fa-solid fa-right-from-bracket me-1"></i>Sign out
         </button>
       </div>
@@ -118,6 +118,7 @@ watch(userPermissions, (perms) => {
 @media (max-width: 576px) {
   .app-main { margin-left: 0; }
   .topbar-desktop { display: none; }
-  .topbar-mobile { display: flex; margin: -1.5rem -1.5rem 1rem -1.5rem; }
+  /* The top margin cancels .app-content's 0.5rem top padding: more would cut the bar's top off (S064) */
+  .topbar-mobile { display: flex; margin: -0.5rem -1.5rem 1rem -1.5rem; }
 }
 </style>

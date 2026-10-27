@@ -78,6 +78,20 @@ class TestEquipmentType:
         _, errors = validate_equipment_type({}, creating=True)
         assert sorted(_fields(errors)) == ["class_id", "name"]
 
+    def test_a_missing_or_bad_class_reads_as_a_choice(self):
+        # S064 UX-13 row 20: a record select says what to do, sent or not; other fields keep theirs
+        _, errors = validate_equipment_type({}, creating=True)
+        assert {"field": "class_id", "message": "Choose a class."} in errors
+        assert {"field": "name", "message": "Name is required"} in errors
+        assert validate_equipment_type({"class_id": None, "name": "x"}, creating=True)[1] == [
+            {"field": "class_id", "message": "Choose a class."}]
+        _, errors = validate_equipment_model({}, creating=True)
+        assert {"field": "manufacturer_id", "message": "Choose a manufacturer."} in errors
+
+    def test_reserved_name_says_what_to_do(self):
+        _, errors = validate_equipment_type({"class_id": 3, "name": "none"}, creating=True)
+        assert errors == [{"field": "name", "message": 'Choose another name; "none" is reserved.'}]
+
     @pytest.mark.parametrize("name", ["", "   ", None, 5, "x" * 101])
     def test_bad_name(self, name):
         _, errors = validate_equipment_type({"class_id": 3, "name": name}, creating=True)
@@ -623,6 +637,12 @@ class TestFailureCode:
     def test_refused(self, validate, extra, code):
         _, errors = validate({"code": code, "label": "Noise", **extra}, creating=True)
         assert _fields(errors) == ["code"]
+
+    def test_refusal_text_shows_the_form(self):
+        # S064 UX-13 row 15
+        _, errors = validate_failure_cause({"code": "N-OI", "label": "Noise", "cause_group": "design"},
+                                           creating=True)
+        assert errors[0]["message"] == "Use up to 8 letters or digits, parts joined by a dot, e.g. NOI or 3.4."
 
 
 class TestFailureLabelAndDescription:

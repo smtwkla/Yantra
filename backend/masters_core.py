@@ -104,7 +104,7 @@ def _parse_category_name(raw):
 def _parse_type_name(raw):
     name = parse_name(raw)
     if name.lower() == RESERVED_TYPE_NAME:
-        raise ValueError(f'The name "{RESERVED_TYPE_NAME}" is reserved; history uses it for no type')
+        raise ValueError(f'Choose another name; "{RESERVED_TYPE_NAME}" is reserved.')
     return name
 
 
@@ -137,10 +137,15 @@ def _flag_parser(label):
 _parse_active = _flag_parser("Active")
 
 
+def _choose_text(label):
+    """The refusal of a missing record select (S064 UX-13 row 20): what to do, not what is wrong."""
+    return f"Choose a {label.lower()}."
+
+
 def _parse_id(label):
     def parse(raw):
         if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
-            raise ValueError(f"{label} is required")
+            raise ValueError(_choose_text(label))
         return raw
     return parse
 
@@ -212,8 +217,7 @@ _MODEL_FIELDS = {
 def _parse_failure_code(raw):
     code = raw.strip().upper() if isinstance(raw, str) else ""
     if not (len(code) <= FAILURE_CODE_MAX and FAILURE_CODE_RE.match(code)):
-        raise ValueError(f"Code must be 1–{FAILURE_CODE_MAX} characters: letters and digits, "
-                         "parts joined by single dots (e.g. NOI, 3.4)")
+        raise ValueError(f"Use up to {FAILURE_CODE_MAX} letters or digits, parts joined by a dot, e.g. NOI or 3.4.")
     return code
 
 
@@ -295,12 +299,19 @@ _PERSON_FIELDS = {
 }
 
 
+def _missing_text(field):
+    """A required field not sent: a record select (``*_id``) reads as a choice, as _parse_id."""
+    if field.endswith("_id"):
+        return _choose_text(field.removesuffix("_id").replace("_", " "))
+    return f"{field.replace('_', ' ').capitalize()} is required"
+
+
 def _validate(data, fields, creating):
     clean, errors = {}, []
     for field, (parse, required) in fields.items():
         if field not in data:
             if creating and required:
-                errors.append({"field": field, "message": f"{field.replace('_', ' ').capitalize()} is required"})
+                errors.append({"field": field, "message": _missing_text(field)})
             continue
         try:
             clean[field] = parse(data[field])

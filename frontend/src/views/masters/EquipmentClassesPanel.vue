@@ -137,7 +137,7 @@ onMounted(reload);
         <option v-for="c in categoryChoices" :key="c.id" :value="c.id">{{ c.name }}{{ c.active ? "" : " (inactive)" }}</option>
       </select>
       <div v-if="fieldError('category_id')" class="invalid-feedback d-block">{{ fieldError("category_id") }}</div>
-      <div class="form-text">The group this class belongs to, e.g. Lifting equipment. Add categories in Equip Category.</div>
+      <div class="form-text">The group this class belongs to, e.g. Lifting equipment. Add categories in Masters › Categories.</div>
     </div>
   </FormModal>
 </template>

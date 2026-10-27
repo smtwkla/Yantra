@@ -25,6 +25,7 @@ import { useDebounced } from "../composables/useDebounced";
 import { userPermissions, userPersonId } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits, noUnits } from "../stores/equipment";
 import { ensureSites, ensureUnits, sites, units } from "../stores/masters";
+import { NO_UNITS_TEXT } from "../utils/messages";
 import { INTENSITY_FILTERS, STATE_FILTERS } from "../utils/ticketLabels";
 
 const PAGE_SIZE = 50; // the API default
@@ -168,7 +169,7 @@ watch(() => route.fullPath, load);
       <button class="btn btn-outline-danger" @click="load">Retry</button>
     </div>
     <div v-else-if="loading && !page" class="text-secondary">Loading…</div>
-    <div v-else-if="noUnits" class="text-secondary">You have no units assigned — ask IT admin for unit access.</div>
+    <div v-else-if="noUnits" class="text-secondary">{{ NO_UNITS_TEXT }}</div>
     <div v-else-if="page && page.total === 0" class="text-secondary">
       {{ hasFilters ? "No tickets match these filters." : "No open tickets." }}
     </div>

@@ -99,6 +99,15 @@ always shows who is logged in, with a large logout button. The Keycloak
 settings and the full requirements (usernames, password policy, lockout,
 leavers, inactivity) are in `docs/Keycloak.md` § 5–6.
 
+**What each role sees in the menus** (decided 28-10-2026, S064, from the UX audit). *Masters*
+shows in the nav only to holders of an edit key on masters data (`masters:edit`,
+`equipment:edit`, `people:edit`, `failure_codes:edit`: engineer, manager, IT admin); the floor
+roles still read the same lists where they work (equipment page, ticket pick-lists), and
+`masters:read` stays every role's for those pick-lists. Settings shows the *Database* and
+*Background tasks* cards only with `settings:edit` (IT admin); a manager sees *Removed
+documents* first. Sign out is a labelled button of at least 44 px on every width (shared
+devices), a departure from the base's Topbar rule.
+
 The full permission matrix (`config_rbac.py`, `module:action` keys) is written
 with each module. First cut of the main keys:
 

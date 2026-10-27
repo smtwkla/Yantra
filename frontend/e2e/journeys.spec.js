@@ -10,6 +10,7 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, openDialog } from "./support/dialogs.js";
 import { meterMachine } from "./support/meters.js";
 import { apiAs, asPerson } from "./support/people.js";
+import { navItem } from "./support/nav.js";
 import { card, istLocal, openAction, saveDialog, setEventTime, stateBadge, thisMinute, timeline } from "./support/tickets.js";
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
@@ -162,7 +163,7 @@ test("S047 journey 2: a breakdown from raise to close: assigned, worked with lab
 
   // The operator's Me screen lists it under Closed
   await asPerson(page, "operator", "/equipment");
-  await page.getByRole("button", { name: "Me", exact: true }).click();
+  await navItem(page, "Me").click();
   await expect(page.getByRole("button", { name: "Raised by me", exact: true })).toHaveAttribute("aria-current", "page");
   await page.getByRole("combobox", { name: "State" }).selectOption("closed");
   await expect(page.locator(".list-group-item").filter({ hasText: serial })).toContainText("Closed");

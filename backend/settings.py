@@ -282,8 +282,10 @@ def put_network():
     ip = client_ip()
     # The lock-out guard protects the saver only; admin may save anything (S013 § 5.2)
     if "admin" not in g.user["roles"] and not is_internal(ip, networks):
-        raise ApiError(f"This would block your own address ({ip or 'unknown'}) — check every site's range "
-                       "before saving", 400, "networks")
+        if not ip:
+            raise ApiError("Yantra cannot see your address. Save from a computer on the plant network.",
+                           400, "networks")
+        raise ApiError(f"Your own address {ip} is not in the list. Add its range.", 400, "networks")
     value = format_networks(networks)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:

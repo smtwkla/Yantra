@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 INTERNAL_NETWORKS_KEY = "internal_networks"
 
-NETWORK_DENIED_MESSAGE = "Yantra can be used from the plant network only for your role"
+NETWORK_DENIED_MESSAGE = "Your role can use Yantra only on the plant network."
 
 # In dev (no Nginx) a missing X-Real-IP falls back to the socket address, so the dev server
 # works on localhost.  Production always has X-Real-IP from Nginx; the tests turn it off.

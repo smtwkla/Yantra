@@ -23,12 +23,13 @@ import PropertiesPanel from "./masters/PropertiesPanel.vue";
 import TradesPanel from "./masters/TradesPanel.vue";
 import UnitsPanel from "./masters/UnitsPanel.vue";
 
+// The section names spelled out (S064 UX-25): one term for one thing across the screens
 const sections = [
   { key: "sites", icon: "fa-solid fa-location-dot", label: "Sites", perm: "masters:read" },
   { key: "units", icon: "fa-solid fa-warehouse", label: "Units", perm: "masters:read" },
-  { key: "categories", icon: "fa-solid fa-layer-group", label: "Equip Category", perm: "masters:read" },
-  { key: "classes", icon: "fa-solid fa-shapes", label: "Equip Class", perm: "masters:read" },
-  { key: "types", icon: "fa-solid fa-sitemap", label: "Equip Type", perm: "masters:read" },
+  { key: "categories", icon: "fa-solid fa-layer-group", label: "Categories", perm: "masters:read" },
+  { key: "classes", icon: "fa-solid fa-shapes", label: "Classes", perm: "masters:read" },
+  { key: "types", icon: "fa-solid fa-sitemap", label: "Types", perm: "masters:read" },
   { key: "manufacturers", icon: "fa-solid fa-industry", label: "Manufacturers", perm: "masters:read" },
   { key: "models", icon: "fa-solid fa-tag", label: "Models", perm: "masters:read" },
   { key: "properties", icon: "fa-solid fa-list-ul", label: "Properties", perm: "masters:read" },

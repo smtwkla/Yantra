@@ -54,7 +54,8 @@ test("15 labels fill one sheet; 16 make two sheets", async ({ page }) => {
   await expect(first.locator(".label-site")).toHaveText("SMTW");
 });
 
-test("labels printed from the equipment list's ticks", async ({ page }) => {
+test("labels printed from the equipment list's ticks", { tag: "@device" }, async ({ page }) => {
+  test.skip(page.viewportSize().width < 768, "the label ticks and Print labels are hidden on a phone (S064 D12)");
   await asPerson(page, "engineer", "/equipment");
   await page.getByLabel(`Select ${seed.extruder.code} for labels`).check();
   const [labelsTab] = await Promise.all([
@@ -82,4 +83,25 @@ test("a label's link /e/<code> opens the equipment page", async ({ page }) => {
   await asPerson(page, "operator", `/e/${seed.extruder.code}`);
   await expect(page).toHaveURL(new RegExp(`/equipment/${seed.extruder.id}$`));
   await expect(page.getByRole("heading", { name: `${seed.extruder.code} — ${seed.extruder.name}` })).toBeVisible();
+});
+
+// S064 UX-03: a printed label exists, so a code the user may not open is never "doesn't exist"
+test("S064: /e/<code> of a machine outside the user's units shows the code, not found or not at your units, and Go to equipment list", async ({ page, consoleWatch }) => {
+  consoleWatch.allowFailedRequest("/api/equipment/by-code/", 404);
+  await asPerson(page, "operator", `/e/${seed.mcc1Mill.code.toLowerCase()}`); // the operator reads MCC2 only
+  const block = page.locator('[data-test="code-not-found"]');
+  await expect(block.getByRole("heading", { name: seed.mcc1Mill.code, exact: true })).toBeVisible();
+  await expect(block).toContainText("Not found, or not at your units. Ask your engineer if you should see it.");
+  await expect(page.getByText("doesn't exist in Yantra")).toHaveCount(0);
+  await block.getByRole("link", { name: "Go to equipment list" }).click();
+  await expect(page).toHaveURL(/\/equipment$/);
+});
+
+// S064 UX-07: labels are printed by the office
+test("S064: Print label is hidden for a technician and shown for an engineer on the equipment page", async ({ page }) => {
+  await asPerson(page, "technician", `/equipment/${seed.extruder.id}`);
+  await expect(page.getByRole("heading", { name: `${seed.extruder.code} — ${seed.extruder.name}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Print label/ })).toHaveCount(0);
+  await asPerson(page, "engineer", `/equipment/${seed.extruder.id}`);
+  await expect(page.getByRole("button", { name: /Print label/ })).toBeVisible();
 });

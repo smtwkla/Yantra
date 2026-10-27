@@ -315,9 +315,7 @@ defineExpose({ open });
       <i class="fa-solid fa-plus me-1"></i>Add condition
     </button>
     <div v-else class="form-text">{{ MAX_RULES }} conditions at most</div>
-
-    <!-- The disabled Apply filter's reason: its tooltip on a desktop, this line on a phone -->
-    <div v-if="disabledReason" class="form-text text-warning-emphasis mt-3 d-md-none">{{ disabledReason }}</div>
+    <!-- The disabled Apply filter's reason shows in FormModal's footer on every width (S064 UX-05) -->
   </FormModal>
 </template>
 

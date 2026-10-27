@@ -85,7 +85,7 @@ class TestUploadAndServe:
 
     def test_photo_over_the_pixel_cap_is_refused(self, admin, node):
         res = upload(admin, node, kind="photo", data=jpeg_with_size(8000, 8000), filename="huge.jpg")
-        assert refusal(res) == (400, "file", "Photo too large (64 megapixels)")
+        assert refusal(res) == (400, "file", "Photo too large (64 megapixels). Take it at a lower resolution.")
         assert folder_files(node) == []
 
 
@@ -99,7 +99,7 @@ class TestUploadRefusals:
     ])
     def test_wrong_type(self, admin, node, kind, data):
         res = upload(admin, node, kind=kind, data=data)
-        assert refusal(res) == (400, "file", "Only PDF documents and JPEG, PNG or WebP photos")
+        assert refusal(res) == (400, "file", "This file can't be added. Use a PDF, or a JPEG, PNG or WebP photo.")
 
     def test_empty_file(self, admin, node):
         assert refusal(upload(admin, node, data=b"")) == (400, "file", "The file is empty")
@@ -613,4 +613,4 @@ class TestTicketPhotos:
         for url in (docs_url(node), model_docs_url(make_model())):
             res = upload_to(operator, url)
             assert res.status_code == 403
-            assert res.get_json()["error"] == "Forbidden: requires 'equipment:edit'"
+            assert res.get_json()["error"] == "You don't have permission for this. Ask your engineer or IT."

@@ -38,10 +38,24 @@ def test_an_unhandled_exception_is_json_500_and_logged(client, failing_version, 
     assert any(r.exc_info and "forced" in str(r.exc_info[1]) for r in caplog.records)
 
 
+DB_TEXT = "Yantra can't reach its database. Try again in a few minutes."
+
+
 def test_a_lost_connection_is_503(client, failing_version):
     failing_version(pymysql.err.OperationalError(2013, "Lost connection to server during query"))
     res = client.get("/api/version")
-    assert (res.status_code, res.get_json()) == (503, {"error": "Database unavailable — try again shortly"})
+    assert (res.status_code, res.get_json()) == (503, {"error": DB_TEXT})
+
+
+def test_db_unavailable_is_the_same_503_without_the_cause(client, failing_version, caplog):
+    # S064 UX-13 row 2: both 503 paths say the same plain text; the cause goes to the log only
+    from local_db import DBUnavailable
+    failing_version(DBUnavailable("pool exhausted at 10.0.0.9"))
+    with caplog.at_level(logging.ERROR):
+        res = client.get("/api/version")
+    assert (res.status_code, res.get_json()) == (503, {"error": DB_TEXT})
+    assert "10.0.0.9" not in res.get_data(as_text=True)
+    assert any("pool exhausted" in r.getMessage() for r in caplog.records)
 
 
 def test_a_deadlock_is_the_500(client, failing_version):

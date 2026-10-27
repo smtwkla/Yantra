@@ -16,15 +16,17 @@
  * attribute in a modal and focuses the modal itself at the end of the open fade, then fires
  * `shown.bs.modal`, where the field takes the focus (inside the focus trap, so it stays).
  */
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { Modal } from "bootstrap";
 import { revealError } from "../utils/revealError";
+import { FORM_DIRTY } from "../utils/formDirty";
 
 const props = defineProps({
   title: { type: String, required: true },
   saving: { type: Boolean, default: false },
   error: { type: String, default: "" },
-  // When set, Save is disabled and the reason shows as its tooltip
+  // When set, Save is disabled and the reason shows as a line of text in the footer (a title
+  // never shows on a phone, S064 UX-05) and as its tooltip
   saveDisabledReason: { type: String, default: "" },
   // The submit button's text, e.g. "Upload"
   saveLabel: { type: String, default: "Save" },
@@ -34,6 +36,10 @@ const props = defineProps({
   closeOnly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["save"]);
+
+// Read-only for the footer's controls: ActiveToggle blocks Deactivate / Reactivate while the
+// form has unsaved changes, since both close the dialog and would drop them (S064 UX-16)
+provide(FORM_DIRTY, computed(() => props.dirty));
 
 const el = ref(null);
 const keepEditingButton = ref(null);
@@ -153,8 +159,9 @@ defineExpose({
 
 <template>
   <div ref="el" class="modal fade" tabindex="-1">
-    <!-- Scrollable: the body scrolls, header and footer (Save) stay on a phone's screen (S018 BR3-03) -->
-    <div class="modal-dialog modal-dialog-scrollable">
+    <!-- Scrollable: the body scrolls, header and footer (Save) stay on a phone's screen (S018 BR3-03);
+         the whole screen below sm, so the form gets every pixel of a phone (S064 UX-01) -->
+    <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
       <form class="modal-content" novalidate @submit.prevent="onSubmit">
         <div class="modal-header">
           <h5 class="modal-title">{{ title }}</h5>
@@ -179,7 +186,10 @@ defineExpose({
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         </div>
         <div v-else class="modal-footer">
-          <div class="me-auto"><slot name="footer-left" /></div>
+          <div class="me-auto d-flex flex-wrap align-items-center gap-2">
+            <span v-if="saveDisabledReason" class="small text-secondary" data-test="save-reason">{{ saveDisabledReason }}</span>
+            <slot name="footer-left" />
+          </div>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" :disabled="saving">Cancel</button>
           <button
             type="submit"

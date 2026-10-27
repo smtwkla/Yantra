@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 27-10-2026
 Track: full
-Status: Gate B (approved 27-10-2026 by KLA; coded by the orchestrator (Opus), KLA 27-10-2026)
+Status: Done (committed 0e4d215, adopted 28-10-2026; checks: 4 auto) (approved 27-10-2026 by KLA; coded by the orchestrator (Opus), KLA 27-10-2026; CR1-03 (a) by KLA 28-10-2026)
 Baseline: c9142b4
 ```
 

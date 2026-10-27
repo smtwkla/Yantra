@@ -117,15 +117,15 @@ for (const kind of [
 
 // The Masters sections no other test opens (S024 CR1-04): each one shows its table, and its Add
 // dialog fits the screen and shows the server's refusal beside the field when saved empty.
-// `before` makes a row first, for a list the seed leaves empty (Equip Category, S063).
+// `before` makes a row first, for a list the seed leaves empty (Categories, S063).
 for (const section of [
   { button: "Units", add: "Add unit", api: "/api/masters/units", person: "it_admin" },
   {
-    button: "Equip Category", add: "Add category", api: "/api/masters/equipment-categories", person: "engineer",
+    button: "Categories", add: "Add category", api: "/api/masters/equipment-categories", person: "engineer",
     message: "Name is required", before: (testInfo) => categorySetup(propertyTag(testInfo)),
   },
-  { button: "Equip Class", add: "Add class", api: "/api/masters/equipment-classes", person: "engineer" },
-  { button: "Equip Type", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
+  { button: "Classes", add: "Add class", api: "/api/masters/equipment-classes", person: "engineer" },
+  { button: "Types", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
   { button: "Trades", add: "Add trade", api: "/api/masters/trades", person: "engineer", message: "Name is required" },
   { button: "Meter types", add: "Add meter type", api: "/api/masters/meter-types", person: "engineer", message: "Name is required" },
 ]) {
@@ -145,13 +145,13 @@ for (const section of [
   });
 }
 
-test("operator: the failure codes are read-only, and the lists fit a phone", { tag: "@device" }, async ({ page }) => {
-  await openFailureCodes(page, "operator");
+// S064 UX-12: Masters is for its editors, so the lists are checked as the engineer (an operator,
+// who read them before, has no Masters now)
+test("engineer: the failure code lists fit a phone", { tag: "@device" }, async ({ page }) => {
+  await openFailureCodes(page, "engineer");
   for (const list of ["Modes", "Causes", "Actions"]) {
     await page.getByRole("group", { name: "Failure code list" }).getByRole("button", { name: list }).click();
     await expect(rows(page).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Add / })).toHaveCount(0);
-    await expect(page.getByTitle("Edit")).toHaveCount(0);
     await expectNoSidewaysScroll(page);
   }
 });
@@ -246,11 +246,11 @@ test("S037: engineer adds a meter type and sees it in the list", async ({ page }
   await expect(row).toContainText("Active");
 });
 
-test("S037: an operator sees meter types but no Add button", async ({ page }) => {
-  await openMeterTypes(page, "operator");
-  await expect(rows(page).filter({ hasText: "Run hours" })).toBeVisible();
+// S064 UX-12 (D2): Masters is for its editors, so an operator no longer reads meter types there
+test("S037: an operator has no Masters, so no meter types to change", async ({ page }) => {
+  await asPerson(page, "operator", "/masters");
+  await expect(page).toHaveURL(/\/me(\?|$)/);
   await expect(page.getByRole("button", { name: "Add meter type" })).toHaveCount(0);
-  await expect(page.getByTitle("Edit")).toHaveCount(0);
 });
 
 test("S037: a Yes / No type hides Unit and Decimals and asks for the expected answer", async ({ page, consoleWatch }, testInfo) => {
@@ -361,7 +361,7 @@ test("S043: engineer adds a choice property, adds two properties to a class at o
   await saveDialog(page, "Save");
   await expect(rows(page).filter({ hasText: drain })).toContainText("Choice · 2 options");
 
-  await openSection(page, "Equip Class");
+  await openSection(page, "Classes");
   await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
   await expect(page.getByText(`Properties of ${cls.code} — ${cls.name}`)).toBeVisible();
   // S061: the seed "GPS location" is on every class, marked, with no Remove
@@ -405,7 +405,7 @@ test("S043: Remove on a class's table takes the row away, and the picker lists t
   const name = `E2E removed ${tag}`;
   const { cls } = await propertySetup(tag, { properties: [{ name, data_type: "text" }] });
   await asPerson(page, "engineer", "/masters");
-  await openSection(page, "Equip Class");
+  await openSection(page, "Classes");
   await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
   await expect(rows(page).filter({ hasText: name })).toContainText("Text");
   await expect(page.getByText("Removing a property keeps the models' values. Add it again to show them.")).toBeVisible();
@@ -434,30 +434,6 @@ test("S043: a refused number shows Enter a number under its input", async ({ pag
   await expectFieldMessage(dialog, "Enter a number");
   await expect(dialog.getByLabel(name)).toBeFocused();
   await expect(dialog).toBeVisible();
-});
-
-test("S043: an operator sees the Properties section and a class's properties read-only, and no Properties button on models", async ({ page }, testInfo) => {
-  const tag = propertyTag(testInfo);
-  const name = `E2E read-only ${tag}`;
-  const { cls, model } = await propertySetup(tag, { properties: [{ name, data_type: "text" }] });
-  await asPerson(page, "operator", "/masters");
-  await openSection(page, "Properties");
-  await expect(rows(page).filter({ hasText: "Power – design" })).toContainText("Number · kW");
-  await expect(page.getByRole("button", { name: "Add property" })).toHaveCount(0);
-  await expect(page.getByTitle("Edit")).toHaveCount(0);
-  await expectNoSidewaysScroll(page);
-
-  // Every reader opens a class's properties (U8, BS1-04); only the keepers change them
-  await openSection(page, "Equip Class");
-  await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
-  await expect(page.getByText(`Properties of ${cls.code} — ${cls.name}`)).toBeVisible();
-  await expect(rows(page).filter({ hasText: name })).toContainText("Text");
-  await expect(page.getByRole("button", { name: "Add property…" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Remove" })).toHaveCount(0);
-
-  await openSection(page, "Models");
-  await expect(rows(page).filter({ hasText: model.label })).toBeVisible();
-  await expect(page.getByTitle("Properties", { exact: true }).and(page.locator("td button"))).toHaveCount(0);
 });
 
 test("S043: an option refused on Save leaves the list showing the property's saved name", async ({ page, consoleWatch }, testInfo) => {
@@ -508,7 +484,7 @@ test("S061: engineer makes a Yes / No property for every class; a machine of an 
     await expect(rows(page).filter({ hasText: name })).toContainText("Every class");
     await expect(rows(page).filter({ hasText: GPS_NAME })).toContainText("Each machine");
 
-    await openSection(page, "Equip Class");
+    await openSection(page, "Classes");
     await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
     const row = rows(page).filter({ hasText: name });
     await expect(row).toContainText("Every class");
@@ -546,21 +522,21 @@ test("S063: engineer adds a category, puts a class in it, and cannot deactivate 
   const name = `E2E lifting ${tag}`;
   await asPerson(page, "engineer", "/masters");
 
-  await openSection(page, "Equip Category");
+  await openSection(page, "Categories");
   await page.getByRole("button", { name: "Add category" }).click();
   await expectDialogFits(page);
   await (await openDialog(page)).getByLabel("Name").fill(name);
   await saveDialog(page, "Save");
   await expect(rows(page).filter({ hasText: name }).locator("td").nth(1)).toHaveText("0");
 
-  await openSection(page, "Equip Class");
+  await openSection(page, "Classes");
   await rows(page).filter({ hasText: cls.code }).getByTitle("Edit").click();
   await expectDialogFits(page);
   await (await openDialog(page)).getByLabel("Category").selectOption({ label: name });
   await saveDialog(page, "Save");
   await expect(rows(page).filter({ hasText: cls.code }).locator("td").nth(2)).toHaveText(name);
 
-  await openSection(page, "Equip Category");
+  await openSection(page, "Categories");
   const row = rows(page).filter({ hasText: name });
   await expect(row.locator("td").nth(1)).toHaveText("1");
   await row.getByTitle("Edit").click();
@@ -569,4 +545,184 @@ test("S063: engineer adds a category, puts a class in it, and cannot deactivate 
   await dialog.getByRole("button", { name: "Deactivate" }).click();
   await dialog.getByRole("button", { name: "Yes" }).click();
   await expect(dialog.locator(".alert-danger")).toHaveText("1 active class is in this category. Move it to another category first.");
+});
+
+// ---------------------------------------------------------------------------
+// S064: Deactivate blocked while the form has unsaved changes (UX-16); Team: Add person with sites
+// (UX-14), the access lines (UX-15), the list's search and site filter (UX-18)
+
+/** Masters › Team as `key`. */
+async function openTeam(page, key) {
+  await asPerson(page, key, "/masters");
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  await expect(rows(page).first()).toBeVisible();
+}
+
+/** A unit code of the test's own: 2–20 capital letters and digits, random. */
+const ownUnitCode = () => `U${Math.random().toString(36).slice(2, 9).toUpperCase()}`;
+
+/** The id of the seed site `code`, read as admin. */
+async function siteId(code) {
+  const api = await apiAs("admin");
+  try {
+    return (await (await api.get("/api/masters/sites")).json()).items.find((s) => s.code === code).id;
+  } finally {
+    await api.dispose();
+  }
+}
+
+test("S064: Deactivate is disabled with its reason after a name is edited, and enabled again once the edit is undone", async ({ page }) => {
+  await asPerson(page, "engineer", "/masters");
+  await page.getByRole("button", { name: "Trades", exact: true }).click();
+  await rows(page).filter({ has: page.locator("td", { hasText: /^Mechanical$/ }) }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  const deactivate = dialog.getByRole("button", { name: "Deactivate" });
+  await expect(deactivate).toBeEnabled();
+  const name = dialog.getByLabel("Name", { exact: true });
+  await name.fill("Mechanical changed");
+  await expect(deactivate).toBeDisabled();
+  await expect(dialog.locator(".modal-footer").getByText("Save your changes first, or cancel them")).toBeVisible();
+  await name.fill("Mechanical");
+  await expect(deactivate).toBeEnabled();
+  await expect(dialog.getByText("Save your changes first, or cancel them")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+});
+
+test("S064: Add person with a site and role saves both in one Save; the list shows the role", async ({ page }, testInfo) => {
+  const name = `E2E new technician ${propertyTag(testInfo)}`;
+  await openTeam(page, "engineer");
+  await page.getByRole("button", { name: "Add person" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByText(/Save the person first/)).toHaveCount(0);
+  await dialog.getByLabel("Name", { exact: true }).fill(name);
+  await dialog.getByLabel("Site to add").selectOption({ index: 1 });
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  await dialog.getByLabel("All units").check();
+  await expectDialogFits(page);
+  await saveDialog(page, "Save");
+  const row = rows(page).filter({ hasText: name });
+  await expect(row).toContainText("SMTW Technician");
+});
+
+test("S064: removing a site row says what the save takes away", async ({ page }, testInfo) => {
+  const name = `E2E row to remove ${propertyTag(testInfo)}`;
+  const api = await apiAs("admin");
+  try {
+    const person = await (await api.post("/api/masters/people", { data: { name, employment: "direct" } })).json();
+    const res = await api.put(`/api/masters/people/${person.id}/sites/${await siteId("SMTW")}`, {
+      data: { role: "maint_technician", all_units: true, unit_ids: [] },
+    });
+    expect(res.ok(), await res.text()).toBe(true);
+  } finally {
+    await api.dispose();
+  }
+  await openTeam(page, "engineer");
+  await rows(page).filter({ hasText: name }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator('[data-test="access-lines"]')).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(dialog.locator('[data-test="access-lines"]')).toHaveText("Saving removes access: SMTW Technician (all units).");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+});
+
+test("S064: the Team search and site select filter the list", async ({ page }) => {
+  await openTeam(page, "it_admin");
+  const search = page.getByRole("searchbox", { name: "Search people" });
+  await search.fill("muthu");
+  await expect(rows(page).filter({ hasText: "Muthu (operator)" })).toBeVisible();
+  await expect(rows(page).filter({ hasText: "Priya (engineer)" })).toHaveCount(0);
+  await search.fill("");
+  await page.getByRole("combobox", { name: "Filter by site" }).selectOption({ label: "BRICKS" });
+  await expect(rows(page).filter({ hasText: "Arun (manager)" })).toBeVisible();
+  await expect(rows(page).filter({ hasText: "Muthu (operator)" })).toHaveCount(0);
+});
+
+test("S064 CR1-01: Add person with the row save and the list reload both failing still becomes Edit person; a second Save sends no POST", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowBrowserError("fetch failed");
+  consoleWatch.allowBrowserError("net::ERR_FAILED");
+  const name = `E2E dropped ${propertyTag(testInfo)}`;
+  const code = ownUnitCode();
+  const api = await apiAs("admin");
+  try {
+    const res = await api.post("/api/masters/units", { data: { site_id: await siteId("SMTW"), code, name: `E2E unit ${propertyTag(testInfo)}` } });
+    expect(res.status(), await res.text()).toBe(201);
+
+    await openTeam(page, "engineer");
+    await page.getByRole("button", { name: "Add person" }).click();
+    await expectDialogFits(page);
+    const dialog = await openDialog(page);
+    await dialog.getByLabel("Name", { exact: true }).fill(name);
+    await dialog.getByLabel("Site to add").selectOption({ index: 1 });
+    await dialog.getByRole("button", { name: "Add", exact: true }).click();
+    await dialog.getByLabel(code, { exact: true }).check();
+
+    // The connection drops after the POST: the row's PUT and the list reload both fail
+    let posts = 0;
+    await page.route("**/api/masters/people**", (route) => {
+      const req = route.request();
+      if (req.method() === "POST") { posts += 1; return route.continue(); }
+      return route.abort("failed");
+    });
+    await dialog.locator(".modal-footer button[type=submit]").click();
+    await expect(dialog.locator(".modal-title")).toHaveText("Edit person");
+    expect(posts).toBe(1);
+
+    // Connection back: the retry saves the row on the same person, with no second POST
+    await page.unroute("**/api/masters/people**");
+    await page.route("**/api/masters/people**", (route) => {
+      if (route.request().method() === "POST") posts += 1;
+      return route.continue();
+    });
+    await dialog.locator(".modal-footer button[type=submit]").click();
+    await expect(dialog).toBeHidden();
+    expect(posts).toBe(1);
+    await expect(rows(page).filter({ hasText: name })).toHaveCount(1);
+  } finally {
+    await api.dispose();
+  }
+});
+
+test("S064: Add person as an engineer offers only the engineer's site; a row refused on Save leaves the dialog as Edit person with the error on the row", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/sites/", 400);
+  const tag = propertyTag(testInfo);
+  const name = `E2E row refused ${tag}`;
+  const code = ownUnitCode();
+  const api = await apiAs("admin");
+  let unit;
+  try {
+    const res = await api.post("/api/masters/units", { data: { site_id: await siteId("SMTW"), code, name: `E2E unit ${tag}` } });
+    expect(res.status(), await res.text()).toBe(201);
+    unit = await res.json();
+
+    await openTeam(page, "engineer");
+    await page.getByRole("button", { name: "Add person" }).click();
+    await expectDialogFits(page);
+    const dialog = await openDialog(page);
+    await dialog.getByLabel("Name", { exact: true }).fill(name);
+    const siteToAdd = dialog.getByLabel("Site to add");
+    await expect(siteToAdd.locator("option")).toHaveCount(2); // "Add a site…" and SMTW, not BRICKS
+    await expect(siteToAdd.locator("option").nth(1)).toHaveText(/^SMTW — /);
+    await siteToAdd.selectOption({ index: 1 });
+    await dialog.getByRole("button", { name: "Add", exact: true }).click();
+    await dialog.getByLabel(code, { exact: true }).check();
+
+    // The unit goes inactive behind the dialog's back: the row's save is refused by the real server
+    expect((await api.put(`/api/masters/units/${unit.id}`, { data: { active: false } })).ok()).toBe(true);
+    await dialog.locator(".modal-footer button[type=submit]").click();
+    await expect(dialog.locator(".modal-title")).toHaveText("Edit person");
+    await expectFieldMessage(dialog, `Unit ${code} is inactive. Untick it or reactivate it.`);
+    // The person was saved and is in the list behind the dialog
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog.getByText("Discard your changes?")).toBeVisible(); // the failed row is unsaved
+    await dialog.getByRole("button", { name: "Discard" }).click();
+    await expect(rows(page).filter({ hasText: name })).toBeVisible();
+  } finally {
+    await api.dispose();
+  }
 });

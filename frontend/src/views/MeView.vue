@@ -16,6 +16,7 @@ import TicketRow from "../components/TicketRow.vue";
 import { userPermissions, userPersonId, userRoles } from "../stores/auth";
 import { ensureMyUnits, noUnits } from "../stores/equipment";
 import { formatDateTime } from "../utils/datetime";
+import { NO_UNITS_TEXT } from "../utils/messages";
 import { activityDetail, defaultMeTab, EVENT_LABELS, isBackdated } from "../utils/ticketLabels";
 
 const PAGE_SIZE = 50; // the API default
@@ -151,7 +152,7 @@ const emptyText = computed(() => {
       <button class="btn btn-outline-danger" @click="load">Retry</button>
     </div>
     <div v-else-if="loading && !page" class="text-secondary">Loading…</div>
-    <div v-else-if="noUnits" class="text-secondary">You have no units assigned — ask IT admin for unit access.</div>
+    <div v-else-if="noUnits" class="text-secondary">{{ NO_UNITS_TEXT }}</div>
     <template v-else-if="page">
       <div v-if="page.total > 0 && countText" class="text-secondary small mb-2">{{ countText }}</div>
       <div v-if="page.total === 0 && notInTeam" class="text-secondary">

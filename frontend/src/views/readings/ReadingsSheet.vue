@@ -20,6 +20,7 @@ import { apiDelete, apiGet, apiPost } from "../../api";
 import { ensureMyUnits, myUnits, noUnits, readingSites } from "../../stores/equipment";
 import { ensureSites, ensureUnits, sites, units } from "../../stores/masters";
 import { LIFECYCLE_LABELS } from "../../utils/equipmentLabels";
+import { NO_UNITS_TEXT } from "../../utils/messages";
 import { isToday, isUnavailable, NOT_SAVED, notSavedOr, savedMessage } from "../../utils/meterLabels";
 import EventFields from "../tickets/EventFields.vue";
 import ReadingSheetRow from "./ReadingSheetRow.vue";
@@ -320,7 +321,7 @@ async function undo(row) {
     </div>
 
     <div v-else-if="!ready" class="text-secondary">Loading…</div>
-    <div v-else-if="nothingToShow" class="text-secondary">You have no units assigned — ask IT admin for unit access.</div>
+    <div v-else-if="nothingToShow" class="text-secondary">{{ NO_UNITS_TEXT }}</div>
 
     <template v-else>
       <div class="d-flex flex-wrap align-items-center gap-2 mb-2">

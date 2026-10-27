@@ -1,10 +1,12 @@
 // The equipment register's dialogs on the three screen sizes (S012 manufacturers and models;
 // S003 add, move and lifecycle, named status before S030; S006 documents: upload and title),
 // each checked with expectDialogFits.  Names carry the project's name: the three projects share one database.
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
-import { expectDialogFits, expectFieldMessage, openDialog } from "./support/dialogs.js";
+import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
+import { equipmentRow, equipmentRows, openFilters } from "./support/equipmentList.js";
 import { apiAs, asPerson } from "./support/people.js";
 import { logByApi, meterMachine } from "./support/meters.js";
 import { categorySetup, noModelPart, propertySetup, propertyTag } from "./support/properties.js";
@@ -101,7 +103,9 @@ test("S003/S006: engineer moves equipment, changes its lifecycle, uploads a docu
   await expect(documents).toContainText("Service manual");
   await expect(documents).toContainText("test-manual.pdf");
 
-  await documents.getByTitle("Edit title").click();
+  // Edit title is in the row's "⋯" menu (S064 UX-10)
+  await documents.getByRole("button", { name: "More actions" }).click();
+  await documents.getByRole("button", { name: "Edit title" }).click();
   await expectDialogFits(page);
   await (await openDialog(page)).getByLabel("Title").fill("Service manual, 2026 edition");
   await saveDialog(page, "Save");
@@ -113,8 +117,10 @@ test("S030: the lifecycle is named Lifecycle on the form, the page, the list and
   // are scoped to the dialogs and the list's header, since the Tickets filter rightly says "Any ticket status"
   const noStatus = /\bStatus\b/;
   await asPerson(page, "engineer", "/equipment");
-  await expect(page.locator("thead th", { hasText: /^Lifecycle$/ })).toBeVisible();
+  // The table's header is in the page on every width; below md the rows show as cards (S064)
+  await expect(page.locator("thead th", { hasText: /^Lifecycle$/ })).toBeAttached();
   await expect(page.locator("thead")).not.toContainText(noStatus);
+  await openFilters(page);
   await expect(page.getByRole("combobox", { name: "Lifecycle" }).locator("option").first()).toHaveText("Any lifecycle");
 
   await page.getByRole("button", { name: "Add equipment" }).click();
@@ -150,8 +156,8 @@ async function lightMachines(testInfo, tag) {
   return { prefix, red, amber, green };
 }
 
-// The list rows carry role="link", so they are found by the table row itself
-const rowOf = (page, machine) => page.locator("tbody tr", { hasText: machine.code });
+// The row the user sees: the table's on a desktop, the card on a phone (S064)
+const rowOf = equipmentRow;
 
 test("S029: the equipment list shows a red, amber and green bulb with a name each", async ({ page }, testInfo) => {
   const { prefix, red, amber, green } = await lightMachines(testInfo, "bulbs");
@@ -165,6 +171,7 @@ test("S029: Down now lists only the red row and the URL carries it; Any ticket s
   const { prefix, red, amber, green } = await lightMachines(testInfo, "filter");
   await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(prefix)}`);
   await expect(rowOf(page, green)).toBeVisible();
+  await openFilters(page);
   await page.getByRole("combobox", { name: "Tickets" }).selectOption({ label: "Down now" });
   await expect(page).toHaveURL(/tickets=down/);
   await expect(rowOf(page, red)).toBeVisible();
@@ -184,14 +191,21 @@ test("S029: the bulb is in view without scrolling and the Tickets filter fits th
   const box = await bulb.boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(width);
-  const select = await page.getByRole("combobox", { name: "Tickets" }).boundingBox();
-  expect(select.x + select.width).toBeLessThanOrEqual(width);
+  // Below md (S064) the selects are folded: the Filters (n) button fits; from md up the Tickets select
+  const MD = 768;
+  const control = width < MD
+    ? page.getByRole("button", { name: /^Filters \(\d+\)/ })
+    : page.getByRole("combobox", { name: "Tickets" });
+  const controlBox = await control.boundingBox();
+  expect(controlBox.x).toBeGreaterThanOrEqual(0);
+  expect(controlBox.x + controlBox.width).toBeLessThanOrEqual(width);
 });
 
 test("S029: a bookmarked tickets=down shows the plain list to a storekeeper, who has no ticket column", async ({ page }, testInfo) => {
   const { prefix, red, amber, green } = await lightMachines(testInfo, "bookmark");
   await asPerson(page, "storekeeper", `/equipment?tickets=down&q=${encodeURIComponent(prefix)}`);
   for (const machine of [red, amber, green]) await expect(rowOf(page, machine)).toBeVisible();
+  await openFilters(page);
   await expect(page.getByRole("combobox", { name: "Tickets" })).toHaveCount(0);
 });
 
@@ -223,8 +237,9 @@ test("S033: engineer adds a component-unit with No model; its page and the list 
   await expect(details.locator("dt", { hasText: /^Class$/ }).locator("xpath=following-sibling::dd[1]")).toContainText("GBX");
 
   await page.goto(`/equipment?level=component_unit&q=${encodeURIComponent(name)}`);
+  await expect(equipmentRows(page).filter({ hasText: name })).toHaveCount(1);
+  // The Model column is the table's (shown from md up; in the page on every width)
   const row = page.locator("tbody tr", { hasText: name });
-  await expect(row).toHaveCount(1);
   const headers = await page.locator("thead th").allTextContents();
   await expect(row.locator("td").nth(headers.findIndex((h) => h.trim() === "Model"))).toHaveText("—");
 });
@@ -692,8 +707,10 @@ async function machineLike(node, model, name) {
   }
 }
 
-async function openPropertyFilter(page, opener = filterButton(page)) {
-  await opener.click();
+async function openPropertyFilter(page, opener = null) {
+  // The Filter by property button is in the phone's folded filters (S064); a line's own button is not
+  if (opener === null) await openFilters(page);
+  await (opener ?? filterButton(page)).click();
   await expectDialogFits(page);
   return openDialog(page);
 }
@@ -715,6 +732,7 @@ test("S062: engineer filters the default list by a part's rated power; the level
   await setItemValues(motor, { [power.id]: "15" });
 
   await asPerson(page, "engineer", "/equipment");
+  await openFilters(page);
   await expect(page.getByRole("combobox", { name: "Level" })).toHaveValue("equipment");
   const dialog = await openPropertyFilter(page);
   await setCondition(dialog, 1, `${name} (kW)`, "more than", "10");
@@ -722,11 +740,12 @@ test("S062: engineer filters the default list by a part's rated power; the level
 
   await expect(page).toHaveURL(/props=/);
   await expect(page).toHaveURL(/level=all/);
+  await openFilters(page);
   await expect(page.getByRole("combobox", { name: "Level" })).toHaveValue("all");
   await expect(rowOf(page, motor)).toBeVisible();
   // The motor's Path names its machine, so the machine is looked for by its own code link
   await expect(page.getByRole("link", { name: node.code, exact: true })).toHaveCount(0);
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
   await expect(page.getByRole("button", { name: `Properties: ${name} more than 10 kW` })).toBeVisible();
   await expect(filterButton(page)).toHaveText("Properties (1)");
 
@@ -734,7 +753,7 @@ test("S062: engineer filters the default list by a part's rated power; the level
   await expect(page).not.toHaveURL(/props=/);
   await expect(page.getByRole("button", { name: /^Properties:/ })).toHaveCount(0);
   await expect(filterButton(page)).toHaveText("Filter by property");
-  await expect.poll(() => page.locator("tbody tr").count()).toBeGreaterThan(1);
+  await expect.poll(() => equipmentRows(page).count()).toBeGreaterThan(1);
 });
 
 test("S062: a hand-broken props shows the line cannot be read and one message, and Clear brings the list back", async ({ page }) => {
@@ -742,7 +761,7 @@ test("S062: a hand-broken props shows the line cannot be read and one message, a
   await expect(page.getByRole("button", { name: "Properties: cannot be read" })).toBeVisible();
   await expect(page.getByText("The property filter cannot be read. Clear it and make it again.")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
-  await expect(page.locator("table")).toHaveCount(0);
+  await expect(page.locator('[data-test="equipment-row"]')).toHaveCount(0);
   // A tap on the line opens the dialog with one empty line
   const dialog = await openPropertyFilter(page, page.getByRole("button", { name: "Properties: cannot be read" }));
   await expect(dialog.locator("[data-test=condition]")).toHaveCount(1);
@@ -753,7 +772,7 @@ test("S062: a hand-broken props shows the line cannot be read and one message, a
   await page.getByRole("button", { name: "Clear property filter" }).click();
   await expect(page).not.toHaveURL(/props=/);
   await expect(page.getByText("The property filter cannot be read.")).toHaveCount(0);
-  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await expect(equipmentRows(page).first()).toBeVisible();
 });
 
 test("S062: two lines with Any condition list both machines; with All conditions none", async ({ page }, testInfo) => {
@@ -778,6 +797,7 @@ test("S062: two lines with Any condition list both machines; with All conditions
   await expect(rowOf(page, node)).toBeVisible();
   await expect(rowOf(page, other)).toBeVisible();
   await expect(page.getByRole("button", { name: `Properties (any of): ${power} more than 10 kW · ${frame} contains "IE3"` })).toBeVisible();
+  await openFilters(page);
   await expect(filterButton(page)).toHaveText("Properties (2)");
 
   dialog = await openPropertyFilter(page, page.getByRole("button", { name: /^Properties \(any of\)/ }));
@@ -827,11 +847,11 @@ test("S062: a reload keeps the filter, and Back after Clear property filter brin
   const line = `Properties: ${name} more than 10 kW`;
   await asPerson(page, "engineer", `/equipment?level=all&props=${propsQuery([{ property_id: power.id, op: "gt", value: "10" }])}`);
   await expect(rowOf(page, node)).toBeVisible();
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
 
   await page.reload();
   await expect(page.getByRole("button", { name: line })).toBeVisible();
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
 
   await page.getByRole("button", { name: "Clear property filter" }).click();
   await expect(page.getByRole("button", { name: line })).toHaveCount(0);
@@ -839,7 +859,7 @@ test("S062: a reload keeps the filter, and Back after Clear property filter brin
   await expect(page.getByRole("button", { name: line })).toBeVisible();
   await expect(page).toHaveURL(/props=/);
   await expect(rowOf(page, node)).toBeVisible();
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
 });
 
 test("S062: the Filter by property dialog with three lines fits the screen, its buttons in view", { tag: "@device" }, async ({ page }, testInfo) => {
@@ -873,15 +893,143 @@ test("S063: engineer picks a category; the class select lists only its classes, 
   await asPerson(page, "engineer", "/equipment");
   await expect(rowOf(page, outside.node)).toBeVisible();
 
+  await openFilters(page);
   await page.getByLabel("Category", { exact: true }).selectOption({ label: category.name });
   await expect(page).toHaveURL(new RegExp(`category_id=${category.id}`));
   const classSelect = page.getByLabel("Class", { exact: true });
   await expect(classSelect.locator("option")).toHaveText(["All classes", inside.cls.code]);
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
   await expect(rowOf(page, inside.node)).toBeVisible();
 
   await page.reload();
+  await openFilters(page);
   await expect(page.getByLabel("Category", { exact: true })).toHaveValue(String(category.id));
-  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(equipmentRows(page)).toHaveCount(1);
   await expect(rowOf(page, inside.node)).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// S064: the floor's equipment screens — the Save reason (UX-05), the page's phone order (UX-07),
+// the list on a phone (UX-08), the photo viewer (UX-09), the document row (UX-10), the upload
+// dialog (UX-11)
+
+const PHOTO = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-photo.jpg");
+const MD = 768; // Bootstrap's md: below it the list is cards and the page puts Documents first
+
+/** Upload a file to the machine `node` through the API as admin -> the document. */
+async function uploadByApi(node, kind, file, title) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.post(`/api/equipment/${node.id}/documents`, {
+      multipart: {
+        kind, title,
+        file: { name: path.basename(file), mimeType: kind === "photo" ? "image/jpeg" : "application/pdf", buffer: fs.readFileSync(file) },
+      },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+test("S064: a disabled Save shows its reason as text in the dialog's footer", async ({ page }, testInfo) => {
+  const node = await createEquipment(`E2E save reason ${testInfo.project.name}`);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await page.getByRole("button", { name: "Move" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-footer button[type=submit]")).toBeDisabled();
+  await expect(dialog.locator(".modal-footer").getByText("Choose a unit", { exact: true })).toBeVisible();
+});
+
+test("S064: on a phone the Documents and Photos cards come before Details on the equipment page", { tag: "@device" }, async ({ page }, testInfo) => {
+  const node = await createEquipment(`E2E phone order ${testInfo.project.name}`);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const header = (title) => page.locator(".card-header", { hasText: new RegExp(`^\\s*${title}`) }).first();
+  const documents = await header("Documents").boundingBox();
+  const details = await header("Details").boundingBox();
+  if (page.viewportSize().width < MD) expect(documents.y, "Documents is below Details on a phone").toBeLessThan(details.y);
+  else expect(details.y, "Details is below Documents on a desktop").toBeLessThan(documents.y);
+});
+
+test("S064: on a phone the equipment list shows search first, Filters (n) with its count, cards not the table, and no print buttons", { tag: "@device" }, async ({ page }) => {
+  test.skip(page.viewportSize().width >= MD, "the phone layout of the list is below md");
+  await asPerson(page, "engineer", "/equipment?criticality=A&scrapped=1");
+  const search = page.getByRole("searchbox", { name: "Search" });
+  const filters = page.getByRole("button", { name: /^Filters \(2\)/ });
+  await expect(search).toBeVisible();
+  await expect(filters).toBeVisible();
+  expect((await search.boundingBox()).y, "the search is not first").toBeLessThan((await filters.boundingBox()).y);
+  const searchBox = await search.boundingBox();
+  expect(searchBox.width, "the search does not fill its line").toBeGreaterThan(page.viewportSize().width / 2);
+  // The selects are folded until Filters is tapped
+  await expect(page.getByRole("combobox", { name: "Criticality" })).toBeHidden();
+  await filters.click();
+  await expect(page.getByRole("combobox", { name: "Criticality" })).toHaveValue("A");
+  await expect(page.getByRole("combobox", { name: "Criticality" }).locator("option:checked")).toHaveText("A — critical");
+  // Cards, each a link to the equipment page; the table is not shown
+  await expect(equipmentRows(page).first()).toBeVisible();
+  await expect(page.locator("table")).toBeHidden();
+  await expect(page.getByRole("button", { name: /Print asset list/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Print labels/ })).toHaveCount(0);
+  await expectNoSidewaysScroll(page);
+  await equipmentRows(page).first().click();
+  await expect(page).toHaveURL(/\/equipment\/\d+$/);
+});
+
+test("S064: on a phone the photo viewer's Next button is on screen", { tag: "@device" }, async ({ page }, testInfo) => {
+  const node = await createEquipment(`E2E viewer ${testInfo.project.name}`);
+  await uploadByApi(node, "photo", PHOTO, "Nameplate");
+  await uploadByApi(node, "photo", PHOTO, "Motor side, a long title that wraps onto a second line on a narrow phone screen");
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await page.getByRole("button", { name: "Nameplate" }).click();
+  const viewer = page.locator(".modal.show .modal-dialog");
+  await expect(viewer.locator("img")).toBeVisible();
+  const next = viewer.getByRole("button", { name: "Next" });
+  await expect(next).toBeInViewport({ ratio: 1 });
+  await next.click();
+  await expect(viewer.locator(".modal-title")).toContainText("Motor side");
+  await expect(viewer.getByRole("button", { name: "Previous" })).toBeInViewport({ ratio: 1 });
+});
+
+test("S064: a document's title opens the PDF; Remove is in the row's menu and still asks", async ({ page }, testInfo) => {
+  const node = await createEquipment(`E2E document row ${testInfo.project.name}`);
+  await uploadByApi(node, "document", MANUAL, "Pump manual");
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const documents = page.locator(".card", { has: page.locator(".card-header", { hasText: /^\s*Documents/ }) });
+  await expect(documents.getByRole("button", { name: "Open" })).toHaveCount(0);
+  await expect(documents.getByRole("button", { name: "Download" })).toBeVisible();
+  const [pdf] = await Promise.all([
+    page.context().waitForEvent("page"),
+    documents.getByRole("button", { name: "Pump manual" }).click(),
+  ]);
+  await pdf.close();
+
+  await expect(documents.getByRole("button", { name: "Remove" })).toHaveCount(0); // in the menu, closed
+  await documents.getByRole("button", { name: "More actions" }).click();
+  await documents.getByRole("button", { name: "Remove" }).click();
+  await expect(documents.getByText("Remove this document?")).toBeVisible();
+  await documents.getByRole("button", { name: "No", exact: true }).click();
+  await expect(documents).toContainText("Pump manual");
+});
+
+test("S064: Add photo shows no Kind choice, and a camera's file name leaves the title empty", async ({ page }, testInfo) => {
+  const node = await createEquipment(`E2E camera name ${testInfo.project.name}`);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  await page.getByRole("button", { name: "Add photo" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-title")).toHaveText("Add photo");
+  await expect(dialog.getByRole("radio")).toHaveCount(0);
+  await expect(dialog.getByText("Kind", { exact: true })).toHaveCount(0);
+  await dialog.getByLabel("File").setInputFiles({ name: "IMG_1234.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(PHOTO) });
+  const title = dialog.getByLabel("Title");
+  await expect(title).toHaveValue("");
+  await expect(title).toHaveAttribute("placeholder", "What does the photo show?");
+  await expect(title).toBeFocused();
+  await expect(dialog.locator(".modal-footer").getByText("Enter a title", { exact: true })).toBeVisible();
+  await title.fill("Nameplate");
+  await saveDialog(page, "Upload");
+  await expect(page.getByRole("button", { name: "Nameplate" })).toBeVisible();
 });

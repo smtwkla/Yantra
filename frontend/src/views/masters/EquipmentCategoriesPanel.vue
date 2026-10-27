@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Equipment categories (S063) — a group of equipment classes, ISO 14224's equipment category
- * (Lifting equipment, Conveyors, …). A name only; each class picks its category in Equip Class.
+ * (Lifting equipment, Conveyors, …). A name only; each class picks its category in Masters › Classes.
  * Edited by engineers and up (equipment:edit, as classes). Deactivating is refused while an
  * active class is in the category; the refusal shows at the top of the dialog.
  */
@@ -61,7 +61,7 @@ onMounted(reload);
       <div v-if="equipmentCategories === null && !loadError" class="text-secondary">Loading…</div>
       <div v-else-if="rows.length === 0 && !loadError" class="text-secondary">
         <template v-if="equipmentCategories.length">No active categories. Turn on Show inactive to see the others.</template>
-        <template v-else-if="canEdit">No equipment categories yet. Add one, then pick it for each class in Equip Class.</template>
+        <template v-else-if="canEdit">No equipment categories yet. Add one, then pick it for each class in Masters › Classes.</template>
         <template v-else>No equipment categories yet.</template>
       </div>
       <div v-else-if="rows.length" class="table-responsive">

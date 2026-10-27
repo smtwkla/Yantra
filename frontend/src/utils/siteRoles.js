@@ -24,6 +24,17 @@ export function roleLabel(role) {
   return SITE_ROLES.find((r) => r.value === role)?.label ?? (role ? role : "No role");
 }
 
+// The token roles a screen may show beside the site roles (the access log's role, S064 UX-26)
+const TOKEN_ROLE_LABELS = { it_admin: "IT admin", admin: "Admin" };
+
+/**
+ * Any role as the screens name it: a site role as the Team dialog does, "IT admin", "Admin";
+ * another value as it is. roleLabel stays the Team dialog's (it names a row without a role).
+ */
+export function displayRoleLabel(role) {
+  return SITE_ROLES.find((r) => r.value === role)?.label ?? TOKEN_ROLE_LABELS[role] ?? role;
+}
+
 /** A site row as text: "SMTW Technician (FWMILL, MCC1)" or "VEL Manager (all units)". */
 export function describeSiteRow(row, unitCodes) {
   const where = row.all_units ? "all units" : unitCodes.join(", ") || "no units";

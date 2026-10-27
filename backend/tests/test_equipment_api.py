@@ -127,7 +127,7 @@ class TestCodes:
         res = admin.post(EQUIPMENT, json={"level": "equipment", "unit_id": make_unit()["id"],
                                           "model_id": make_model(cls=cls)["id"], "name": "x"})
         assert res.status_code == 409
-        assert res.get_json() == {"error": "Code collision — retry"}
+        assert res.get_json() == {"error": "Could not give a code. Press Save again."}
 
 
 class TestTree:

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { describeSiteRow, roleLabel, siteRoleChoices, SITE_ROLES, TECHNICIAN } from "../src/utils/siteRoles.js";
+import {
+  describeSiteRow, displayRoleLabel, roleLabel, siteRoleChoices, SITE_ROLES, TECHNICIAN,
+} from "../src/utils/siteRoles.js";
+
+describe("displayRoleLabel (S064 UX-26)", () => {
+  it("names site roles as the Team dialog does, and the token roles", () => {
+    expect(displayRoleLabel("maint_engineer")).toBe("Engineer");
+    expect(displayRoleLabel(TECHNICIAN)).toBe("Technician");
+    expect(displayRoleLabel("it_admin")).toBe("IT admin");
+    expect(displayRoleLabel("admin")).toBe("Admin");
+  });
+
+  it("shows any other value as it is", () => {
+    expect(displayRoleLabel("maintenance_team")).toBe("maintenance_team");
+  });
+});
 
 describe("site roles", () => {
   it("labels every role, and a legacy row without one", () => {

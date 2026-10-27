@@ -1,6 +1,6 @@
 <script setup>
 /**
- * A class's properties (S043 § 7.2, U6): the table in the Equip Class panel, shown instead of the
+ * A class's properties (S043 § 7.2, U6): the table in the Classes panel, shown instead of the
  * class table as Models shows a model's Documents; Back brings the class table back.
  * Add property… opens the picker; Remove takes one link away at once, without asking: the
  * models' values stay and come back when the property is added again (§ 5.4).

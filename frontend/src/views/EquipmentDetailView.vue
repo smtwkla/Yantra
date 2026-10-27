@@ -85,6 +85,7 @@ const canLogReading = computed(
   () => (node.value?.permissions ?? []).includes("reading:log") && !scrapped.value && !loading.value
 );
 const canSeeRemovedReadings = computed(() => (node.value?.permissions ?? []).includes("equipment:edit"));
+const canPrintLabel = canSeeRemovedReadings; // the same bare key: equipment:edit at the node's site (S064 UX-07)
 const canReadTickets = computed(() => (node.value?.permissions ?? []).includes("ticket:read"));
 const canRaiseTicket = computed(
   () => (node.value?.permissions ?? []).includes("ticket:raise") && !scrapped.value && !loading.value
@@ -206,7 +207,9 @@ function onSaved({ result, created }) {
         <LifecycleBadge :lifecycle="node.lifecycle" />
         <CriticalityBadge :grade="node.effective_criticality" :inherited="node.criticality === null" />
         <span v-if="loading" class="text-secondary small">Loading…</span>
-        <div class="dropdown ms-auto">
+        <!-- For the office that prints labels (S064 UX-07): the bare key at the node's site, so a
+             scrapped node keeps it (a label may be reprinted for the scrap record) -->
+        <div v-if="canPrintLabel" class="dropdown ms-auto">
           <button
             class="btn btn-sm btn-outline-secondary dropdown-toggle"
             type="button"
@@ -227,12 +230,19 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <router-link v-if="canRaiseTicket" :to="`/tickets/new?equipment=${node.id}`" class="btn btn-danger mb-3">
+      <!-- On a phone Documents and Photos come right after Open tickets, above the long cards (S064
+           UX-07): one flex column, ordered below md; from md up every order is reset to the page order -->
+      <div class="d-flex flex-column">
+      <router-link
+        v-if="canRaiseTicket"
+        :to="`/tickets/new?equipment=${node.id}`"
+        class="btn btn-danger mb-3 order-0 align-self-stretch align-self-md-start"
+      >
         <i class="fa-solid fa-triangle-exclamation me-1"></i>Raise ticket
       </router-link>
 
-      <div v-if="scrapped" class="alert alert-secondary">Scrapped — this record is read-only.</div>
-      <div v-else-if="canEdit" class="d-flex flex-wrap gap-2 mb-3">
+      <div v-if="scrapped" class="alert alert-secondary order-0">Scrapped — this record is read-only.</div>
+      <div v-else-if="canEdit" class="d-flex flex-wrap gap-2 mb-3 order-0">
         <button class="btn btn-sm btn-outline-primary" @click="formModal.openEdit(node)">
           <i class="fa-solid fa-pen me-1"></i>Edit
         </button>
@@ -247,7 +257,7 @@ function onSaved({ result, created }) {
         </button>
       </div>
 
-      <div v-if="canReadTickets" class="card mb-3">
+      <div v-if="canReadTickets" class="card mb-3 order-0">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
           <span>Open tickets</span>
           <router-link :to="`/tickets?equipment_id=${node.id}&state=all`" class="small">All its tickets</router-link>
@@ -274,7 +284,7 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <div class="row g-3">
+      <div class="row g-3 order-2 order-md-0">
         <div class="col-lg-6">
           <div class="card h-100">
             <div class="card-header">Details</div>
@@ -343,25 +353,34 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <MetersCard :node="node" :can-edit="canEdit" :can-log="canLogReading" :can-see-removed="canSeeRemovedReadings" @changed="load" />
+      <MetersCard
+        class="order-2 order-md-0"
+        :node="node"
+        :can-edit="canEdit"
+        :can-log="canLogReading"
+        :can-see-removed="canSeeRemovedReadings"
+        @changed="load"
+      />
 
-      <div v-if="node.notes" class="card mt-3">
+      <div v-if="node.notes" class="card mt-3 order-2 order-md-0">
         <div class="card-header">Notes</div>
         <!-- pre-wrap: shown as entered, line breaks and aligned spacing kept -->
         <div class="card-body notes-text">{{ node.notes }}</div>
       </div>
 
-      <div class="card mt-3">
+      <div class="card mt-3 order-2 order-md-0">
         <div class="card-header">History</div>
         <div class="card-body history-text"><EquipmentHistory :events="node.events" /></div>
       </div>
 
       <DocumentsCards
         ref="documentsCards"
+        class="order-1 order-md-0 mb-3 mb-md-0"
         :base-path="`/api/equipment/${node.id}/documents`"
         :can-edit="canEdit"
         :show-managed-in="canEditModels"
       />
+      </div>
     </template>
 
     <EquipmentFormModal ref="formModal" @saved="onSaved" />

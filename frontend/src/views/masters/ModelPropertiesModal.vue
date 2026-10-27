@@ -59,7 +59,7 @@ defineExpose({ open });
     save-label="Save values"
     @save="save"
   >
-    <p v-if="items.length === 0" class="mb-0">The class {{ classCode }} has no properties yet. Add them in Equip Class.</p>
+    <p v-if="items.length === 0" class="mb-0">The class {{ classCode }} has no properties yet. Add them in Masters › Classes.</p>
     <template v-else>
       <PropertyInput
         v-for="item in items"

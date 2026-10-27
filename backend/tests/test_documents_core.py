@@ -59,7 +59,7 @@ class TestKindAccepts:
         assert not kind_accepts("drawing", "pdf")
 
     def test_refusal_message(self):
-        assert TYPE_REFUSED == "Only PDF documents and JPEG, PNG or WebP photos"
+        assert TYPE_REFUSED == "This file can't be added. Use a PDF, or a JPEG, PNG or WebP photo."
 
 
 class TestTitle:
@@ -155,7 +155,7 @@ class TestThumbnail:
         assert thumb.format == "JPEG"
 
     def test_header_over_the_cap_is_refused(self):
-        with pytest.raises(PhotoTooLarge, match=r"Photo too large \(64 megapixels\)"):
+        with pytest.raises(PhotoTooLarge, match=r"Photo too large \(64 megapixels\)\. Take it at a lower resolution\."):
             make_thumbnail(jpeg_with_size(8000, 8000))
 
     def test_header_just_at_the_cap_is_not_refused_by_it(self):
@@ -163,7 +163,7 @@ class TestThumbnail:
         make_thumbnail(jpeg_with_size(10000, 5000))
 
     def test_pillow_bomb_limit_is_also_a_refusal(self):
-        with pytest.raises(PhotoTooLarge, match="over 50 megapixels"):
+        with pytest.raises(PhotoTooLarge, match=r"^Photo too large\. Take it at a lower resolution\.$"):
             make_thumbnail(jpeg_with_size(15000, 15000))
 
     def test_truncated_jpeg_gives_none(self):

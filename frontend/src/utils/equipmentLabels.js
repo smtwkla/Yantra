@@ -19,11 +19,12 @@ export const LIFECYCLE_LABELS = {
   scrapped: "Scrapped",
 };
 
+// Plain words for the floor (S064 UX-24); the standards behind them are named above
 export const LIFECYCLE_HELP = {
-  in_service: "In use (EN 13306 operating or idle).",
-  standby: "Ready to run, not running, e.g. a spare pump (EN 13306 standby).",
-  out_of_use: "Laid up; no PM due (Yantra lifecycle stage).",
-  scrapped: "Removed from the plant for good (Yantra lifecycle stage).",
+  in_service: "Running or ready to run.",
+  standby: "Ready, kept as a spare, e.g. a spare pump.",
+  out_of_use: "Not in use for now — no PM is due.",
+  scrapped: "Gone from the plant for good. You cannot undo this.",
 };
 
 export const LIFECYCLE_BADGE_CLASS = {
@@ -34,6 +35,17 @@ export const LIFECYCLE_BADGE_CLASS = {
 };
 
 export const CRITICALITY_LABELS = { A: "A", B: "B", C: "C" };
+
+// The grade with its word, for selects and the badge's title (S064 UX-20)
+export const CRITICALITY_OPTIONS = { A: "A — critical", B: "B — important", C: "C — normal" };
+
+// What each grade means at VEL (docs/Maintenance-Philosophy.md, decided in S002), shown under the
+// form's select: a title never shows on a phone
+export const CRITICALITY_HELP = {
+  A: "Stops a production line or is a safety or environment risk; no standby.",
+  B: "Slows production or has a standby; repair within the shift.",
+  C: "No direct production impact; repair when convenient.",
+};
 
 export const CRITICALITY_BADGE_CLASS = {
   // Shades of blue, strongest = most critical: a grade is a ranking, not an alarm, so no red/amber.

@@ -833,9 +833,12 @@ def _check_grantable(cur, table, ids, held, field, label):
     rows_by_id = {r["id"]: r for r in cur.fetchall()}
     for record_id in ids:
         if record_id not in rows_by_id:
-            raise ApiError(f"Unknown {label} {record_id}", 400, field)
-        if not rows_by_id[record_id]["active"] and record_id not in held:
-            raise ApiError(f"{label.capitalize()} {record_id} is inactive and cannot be newly granted", 400, field)
+            raise ApiError(f"That {label} no longer exists. Reload and try again.", 400, field)
+        row = rows_by_id[record_id]
+        if not row["active"] and record_id not in held:
+            # A unit by its code, a trade (no code) by its name; never the id (S064 UX-13 row 17)
+            shown = row.get("code") or row["name"]
+            raise ApiError(f"{label.capitalize()} {shown} is inactive. Untick it or reactivate it.", 400, field)
     return rows_by_id
 
 
@@ -1128,16 +1131,20 @@ class _SiteViewer:
             return False
         return self.it_admin or (self.assigns_at(row["site_id"]) and technician_only(row["role"], None))
 
-    def assignable_site_ids(self, person, present_site_ids):
-        """Active sites where this viewer may add a row for the person (a Technician row, for
-        an engineer; any role, for IT admin)."""
-        if _is_own(person):
-            return []
+    def grantable_site_ids(self):
+        """Active sites where this viewer may add a row for someone (a Technician row, for an
+        engineer; any role, for IT admin), before any person's own rows are taken out.  The
+        people list sends it for the Add dialog, which has no person yet (S064 § 5.6 rule 1)."""
         if self._active_site_ids is None:
             self._cur.execute("SELECT id FROM sites WHERE active = 1 ORDER BY code")
             self._active_site_ids = [r["id"] for r in self._cur.fetchall()]
-        return [site_id for site_id in self._active_site_ids
-                if site_id not in present_site_ids and (self.it_admin or self.assigns_at(site_id))]
+        return [site_id for site_id in self._active_site_ids if self.it_admin or self.assigns_at(site_id)]
+
+    def assignable_site_ids(self, person, present_site_ids):
+        """Active sites where this viewer may add a row for the person."""
+        if _is_own(person):
+            return []
+        return [site_id for site_id in self.grantable_site_ids() if site_id not in present_site_ids]
 
 
 def _unit_summary(row):
@@ -1173,7 +1180,7 @@ def _people_out(cur, rows):
     """Rows with their trades and, for those who may see them, their site rows.  Editors
     (people:edit) learn whether a person has a login; the login itself, and the email address
     copied from it (S032 § 1.6), go only to those who maintain it, IT admin (A.5.15, A.5.34).
-    Site rows: _SiteViewer."""
+    Site rows: _SiteViewer.  -> (items, the viewer)."""
     items = _attach_trades(cur, rows_to_list(rows))
     viewer = _SiteViewer(cur)
     site_rows = _site_rows(cur, [item["id"] for item in items]) if viewer.editor else {}
@@ -1188,12 +1195,13 @@ def _people_out(cur, rows):
         if not viewer.senior:
             del item["username"]
             del item["email"]
-    return items
+    return items, viewer
 
 
 def _fetch_person(cur, person_id):
     cur.execute("SELECT * FROM people WHERE id = %s", (person_id,))
-    return _people_out(cur, [cur.fetchone()])[0]
+    items, _viewer = _people_out(cur, [cur.fetchone()])
+    return items[0]
 
 
 def _check_login_change(clean):
@@ -1232,8 +1240,12 @@ def list_people():
     where = "" if _include_inactive() else "WHERE active = 1 "
     with get_db().cursor() as cur:
         cur.execute(f"SELECT * FROM people {where}ORDER BY name, id")
-        items = _people_out(cur, cur.fetchall())
-    return jsonify({"items": items, "total": len(items)})
+        items, viewer = _people_out(cur, cur.fetchall())
+        body = {"items": items, "total": len(items)}
+        # The sites the Add dialog offers (S064 UX-14): only editors get site data, as each item
+        if viewer.editor:
+            body["assignable_site_ids"] = viewer.grantable_site_ids()
+    return jsonify(body)
 
 
 def _held_trade_ids(cur, person_id):
@@ -1350,7 +1362,7 @@ def _check_site_row(cur, site_id, clean, stored, field):
     if site is None:
         raise ApiError("Unknown site", 400, field)
     if not site["active"] and stored is None:
-        raise ApiError(f"Site {site['code']} is inactive and cannot be newly granted", 400, field)
+        raise ApiError(f"Site {site['code']} is inactive. Remove the row or reactivate the site.", 400, field)
     held = stored["unit_ids"] if stored else set()
     for unit in _check_grantable(cur, "units", clean["unit_ids"], held, "unit_ids", "unit").values():
         if unit["site_id"] != site_id:

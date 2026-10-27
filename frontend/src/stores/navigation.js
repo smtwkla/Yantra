@@ -11,7 +11,12 @@ export const navItems = [
   { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
   // S050: every equipment:read holder; the storekeeper and IT admin see only the Register tab
   { name: "readings", path: "/readings", icon: "fa-solid fa-gauge", label: "Readings", perm: "equipment:read" },
-  { name: "masters", path: "/masters", icon: "yi-icon yi-table-edit", label: "Masters", perm: "masters:read" },
+  // S064 UX-12: only the people who maintain masters data see the item (and may open the route);
+  // masters:read stays every role's for the pick-lists
+  {
+    name: "masters", path: "/masters", icon: "yi-icon yi-table-edit", label: "Masters",
+    perms: ["masters:edit", "equipment:edit", "people:edit", "failure_codes:edit"],
+  },
   { name: "settings", path: "/settings", icon: "fa-solid fa-gear", label: "Settings", perm: "settings:read" },
 ];
 

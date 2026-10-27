@@ -115,9 +115,12 @@ export const NOT_SAVED = "Not saved. Try again in a minute.";
 // 502 to 504: Nginx or the backend is down or restarting; 503 is also the database being down
 const UNAVAILABLE = [502, 503, 504];
 
-/** The server or its database did not answer (502-504), or the request never reached it (no status). */
+/**
+ * The server or its database did not answer (502-504), or the request never reached it: status 0
+ * from api.js on a dropped connection (S064 UX-06), or no status at all.
+ */
 export function isUnavailable(err) {
-  return err.status === undefined || UNAVAILABLE.includes(err.status);
+  return err.status === undefined || err.status === 0 || UNAVAILABLE.includes(err.status);
 }
 
 /**

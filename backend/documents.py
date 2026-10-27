@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 documents_bp = Blueprint("documents", __name__)
 
 UNIQUE_KEY_ERRORS.update({
-    "uq_equipment_documents_stored": (None, "Retry the upload"),
+    "uq_equipment_documents_stored": (None, "The upload failed. Try again."),
 })
 
 # Room for the multipart boundaries and the kind and title fields on top of the file
@@ -83,8 +83,7 @@ STORED_TOKEN_BYTES = 16   # 32 hex characters
 CACHE_MAX_AGE_S = 3600
 
 STORAGE_UNAVAILABLE = "File storage is unavailable — try again later"
-FILE_LEFT_BEHIND = ("The record is deleted, but its file could not be removed from storage. "
-                    "Ask IT to remove it; the path is in the server log.")
+FILE_LEFT_BEHIND = "Deleted, but its file is still on the server. Tell IT."
 
 _ITEM_COLUMNS = ("id, kind, title, original_name, content_type, size_bytes, has_thumb,"
                  " created_at, created_by, updated_at, updated_by")

@@ -97,7 +97,7 @@ describe("the readings sheet's shared helpers (S040)", () => {
   const status = (code) => Object.assign(new Error("x"), { status: code, field: "value" });
 
   it("a reading is not saved when the server or the network does not answer (BS1-02)", () => {
-    for (const code of [502, 503, 504, undefined]) {
+    for (const code of [502, 503, 504, undefined, 0]) { // 0: api.js's dropped connection (S064)
       expect(isUnavailable(status(code))).toBe(true);
       const err = notSavedOr(status(code));
       expect([err.message, err.field, err.status]).toEqual([NOT_SAVED, null, code]);

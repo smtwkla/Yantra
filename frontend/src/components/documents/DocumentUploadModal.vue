@@ -1,23 +1,27 @@
 <script setup>
 /**
- * Upload dialog — kind, title, file (docs/steps/S006-equipment-documents/1-brief.md § 1, § 5.2, § 6.3).
+ * Upload dialog — file and title (docs/steps/S006-equipment-documents/1-brief.md § 1, § 5.2, § 6.3).
  *
- * The parent calls open(kind) through a template ref and handles @saved. The title is
- * pre-filled from the file name without its extension. A file above the upload limit is
- * refused here before sending, to save mobile data; the backend checks again and decides
- * the file type from its first bytes.
+ * The parent calls open(kind) through a template ref and handles @saved: Add document and Add
+ * photo each pass their kind, and the dialog's title names it (S064 UX-11: no Kind choice). The
+ * title is pre-filled from the file name without its extension, except a camera's own name
+ * (IMG_…, PXL_…), which says nothing: the title then stays empty for the user to fill. A file
+ * above the upload limit is refused here before sending, to save mobile data; the backend checks
+ * again and decides the file type from its first bytes.
  *
  * The file input has no `capture` attribute, so a phone offers the camera and the gallery.
  *
  * The parent passes the owner's documents collection URL (a node or a model: S012; a
- * ticket: S017). With `photosOnly` (a user who may add photos but not documents: an operator
- * on a ticket, S018) the Kind choice is hidden and the kind is photo.
+ * ticket: S017). Who may add which kind is the parent's: it shows only the buttons the user may
+ * use (S018).
+ *
+ * The iPhone note (Most Compatible) shows only after the server refused a HEIC / HEIF file.
  */
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { apiUpload } from "../../api";
 import FormModal from "../FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
-import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../../utils/documentTypes";
+import { ACCEPT, IPHONE_PHOTO_HINT, isCameraName, isHeicFile, withoutExtension } from "../../utils/documentTypes";
 
 const props = defineProps({
   basePath: { type: String, required: true },
@@ -25,8 +29,6 @@ const props = defineProps({
   everySite: { type: Boolean, default: false },
   // From the list response; null until the list has loaded (the backend still checks)
   uploadMaxMb: { type: Number, default: null },
-  // Photos only for this user (a ticket's operator, S018): no Kind choice
-  photosOnly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["saved"]);
 
@@ -34,10 +36,6 @@ const MB = 1024 * 1024;
 // A ticket's files are seen by everyone who sees the ticket (S017 § 5.5); the owner is known by its URL
 const ticketOwner = computed(() => props.basePath.startsWith("/api/tickets/"));
 const TITLE_MAX = 200;
-const KIND_LABELS = {
-  document: "Document (PDF)",
-  photo: "Photo (JPEG, PNG or WebP)",
-};
 
 // Uploads are multipart, so they go through send() rather than useFormModal's JSON save()
 const { modal, form, saving, dirty, fieldError, modalError, openCreate, send } = useFormModal({
@@ -48,7 +46,10 @@ const { modal, form, saving, dirty, fieldError, modalError, openCreate, send } =
 
 // Bumped to give the file input a fresh element: an <input type="file"> cannot be cleared from code
 const fileInputKey = ref(0);
+const titleInput = ref(null);
 let prefilledTitle = "";
+// The chosen file has a camera's name: the title field asks what the photo shows
+const cameraNamed = ref(false);
 
 const tooLarge = computed(() =>
   Boolean(form.value.file && props.uploadMaxMb && form.value.file.size > props.uploadMaxMb * MB),
@@ -56,30 +57,28 @@ const tooLarge = computed(() =>
 const fileError = computed(() => (tooLarge.value ? `Larger than ${props.uploadMaxMb} MB` : fieldError("file")));
 const saveDisabledReason = computed(() => {
   if (!form.value.file) return "Choose a file";
-  return tooLarge.value ? fileError.value : "";
+  if (tooLarge.value) return fileError.value;
+  return form.value.title.trim() === "" ? "Enter a title" : "";
 });
-
-function clearFile() {
-  form.value.file = null;
-  fileInputKey.value += 1;
-}
-
-// A file chosen for one kind may not suit the other
-watch(() => form.value.kind, clearFile);
+// After the server refused the chosen HEIC file (the error is on the file field or the dialog)
+const showIphoneHint = computed(() => isHeicFile(form.value.file) && Boolean(fieldError("file") || modalError.value));
 
 function onFileChosen(event) {
   const file = event.target.files[0] ?? null;
   form.value.file = file;
+  cameraNamed.value = Boolean(file) && isCameraName(file.name);
   // Pre-fill the title, unless the user has typed one of their own
   if (file && (form.value.title === "" || form.value.title === prefilledTitle)) {
-    prefilledTitle = withoutExtension(file.name).slice(0, TITLE_MAX);
+    prefilledTitle = cameraNamed.value ? "" : withoutExtension(file.name).slice(0, TITLE_MAX);
     form.value.title = prefilledTitle;
+    if (cameraNamed.value) nextTick(() => titleInput.value?.focus());
   }
 }
 
 function open(kind) {
   prefilledTitle = "";
-  openCreate(props.photosOnly ? "photo" : kind);
+  cameraNamed.value = false;
+  openCreate(kind);
   fileInputKey.value += 1;
 }
 
@@ -106,14 +105,6 @@ defineExpose({ open });
     save-label="Upload"
     @save="save"
   >
-    <div v-if="!photosOnly" class="mb-3">
-      <label class="form-label d-block">Kind</label>
-      <div v-for="(label, kind) in KIND_LABELS" :key="kind" class="form-check form-check-inline">
-        <input :id="`doc-kind-${kind}`" v-model="form.kind" class="form-check-input" type="radio" :value="kind" />
-        <label class="form-check-label" :for="`doc-kind-${kind}`">{{ label }}</label>
-      </div>
-      <div v-if="fieldError('kind')" class="invalid-feedback d-block">{{ fieldError("kind") }}</div>
-    </div>
     <div class="mb-3">
       <label class="form-label" for="doc-file">File</label>
       <input
@@ -128,14 +119,16 @@ defineExpose({ open });
       <div v-if="fileError" class="invalid-feedback d-block">{{ fileError }}</div>
       <div class="form-text">
         <template v-if="uploadMaxMb">At most {{ uploadMaxMb }} MB.</template>
-        <template v-if="form.kind === 'photo'">{{ IPHONE_PHOTO_HINT }}</template>
+        <template v-if="showIphoneHint"> {{ IPHONE_PHOTO_HINT }}</template>
       </div>
     </div>
     <div class="mb-0">
       <label class="form-label" for="doc-title">Title</label>
       <input
         id="doc-title"
+        ref="titleInput"
         v-model="form.title"
+        :placeholder="cameraNamed ? 'What does the photo show?' : null"
         class="form-control"
         :class="{ 'is-invalid': fieldError('title') }"
         :maxlength="TITLE_MAX"

@@ -15,6 +15,10 @@
  * - Background tasks card: each scheduled task's last and next run, Overdue when the worker
  *   seems stopped, and the failed count (S013 § 5.6).
  * - Access log card, with access_log:view (S013 § 5.4).
+ * The Database and Background tasks cards are IT's: they show only with settings:edit, and
+ * their data is fetched only then (S064 UX-19; the APIs stay settings:read).  Without
+ * settings:edit, Removed documents comes first.  Saving the network ranges or the label address
+ * asks first, inside the card, with what the change does (S064 UX-04, UX-17).
  */
 import { computed, onMounted, ref } from "vue";
 import { apiGet, apiPut } from "../api";
@@ -115,7 +119,19 @@ async function loadLabels() {
   }
 }
 
+// The fixed code the confirm's sample link shows (S064 § 9 item 5): only text, no lookup
+const SAMPLE_CODE = "MCC2CMP001";
+const confirmingLabels = ref(false);
+// Joined as the server does (labels_core.label_url): no trailing slash, then /e/<code>
+const sampleLabelLink = computed(() => `${labelBaseUrlInput.value.trim().replace(/\/+$/, "")}/e/${SAMPLE_CODE}`);
+
+function editLabels() {
+  labelsSaved.value = false;
+  confirmingLabels.value = false;
+}
+
 async function saveLabels() {
+  confirmingLabels.value = false;
   labelsSaving.value = true;
   labelsSaveError.value = "";
   labelsSaved.value = false;
@@ -156,7 +172,20 @@ async function loadNetwork() {
   }
 }
 
+const confirmingNetwork = ref(false);
+// What the save changes, line by line: trimmed, empty lines dropped.  A range typed in another
+// form than the server stores it shows as both; the lists are a reminder, the server normalises.
+const typedRanges = computed(() => networksInput.value.split("\n").map((line) => line.trim()).filter(Boolean));
+const addedRanges = computed(() => typedRanges.value.filter((range) => !network.value.networks.includes(range)));
+const removedRanges = computed(() => network.value.networks.filter((range) => !typedRanges.value.includes(range)));
+
+function editNetwork() {
+  networkSaved.value = false;
+  confirmingNetwork.value = false;
+}
+
 async function saveNetwork() {
+  confirmingNetwork.value = false;
   networkSaving.value = true;
   networkSaveError.value = "";
   networkSaved.value = false;
@@ -177,6 +206,8 @@ const networksChanged = computed(() => network.value !== null && networksInput.v
 // ---------------------------------------------------------------------------
 
 const TASK_LABELS = { purge_access_log: "Delete access-log entries older than 365 days" };
+// The task's last status in words (S064 UX-27); an unknown value shows as it is
+const TASK_STATUS_WORDS = { done: "Done", failed: "Failed", pending: "Waiting", running: "Running" };
 const TASK_STATUS_BADGES = {
   done: "text-bg-success",
   failed: "text-bg-danger",
@@ -201,17 +232,22 @@ async function loadTasks() {
 }
 
 onMounted(() => {
-  loadStatus();
+  if (canEditSettings.value) {
+    loadStatus();
+    loadTasks();
+  }
   loadAppSettings();
   loadLabels();
   loadNetwork();
-  loadTasks();
 });
 </script>
 
 <template>
   <div class="py-3">
-    <div class="card db-card">
+    <!-- A manager's card first: the one they act on (S064 UX-19) -->
+    <RemovedDocuments v-if="canPurgeDocuments && !canEditSettings" />
+
+    <div v-if="canEditSettings" class="card db-card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fa-solid fa-database me-2"></i>Database</span>
         <button class="btn btn-sm btn-outline-secondary" :disabled="loading" title="Refresh" @click="loadStatus">
@@ -293,7 +329,7 @@ onMounted(() => {
       <div class="card-body">
         <div v-if="labelsLoadError" class="alert alert-danger mb-0">{{ labelsLoadError }}</div>
         <div v-else-if="labelBaseUrl === null" class="text-secondary">Loading…</div>
-        <form v-else-if="canEditSettings" novalidate @submit.prevent="saveLabels">
+        <form v-else-if="canEditSettings" novalidate @submit.prevent="confirmingLabels = true">
           <label class="form-label" for="label-base-url">Label link address</label>
           <div class="d-flex flex-wrap align-items-start gap-2">
             <input
@@ -303,14 +339,27 @@ onMounted(() => {
               class="form-control label-address"
               :class="{ 'is-invalid': labelsSaveError }"
               spellcheck="false"
-              @input="labelsSaved = false"
+              @input="editLabels"
             />
-            <button type="submit" class="btn btn-primary" :disabled="labelsSaving || labelBaseUrlInput === labelBaseUrl">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="labelsSaving || confirmingLabels || labelBaseUrlInput === labelBaseUrl"
+            >
               <span v-if="labelsSaving" class="spinner-border spinner-border-sm me-1"></span>Save
             </button>
             <span v-if="labelsSaved" class="text-success align-self-center small">Saved</span>
           </div>
           <div v-if="labelsSaveError" class="invalid-feedback d-block">{{ labelsSaveError }}</div>
+          <div v-if="confirmingLabels" class="alert alert-warning mt-2 mb-0" role="alert" data-test="labels-confirm">
+            <p class="mb-2">
+              Labels printed from now on will open <strong class="text-break">{{ sampleLabelLink }}</strong>. Save?
+            </p>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-primary" @click="saveLabels">Yes, save</button>
+              <button type="button" class="btn btn-outline-secondary" @click="confirmingLabels = false">No</button>
+            </div>
+          </div>
           <div class="form-text">
             Each QR label opens this address + /e/ + the equipment code, whoever prints it. Only the host
             (no path), at most 40 characters. Labels already printed keep the address they were printed with.
@@ -334,7 +383,7 @@ onMounted(() => {
             <span v-if="network.your_ip_internal" class="badge text-bg-success">internal</span>
             <span v-else class="badge text-bg-warning">external</span>
           </p>
-          <form v-if="canEditSettings" novalidate @submit.prevent="saveNetwork">
+          <form v-if="canEditSettings" novalidate @submit.prevent="confirmingNetwork = true">
             <label class="form-label" for="internal-networks">Plant network ranges</label>
             <textarea
               id="internal-networks"
@@ -343,7 +392,7 @@ onMounted(() => {
               :class="{ 'is-invalid': networkSaveError }"
               rows="4"
               spellcheck="false"
-              @input="networkSaved = false"
+              @input="editNetwork"
             ></textarea>
             <div v-if="networkSaveError" class="invalid-feedback d-block">{{ networkSaveError }}</div>
             <div class="form-text">
@@ -352,10 +401,24 @@ onMounted(() => {
               out your own address is refused; it does not check other sites' ranges, so check each before saving.
             </div>
             <div class="d-flex align-items-center gap-2 mt-2">
-              <button type="submit" class="btn btn-primary" :disabled="networkSaving || !networksChanged">
+              <button type="submit" class="btn btn-primary" :disabled="networkSaving || confirmingNetwork || !networksChanged">
                 <span v-if="networkSaving" class="spinner-border spinner-border-sm me-1"></span>Save
               </button>
               <span v-if="networkSaved" class="text-success small">Saved</span>
+            </div>
+            <!-- A lock-out risk: the effect is shown before anything is saved (S064 UX-04) -->
+            <div v-if="confirmingNetwork" class="alert alert-warning mt-2 mb-0" role="alert" data-test="network-confirm">
+              <p class="mb-2 fw-semibold">Save these ranges? IT admin outside them will be refused within 5 minutes.</p>
+              <div v-if="addedRanges.length" class="mb-1">
+                <strong>Added:</strong> <span class="font-monospace">{{ addedRanges.join(", ") }}</span>
+              </div>
+              <div v-if="removedRanges.length" class="mb-1">
+                <strong>Removed:</strong> <span class="font-monospace">{{ removedRanges.join(", ") }}</span>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mt-2">
+                <button type="button" class="btn btn-danger" @click="saveNetwork">Yes, save</button>
+                <button type="button" class="btn btn-outline-secondary" @click="confirmingNetwork = false">No</button>
+              </div>
             </div>
           </form>
           <dl v-else class="row mb-0">
@@ -370,7 +433,7 @@ onMounted(() => {
 
     <NotificationsSettings />
 
-    <div class="card settings-card mt-3">
+    <div v-if="canEditSettings" class="card settings-card mt-3">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="fa-solid fa-gears me-2"></i>Background tasks</span>
         <button class="btn btn-sm btn-outline-secondary" :disabled="tasksLoading" title="Refresh" @click="loadTasks">
@@ -391,7 +454,7 @@ onMounted(() => {
               <template v-if="task.last_run">
                 {{ formatDateTime(task.last_run) }}
                 <span class="badge ms-1" :class="TASK_STATUS_BADGES[task.last_status] || 'text-bg-light'">
-                  {{ task.last_status }}
+                  {{ TASK_STATUS_WORDS[task.last_status] ?? task.last_status }}
                 </span>
               </template>
               <span v-else class="text-secondary">never</span>
@@ -410,7 +473,7 @@ onMounted(() => {
 
     <AccessLog v-if="canViewAccessLog" />
 
-    <RemovedDocuments v-if="canPurgeDocuments" />
+    <RemovedDocuments v-if="canPurgeDocuments && canEditSettings" />
   </div>
 </template>
 

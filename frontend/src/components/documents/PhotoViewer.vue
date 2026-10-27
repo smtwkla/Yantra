@@ -97,10 +97,12 @@ defineExpose({ open, close });
 
 <template>
   <div ref="el" class="modal fade" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
+    <!-- The whole screen on a phone, the photo sized to the space left, so Previous / Next stay
+         on screen (S064 UX-09) -->
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-sm-down">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title text-truncate">{{ photo?.title }}</h5>
+          <h5 class="modal-title photo-title">{{ photo?.title }}</h5>
           <button type="button" class="btn-close" aria-label="Close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body text-center photo-body">
@@ -147,5 +149,20 @@ defineExpose({ open, close });
   max-width: 100%;
   max-height: 75vh;
   object-fit: contain;
+}
+/* A long title wraps to two lines, then is cut */
+.photo-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* Below sm the dialog is the screen: the photo takes what the header and footer leave */
+@media (max-width: 575.98px) {
+  .photo-large {
+    max-height: calc(100dvh - 9rem);
+  }
 }
 </style>

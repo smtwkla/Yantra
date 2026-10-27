@@ -5,9 +5,35 @@
  * - No view or component should call fetch() directly.
  * - Files are fetched as blobs with the token (apiGetBlob), never through a plain
  *   <img src> or link, which could not send it (S006 § 6.3).
+ * - The browser's own texts never reach the user (S064 UX-06): a dropped connection and a 5xx
+ *   without JSON (the proxy's error page) get plain messages.
  */
 
 import { getToken, networkDenied } from "./stores/auth";
+import { NO_CONNECTION_TEXT, NOT_ANSWERING_TEXT } from "./utils/messages";
+
+// fetch() rejects with a TypeError when the network fails ("Failed to fetch", "Load failed");
+// it becomes a plain Error with status 0.  An abort (AbortError) is the caller's and goes on as it is.
+async function send(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause;
+    // A TypeError is mostly the network, but a coding error (bad header value) looks the same
+    console.error("fetch failed", cause);
+    const err = new Error(NO_CONNECTION_TEXT, { cause });
+    err.status = 0;
+    err.code = null;
+    err.field = null;
+    err.ip = null;
+    throw err;
+  }
+}
+
+// A body that is not JSON: a 5xx is the proxy or a crashed server; a 4xx keeps its status text
+function notJsonBody(response) {
+  return { error: response.status >= 500 ? NOT_ANSWERING_TEXT : response.statusText };
+}
 
 async function authHeaders() {
   const token = await getToken();
@@ -19,7 +45,7 @@ async function authHeaders() {
 // store's networkDenied, so App.vue shows the full-page card even mid-session.
 async function throwIfFailed(response) {
   if (response.ok) return;
-  const error = await response.json().catch(() => ({ error: response.statusText }));
+  const error = await response.json().catch(() => notJsonBody(response));
   const err = new Error(error.error || `HTTP ${response.status}`);
   err.status = response.status;
   err.code = error.code ?? null;   // machine-readable refusal kind, when the API sends one
@@ -37,7 +63,7 @@ async function request(method, url, body = null) {
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, options);
+  const response = await send(url, options);
   await throwIfFailed(response);
 
   const ct = response.headers.get("content-type") || "";
@@ -63,14 +89,14 @@ export function apiDelete(url) {
 
 /** POST a multipart form; the browser sets the Content-Type with its boundary. */
 export async function apiUpload(url, formData) {
-  const response = await fetch(url, { method: "POST", headers: await authHeaders(), body: formData });
+  const response = await send(url, { method: "POST", headers: await authHeaders(), body: formData });
   await throwIfFailed(response);
   return response.json();
 }
 
 /** GET a file as a Blob, for URL.createObjectURL. */
 export async function apiGetBlob(url) {
-  const response = await fetch(url, { headers: await authHeaders() });
+  const response = await send(url, { headers: await authHeaders() });
   await throwIfFailed(response);
   return response.blob();
 }

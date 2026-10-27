@@ -267,9 +267,9 @@ def _check_place(level, clean, creating, errors):
         if clean.get("parent_id") is not None:
             errors.append({"field": "parent_id", "message": check_parent(level, "equipment")})
         if ("unit_id" in clean or creating) and clean.get("unit_id") is None and "unit_id" not in failed:
-            errors.append({"field": "unit_id", "message": "Unit is required for equipment"})
+            errors.append({"field": "unit_id", "message": "Choose a unit."})
         if "criticality" in clean and clean["criticality"] is None:
-            errors.append({"field": "criticality", "message": "Criticality is required for equipment"})
+            errors.append({"field": "criticality", "message": "Choose a criticality."})
     else:
         if clean.get("unit_id") is not None:
             errors.append({"field": "unit_id",

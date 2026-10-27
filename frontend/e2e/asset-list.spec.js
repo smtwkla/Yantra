@@ -54,7 +54,8 @@ test("manager: a section per unit with its header; parts indented with the count
 
   // Leaving the page takes its A4 @page rule away, so other screens print as they like
   await page.goto("/equipment");
-  await expect(page.getByRole("button", { name: /Print asset list/ })).toBeVisible();
+  // The list is loaded (its search shows on every width; Print asset list only from md up, S064)
+  await expect(page.getByRole("searchbox", { name: "Search" })).toBeVisible();
   const pageRules = await page.evaluate(() => [...document.head.querySelectorAll("style")].filter((s) => s.textContent.includes("@page")).length);
   expect(pageRules).toBe(0);
 });
@@ -70,7 +71,8 @@ test("filters that match nothing say so", async ({ page }) => {
   await expect(page.getByText("Nothing to list for these filters")).toBeVisible();
 });
 
-test("S062: Print asset list with a property filter lists only the matching machine and names the filter", async ({ page }, testInfo) => {
+test("S062: Print asset list with a property filter lists only the matching machine and names the filter", { tag: "@device" }, async ({ page }, testInfo) => {
+  test.skip(page.viewportSize().width < 768, "the office's print buttons are hidden on a phone (S064 D12)");
   const tag = propertyTag(testInfo);
   const name = `E2E rated power ${tag}`;
   const { node, properties: [power] } = await propertySetup(tag, {
@@ -93,7 +95,8 @@ test("S062: Print asset list with a property filter lists only the matching mach
   await sheet.close();
 });
 
-test("S063: Print asset list with a category filter names the category in the section header", async ({ page }, testInfo) => {
+test("S063: Print asset list with a category filter names the category in the section header", { tag: "@device" }, async ({ page }, testInfo) => {
+  test.skip(page.viewportSize().width < 768, "the office's print buttons are hidden on a phone (S064 D12)");
   const tag = propertyTag(testInfo);
   const { cls, node } = await propertySetup(tag);
   const category = await categorySetup(tag, [cls]);

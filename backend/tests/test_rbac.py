@@ -276,7 +276,9 @@ class TestRequirePerm:
         g.user = _user(["maint_manager"])
         response, status = _guarded()
         assert status == 403
-        assert "settings:edit" in response.get_json()["error"]
+        # S064 UX-13 row 1: plain words on the screen; the key needed goes to the access log only
+        assert response.get_json()["error"] == "You don't have permission for this. Ask your engineer or IT."
+        assert (g.access_outcome, g.access_detail) == ("denied_perm", "settings:edit")
 
     def test_blocks_anonymous(self, ctx):
         _, status = _guarded()

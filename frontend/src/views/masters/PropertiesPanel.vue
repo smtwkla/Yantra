@@ -2,7 +2,7 @@
 /**
  * Properties (S043 § 7.1) — the technical data a class of equipment has (ISO 14224 Annex A
  * equipment-specific data): a name, a data type, a unit for a number, the options of a choice.
- * Defined once and linked to any number of classes in Equip Class; valued on models. Edited by
+ * Defined once and linked to any number of classes in Classes; valued on models. Edited by
  * the keepers of classes and models (equipment:edit). Never deleted: deactivated.
  *
  * The dialog: a new property is one POST with its first options. An edit is a PUT of the
@@ -228,7 +228,7 @@ onMounted(reload);
       </select>
       <div v-if="fieldError('data_type')" class="invalid-feedback d-block">{{ fieldError("data_type") }}</div>
       <div v-if="typeFixed" class="form-text">This property has options or values, so its data type is fixed.</div>
-      <div class="form-text">How the equipment is built (centrifugal, open execution) is its type: use Equip Type for that.</div>
+      <div class="form-text">How the equipment is built (centrifugal, open execution) is its type: use Masters › Types for that.</div>
     </div>
     <div v-if="form.data_type === 'number'" class="mb-3">
       <label class="form-label" for="property-unit">Unit</label>

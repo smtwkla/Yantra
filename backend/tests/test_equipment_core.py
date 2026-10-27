@@ -271,6 +271,12 @@ class TestValidateCreate:
         _, errors = _create(**EQUIPMENT, criticality=None)
         assert _fields(errors) == ["criticality"]
 
+    def test_missing_unit_and_criticality_read_as_a_choice(self):
+        # S064 UX-13 row 20
+        assert _create(**{**EQUIPMENT, "unit_id": None})[1] == [{"field": "unit_id", "message": "Choose a unit."}]
+        assert _create(**EQUIPMENT, criticality=None)[1] == [
+            {"field": "criticality", "message": "Choose a criticality."}]
+
     def test_null_criticality_on_a_part_means_inherit(self):
         clean, errors = _create(**PART, criticality=None)
         assert errors == [] and clean["criticality"] is None

@@ -27,9 +27,20 @@ const IT_ADMIN = [
 const visible = (perms) => navItems.filter((i) => canSeeNavItem(i, perms)).map((i) => i.name);
 
 describe("navigation permissions", () => {
-  it("maint_operator sees Me, Equipment, Tickets, Readings and Masters, and cannot open Settings", () => {
-    expect(visible(OPERATOR)).toEqual(["me", "equipment", "tickets", "readings", "masters"]);
+  it("maint_operator sees Me, Equipment, Tickets and Readings, and cannot open Masters or Settings (S064)", () => {
+    expect(visible(OPERATOR)).toEqual(["me", "equipment", "tickets", "readings"]);
+    expect(canOpenRoute("masters", OPERATOR)).toBe(false);
     expect(canOpenRoute("settings", OPERATOR)).toBe(false);
+  });
+
+  it("Masters shows to holders of any one of its four edit keys, not to masters:read alone (S064 UX-12)", () => {
+    for (const key of ["masters:edit", "equipment:edit", "people:edit", "failure_codes:edit"]) {
+      expect(visible(["masters:read", key])).toContain("masters");
+      expect(canOpenRoute("masters", ["masters:read", key])).toBe(true);
+    }
+    expect(visible(["masters:read"])).not.toContain("masters");
+    expect(canOpenRoute("masters", ["masters:read"])).toBe(false);
+    expect(visible(SUPERVISOR)).not.toContain("masters");
   });
 
   it("Me is first for every role with ticket:read; manager and IT admin also see Settings (S035)", () => {
@@ -50,7 +61,7 @@ describe("navigation permissions", () => {
   });
 
   it("the storekeeper sees no Tickets and cannot open the list (S017 user decision 7)", () => {
-    expect(visible(STOREKEEPER)).toEqual(["equipment", "readings", "masters"]);
+    expect(visible(STOREKEEPER)).toEqual(["equipment", "readings"]);
     expect(canOpenRoute("tickets", STOREKEEPER)).toBe(false);
     expect(canOpenRoute("me", STOREKEEPER)).toBe(false); // S031
   });

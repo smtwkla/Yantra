@@ -6,7 +6,7 @@
 :root {
   /* Layout dimensions */
   --sidebar-width: 60px;
-  --topbar-height: 42px;
+  --topbar-height: 48px; /* holds the 44 px Sign out button (S064 UX-02) */
 
   /* Sidebar */
   --sidebar-bg: #1e293b;
@@ -122,7 +122,7 @@ body {
     color: var(--sidebar-icon-color);
     text-decoration: none;
     cursor: pointer;
-    font-size: 0.65rem;
+    font-size: 0.75rem; /* S064 UX-12: readable on the floor */
     gap: 2px;
     transition: color 0.15s;
   }
@@ -135,6 +135,12 @@ body {
   .bottom-nav-item:hover {
     color: var(--sidebar-icon-active-color);
   }
+}
+
+/* S064: a floor control a gloved thumb can hit, 44 px high (WCAG 2.2 SC 2.5.5); Bootstrap's
+   btn alone is 38 px.  Used on Sign out, the pager, a document's Download and "⋯", Filters (n). */
+.tap-target {
+  min-height: 44px;
 }
 
 /* Suppress the default focus outline for mouse users, keep for keyboard */

@@ -23,7 +23,7 @@ import {
   defaultSiteId, ensureEquipmentClasses, ensureEquipmentTypes, ensureModels, ensureSites, ensureUnits,
   equipmentClasses, equipmentModels, equipmentTypes, sites, units,
 } from "../../stores/masters";
-import { LEVEL_LABELS, LIFECYCLE_LABELS } from "../../utils/equipmentLabels";
+import { CRITICALITY_HELP, CRITICALITY_OPTIONS, LEVEL_LABELS, LIFECYCLE_LABELS } from "../../utils/equipmentLabels";
 import {
   NO_MODEL, NO_MODEL_LEVEL, classHasNoModel, modelChoices, noModelClassChoices, noModelDefaults, noModelTypeChoices,
 } from "../../utils/modelPicker";
@@ -321,7 +321,7 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
 
     <div class="mb-3">
       <label class="form-label">Code</label>
-      <div class="form-control-plaintext py-0">{{ isEdit ? context.label : "Issued on save" }}</div>
+      <div class="form-control-plaintext py-0">{{ isEdit ? context.label : "The code is given on Save and never changes." }}</div>
     </div>
 
     <div class="mb-3">
@@ -345,11 +345,13 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
         <label class="form-label" for="eq-crit">Criticality</label>
         <select id="eq-crit" v-model="form.criticality" class="form-select" :class="{ 'is-invalid': fieldError('criticality') }">
           <option v-if="isPart" value="">{{ inheritLabel }}</option>
-          <option value="A">A</option>
-          <option value="B">B</option>
-          <option value="C">C</option>
+          <option v-for="(text, grade) in CRITICALITY_OPTIONS" :key="grade" :value="grade">{{ text }}</option>
         </select>
         <div v-if="fieldError('criticality')" class="invalid-feedback d-block">{{ fieldError("criticality") }}</div>
+        <!-- The chosen grade's meaning (S064 UX-20): a title never shows on a phone -->
+        <div v-if="CRITICALITY_HELP[form.criticality]" class="form-text" data-test="criticality-help">
+          {{ CRITICALITY_HELP[form.criticality] }}
+        </div>
       </div>
       <div v-if="!isEdit" class="col-sm-4">
         <label class="form-label" for="eq-lifecycle">Lifecycle</label>
@@ -358,12 +360,8 @@ defineExpose({ openCreateEquipment, openCreatePart, openEdit });
         </select>
         <div v-if="fieldError('lifecycle')" class="invalid-feedback d-block">{{ fieldError("lifecycle") }}</div>
       </div>
-      <div class="col-12 form-text mt-1">
-        Criticality —
-        <strong>A</strong>: stops a production line, or is a safety or environment risk; no standby.
-        <strong>B</strong>: slows production, or has a standby; repair within the shift.
-        <strong>C</strong>: no direct effect on production; repair when convenient.
-        <template v-if="isPart">A component-unit or component without its own grade takes its equipment's grade.</template>
+      <div v-if="isPart" class="col-12 form-text mt-1">
+        A component-unit or component without its own grade takes its equipment's grade.
       </div>
     </div>
 

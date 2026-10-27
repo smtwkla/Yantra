@@ -118,6 +118,8 @@ class TestLoginSave:
         person = make_person()
         res = admin.put(f"{BASE}/people/{person['id']}", json={"username": uniq.username(), "sites": [_site(site)]})
         assert (res.status_code, res.get_json()["field"]) == (400, "sites")
+        # S064 UX-13 row 17: the site by its code, with what to do
+        assert res.get_json()["error"] == f"Site {site['code']} is inactive. Remove the row or reactivate the site."
 
         kept_site = make_site()
         login = uniq.username()
@@ -135,6 +137,11 @@ class TestLoginSave:
         res = admin.put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}",
                         json=_row(role="maint_operator", unit_ids=[kept["id"], other["id"]]))
         assert (res.status_code, res.get_json()["field"]) == (400, "unit_ids")
+        # S064 UX-13 row 17: the unit by its code, never its id
+        assert res.get_json()["error"] == f"Unit {other['code']} is inactive. Untick it or reactivate it."
+        res = admin.put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}",
+                        json=_row(role="maint_operator", unit_ids=[kept["id"], 999999999]))
+        assert (res.status_code, res.get_json()["error"]) == (400, "That unit no longer exists. Reload and try again.")
         res = admin.put(f"{BASE}/people/{person['id']}/sites/{site_a['id']}",
                         json=_row(role="maint_engineer", unit_ids=[kept["id"]]))
         assert res.status_code == 200
@@ -471,6 +478,29 @@ class TestVisibility:
     def test_floor_roles_see_no_sites(self, role_client, make_person, role):
         row = _person(role_client(role), make_person()["id"])
         assert "sites" not in row and "assignable_site_ids" not in row
+        # S064: nor the list's own field for the Add dialog
+        assert "assignable_site_ids" not in role_client(role).get(f"{BASE}/people").get_json()
+
+    def test_list_assignable_sites_for_add_by_it_admin(self, admin, make_site, two_sites):
+        # S064 § 5.6 rule 1: IT admin may add a row at every active site, and at no inactive one
+        site_a, _, site_b, _ = two_sites
+        gone = make_site()
+        assert admin.put(f"{BASE}/sites/{gone['id']}", json={"active": False}).status_code == 200
+        listed = admin.get(f"{BASE}/people").get_json()["assignable_site_ids"]
+        active = [s["id"] for s in admin.get(f"{BASE}/sites").get_json()["items"]]
+        assert sorted(listed) == sorted(active)
+        assert {site_a["id"], site_b["id"]} <= set(listed) and gone["id"] not in listed
+
+    def test_list_assignable_sites_for_add_by_engineer(self, engineer_at_a, two_sites):
+        # Only where the engineer assigns technicians: A, not B where they are an operator
+        assert engineer_at_a[0].get(f"{BASE}/people").get_json()["assignable_site_ids"] == [two_sites[0]["id"]]
+
+    def test_list_assignable_sites_for_add_editor_without_grant(self, admin, user_at_sites, make_site):
+        # An editor (people:edit) whose one engineer site is inactive may add a row nowhere
+        site = make_site()
+        client, _ = user_at_sites([(site, "maint_engineer", "all")])
+        assert admin.put(f"{BASE}/sites/{site['id']}", json={"active": False}).status_code == 200
+        assert client.get(f"{BASE}/people").get_json()["assignable_site_ids"] == []
 
     def test_put_response_is_filtered(self, engineer_at_a, make_person, uniq, two_sites):
         site_a, _, site_b, _ = two_sites

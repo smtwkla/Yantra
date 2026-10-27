@@ -7,7 +7,7 @@ import time
 from flask import Flask, g, jsonify, request
 
 from access_control import client_network, make_access_log_hook, require_network
-from api_common import register_error_handlers
+from api_common import DB_LOST_TEXT, register_error_handlers
 from access_core import display_role
 from auth_utils import (
     current_memberships, current_person_id, global_permissions, membership_sites, require_auth, store_login_email,
@@ -63,7 +63,9 @@ register_error_handlers(app)
 
 @app.errorhandler(DBUnavailable)
 def _db_unavailable(exc):
-    return jsonify({"error": f"Database unavailable: {exc}"}), 503
+    # The cause goes to the log; the screen gets the one plain text of both 503s (S064 UX-13 row 2)
+    logger.error("Database unavailable on %s %s: %s", request.method, request.path, exc)
+    return jsonify({"error": DB_LOST_TEXT}), 503
 
 
 # ---------------------------------------------------------------------------

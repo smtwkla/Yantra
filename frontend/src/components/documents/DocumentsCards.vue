@@ -269,41 +269,58 @@ defineExpose({ reload: load });
           </div>
           <ul class="list-group list-group-flush">
             <li v-for="doc in group.items" :key="doc.id" class="list-group-item">
+              <!-- The title opens the PDF; Download is one labelled button; Edit title and Remove sit
+                   in the "⋯" menu, apart from it (S064 UX-10) -->
               <div class="d-flex flex-wrap align-items-start gap-2">
                 <i class="fa-regular fa-file-pdf text-danger mt-1"></i>
                 <div class="flex-grow-1 doc-text">
-                  <div class="fw-semibold">{{ doc.title }}</div>
+                  <button
+                    type="button"
+                    class="btn btn-link p-0 fw-semibold text-start text-decoration-none doc-title"
+                    title="Open in a new tab"
+                    @click="openPdf(doc)"
+                  >
+                    {{ doc.title }}
+                  </button>
                   <div class="small text-secondary">
                     {{ doc.original_name }} · {{ formatBytes(doc.size_bytes) }} ·
                     {{ doc.created_by }}, {{ formatDateTime(doc.created_at) }}
                   </div>
+                  <div v-if="canEditDocs && doc.own && confirmingRemoveId === doc.id" class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <span>Remove this document?<template v-if="removeNote"> {{ removeNote }}</template></span>
+                    <button class="btn btn-sm btn-danger" :disabled="removing" @click="remove(doc)">Yes</button>
+                    <button class="btn btn-sm btn-outline-secondary" @click="confirmingRemoveId = null">No</button>
+                  </div>
                 </div>
-                <div class="d-flex flex-wrap gap-1">
-                  <button class="btn btn-sm btn-outline-secondary" title="Open in a new tab" @click="openPdf(doc)">
-                    <i class="fa-solid fa-up-right-from-square"></i><span class="ms-1 d-none d-sm-inline">Open</span>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-outline-secondary tap-target" @click="downloadPdf(doc)">
+                    <i class="fa-solid fa-download me-1"></i>Download
                   </button>
-                  <button class="btn btn-sm btn-outline-secondary" title="Download" @click="downloadPdf(doc)">
-                    <i class="fa-solid fa-download"></i><span class="ms-1 d-none d-sm-inline">Download</span>
-                  </button>
-                  <template v-if="canEditDocs && doc.own">
-                    <button class="btn btn-sm btn-outline-primary" title="Edit title" @click="titleModal.open(doc)">
-                      <i class="fa-solid fa-pen"></i>
-                    </button>
+                  <div v-if="canEditDocs && doc.own" class="dropdown">
                     <button
-                      v-if="confirmingRemoveId !== doc.id"
-                      class="btn btn-sm btn-outline-danger"
-                      title="Remove"
-                      @click="confirmingRemoveId = doc.id"
+                      type="button"
+                      class="btn btn-outline-secondary tap-target"
+                      data-bs-toggle="dropdown"
+                      aria-expanded="false"
+                      aria-label="More actions"
+                      title="More actions"
                     >
-                      <i class="fa-solid fa-trash"></i>
+                      <i class="fa-solid fa-ellipsis"></i>
                     </button>
-                  </template>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li>
+                        <button type="button" class="dropdown-item" @click="titleModal.open(doc)">
+                          <i class="fa-solid fa-pen me-2"></i>Edit title
+                        </button>
+                      </li>
+                      <li>
+                        <button type="button" class="dropdown-item text-danger" @click="confirmingRemoveId = doc.id">
+                          <i class="fa-solid fa-trash me-2"></i>Remove
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
                 </div>
-              </div>
-              <div v-if="canEditDocs && doc.own && confirmingRemoveId === doc.id" class="d-flex flex-wrap align-items-center justify-content-end gap-2 mt-2">
-                <span>Remove this document?<template v-if="removeNote"> {{ removeNote }}</template></span>
-                <button class="btn btn-sm btn-danger" :disabled="removing" @click="remove(doc)">Yes</button>
-                <button class="btn btn-sm btn-outline-secondary" @click="confirmingRemoveId = null">No</button>
               </div>
             </li>
           </ul>
@@ -362,7 +379,6 @@ defineExpose({ reload: load });
       :base-path="basePath"
       :every-site="Boolean(everySite)"
       :upload-max-mb="uploadMaxMb"
-      :photos-only="!canEditDocs"
       @saved="load"
     />
     <DocumentTitleModal ref="titleModal" :base-path="basePath" @saved="load" />
