@@ -26,6 +26,11 @@
  * is its own); the line under the rows then says which values are not the model's. Edit this
  * machine's values follows canEdit (equipment:edit at the node's site, not on a scrapped node) and
  * comes first: the model's button changes every machine of the model, so it stands apart.
+ *
+ * S061: a per-machine property (GPS location) is never the model's, so its row has no "· this
+ * machine" mark, and the model line and Edit model values show only when the card has another
+ * row. A Location row with a value links Open in Maps (Google Maps, the backend's map_url); the
+ * hint for a machine that moves (moving_hint) shows under it.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -85,9 +90,12 @@ const canRaiseTicket = computed(
   () => (node.value?.permissions ?? []).includes("ticket:raise") && !scrapped.value && !loading.value
 );
 const siteAndUnit = computed(() => node.value.unit.split("."));
-// A row with this machine's own value, marked only when the machine has a model to differ from
-const markedOwn = (p) => p.source === "item" && node.value.model_id !== null;
+// A row with this machine's own value, marked only when the machine has a model to differ from;
+// a per-machine row is always the machine's own, so it is not marked (S061 § 5.4)
+const markedOwn = (p) => p.source === "item" && node.value.model_id !== null && !p.per_item_only;
 const anyMarkedOwn = computed(() => node.value.properties.some(markedOwn));
+// The model line and Edit model values: only when a row can come from the model (BR1-06)
+const hasModelRows = computed(() => node.value.model_id !== null && node.value.properties.some((p) => !p.per_item_only));
 
 // The node's open tickets, loaded after the node (its permissions say whether to)
 const openTickets = ref(null); // null until loaded
@@ -301,7 +309,7 @@ function onSaved({ result, created }) {
                 <button v-if="canEdit" class="btn btn-sm btn-outline-primary" @click="editItemValues">
                   <i class="fa-solid fa-pen me-1"></i>Edit this machine's values
                 </button>
-                <button v-if="canEditModels && node.model_id !== null" class="btn btn-sm btn-outline-primary" :disabled="loading" @click="editModelValues">
+                <button v-if="canEditModels && hasModelRows" class="btn btn-sm btn-outline-primary" :disabled="loading" @click="editModelValues">
                   <i class="fa-solid fa-pen me-1"></i>Edit model values
                 </button>
               </div>
@@ -313,10 +321,14 @@ function onSaved({ result, created }) {
                   <dt class="col-6">{{ p.name }}</dt>
                   <dd class="col-6">
                     {{ valueText(p.display) }}<small v-if="markedOwn(p)" class="text-secondary"> · this machine</small>
+                    <div v-if="p.map_url">
+                      <a :href="p.map_url" target="_blank" rel="noopener"><i class="fa-solid fa-map-location-dot me-1"></i>Open in Maps</a>
+                    </div>
+                    <div v-if="p.data_type === 'geo' && node.moving_hint" class="small text-warning-emphasis">{{ node.moving_hint }}</div>
                   </dd>
                 </template>
               </dl>
-              <div v-if="node.model_id !== null" class="small text-secondary">
+              <div v-if="hasModelRows" class="small text-secondary">
                 <template v-if="anyMarkedOwn">Values from model {{ node.model_label }}, except those marked this machine.</template>
                 <template v-else>Values from model {{ node.model_label }}.</template>
               </div>

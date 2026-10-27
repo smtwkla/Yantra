@@ -32,6 +32,10 @@ LOCK ORDER — one order for every write here, each step taken only when the wri
 - An item's own values (S044) are written in item_properties.py, which takes the equipment row
   first, then (2) and the share locks of this module's values write; its LOCK ORDER note says
   why no cycle forms.  This module never locks equipment, and imports nothing from equipment.py.
+- S061: a values save reads the flags all_classes and per_item_only from the property rows it
+  already locks at (2), so a flag change waits or is seen.  update_property's check for turning
+  per_item_only on is its existing locking read of model_property_values, now also kept apart
+  for the model rows alone.  No new lock and no new order.
 """
 
 from flask import Blueprint, jsonify, request
@@ -40,8 +44,9 @@ from api_common import UNIQUE_KEY_ERRORS, ApiError, actor, clean_body
 from auth_utils import require_perm
 from db_helpers import count, fetch_one, get_db, insert_row, rows_to_list, transaction, update_row
 from properties_core import (
-    CHOICE, CHOOSE_ACTIVE_PROPERTIES, ONLY_CHOICE_HAS_OPTIONS, can_link, check_values, parse_property_ids,
-    parse_value_keys, property_changes, property_view, validate_option, validate_property,
+    CHOICE, CHOOSE_ACTIVE_PROPERTIES, GEO_LEVEL, ONLY_CHOICE_HAS_OPTIONS, OWNER_MODEL, can_link, check_values,
+    on_level, parse_property_ids, parse_value_keys, property_changes, property_view, validate_option,
+    validate_property,
 )
 
 properties_bp = Blueprint("properties", __name__)
@@ -61,7 +66,7 @@ _PROPERTY_SELECT = (
     " FROM property_definitions p"
 )
 _OPTION_COLUMNS = "id, property_id, label, active"
-_VALUE_COLUMNS = "property_id, value_number, value_text, value_bool, option_id"
+_VALUE_COLUMNS = "property_id, value_number, value_text, value_bool, option_id, value_lat, value_lng"
 
 
 def _body():
@@ -129,8 +134,8 @@ def create_property():
 
 
 def _lock_property(cur, property_id):
-    cur.execute("SELECT id, name, data_type, unit, active FROM property_definitions WHERE id = %s FOR UPDATE",
-                (property_id,))   # (2)
+    cur.execute("SELECT id, name, data_type, unit, active, per_item_only FROM property_definitions"
+                " WHERE id = %s FOR UPDATE", (property_id,))   # (2)
     row = cur.fetchone()
     if row is None:
         raise ApiError("Not found", 404)
@@ -141,19 +146,22 @@ def _lock_property(cur, property_id):
 @require_perm("equipment:edit")
 def update_property(property_id):
     """Edit any field.  The data type is fixed once the property has an option or a value, the
-    unit once it has a value (§ 5.1); a type leaving *number* drops its unit in the same write."""
+    unit once it has a value (§ 5.1); a type leaving *number* drops its unit in the same write.
+    *Value set on each machine* cannot be turned on while a model holds a value (S061 § 5.1)."""
     clean = clean_body(validate_property, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         stored = _lock_property(cur, property_id)
         has_options = bool(count(cur, "SELECT COUNT(*) AS n FROM property_options WHERE property_id = %s"
                                       " LOCK IN SHARE MODE", (property_id,)))
-        has_values = False
-        # A model's value or an item's own fixes the type and the unit (S044 § 1.6)
+        # A model's value or an item's own fixes the type and the unit (S044 § 1.6); the models'
+        # alone block per_item_only (S061)
+        found = {}
         for table in ("model_property_values", "equipment_property_values"):
             cur.execute(f"SELECT 1 FROM {table} WHERE property_id = %s LIMIT 1 LOCK IN SHARE MODE", (property_id,))
-            has_values = has_values or cur.fetchone() is not None
-        changes, refusal = property_changes(stored, clean, has_options, has_values)
+            found[table] = cur.fetchone() is not None
+        changes, refusal = property_changes(stored, clean, has_options, any(found.values()),
+                                            found["model_property_values"])
         if refusal:
             _refuse(refusal)
         update_row(cur, "property_definitions", property_id, changes, actor())
@@ -209,16 +217,21 @@ def _lock_class(cur, class_id):
 
 
 def _class_properties(cur, class_id):
-    cur.execute("SELECT p.id AS property_id, p.name, p.data_type, p.unit, p.active FROM class_properties cp"
-                " JOIN property_definitions p ON p.id = cp.property_id WHERE cp.class_id = %s ORDER BY p.name",
-                (class_id,))
-    return {"items": cur.fetchall()}
+    """The class table's rows (S061 § 5.3, BR1-08): the properties linked to the class and those on
+    every class, one row each, inactive ones included; ``all_classes`` marks the latter, linked
+    or not (a link has no effect while the flag is on)."""
+    cur.execute("SELECT p.id AS property_id, p.name, p.data_type, p.unit, p.active, p.all_classes"
+                " FROM property_definitions p WHERE p.all_classes = 1 OR EXISTS ("
+                "SELECT 1 FROM class_properties cp WHERE cp.class_id = %s AND cp.property_id = p.id)"
+                " ORDER BY p.name", (class_id,))
+    return {"items": [{**row, "all_classes": bool(row["all_classes"])} for row in cur.fetchall()]}
 
 
 @properties_bp.route("/equipment-classes/<int:class_id>/properties")
 @require_perm("masters:read")
 def list_class_properties(class_id):
-    """The class's properties by name, inactive ones included (the table marks them)."""
+    """The class's properties by name, inactive ones included (the table marks them), and the
+    properties on every class (S061)."""
     with get_db().cursor() as cur:
         if fetch_one(cur, "SELECT id FROM equipment_classes WHERE id = %s", (class_id,)) is None:
             raise ApiError("Not found", 404)
@@ -269,12 +282,14 @@ def remove_class_property(class_id, property_id):
 # A model's values (§ 5.3) and the equipment page's card (§ 6.3)
 # ---------------------------------------------------------------------------
 
-def linked_properties(cur, class_id):
-    """The active properties of the class, by name."""
-    cur.execute("SELECT p.id, p.name, p.data_type, p.unit FROM class_properties cp"
-                " JOIN property_definitions p ON p.id = cp.property_id"
-                " WHERE cp.class_id = %s AND p.active = 1 ORDER BY p.name", (class_id,))
-    return cur.fetchall()
+def linked_properties(cur, class_id, level):
+    """The active properties a node of ``level`` and ``class_id`` shows, by name: those linked to
+    the class or on every class, a Location only on top-level equipment (S061 § 5.3)."""
+    cur.execute("SELECT p.id, p.name, p.data_type, p.unit, p.per_item_only FROM property_definitions p"
+                " WHERE p.active = 1 AND (p.all_classes = 1 OR EXISTS ("
+                "SELECT 1 FROM class_properties cp WHERE cp.class_id = %s AND cp.property_id = p.id))"
+                " ORDER BY p.name", (class_id,))
+    return on_level(cur.fetchall(), level)
 
 
 def _values(cur, table, owner_column, owner_id, property_ids=None, lock=""):
@@ -305,10 +320,10 @@ def option_labels(options):
     return {o["id"]: o["label"] for opts in options.values() for o in opts}
 
 
-def _card_rows(cur, class_id, model_id, node_id=None):
-    """The linked active properties with the model's values and, given ``node_id``, the item's
-    own -> (properties, model values, options, view rows)."""
-    properties = linked_properties(cur, class_id)
+def _card_rows(cur, class_id, model_id, level, node_id=None):
+    """The active properties a node of ``level`` shows with the model's values and, given
+    ``node_id``, the item's own -> (properties, model values, options, view rows)."""
+    properties = linked_properties(cur, class_id, level)
     # A component-unit may have no model (S033): its rows show only its own values (BS1-01)
     values = model_values(cur, model_id) if model_id is not None else {}
     options = options_by_property(cur, [p["id"] for p in properties])
@@ -316,20 +331,24 @@ def _card_rows(cur, class_id, model_id, node_id=None):
     return properties, values, options, property_view(properties, values, option_labels(options), own)
 
 
-def equipment_properties(cur, class_id, model_id, node_id):
-    """The Properties card of an equipment item (§ 6.3): its class's active properties with the
-    value in force, the item's own (``source`` "item", S044) or its model's ("model"), or None.
-    ``model_id`` None (a component-unit without a model, S033): only its own values show."""
-    return _card_rows(cur, class_id, model_id, node_id)[3]
+def equipment_properties(cur, class_id, model_id, node_id, level):
+    """The Properties card of an equipment item (§ 6.3): the active properties of its class and
+    of every class (S061; a Location only on ``level`` equipment) with the value in force, the
+    item's own (``source`` "item", S044) or its model's ("model"), or None.  ``model_id`` None (a
+    component-unit without a model, S033): only its own values show."""
+    return _card_rows(cur, class_id, model_id, level, node_id)[3]
 
 
 def _model_properties(cur, model_id, class_id):
     """The model dialog's rows: the card's, plus each property's data type and, for a choice,
-    its active options and the stored one if inactive."""
-    properties, values, options, rows = _card_rows(cur, class_id, model_id)
+    its active options and the stored one if inactive.  A model has no node: its properties are
+    those of a top-level machine, without the per-machine ones (S061 § 5.3, § 5.4)."""
+    properties, values, options, rows = _card_rows(cur, class_id, model_id, GEO_LEVEL)
     by_id = {prop["id"]: prop for prop in properties}
     items = []
     for row in rows:
+        if row["per_item_only"]:
+            continue
         prop = by_id[row["property_id"]]
         stored = values.get(prop["id"])
         stored_option = stored["option_id"] if stored else None
@@ -374,24 +393,29 @@ def values_from_body():
     return values, property_ids
 
 
-def lock_value_properties(cur, class_id, property_ids):
+def lock_value_properties(cur, class_id, property_ids, level):
     """(2) the properties named, ascending, FOR UPDATE; then their links to ``class_id`` and (3)
     their options LOCK IN SHARE MODE -> ``(properties, options)``: ``{id: {id, name, data_type,
-    unit, active, linked}}`` for the ids found, and options_by_property's answer for them."""
+    unit, active, all_classes, per_item_only, linked}}`` for the ids found, and
+    options_by_property's answer for them.  ``linked``: shown on a node of ``class_id`` and
+    ``level`` (S061 § 5.3): linked to the class or on every class, the flag read from the row
+    locked here; a Location only on top-level equipment."""
     placeholders = ", ".join(["%s"] * len(property_ids))
-    cur.execute(f"SELECT id, name, data_type, unit, active FROM property_definitions WHERE id IN ({placeholders})"
-                " ORDER BY id FOR UPDATE", property_ids)   # (2), ascending
+    cur.execute(f"SELECT id, name, data_type, unit, active, all_classes, per_item_only FROM property_definitions"
+                f" WHERE id IN ({placeholders}) ORDER BY id FOR UPDATE", property_ids)   # (2), ascending
     found = {row["id"]: row for row in cur.fetchall()}
     cur.execute(f"SELECT property_id FROM class_properties WHERE class_id = %s"
                 f" AND property_id IN ({placeholders}) LOCK IN SHARE MODE", [class_id, *property_ids])
-    linked = {row["property_id"] for row in cur.fetchall()}
-    properties = {pid: {**row, "linked": pid in linked} for pid, row in found.items()}
+    links = {row["property_id"] for row in cur.fetchall()}
+    on_node = {prop["id"] for prop in on_level(found.values(), level)}
+    properties = {pid: {**row, "linked": (pid in links or bool(row["all_classes"])) and pid in on_node}
+                  for pid, row in found.items()}
     return properties, options_by_property(cur, list(found), " LOCK IN SHARE MODE")   # (3)
 
 
-def checked_changes(values, properties, options, stored):
+def checked_changes(values, properties, options, stored, owner):
     """check_values' changes, or 400 on the first refusal by property name (nothing saved)."""
-    changes, refusal = check_values(values, properties, options, stored)
+    changes, refusal = check_values(values, properties, options, stored, owner=owner)
     if refusal:
         raise ApiError(refusal[1], 400, refusal[0])
     return changes
@@ -407,12 +431,13 @@ def write_values(cur, table, owner_column, owner_id, changes):
             continue
         cur.execute(
             f"INSERT INTO {table} ({owner_column}, property_id, value_number, value_text, value_bool,"
-            " option_id, updated_at, updated_by) VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)"
+            " option_id, value_lat, value_lng, updated_at, updated_by)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)"
             " ON DUPLICATE KEY UPDATE value_number = VALUES(value_number), value_text = VALUES(value_text),"
-            " value_bool = VALUES(value_bool), option_id = VALUES(option_id), updated_at = NOW(),"
-            " updated_by = VALUES(updated_by)",
+            " value_bool = VALUES(value_bool), option_id = VALUES(option_id), value_lat = VALUES(value_lat),"
+            " value_lng = VALUES(value_lng), updated_at = NOW(), updated_by = VALUES(updated_by)",
             (owner_id, property_id, columns["value_number"], columns["value_text"], columns["value_bool"],
-             columns["option_id"], actor()))
+             columns["option_id"], columns["value_lat"], columns["value_lng"], actor()))
 
 
 @properties_bp.route("/equipment-models/<int:model_id>/properties", methods=["PUT"])
@@ -426,8 +451,9 @@ def set_model_properties(model_id):
     with transaction(conn), conn.cursor() as cur:
         class_id = _model_class(cur, model_id, " FOR UPDATE")   # (1)
         if property_ids:
-            properties, options = lock_value_properties(cur, class_id, property_ids)   # (2), (3)
-            changes = checked_changes(values, properties, options, model_values(cur, model_id))
+            # A model's machines are top-level equipment (S061 § 5.3)
+            properties, options = lock_value_properties(cur, class_id, property_ids, GEO_LEVEL)   # (2), (3)
+            changes = checked_changes(values, properties, options, model_values(cur, model_id), OWNER_MODEL)
             write_values(cur, "model_property_values", "model_id", model_id, changes)
     with conn.cursor() as cur:
         return jsonify(_model_properties(cur, model_id, class_id))

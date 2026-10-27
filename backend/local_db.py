@@ -1032,6 +1032,44 @@ _MIGRATIONS = [
                  'meter_added','meter_removed','meter_limits','property')
             NOT NULL""",
     ]),
+    # S061 — properties for every class, and a GPS location
+    # (docs/steps/S061-global-properties-gps/1-brief.md § 4).  A data type 'geo' (a latitude and a
+    # longitude, 6 decimals, about 10 cm), appended to the ENUM so no row changes; two flags:
+    # all_classes (on every class without a link) and per_item_only (installation data, valued on
+    # each machine, never on a model: ISO 14224's design vs installation data).  Both value tables
+    # gain value_lat / value_lng: value_lat is a fifth slot in the one-value CHECK, the pair CHECK
+    # keeps both or neither, the range CHECK keeps -90..90 / -180..180 (the columns alone hold up
+    # to 99.999999 / 999.999999).  Every existing row has both new columns NULL and one old column
+    # set, so it meets the CHECKs.  ADD COLUMN IF NOT EXISTS and DROP CONSTRAINT IF EXISTS before
+    # each ADD CONSTRAINT make a half-applied v34 re-run; INSERT IGNORE keys the seed on its name.
+    # _PRECONDITIONS: _v34_gps_name_check (a hand-made "GPS location" would keep its own type and
+    # no flags, silently).  Rollback: the previous release reads p.* and ignores the flags; "GPS
+    # location" shows in its Masters with the raw type geo and on no card.  Known risk: a geo
+    # property linked to a class in the old release fails that class's pages until Remove.
+    (34, "Properties for every class, per-machine values, Location (S061)", [
+        """ALTER TABLE property_definitions
+            MODIFY data_type ENUM('number','choice','text','yes_no','geo') NOT NULL,
+            ADD COLUMN IF NOT EXISTS all_classes TINYINT(1) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS per_item_only TINYINT(1) NOT NULL DEFAULT 0""",
+        *(f"""ALTER TABLE {table}_property_values
+            ADD COLUMN IF NOT EXISTS value_lat DECIMAL(8,6) NULL,
+            ADD COLUMN IF NOT EXISTS value_lng DECIMAL(9,6) NULL,
+            DROP CONSTRAINT IF EXISTS chk_{table}_property_one_value,
+            ADD CONSTRAINT chk_{table}_property_one_value CHECK (
+                (value_number IS NOT NULL) + (value_text IS NOT NULL) + (value_bool IS NOT NULL)
+                + (option_id IS NOT NULL) + (value_lat IS NOT NULL) = 1),
+            DROP CONSTRAINT IF EXISTS chk_{table}_property_geo_pair,
+            ADD CONSTRAINT chk_{table}_property_geo_pair CHECK ((value_lat IS NULL) = (value_lng IS NULL)),
+            DROP CONSTRAINT IF EXISTS chk_{table}_property_geo_range,
+            ADD CONSTRAINT chk_{table}_property_geo_range CHECK (value_lat IS NULL OR (
+                value_lat BETWEEN -90 AND 90 AND value_lng BETWEEN -180 AND 180))"""
+          for table in ("model", "equipment")),
+        """INSERT IGNORE INTO property_definitions (name, data_type, description, all_classes, per_item_only,
+                                                    created_by)
+            VALUES ('GPS location', 'geo',
+                    'Where the machine stands. Tap Use my current location next to the machine, or paste from Google Maps.',
+                    1, 1, 'migration-v34')""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]
@@ -1098,8 +1136,32 @@ def _v25_shape_check(cur):
     return None
 
 
+V34_SEED_NAME = "GPS location"
+V34_SEED_CREATOR = "migration-v34"
+
+
+def _v34_gps_name_check(cur):
+    """v34's precondition (S061 § 4, D8) -> None, or the refusal Settings › Database shows.
+
+    A property named "GPS location" (any case: the column's collation compares) that v34 did not
+    seed would be kept by INSERT IGNORE with its own type and no flags, and nothing would say so.
+    The row v34 itself seeded (created_by 'migration-v34') passes, so a half-applied v34 re-runs.
+    An absent table passes: on an empty database this runs before v20 has created it.
+    information_schema is read with TABLE_SCHEMA = DATABASE(), as _old_tables_for_v20 does."""
+    cur.execute("SELECT COUNT(*) AS n FROM information_schema.TABLES"
+                " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'property_definitions'")
+    if not cur.fetchone()["n"]:
+        return None
+    cur.execute("SELECT COUNT(*) AS n FROM property_definitions WHERE name = %s AND created_by <> %s",
+                (V34_SEED_NAME, V34_SEED_CREATOR))
+    if cur.fetchone()["n"]:
+        return ("A property named GPS location already exists. Rename it in Masters › Properties; "
+                "the update then adds the new one.")
+    return None
+
+
 # version -> a function of the cursor that returns None (go) or why the version cannot run yet
-_PRECONDITIONS = {20: _v20_shape_check, 25: _v25_shape_check}
+_PRECONDITIONS = {20: _v20_shape_check, 25: _v25_shape_check, 34: _v34_gps_name_check}
 
 
 class DBUnavailable(Exception):

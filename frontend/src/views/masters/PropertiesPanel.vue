@@ -10,6 +10,11 @@
  * dialog); an option's refusal shows under the options list. The data type is fixed once the
  * property has an option or a value, the unit once it has a value (the API refuses; the inputs
  * say so first, BR2-01).
+ *
+ * S061: two tick boxes. Applies to every class: the property shows on every machine without a
+ * link. Value set on each machine: installation data such as where the machine stands, left out of
+ * the model's dialog; turning it on is refused while a model has a value (the message shows under
+ * its box). The table marks them Every class and Each machine.
  */
 import { computed, onMounted, ref } from "vue";
 import { apiPost, apiPut } from "../../api";
@@ -43,7 +48,10 @@ async function reload() {
 
 // A new property's body: a unit only for a number, options only for a choice
 function toBody(form) {
-  const body = { name: form.name, data_type: form.data_type, description: form.description };
+  const body = {
+    name: form.name, data_type: form.data_type, description: form.description,
+    all_classes: form.all_classes, per_item_only: form.per_item_only,
+  };
   if (form.data_type === "number") body.unit = form.unit;
   if (form.data_type === "choice") body.options = form.options.map((o) => o.label);
   return body;
@@ -55,12 +63,14 @@ const {
 } =
   useMasterForm({
     path: PATH,
-    blank: () => ({ name: "", data_type: "", unit: "", description: "", options: [] }),
+    blank: () => ({ name: "", data_type: "", unit: "", description: "", all_classes: false, per_item_only: false, options: [] }),
     fromRecord: (p) => ({
       name: p.name,
       data_type: p.data_type,
       unit: p.unit ?? "",
       description: p.description ?? "",
+      all_classes: Boolean(p.all_classes),
+      per_item_only: Boolean(p.per_item_only),
       options: p.options.map((o) => ({ id: o.id, label: o.label, active: Boolean(o.active) })),
     }),
     label: (p) => p.name,
@@ -103,7 +113,10 @@ async function optionRequest(request) {
 
 async function saveEdit() {
   const id = editingId.value;
-  const body = { name: form.value.name, data_type: form.value.data_type, description: form.value.description };
+  const body = {
+    name: form.value.name, data_type: form.value.data_type, description: form.value.description,
+    all_classes: form.value.all_classes, per_item_only: form.value.per_item_only,
+  };
   if (form.value.data_type === "number") body.unit = form.value.unit;
   const saved = await apiPut(`${PATH}/${id}`, body);
   // Options belong to a choice only: rows left from before a type change are not sent (CR1-02)
@@ -170,7 +183,11 @@ onMounted(reload);
           </thead>
           <tbody>
             <tr v-for="p in rows" :key="p.id" :class="{ 'text-secondary': !p.active }">
-              <td class="fw-semibold">{{ p.name }}</td>
+              <td class="fw-semibold">
+                {{ p.name }}
+                <span v-if="p.all_classes" class="badge text-bg-info fw-normal ms-1">Every class</span>
+                <span v-if="p.per_item_only" class="badge text-bg-secondary fw-normal ms-1">Each machine</span>
+              </td>
               <td>{{ typeSummary(p) }}</td>
               <td>{{ p.class_count }}</td>
               <td><span class="badge" :class="p.active ? 'text-bg-success' : 'text-bg-secondary'">{{ p.active ? "Active" : "Inactive" }}</span></td>
@@ -250,6 +267,22 @@ onMounted(reload);
       <div v-if="fieldError('options')" class="invalid-feedback d-block">{{ fieldError("options") }}</div>
     </div>
     <div v-else-if="fieldError('options')" class="invalid-feedback d-block mb-3">{{ fieldError("options") }}</div>
+    <div class="mb-3">
+      <div class="form-check">
+        <input id="property-all-classes" v-model="form.all_classes" class="form-check-input" type="checkbox" />
+        <label class="form-check-label" for="property-all-classes">Applies to every class</label>
+      </div>
+      <div class="form-text mt-0">Shows on every machine. No need to add it to each class.</div>
+      <div v-if="fieldError('all_classes')" class="invalid-feedback d-block">{{ fieldError("all_classes") }}</div>
+    </div>
+    <div class="mb-3">
+      <div class="form-check">
+        <input id="property-per-item" v-model="form.per_item_only" class="form-check-input" type="checkbox" :class="{ 'is-invalid': fieldError('per_item_only') }" />
+        <label class="form-check-label" for="property-per-item">Value set on each machine</label>
+      </div>
+      <div class="form-text mt-0">Each machine gets its own value, for example where it stands. Models do not hold it.</div>
+      <div v-if="fieldError('per_item_only')" class="invalid-feedback d-block">{{ fieldError("per_item_only") }}</div>
+    </div>
     <div class="mb-0">
       <label class="form-label" for="property-description">Description</label>
       <textarea id="property-description" v-model="form.description" class="form-control" :class="{ 'is-invalid': fieldError('description') }" rows="2" maxlength="300"></textarea>

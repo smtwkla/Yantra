@@ -120,6 +120,7 @@ from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selectio
 from masters import lock_type_of_class
 from masters_core import model_label
 from properties import equipment_properties
+from properties_core import moving_hint
 from settings import label_base_url
 from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
 
@@ -309,7 +310,9 @@ def _detail(cur, node):
     out["events"] = rows_to_list(cur.fetchall())
     # The Properties card (S043 § 6.3): the class's active properties with the value in force, the
     # item's own (S044) or its model's
-    out["properties"] = equipment_properties(cur, node["class_id"], node["model_id"], node["id"])
+    out["properties"] = equipment_properties(cur, node["class_id"], node["model_id"], node["id"], node["level"])
+    # S061 § 5.5: a hint under the Location row when the machine moves (text or None)
+    out["moving_hint"] = moving_hint(out["properties"])
     return out
 
 

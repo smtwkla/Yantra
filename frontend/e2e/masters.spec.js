@@ -326,6 +326,7 @@ test("S038: engineer adds Oil temperature with limits to a model", async ({ page
 
 // Equipment properties (S043 § 8.4): the master, a class's table and picker, a model's values.
 const openSection = (page, name) => page.getByRole("button", { name, exact: true }).click();
+const GPS_NAME = "GPS location"; // the seed of migration v34 (S061): every class, set on each machine
 
 test("S043: engineer adds a choice property, adds two properties to a class at once and sets one on a model; the equipment page shows it", async ({ page }, testInfo) => {
   const tag = propertyTag(testInfo);
@@ -357,7 +358,10 @@ test("S043: engineer adds a choice property, adds two properties to a class at o
   await openSection(page, "Equip Class");
   await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
   await expect(page.getByText(`Properties of ${cls.code} — ${cls.name}`)).toBeVisible();
-  await expect(page.getByText("No properties on this class yet.")).toBeVisible();
+  // S061: the seed "GPS location" is on every class, marked, with no Remove
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).filter({ hasText: "GPS location" })).toContainText("Every class");
+  await expect(rows(page).filter({ hasText: "GPS location" }).getByRole("button", { name: "Remove" })).toHaveCount(0);
   await page.getByRole("button", { name: "Add property…" }).click();
   await expectDialogFits(page);
   const picker = await openDialog(page);
@@ -371,7 +375,7 @@ test("S043: engineer adds a choice property, adds two properties to a class at o
   await expect(picker.getByLabel(drain)).toBeChecked();
   await picker.getByLabel(power).check();
   await saveDialog(page, "Add properties");
-  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page)).toHaveCount(3);
   await expect(rows(page).filter({ hasText: drain })).toContainText("Choice");
   await expect(rows(page).filter({ hasText: power })).toContainText("kW");
 
@@ -385,8 +389,8 @@ test("S043: engineer adds a choice property, adds two properties to a class at o
 
   await page.goto(`/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dt")).toHaveText([drain, power]);
-  await expect(properties.locator("dd")).toHaveText(["External", "—"]);
+  await expect(properties.locator("dt")).toHaveText([drain, power, "GPS location"]);
+  await expect(properties.locator("dd")).toHaveText(["External", "—", "—"]);
   await expect(properties).toContainText(`Values from model ${model.label}.`);
 });
 
@@ -400,7 +404,8 @@ test("S043: Remove on a class's table takes the row away, and the picker lists t
   await expect(rows(page).filter({ hasText: name })).toContainText("Text");
   await expect(page.getByText("Removing a property keeps the models' values. Add it again to show them.")).toBeVisible();
   await rows(page).filter({ hasText: name }).getByRole("button", { name: "Remove" }).click();
-  await expect(page.getByText("No properties on this class yet.")).toBeVisible();
+  await expect(rows(page).filter({ hasText: name })).toHaveCount(0);
+  await expect(rows(page)).toHaveText([/GPS location/]); // S061: the every-class seed stays
 
   await page.getByRole("button", { name: "Add property…" }).click();
   const picker = await openDialog(page);
@@ -476,4 +481,54 @@ test("S043: an option refused on Save leaves the list showing the property's sav
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(dialog).toBeHidden();
   await expect(rows(page).filter({ hasText: `${name} type` })).toContainText("Choice · 1 option");
+});
+
+// S061: a property on every class shows on every machine without a link; marked in a class's
+// table with no Remove, and left out of the picker
+test("S061: engineer makes a Yes / No property for every class; a machine of an unlinked class shows it, the class table marks it, the picker leaves it out", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const name = `E2E every class ${tag}`;
+  const { cls, node } = await propertySetup(tag);
+  try {
+    await asPerson(page, "engineer", "/masters");
+    await openSection(page, "Properties");
+    await page.getByRole("button", { name: "Add property", exact: true }).click();
+    await expectDialogFits(page);
+    const dialog = await openDialog(page);
+    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByLabel("Data type").selectOption({ label: "Yes / No" });
+    await dialog.getByLabel("Applies to every class").check();
+    await saveDialog(page, "Save");
+    await expect(rows(page).filter({ hasText: name })).toContainText("Every class");
+    await expect(rows(page).filter({ hasText: GPS_NAME })).toContainText("Each machine");
+
+    await openSection(page, "Equip Class");
+    await rows(page).filter({ hasText: cls.code }).getByTitle("Properties").click();
+    const row = rows(page).filter({ hasText: name });
+    await expect(row).toContainText("Every class");
+    await expect(row.getByRole("button", { name: "Remove" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Add property…" }).click();
+    await expectDialogFits(page);
+    const picker = await openDialog(page);
+    await picker.getByLabel("Search properties").fill(tag);
+    await expect(picker.getByText("No property matches the search.")).toBeVisible();
+    await picker.getByRole("button", { name: "Cancel" }).click();
+
+    await page.goto(`/equipment/${node.id}`);
+    const properties = card(page, "Properties");
+    await expect(properties.locator("dt")).toHaveText([name, GPS_NAME]);
+    await expect(properties.locator("dd")).toHaveText(["—", "—"]);
+  } finally {
+    // Off again, so the lane's later tests do not meet it on every machine
+    const api = await apiAs("admin");
+    try {
+      const made = (await (await api.get("/api/masters/properties")).json()).items.find((p) => p.name === name);
+      if (made) {
+        const res = await api.put(`/api/masters/properties/${made.id}`, { data: { all_classes: false } });
+        expect(res.ok(), await res.text()).toBe(true);
+      }
+    } finally {
+      await api.dispose();
+    }
+  }
 });

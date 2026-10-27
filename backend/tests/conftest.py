@@ -167,12 +167,12 @@ _TABLES = ("meter_readings", "node_meters", "model_meters", "access_log", "task_
            "serial_counters")
 
 # The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
-# Table -> the created_by of its seed rows (meter types: migration v29, S037; the property
-# master and its options: migration v31, S043)
+# Table -> the created_by values of its seed rows (meter types: migration v29, S037; the property
+# master and its options: migration v31, S043; "GPS location": migration v34, S061)
 SEED_CREATOR = "migration-v11"  # the failure-code seeds' creator only, for test_migration_v11.py
-_SEEDED_TABLES = {"failure_modes": SEED_CREATOR, "failure_causes": SEED_CREATOR,
-                  "maintenance_actions": SEED_CREATOR, "meter_types": "migration-v29",
-                  "property_definitions": "migration-v31", "property_options": "migration-v31"}
+_SEEDED_TABLES = {"failure_modes": (SEED_CREATOR,), "failure_causes": (SEED_CREATOR,),
+                  "maintenance_actions": (SEED_CREATOR,), "meter_types": ("migration-v29",),
+                  "property_definitions": ("migration-v31", "migration-v34"), "property_options": ("migration-v31",)}
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -191,8 +191,9 @@ def _clean_tables():
             cur.execute("SET FOREIGN_KEY_CHECKS = 0")
             try:
                 with transaction(conn):
-                    for table, creator in _SEEDED_TABLES.items():
-                        cur.execute(f"DELETE FROM {table} WHERE created_by <> %s", (creator,))
+                    for table, creators in _SEEDED_TABLES.items():
+                        cur.execute(f"DELETE FROM {table} WHERE created_by NOT IN ({', '.join(['%s'] * len(creators))})",
+                                    creators)
                     for table in _TABLES:
                         cur.execute(f"DELETE FROM {table}")
             finally:

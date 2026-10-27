@@ -34,8 +34,9 @@ const { modal, form, editingId, editingLabel, saving, dirty, fieldError, modalEr
 
 const title = computed(() => `This machine's values — ${editingLabel.value}`);
 
+// A per-machine property (S061 § 5.4) has no model value, so no "Model: …" line
 function modelHint(item) {
-  if (!item.has_model) return "";
+  if (!item.has_model || item.per_item_only) return "";
   return `Model: ${item.model_display ?? "no value"}`;
 }
 

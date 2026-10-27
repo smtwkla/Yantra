@@ -43,6 +43,13 @@ def _card(admin, node):
     return {p["name"]: (p["display"], p["source"]) for p in _ok(admin.get(f"{EQUIPMENT}/{node['id']}"))["properties"]}
 
 
+def _made(rows, *made):
+    """The rows of the properties the test made, without the seed "GPS location" and other
+    every-class properties, which show on every top-level machine since S061 (BR1-02)."""
+    ids = {prop["id"] for prop in made}
+    return [row for row in rows if row["property_id"] in ids]
+
+
 def _own_rows(db_rows, node):
     return list(db_rows("SELECT property_id, value_number, value_text, value_bool, option_id, updated_at, updated_by"
                         " FROM equipment_property_values WHERE equipment_id = %s ORDER BY property_id",
@@ -112,12 +119,13 @@ def _key(prop):
 class TestRead:
 
     def test_an_item_with_a_model_and_no_own_values(self, engineer, motor, props):
-        items = _ok(engineer.get(_url(motor)))["items"]
+        items = _made(_ok(engineer.get(_url(motor)))["items"], *props.values())
         assert [i["property_id"] for i in items] == [props[k]["id"] for k in ("power", "orientation", "frame",
                                                                                "exproof")]
         power, orientation = items[0], items[1]
         assert power == {"property_id": props["power"]["id"], "name": props["power"]["name"], "data_type": "number",
-                         "unit": "kW", "options": [], "value": None, "model_display": "7.5 kW", "has_model": True}
+                         "unit": "kW", "options": [], "value": None, "model_display": "7.5 kW", "has_model": True,
+                         "per_item_only": False}
         assert [o["label"] for o in orientation["options"]] == ["Horizontal", "Vertical"]
         assert (orientation["value"], orientation["model_display"]) == (None, None)
 
@@ -134,9 +142,9 @@ class TestRead:
         assert len(items) == 4
         assert all(not i["has_model"] and i["model_display"] is None and i["value"] is None for i in items)
 
-    def test_a_scrapped_item_is_readable(self, admin, engineer, motor):
+    def test_a_scrapped_item_is_readable(self, admin, engineer, motor, props):
         _ok(admin.put(f"{EQUIPMENT}/{motor['id']}", json={"lifecycle": "scrapped"}))
-        assert len(_ok(engineer.get(_url(motor)))["items"]) == 4
+        assert len(_made(_ok(engineer.get(_url(motor)))["items"], *props.values())) == 4
 
 
 class TestWrite:
@@ -211,8 +219,8 @@ class TestWrite:
         assert [o["label"] for o in items[1]["options"]] == ["Horizontal", "Vertical"]
         assert len(_events(admin, motor)) == 1
 
-    def test_an_empty_values_object_saves_nothing(self, engineer, motor):
-        assert len(_ok(engineer.put(_url(motor), json={"values": {}}))["items"]) == 4
+    def test_an_empty_values_object_saves_nothing(self, engineer, motor, props):
+        assert len(_made(_ok(engineer.put(_url(motor), json={"values": {}}))["items"], *props.values())) == 4
 
 
 class TestRefusals:
@@ -315,7 +323,8 @@ class TestModelAndClassChanges:
         link(other["id"], props["power"])
         model = make_model(cls=other)
         _ok(admin.put(f"{EQUIPMENT}/{motor['id']}", json={"model_id": model["id"]}))
-        assert _card(admin, motor) == {props["power"]["name"]: ("5.5 kW", "item")}
+        rows = _made(_ok(admin.get(f"{EQUIPMENT}/{motor['id']}"))["properties"], *props.values())
+        assert [(r["name"], r["display"], r["source"]) for r in rows] == [(props["power"]["name"], "5.5 kW", "item")]
         assert len(_own_rows(db_rows, motor)) == 2
 
 
@@ -324,3 +333,123 @@ class TestDatabaseDown:
     def test_a_read_and_a_write_are_503(self, admin, db_down):
         assert admin.get(f"{EQUIPMENT}/1/properties").status_code == 503
         assert admin.put(f"{EQUIPMENT}/1/properties", json={"values": {}}).status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# S061: every-class properties, per-machine values, Location (§ 5, § 8.2)
+# ---------------------------------------------------------------------------
+
+GPS = "GPS location"
+
+
+def _gps(admin):
+    """The seed "GPS location" (migration v34)."""
+    return next(p for p in _ok(admin.get(f"{MASTERS}/properties"))["items"] if p["name"] == GPS)
+
+
+def _card_row(admin, node, prop):
+    return next((p for p in _ok(admin.get(f"{EQUIPMENT}/{node['id']}"))["properties"]
+                 if p["property_id"] == prop["id"]), None)
+
+
+@pytest.fixture
+def every_class(admin, make_property):
+    """A Yes / No property on every class; the flag is turned off afterwards, so it does not show
+    on the later tests' machines."""
+    made = []
+
+    def make(prefix, **overrides):
+        prop = make_property(prefix, data_type="yes_no", all_classes=True, **overrides)
+        made.append(prop)
+        return prop
+    yield make
+    for prop in made:
+        _ok(admin.put(f"{MASTERS}/properties/{prop['id']}", json={"all_classes": False}))
+
+
+class TestEveryClass:
+
+    def test_shown_and_saved_on_an_unlinked_class_and_hidden_when_turned_off(self, engineer, admin, node,
+                                                                             every_class, db_rows):
+        prop = every_class("S061 every")
+        assert _card_row(admin, node, prop)["display"] is None
+        assert prop["id"] in [i["property_id"] for i in _ok(engineer.get(_url(node)))["items"]]
+        _ok(engineer.put(_url(node), json={"values": {_key(prop): True}}))
+        assert _card_row(admin, node, prop)["display"] == "Yes"
+        _ok(admin.put(f"{MASTERS}/properties/{prop['id']}", json={"all_classes": False}))
+        assert _card_row(admin, node, prop) is None
+        assert _refusal(engineer.put(_url(node), json={"values": {_key(prop): False}})) == (
+            400, f"values.{prop['id']}", NOT_ON_CLASS)
+        # The value stays, hidden, as with Remove from a class
+        assert [r["value_bool"] for r in _own_rows(db_rows, node) if r["property_id"] == prop["id"]] == [1]
+
+
+class TestLocation:
+
+    def test_set_with_its_event_card_display_and_map_link(self, engineer, admin, node, db_rows):
+        gps = _gps(admin)
+        items = _ok(engineer.put(_url(node), json={"values": {_key(gps): "11.0168234567, 76.9558123"}}))["items"]
+        row = next(i for i in items if i["property_id"] == gps["id"])
+        assert (row["data_type"], row["value"], row["per_item_only"], row["model_display"]) == (
+            "geo", "11.016823, 76.955812", True, None)
+        card = _card_row(admin, node, gps)
+        assert (card["display"], card["source"], card["map_url"]) == (
+            "11.016823, 76.955812", "item",
+            "https://www.google.com/maps/search/?api=1&query=11.016823,76.955812")
+        stored = db_rows("SELECT value_lat, value_lng, value_number, value_text FROM equipment_property_values"
+                         " WHERE equipment_id = %s AND property_id = %s", (node["id"], gps["id"]))
+        assert [(str(r["value_lat"]), str(r["value_lng"]), r["value_number"], r["value_text"]) for r in stored] == [
+            ("11.016823", "76.955812", None, None)]
+        # A per-machine property has no model value: no "(model)" mark (§ 5.6)
+        assert _events(admin, node) == [(f"{GPS}: no value", f"{GPS}: 11.016823, 76.955812")]
+
+    def test_a_re_save_with_the_same_location_writes_nothing(self, engineer, admin, node, db_rows):
+        """BR1-05: the pattern of test_a_clear_of_a_row_with_no_own_value_writes_nothing."""
+        gps = _gps(admin)
+        _ok(engineer.put(_url(node), json={"values": {_key(gps): "11.016823, 76.955812"}}))
+        before = _own_rows(db_rows, node)
+        _ok(engineer.put(_url(node), json={"values": {_key(gps): "11.0168230 76.955812"}}))
+        assert _own_rows(db_rows, node) == before
+        assert len(_events(admin, node)) == 1
+
+    @pytest.mark.parametrize("raw, message", [
+        ("95, 76", "The latitude must be between -90 and 90"),
+        ("11, 200", "The longitude must be between -180 and 180"),
+        ("11.016823", "Enter the location as latitude, longitude, for example 11.016823, 76.955812"),
+    ])
+    def test_a_bad_location_is_400_on_its_field(self, engineer, admin, node, raw, message):
+        gps = _gps(admin)
+        assert _refusal(engineer.put(_url(node), json={"values": {_key(gps): raw}})) == (
+            400, f"values.{gps['id']}", message)
+
+    def test_a_component_unit_has_no_location(self, engineer, admin, no_model_part):
+        gps = _gps(admin)
+        assert gps["id"] not in [p["property_id"] for p in _ok(admin.get(f"{EQUIPMENT}/{no_model_part['id']}"))[
+            "properties"]]
+        assert gps["id"] not in [i["property_id"] for i in _ok(engineer.get(_url(no_model_part)))["items"]]
+        assert _refusal(engineer.put(_url(no_model_part), json={"values": {_key(gps): "11, 76"}})) == (
+            400, f"values.{gps['id']}", NOT_ON_CLASS)
+
+    def test_an_operator_cannot_set_it(self, at_unit, admin, node):
+        gps = _gps(admin)
+        assert at_unit("maint_operator").put(_url(node), json={"values": {_key(gps): "11, 76"}}).status_code == 403
+
+
+class TestMovingHint:
+
+    def test_portable_shows_the_hint_and_fixed_does_not(self, engineer, admin, node, link):
+        gps = _gps(admin)
+        mobility = _ok(admin.post(f"{MASTERS}/properties", json={
+            "name": "Mobility", "data_type": "choice", "options": ["Fixed", "Mobile", "Portable"]}), 201)
+        try:
+            link(node["class_id"], mobility)
+            fixed, _, portable = (o["id"] for o in mobility["options"])
+            _ok(engineer.put(_url(node), json={"values": {_key(gps): "11.016823, 76.955812",
+                                                          _key(mobility): portable}}))
+            assert _ok(admin.get(f"{EQUIPMENT}/{node['id']}"))["moving_hint"] == (
+                "This machine moves. The location may be out of date.")
+            _ok(engineer.put(_url(node), json={"values": {_key(mobility): fixed}}))
+            assert _ok(admin.get(f"{EQUIPMENT}/{node['id']}"))["moving_hint"] is None
+        finally:
+            # The name is unique: rename it, so no later test meets a "Mobility"
+            _ok(admin.put(f"{MASTERS}/properties/{mobility['id']}", json={"name": f"Mobility done {node['id']}"}))

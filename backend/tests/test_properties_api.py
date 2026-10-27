@@ -1,5 +1,5 @@
 """Equipment properties (S043 § 5, § 6, § 8.2) — the property master, its options, the class
-links and the models' values, against the test DB.  Needs the dev MariaDB container
+links and the models' values (S061: the flags, per-machine properties), against the test DB.  Needs the dev MariaDB container
 (tooling/dev/dev-db-up.bat).  Names come from a counter of this module, never fixed values."""
 
 import itertools
@@ -7,8 +7,9 @@ import itertools
 import pytest
 
 from properties_core import (
-    CHOOSE_ACTIVE_PROPERTIES, CHOOSE_A_PROPERTY, CHOOSE_OPTION, DATA_TYPE_FIXED, ENTER_NUMBER, NOT_ON_CLASS,
-    ONLY_CHOICE_HAS_OPTIONS, UNIT_FIXED, UNIT_ONLY_NUMBER, VALUES_NOT_OBJECT,
+    CHOOSE_ACTIVE_PROPERTIES, CHOOSE_A_PROPERTY, CHOOSE_OPTION, CHOOSE_YES_OR_NO, DATA_TYPE_FIXED, ENTER_NUMBER,
+    NOT_ON_CLASS, ONLY_CHOICE_HAS_OPTIONS, PER_ITEM_HAS_MODEL_VALUES, SET_ON_EACH_MACHINE, UNIT_FIXED,
+    UNIT_ONLY_NUMBER, VALUES_NOT_OBJECT,
 )
 
 BASE = "/api/masters"
@@ -32,6 +33,13 @@ def _model_path(model):
 
 def _refusal(res):
     return res.status_code, res.get_json()
+
+
+def _made(rows, *made):
+    """The rows of the properties the test made, without the seed "GPS location" and other
+    every-class properties, which show on every class since S061 (BR1-02)."""
+    ids = {prop["id"] for prop in made}
+    return [row for row in rows if row["property_id"] in ids]
 
 
 @pytest.fixture
@@ -226,11 +234,12 @@ class TestClassLinks:
         a, b = make_property(name=_name("Link a")), make_property(name=_name("Link b"))
         res = engineer.post(_class_path(cls), json={"property_ids": [b["id"], a["id"], b["id"]]})
         assert res.status_code == 200
-        assert [i["property_id"] for i in res.get_json()["items"]] == [a["id"], b["id"]]
-        assert res.get_json()["items"][0] == {"property_id": a["id"], "name": a["name"], "data_type": "number",
-                                              "unit": "kW", "active": 1}
+        items = _made(res.get_json()["items"], a, b)
+        assert [i["property_id"] for i in items] == [a["id"], b["id"]]
+        assert items[0] == {"property_id": a["id"], "name": a["name"], "data_type": "number", "unit": "kW",
+                            "active": 1, "all_classes": False}
         res = engineer.post(_class_path(cls), json={"property_ids": [a["id"]]})
-        assert (res.status_code, len(res.get_json()["items"])) == (200, 2)
+        assert (res.status_code, len(_made(res.get_json()["items"], a, b))) == (200, 2)
         assert _listed(engineer, a["id"])["class_count"] == 1
 
     @pytest.mark.parametrize("body", [{"property_ids": []}, {"property_ids": "1"}, {"property_ids": [True]},
@@ -249,12 +258,13 @@ class TestClassLinks:
         for ids in ([inactive["id"]], [no_options["id"]], [retired["id"]], [999999999]):
             res = engineer.post(_class_path(cls), json={"property_ids": ids})
             assert _refusal(res) == (400, {"error": CHOOSE_ACTIVE_PROPERTIES, "field": "property_ids"})
-        assert engineer.get(_class_path(cls)).get_json()["items"] == []
+        assert _made(engineer.get(_class_path(cls)).get_json()["items"], inactive, no_options, retired) == []
 
     def test_an_inactive_class_gets_them(self, engineer, make_class, make_property, link):
         cls = make_class()
         assert engineer.put(f"{BASE}/equipment-classes/{cls['id']}", json={"active": False}).status_code == 200
-        assert len(link(cls, make_property())) == 1
+        prop = make_property()
+        assert len(_made(link(cls, prop), prop)) == 1
 
     def test_remove_keeps_the_values_and_adding_again_shows_them(self, engineer, make_model, make_property, link):
         model = make_model()
@@ -263,11 +273,11 @@ class TestClassLinks:
         link(cls, prop)
         engineer.put(_model_path(model), json={"values": {str(prop["id"]): "62.5"}})
         res = engineer.delete(f"{_class_path(cls)}/{prop['id']}")
-        assert (res.status_code, res.get_json()["items"]) == (200, [])
-        assert engineer.get(_model_path(model)).get_json()["items"] == []
+        assert (res.status_code, _made(res.get_json()["items"], prop)) == (200, [])
+        assert _made(engineer.get(_model_path(model)).get_json()["items"], prop) == []
         assert _listed(engineer, prop["id"])["value_count"] == 1
         link(cls, prop)
-        assert engineer.get(_model_path(model)).get_json()["items"][0]["display"] == "62.5 kW"
+        assert _made(engineer.get(_model_path(model)).get_json()["items"], prop)[0]["display"] == "62.5 kW"
 
     def test_remove_one_not_on_the_class_is_404(self, engineer, make_class, make_property):
         res = engineer.delete(f"{_class_path(make_class())}/{make_property()['id']}")
@@ -279,8 +289,8 @@ class TestClassLinks:
         prop = make_property()
         link(cls, prop)
         engineer.put(f"{PROPERTIES}/{prop['id']}", json={"active": False})
-        assert [(i["property_id"], i["active"]) for i in engineer.get(_class_path(cls)).get_json()["items"]] == [
-            (prop["id"], 0)]
+        items = _made(engineer.get(_class_path(cls)).get_json()["items"], prop)
+        assert [(i["property_id"], i["active"]) for i in items] == [(prop["id"], 0)]
         assert engineer.delete(f"{_class_path(cls)}/{prop['id']}").status_code == 200
 
     def test_unknown_class_is_404(self, engineer, make_property):
@@ -403,3 +413,89 @@ class TestDatabaseDown:
     def test_a_write_and_a_read_are_503(self, admin, db_down):
         assert admin.get(PROPERTIES).status_code == 503
         assert admin.post(PROPERTIES, json={"name": _name(), "data_type": "text"}).status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# S061: the flags, per-machine properties and the class table (§ 5.1, § 5.3, § 5.4, § 8.2)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def every_class(engineer, make_property):
+    """make_property(all_classes=True, ...); the flag is turned off afterwards, so the property
+    does not show on the later tests' classes."""
+    made = []
+
+    def make(**overrides):
+        prop = make_property(all_classes=True, **overrides)
+        made.append(prop)
+        return prop
+    yield make
+    for prop in made:
+        assert engineer.put(f"{PROPERTIES}/{prop['id']}", json={"all_classes": False}).status_code == 200
+
+
+class TestFlags:
+
+    def test_create_and_list_carry_the_flags(self, engineer, make_property):
+        plain = make_property()
+        geo = make_property(data_type="geo", per_item_only=True)
+        assert (plain["all_classes"], plain["per_item_only"]) == (0, 0)
+        assert (geo["data_type"], geo["unit"], geo["per_item_only"], geo["all_classes"]) == ("geo", None, 1, 0)
+        listed = _listed(engineer, geo["id"])
+        assert (listed["all_classes"], listed["per_item_only"]) == (0, 1)
+
+    def test_a_flag_that_is_not_yes_or_no_is_400(self, engineer, make_property):
+        res = engineer.put(f"{PROPERTIES}/{make_property()['id']}", json={"per_item_only": "yes"})
+        assert _refusal(res) == (400, {"error": CHOOSE_YES_OR_NO, "field": "per_item_only"})
+
+    def test_per_item_only_on_is_409_while_a_model_has_a_value(self, engineer, make_model, make_property, link):
+        model = make_model()
+        prop = make_property()
+        link({"id": model["class_id"]}, prop)
+        assert engineer.put(_model_path(model), json={"values": {str(prop["id"]): "7.5"}}).status_code == 200
+        res = engineer.put(f"{PROPERTIES}/{prop['id']}", json={"per_item_only": True})
+        assert _refusal(res) == (409, {"error": PER_ITEM_HAS_MODEL_VALUES, "field": "per_item_only"})
+        assert engineer.put(_model_path(model), json={"values": {str(prop["id"]): None}}).status_code == 200
+        res = engineer.put(f"{PROPERTIES}/{prop['id']}", json={"per_item_only": True})
+        assert (res.status_code, res.get_json()["per_item_only"]) == (200, 1)
+        # Off again at any time
+        assert engineer.put(f"{PROPERTIES}/{prop['id']}", json={"per_item_only": False}).status_code == 200
+
+
+class TestPerMachine:
+
+    def test_absent_from_the_model_dialog_and_refused_on_a_model_save(self, engineer, make_model, make_property,
+                                                                      link):
+        model = make_model()
+        prop = make_property(per_item_only=True)
+        link({"id": model["class_id"]}, prop)
+        assert prop["id"] not in [i["property_id"] for i in engineer.get(_model_path(model)).get_json()["items"]]
+        res = engineer.put(_model_path(model), json={"values": {str(prop["id"]): "7.5"}})
+        assert _refusal(res) == (400, {"error": SET_ON_EACH_MACHINE, "field": f"values.{prop['id']}"})
+
+    def test_the_seed_is_left_out_of_every_model_dialog(self, engineer, make_model):
+        gps = next(p for p in engineer.get(PROPERTIES).get_json()["items"] if p["name"] == "GPS location")
+        assert (gps["data_type"], gps["all_classes"], gps["per_item_only"]) == ("geo", 1, 1)
+        model = make_model()
+        assert gps["id"] not in [i["property_id"] for i in engineer.get(_model_path(model)).get_json()["items"]]
+        res = engineer.put(_model_path(model), json={"values": {str(gps["id"]): "11, 76"}})
+        assert _refusal(res) == (400, {"error": SET_ON_EACH_MACHINE, "field": f"values.{gps['id']}"})
+
+
+class TestClassTable:
+
+    def test_every_class_rows_are_marked_and_listed_once(self, engineer, make_class, make_property, every_class,
+                                                         link):
+        cls = make_class()
+        linked, both = make_property(), every_class()
+        items = link(cls, linked, both)   # the answer of Add carries the every-class rows too (BR2-01)
+        # By name: linked was made first, so its counter is lower
+        assert [(i["property_id"], i["all_classes"]) for i in _made(items, linked, both)] == [
+            (linked["id"], False), (both["id"], True)]
+        listed = engineer.get(_class_path(cls)).get_json()["items"]
+        assert [i["property_id"] for i in listed].count(both["id"]) == 1
+        gps = next(i for i in listed if i["name"] == "GPS location")
+        assert gps["all_classes"] is True
+        # The answer of Remove carries them too
+        res = engineer.delete(f"{_class_path(cls)}/{linked['id']}")
+        assert both["id"] in [i["property_id"] for i in res.get_json()["items"]]

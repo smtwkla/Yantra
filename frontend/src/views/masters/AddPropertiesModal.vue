@@ -30,8 +30,9 @@ const { modal, form, saving, dirty, fieldError, modalError, openCreate, send } =
   afterSave: (result) => emit("saved", result),
 });
 
+// A property on every class (S061) needs no link, so the picker leaves it out
 const available = computed(() =>
-  props.properties.filter((p) => p.active && !props.linkedIds.includes(p.id))
+  props.properties.filter((p) => p.active && !p.all_classes && !props.linkedIds.includes(p.id))
 );
 const shown = computed(() => {
   const needle = search.value.trim().toLowerCase();

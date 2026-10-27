@@ -41,6 +41,8 @@ No cycle:
 - The item's own rows are read plainly after (1): every writer of them holds (1), and the
   transaction's snapshot starts at load_node_for_user's plain read, after the lock.
 - The GET and the equipment detail read plainly.
+- S061: the flags all_classes and per_item_only are read from the property rows locked at (2),
+  so a flag change waits or is seen.  No new lock and no new order.
 """
 
 from flask import Blueprint, jsonify
@@ -54,16 +56,17 @@ from properties import (
     checked_changes, item_values, linked_properties, lock_value_properties, model_values, option_labels,
     options_by_property, values_from_body, write_values,
 )
-from properties_core import item_changes, item_events, property_view, stored_value, value_display
+from properties_core import OWNER_ITEM, item_changes, item_events, property_view, stored_value, value_display
 
 item_properties_bp = Blueprint("item_properties", __name__)
 
 
 def _item_properties(cur, node):
-    """The dialog's rows (§ 5.5), by name: each active property of the node's class with the
-    item's own value (or None), the model's value as text (or None) and, for a choice, its
-    active options plus the stored inactive one."""
-    properties = linked_properties(cur, node["class_id"])
+    """The dialog's rows (§ 5.5), by name: each active property the node shows (its class's, those
+    on every class, a Location only on top-level equipment: S061 § 5.3) with the item's own value
+    (or None), the model's value as text (or None), whether it is set on each machine only and,
+    for a choice, its active options plus the stored inactive one."""
+    properties = linked_properties(cur, node["class_id"], node["level"])
     by_id = {prop["id"]: prop for prop in properties}
     options = options_by_property(cur, list(by_id))
     has_model = node["model_id"] is not None
@@ -84,6 +87,7 @@ def _item_properties(cur, node):
             "value": stored_value(prop["data_type"], stored),
             "model_display": row["display"],
             "has_model": has_model,
+            "per_item_only": row["per_item_only"],
         })
     return {"items": items}
 
@@ -111,12 +115,13 @@ def set_item_properties(node_id):
         if locked["lifecycle"] == SCRAPPED:
             raise ApiError(SCRAPPED_MESSAGE, 409)
         if property_ids:
-            properties, options = lock_value_properties(cur, locked["class_id"], property_ids)   # (2), (3)
+            properties, options = lock_value_properties(cur, locked["class_id"], property_ids,
+                                                        locked["level"])   # (2), (3)
             has_model = locked["model_id"] is not None
             from_model = (model_values(cur, locked["model_id"], list(properties), " LOCK IN SHARE MODE")
                           if has_model else {})   # (3)
             stored = item_values(cur, node_id)
-            changes = item_changes(checked_changes(values, properties, options, stored), stored)
+            changes = item_changes(checked_changes(values, properties, options, stored, OWNER_ITEM), stored)
             write_values(cur, "equipment_property_values", "equipment_id", node_id, changes)   # (4)
             labels = option_labels(options)
             model_displays = {pid: value_display(prop, from_model.get(pid), labels)

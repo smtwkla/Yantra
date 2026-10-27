@@ -4,6 +4,8 @@
  * class table as Models shows a model's Documents; Back brings the class table back.
  * Add property… opens the picker; Remove takes one link away at once, without asking: the
  * models' values stay and come back when the property is added again (§ 5.4).
+ * A property on every class (S061 § 5.3) is listed too, marked Every class, with no Remove: it
+ * shows on every machine whether linked or not.
  */
 import { computed, onMounted, ref } from "vue";
 import { apiDelete, apiGet } from "../../api";
@@ -82,11 +84,14 @@ onMounted(load);
             </thead>
             <tbody>
               <tr v-for="r in rows" :key="r.property_id" :class="{ 'text-secondary': !r.active }">
-                <td class="fw-semibold">{{ r.name }}<span v-if="!r.active" class="fw-normal"> (inactive)</span></td>
+                <td class="fw-semibold">
+                  {{ r.name }}<span v-if="!r.active" class="fw-normal"> (inactive)</span>
+                  <span v-if="r.all_classes" class="badge text-bg-info fw-normal ms-1">Every class</span>
+                </td>
                 <td>{{ typeLabel(r.data_type) }}</td>
                 <td>{{ r.unit }}</td>
                 <td v-if="canEdit" class="text-end">
-                  <button class="btn btn-sm btn-outline-danger" :disabled="removing !== null" @click="remove(r)">Remove</button>
+                  <button v-if="!r.all_classes" class="btn btn-sm btn-outline-danger" :disabled="removing !== null" @click="remove(r)">Remove</button>
                 </td>
               </tr>
             </tbody>

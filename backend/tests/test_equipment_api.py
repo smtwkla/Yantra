@@ -1528,6 +1528,17 @@ class TestNoModel:
         assert "chk_equipment_model_level" in str(caught.value)
 
 
+def _made(rows, *made):
+    """The card's rows of the properties the test made, without the seed rows ("GPS location" is
+    on every top-level machine since S061; BR1-02)."""
+    ids = {prop["id"] for prop in made}
+    return [row for row in rows if row["property_id"] in ids]
+
+
+# The keys S061 added to every card row
+_PLAIN_ROW = {"per_item_only": False, "map_url": None}
+
+
 class TestProperties:
     """The detail's properties (S043 § 6.3): the class's active properties with the model's values."""
 
@@ -1549,17 +1560,20 @@ class TestProperties:
         node = make_equipment(model=model)
 
         detail = admin.get(f"{EQUIPMENT}/{node['id']}").get_json()
-        assert detail["properties"] == [
-            {"property_id": empty["id"], "name": "Eq frame size", "value": None, "unit": None, "display": None,
-             "source": None},
-            {"property_id": rating["id"], "name": "Eq generator rating", "value": "62.5", "unit": "kVA",
-             "display": "62.5 kVA", "source": "model"},
+        assert _made(detail["properties"], empty, rating, unlinked, retired) == [
+            {"property_id": empty["id"], "name": "Eq frame size", "data_type": "text", "value": None, "unit": None,
+             "display": None, "source": None, **_PLAIN_ROW},
+            {"property_id": rating["id"], "name": "Eq generator rating", "data_type": "number", "value": "62.5",
+             "unit": "kVA", "display": "62.5 kVA", "source": "model", **_PLAIN_ROW},
         ]
-        assert unlinked["id"] not in [p["property_id"] for p in detail["properties"]]
+        assert detail["moving_hint"] is None
 
-    def test_no_properties_is_an_empty_list(self, admin, make_equipment):
+    def test_a_class_without_links_shows_only_the_every_class_seed(self, admin, make_equipment):
+        """S061: "GPS location" (seed, every class) is the one row of a machine whose class has no link."""
         node = make_equipment()
-        assert admin.get(f"{EQUIPMENT}/{node['id']}").get_json()["properties"] == []
+        rows = admin.get(f"{EQUIPMENT}/{node['id']}").get_json()["properties"]
+        assert [(r["name"], r["data_type"], r["per_item_only"], r["display"]) for r in rows] == [
+            ("GPS location", "geo", True, None)]
 
     def test_a_component_unit_without_a_model_shows_its_class_s_properties_without_values(
             self, admin, uniq, make_class, make_equipment):
@@ -1572,6 +1586,7 @@ class TestProperties:
         node = TestNoModel._create(admin, make_equipment(), cls).get_json()
         detail = admin.get(f"{EQUIPMENT}/{node['id']}").get_json()
         assert detail["model_id"] is None
+        # A component-unit shows no Location (S061 D5), so the seed is not on it either
         assert detail["properties"] == [
-            {"property_id": rating["id"], "name": rating["name"], "value": None, "unit": "kW", "display": None,
-             "source": None}]
+            {"property_id": rating["id"], "name": rating["name"], "data_type": "number", "value": None, "unit": "kW",
+             "display": None, "source": None, **_PLAIN_ROW}]

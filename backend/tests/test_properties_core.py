@@ -1,16 +1,19 @@
-"""Equipment properties — the pure rules (S043 § 5, § 8.1; an item's own values: S044 § 5, § 8.1)."""
+"""Equipment properties — the pure rules (S043 § 5, § 8.1; an item's own values: S044 § 5, § 8.1;
+Location, every-class and per-machine properties: S061 § 5, § 8.1)."""
 
 from decimal import Decimal
 
 import pytest
 
 from properties_core import (
-    CHOOSE_ACTIVE_PROPERTIES, CHOOSE_A_PROPERTY, CHOOSE_DATA_TYPE, CHOOSE_OPTION, CHOOSE_YES_NO, DATA_TYPE_FIXED,
-    DESCRIPTION_TOO_LONG, ENTER_LABEL, ENTER_NAME, ENTER_NUMBER, LABEL_TOO_LONG, NAME_TOO_LONG, NOT_ON_CLASS,
-    NUMBER_TOO_BIG, ONLY_CHOICE_HAS_OPTIONS, OPTION_EXISTS, TEXT_TOO_LONG, TOO_MANY_DECIMALS, UNIT_FIXED,
-    UNIT_ONLY_NUMBER, UNIT_TOO_LONG, VALUES_NOT_OBJECT, can_link, check_values, format_value, item_changes, item_events, number_text,
+    CHOOSE_ACTIVE_PROPERTIES, CHOOSE_A_PROPERTY, CHOOSE_DATA_TYPE, CHOOSE_OPTION, CHOOSE_YES_NO, CHOOSE_YES_OR_NO,
+    DATA_TYPE_FIXED, DESCRIPTION_TOO_LONG, ENTER_LABEL, ENTER_LOCATION, ENTER_NAME, ENTER_NUMBER, LABEL_TOO_LONG,
+    LATITUDE_RANGE, LONGITUDE_RANGE, MOVING_HINT, NAME_TOO_LONG, NOT_ON_CLASS, NUMBER_TOO_BIG,
+    ONLY_CHOICE_HAS_OPTIONS, OPTION_EXISTS, OWNER_ITEM, OWNER_MODEL, PER_ITEM_HAS_MODEL_VALUES, SET_ON_EACH_MACHINE,
+    TEXT_TOO_LONG, TOO_MANY_DECIMALS, UNIT_FIXED, UNIT_ONLY_NUMBER, UNIT_TOO_LONG, VALUES_NOT_OBJECT, can_link,
+    check_values, format_value, item_changes, item_events, map_url, moving_hint, number_text, on_level,
     parse_property_ids, parse_value, parse_value_keys, property_changes, property_view, stored_value,
-    validate_option, validate_property,
+    validate_option, validate_property, value_in_force,
 )
 
 
@@ -212,42 +215,44 @@ class TestModelValues:
     def test_unknown_inactive_or_unlinked_is_refused(self):
         props = {1: _prop(1, "A", active=0), 2: _prop(2, "B", linked=False)}
         for key in ("1", "2", "9"):
-            assert check_values({key: "1"}, props, {}, {}) == (None, (f"values.{key}", NOT_ON_CLASS))
+            assert check_values({key: "1"}, props, {}, {}, owner=OWNER_MODEL) == (None, (f"values.{key}", NOT_ON_CLASS))
 
     def test_the_first_refusal_by_name_answers(self):
         props = {1: _prop(1, "Zeta"), 2: _prop(2, "alpha")}
-        assert check_values({"1": "x", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "x", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2", ENTER_NUMBER))
 
     def test_an_unlinked_property_is_refused_in_its_name_s_place(self):
         """CR1-05: the order is by name, not by the body's key order; an unknown id (no name) first."""
         props = {1: _prop(1, "Zeta", linked=False), 2: _prop(2, "alpha")}
-        assert check_values({"1": "1", "2": "y"}, props, {}, {}) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "1", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2", ENTER_NUMBER))
         props = {1: _prop(1, "alpha", active=0), 2: _prop(2, "Zeta")}
-        assert check_values({"2": "y", "1": "1"}, props, {}, {}) == (None, ("values.1", NOT_ON_CLASS))
-        assert check_values({"2": "y", "9": "1", "7": "1"}, props, {}, {}) == (
+        assert check_values({"2": "y", "1": "1"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.1", NOT_ON_CLASS))
+        assert check_values({"2": "y", "9": "1", "7": "1"}, props, {}, {}, owner=OWNER_MODEL) == (
             None, ("values.7", NOT_ON_CLASS))
 
     def test_changes(self):
         props = {1: _prop(1, "Power"), 2: _prop(2, "Drain", "choice"), 3: _prop(3, "VSD", "yes_no")}
         changes, error = check_values({"1": "7.5", "2": 5, "3": ""}, props,
-                                            {2: [{"id": 5, "active": 1}]}, {})
+                                            {2: [{"id": 5, "active": 1}]}, {}, owner=OWNER_MODEL)
         assert error is None
         assert dict(changes) == {
-            1: {"value_number": Decimal("7.5"), "value_text": None, "value_bool": None, "option_id": None},
-            2: {"value_number": None, "value_text": None, "value_bool": None, "option_id": 5},
+            1: {"value_number": Decimal("7.5"), "value_text": None, "value_bool": None, "option_id": None,
+               "value_lat": None, "value_lng": None},
+            2: {"value_number": None, "value_text": None, "value_bool": None, "option_id": 5,
+               "value_lat": None, "value_lng": None},
             3: None,
         }
 
     def test_clear_by_null_and_by_empty_text(self):
         """S044 § 8.1: an item's save clears its own value by "" or null, as the model's."""
         props = {1: _prop(1, "Power"), 2: _prop(2, "Frame", "text")}
-        assert check_values({"1": None, "2": ""}, props, {}, {}) == ([(2, None), (1, None)], None)
+        assert check_values({"1": None, "2": ""}, props, {}, {}, owner=OWNER_MODEL) == ([(2, None), (1, None)], None)
 
     def test_an_inactive_option_is_kept_when_unchanged(self):
         props = {2: _prop(2, "Drain", "choice")}
         options = {2: [{"id": 5, "active": 0}]}
-        assert check_values({"2": 5}, props, options, {})[1] == ("values.2", CHOOSE_OPTION)
-        assert check_values({"2": 5}, props, options, {2: {"option_id": 5}})[1] is None
+        assert check_values({"2": 5}, props, options, {}, owner=OWNER_MODEL)[1] == ("values.2", CHOOSE_OPTION)
+        assert check_values({"2": 5}, props, options, {2: {"option_id": 5}}, owner=OWNER_MODEL)[1] is None
 
 
 class TestPropertyView:
@@ -258,13 +263,15 @@ class TestPropertyView:
             {"id": 1, "name": "drain", "data_type": "choice", "unit": None},
             {"id": 2, "name": "Frame size", "data_type": "text", "unit": None},
         ]
-        values = {3: {"value_number": Decimal("62.5000"), "value_text": None, "value_bool": None, "option_id": None},
-                  1: {"value_number": None, "value_text": None, "value_bool": None, "option_id": 9}}
+        values = {3: _columns(value_number=Decimal("62.5000")), 1: _columns(option_id=9)}
+        common = {"per_item_only": False, "map_url": None}
         assert property_view(props, values, {9: "Internal"}) == [
-            {"property_id": 1, "name": "drain", "value": 9, "unit": None, "display": "Internal", "source": "model"},
-            {"property_id": 2, "name": "Frame size", "value": None, "unit": None, "display": None, "source": None},
-            {"property_id": 3, "name": "Generator rating", "value": "62.5", "unit": "kVA", "display": "62.5 kVA",
-             "source": "model"},
+            {"property_id": 1, "name": "drain", "data_type": "choice", "value": 9, "unit": None, "display": "Internal",
+             "source": "model", **common},
+            {"property_id": 2, "name": "Frame size", "data_type": "text", "value": None, "unit": None, "display": None,
+             "source": None, **common},
+            {"property_id": 3, "name": "Generator rating", "data_type": "number", "value": "62.5", "unit": "kVA",
+             "display": "62.5 kVA", "source": "model", **common},
         ]
 
     def test_no_properties(self):
@@ -274,8 +281,8 @@ class TestPropertyView:
         """A component-unit without a model (S033, BS1-01): the shell passes no values."""
         props = [{"id": 3, "name": "Generator rating", "data_type": "number", "unit": "kVA"}]
         assert property_view(props, {}, {}) == [
-            {"property_id": 3, "name": "Generator rating", "value": None, "unit": "kVA", "display": None,
-             "source": None}]
+            {"property_id": 3, "name": "Generator rating", "data_type": "number", "per_item_only": False,
+             "value": None, "unit": "kVA", "display": None, "source": None, "map_url": None}]
 
 
 def test_option_label_rules():
@@ -291,7 +298,8 @@ def test_option_label_rules():
 
 def _columns(**value):
     """A value row / a change's columns: the four typed columns, one filled."""
-    return {"value_number": None, "value_text": None, "value_bool": None, "option_id": None, **value}
+    return {"value_number": None, "value_text": None, "value_bool": None, "option_id": None, "value_lat": None,
+            "value_lng": None, **value}
 
 
 class TestItemChanges:
@@ -385,3 +393,171 @@ class TestItemEvents:
                    (3, _columns(value_bool=0))]
         assert [e[1].split(":")[0] for e in self._events(changes)] == ["Ex-proof", "Rated power",
                                                                         "Shaft orientation"]
+
+
+# ---------------------------------------------------------------------------
+# S061: Location, every-class and per-machine properties (§ 5, § 8.1)
+# ---------------------------------------------------------------------------
+
+def _geo(lat, lng):
+    return _columns(value_lat=Decimal(lat), value_lng=Decimal(lng))
+
+
+class TestLocation:
+
+    @pytest.mark.parametrize("raw", ["11.016823, 76.955812", "11.016823,76.955812", "11.016823 76.955812",
+                                     " 11.016823 ,  76.955812 "])
+    def test_the_separators(self, raw):
+        assert parse_value("geo", raw) == ((Decimal("11.016823"), Decimal("76.955812")), None)
+
+    def test_more_than_6_decimals_are_rounded(self):
+        assert parse_value("geo", "11.0000005, 76.0000004") == ((Decimal("11.000001"), Decimal("76.000000")), None)
+        assert parse_value("geo", "11.0168234567, 76.9558123") == ((Decimal("11.016823"), Decimal("76.955812")), None)
+
+    @pytest.mark.parametrize("raw", ["90, 180", "-90, -180", "0, 0", "-0.5, 0"])
+    def test_the_ends_and_zero_are_accepted(self, raw):
+        assert parse_value("geo", raw)[1] is None
+
+    @pytest.mark.parametrize("raw, message", [
+        ("90.000001, 76", LATITUDE_RANGE), ("-91, 76", LATITUDE_RANGE),
+        ("11, -180.000001", LONGITUDE_RANGE), ("11, 181", LONGITUDE_RANGE),
+        # S061 CR1-01: more digits than Decimal's 28-digit context holds after rounding
+        ("1111111111111111111111111, 5", LATITUDE_RANGE), ("5, 1111111111111111111111111", LONGITUDE_RANGE),
+        ("11.016823", ENTER_LOCATION), ("1, 2, 3", ENTER_LOCATION), ("north, east", ENTER_LOCATION),
+        ("11.0N, 76.9E", ENTER_LOCATION), ("+11, 76", ENTER_LOCATION), ("1e1, 76", ENTER_LOCATION),
+        (11.016823, ENTER_LOCATION), ([11, 76], ENTER_LOCATION), (True, ENTER_LOCATION),
+    ])
+    def test_refusals(self, raw, message):
+        assert parse_value("geo", raw) == (None, message)
+
+    @pytest.mark.parametrize("raw", [None, "", "   "])
+    def test_blank_clears(self, raw):
+        assert parse_value("geo", raw) == (None, None)
+
+    def test_the_messages(self):
+        assert ENTER_LOCATION == "Enter the location as latitude, longitude, for example 11.016823, 76.955812"
+        assert LATITUDE_RANGE == "The latitude must be between -90 and 90"
+        assert LONGITUDE_RANGE == "The longitude must be between -180 and 180"
+
+    def test_stored_value_and_display_drop_trailing_zeros(self):
+        row = _geo("11.016800", "76.955800")
+        assert stored_value("geo", row) == "11.0168, 76.9558"
+        assert format_value("geo", (Decimal("11.016823"), Decimal("-76.000000"))) == "11.016823, -76"
+        assert stored_value("geo", _columns()) is None and stored_value("geo", None) is None
+        assert format_value("geo", None) is None
+
+    def test_map_url(self):
+        assert map_url("geo", _geo("11.016823", "76.955812")) == (
+            "https://www.google.com/maps/search/?api=1&query=11.016823,76.955812")
+        assert map_url("geo", _geo("11.010000", "76.900000")).endswith("query=11.01,76.9")
+        assert map_url("geo", None) is None and map_url("geo", _columns()) is None
+        assert map_url("text", _columns(value_text="x")) is None
+
+    def test_check_values_fills_both_columns_and_a_re_save_is_no_change(self):
+        props = {4: _prop(4, "GPS location", "geo")}
+        changes, error = check_values({"4": "11.016823, 76.955812"}, props, {}, {}, owner=OWNER_ITEM)
+        assert error is None and changes == [(4, _geo("11.016823", "76.955812"))]
+        # BR1-05: the same location against the stored DECIMALs writes nothing
+        assert item_changes(changes, {4: _geo("11.016823", "76.955812")}) == []
+        assert item_changes(changes, {4: _geo("11.016824", "76.955812")}) == changes
+
+    def test_a_unit_on_a_location_is_refused(self):
+        assert property_changes(None, {"data_type": "geo", "unit": "deg"}) == (None, ("unit", UNIT_ONLY_NUMBER, 400))
+        assert validate_property({"name": "GPS", "data_type": "geo"}, True) == ({"name": "GPS", "data_type": "geo"}, [])
+
+
+class TestFlags:
+
+    @pytest.mark.parametrize("raw, stored", [(True, 1), (False, 0), (1, 1), (0, 0)])
+    def test_accepted(self, raw, stored):
+        assert validate_property({"all_classes": raw, "per_item_only": raw}, False) == (
+            {"all_classes": stored, "per_item_only": stored}, [])
+
+    @pytest.mark.parametrize("raw", ["yes", None, 2, "1"])
+    def test_refused(self, raw):
+        assert _errors({"all_classes": raw, "per_item_only": raw}, creating=False) == [
+            ("all_classes", CHOOSE_YES_OR_NO), ("per_item_only", CHOOSE_YES_OR_NO)]
+
+    def test_a_create_without_the_flags_sends_none(self):
+        """The columns default to 0 (§ 5.1)."""
+        assert property_changes(None, {"name": "P", "data_type": "text"}) == ({"name": "P", "data_type": "text"}, None)
+
+    def test_turning_per_item_only_on_with_model_values_is_refused(self):
+        stored = {"data_type": "geo", "unit": None, "per_item_only": 0}
+        assert property_changes(stored, {"per_item_only": 1}, has_values=True, model_has_values=True) == (
+            None, ("per_item_only", PER_ITEM_HAS_MODEL_VALUES, 409))
+        assert property_changes(stored, {"per_item_only": 1}, has_values=True) == ({"per_item_only": 1}, None)
+
+    def test_turning_it_off_or_keeping_it_on_is_allowed(self):
+        stored = {"data_type": "geo", "unit": None, "per_item_only": 1}
+        assert property_changes(stored, {"per_item_only": 0}, model_has_values=True) == ({"per_item_only": 0}, None)
+        assert property_changes(stored, {"per_item_only": 1}, model_has_values=True) == ({"per_item_only": 1}, None)
+
+    def test_all_classes_changes_at_any_time(self):
+        stored = {"data_type": "text", "unit": None, "per_item_only": 0}
+        assert property_changes(stored, {"all_classes": 1}, has_values=True, model_has_values=True) == (
+            {"all_classes": 1}, None)
+
+    def test_a_per_machine_property_is_refused_on_a_model_only(self):
+        props = {4: {**_prop(4, "GPS location", "geo"), "per_item_only": 1}}
+        assert check_values({"4": "11, 76"}, props, {}, {}, owner=OWNER_MODEL) == (
+            None, ("values.4", SET_ON_EACH_MACHINE))
+        assert check_values({"4": "11, 76"}, props, {}, {}, owner=OWNER_ITEM)[1] is None
+        assert SET_ON_EACH_MACHINE == "Set this property on each machine, not on the model"
+
+    def test_location_shows_only_on_top_level_equipment(self):
+        props = [{"id": 1, "data_type": "geo"}, {"id": 2, "data_type": "number"}]
+        assert on_level(props, "equipment") == props
+        assert on_level(props, "component_unit") == [props[1]]
+        assert on_level(props, "component") == [props[1]]
+
+
+class TestValueInForceAndHint:
+
+    PROPS = [
+        {"id": 1, "name": "GPS location", "data_type": "geo", "unit": None, "per_item_only": 1},
+        {"id": 2, "name": "Mobility", "data_type": "choice", "unit": None},
+    ]
+    LABELS = {7: "Fixed", 8: "Portable", 9: "Mobile", 10: "PORTABLE"}
+
+    def _rows(self, mobility_option=None, gps=True, props=None):
+        own = {1: _geo("11.016823", "76.955812")} if gps else {}
+        if mobility_option is not None:
+            own[2] = _columns(option_id=mobility_option)
+        return property_view(props or self.PROPS, {}, self.LABELS, own)
+
+    def test_portable_and_mobile_show_the_hint_fixed_does_not(self):
+        assert moving_hint(self._rows(8)) == MOVING_HINT
+        assert moving_hint(self._rows(9)) == MOVING_HINT
+        assert moving_hint(self._rows(7)) is None
+        assert MOVING_HINT == "This machine moves. The location may be out of date."
+
+    def test_mobility_missing_or_without_a_value(self):
+        assert moving_hint(self._rows(props=self.PROPS[:1])) is None
+        assert moving_hint(self._rows(None)) is None
+
+    def test_gps_without_a_value(self):
+        assert moving_hint(self._rows(8, gps=False)) is None
+
+    def test_names_in_other_case(self):
+        props = [{**self.PROPS[0]}, {**self.PROPS[1], "name": "MOBILITY"}]
+        assert moving_hint(self._rows(10, props=props)) == MOVING_HINT
+        assert value_in_force(self._rows(8), "mobility")["display"] == "Portable"
+        assert value_in_force(self._rows(None), "Mobility") is None
+        assert value_in_force(self._rows(8), "Colour") is None
+
+    def test_the_rows_carry_data_type_per_item_only_and_map_url(self):
+        gps = self._rows(8)[0]
+        assert (gps["data_type"], gps["per_item_only"], gps["display"], gps["map_url"]) == (
+            "geo", True, "11.016823, 76.955812",
+            "https://www.google.com/maps/search/?api=1&query=11.016823,76.955812")
+
+
+def test_a_per_machine_property_s_history_has_no_model_mark():
+    """§ 5.6: a per-machine property has no model value, so "no value" carries no "(model)"."""
+    props = {1: {"id": 1, "name": "GPS location", "data_type": "geo", "unit": None, "per_item_only": 1}}
+    changes = [(1, _geo("11.016823", "76.955812"))]
+    assert item_events(props, changes, {}, {1: None}, {}, True) == [
+        ("property", "GPS location: no value", "GPS location: 11.016823, 76.955812")]
+    assert item_events(props, [(1, None)], {1: _geo("11.016823", "76.955812")}, {1: None}, {}, True) == [
+        ("property", "GPS location: 11.016823, 76.955812", "GPS location: no value")]

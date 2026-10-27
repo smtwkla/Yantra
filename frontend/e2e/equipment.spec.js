@@ -369,8 +369,9 @@ test("S043: a number value with its unit shows as 62.5 kVA on the card", async (
   });
   await asPerson(page, "technician", `/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dt")).toHaveText([name]);
-  await expect(properties.locator("dd")).toHaveText(["62.5 kVA"]);
+  // "GPS location" (S061 seed, every class) is on every top-level machine, last by name
+  await expect(properties.locator("dt")).toHaveText([name, "GPS location"]);
+  await expect(properties.locator("dd")).toHaveText(["62.5 kVA", "—"]);
   await expect(properties).toContainText(`Values from model ${model.label}.`);
   // A technician does not keep the masters (no equipment:edit)
   await expect(properties.getByRole("button", { name: "Edit model values" })).toHaveCount(0);
@@ -384,7 +385,7 @@ test("S043: Edit model values on the card opens the model dialog; after a save t
   });
   await asPerson(page, "engineer", `/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dd")).toHaveText(["62.5 kVA"]);
+  await expect(properties.locator("dd")).toHaveText(["62.5 kVA", "—"]);
   await properties.getByRole("button", { name: "Edit model values" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
@@ -392,12 +393,16 @@ test("S043: Edit model values on the card opens the model dialog; after a save t
   await expect(dialog.getByLabel(name)).toHaveValue("62.5");
   await dialog.getByLabel(name).fill("75");
   await saveDialog(page, "Save values");
-  await expect(properties.locator("dd")).toHaveText(["75 kVA"]);
+  await expect(properties.locator("dd")).toHaveText(["75 kVA", "—"]);
 });
 
+// S061: a top-level machine always has "GPS location", so a component-unit of a class with no
+// links shows the hidden card (no Location on parts, D5)
 test("S043: the card is hidden when the class has no property", async ({ page }, testInfo) => {
-  const { node } = await propertySetup(propertyTag(testInfo));
-  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const tag = propertyTag(testInfo);
+  const { cls, node } = await propertySetup(tag);
+  const part = await noModelPart(node, cls, `E2E bare part ${tag}`);
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
   await expect(card(page, "Details")).toBeVisible();
   await expect(card(page, "Properties")).toHaveCount(0);
 });
@@ -446,7 +451,7 @@ test("S044: engineer sets this machine's rated power; the card marks it and the 
   const { model, node } = await propertySetup(tag, RATED_POWER(name));
   await asPerson(page, "engineer", `/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW", "—"]);
   // This machine's button first, the model's second (BR2-07)
   await expect(properties.getByRole("button")).toHaveText(["Edit this machine's values", "Edit model values"]);
   await properties.getByRole("button", { name: "Edit this machine's values" }).click();
@@ -458,7 +463,7 @@ test("S044: engineer sets this machine's rated power; the card marks it and the 
   await dialog.getByLabel(name).fill("5.5");
   await saveDialog(page, "Save values");
 
-  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine"]);
+  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine", "—"]);
   await expect(properties).toContainText(`Values from model ${model.label}, except those marked this machine.`);
   await expect(card(page, "History")).toContainText(`Property: ${name}: 7.5 kW (model) → 5.5 kW`);
 });
@@ -470,7 +475,7 @@ test("S044: engineer clears this machine's value; the card shows the model's aga
   await setItemValues(node, { [power.id]: "5.5" });
   await asPerson(page, "engineer", `/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine"]);
+  await expect(properties.locator("dd")).toHaveText(["5.5 kW · this machine", "—"]);
   await properties.getByRole("button", { name: "Edit this machine's values" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
@@ -478,7 +483,7 @@ test("S044: engineer clears this machine's value; the card shows the model's aga
   await dialog.getByLabel(name).fill("");
   await saveDialog(page, "Save values");
 
-  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW", "—"]);
   await expect(properties).toContainText(`Values from model ${model.label}.`);
   await expect(properties).not.toContainText("this machine.");
   await expect(card(page, "History")).toContainText(`Property: ${name}: 5.5 kW → 7.5 kW (model)`);
@@ -517,7 +522,7 @@ test("S044: the operator sees no Edit this machine's values, nor does anyone on 
   await adminPutNode(node, { unit_id: mcc2.id }); // MCC2: the operator's unit
   await asPerson(page, "operator", `/equipment/${node.id}`);
   const properties = card(page, "Properties");
-  await expect(properties.locator("dd")).toHaveText(["7.5 kW"]);
+  await expect(properties.locator("dd")).toHaveText(["7.5 kW", "—"]);
   await expect(properties.getByRole("button")).toHaveCount(0);
 
   await adminPutNode(node, { lifecycle: "scrapped" });
@@ -541,4 +546,132 @@ test("S044: a number with five decimals is refused under its input", async ({ pa
   // Beside its field: the input marked, the dialog still open with what was typed
   await expect(dialog.getByLabel(name)).toHaveClass(/is-invalid/);
   await expect(dialog.getByLabel(name)).toHaveValue("5.12345");
+});
+
+// S061: the GPS location (seed, every class, set on each machine) and the hint on a machine that moves
+const GPS = "GPS location";
+const GENSET = { latitude: 11.016823, longitude: 76.955812, accuracy: 12 };
+const GENSET_MAP = "https://www.google.com/maps/search/?api=1&query=11.016823,76.955812";
+
+async function gpsId() {
+  const api = await apiAs("admin");
+  try {
+    const items = (await (await api.get("/api/masters/properties")).json()).items;
+    return items.find((p) => p.name === GPS).id;
+  } finally {
+    await api.dispose();
+  }
+}
+
+async function openMachineValues(page) {
+  await card(page, "Properties").getByRole("button", { name: "Edit this machine's values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel(GPS)).toBeVisible();
+  return dialog;
+}
+
+test("S061: engineer taps Use my current location; the card shows the location with Open in Maps, and the history the line", async ({ page }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  await page.context().grantPermissions(["geolocation"]);
+  await page.context().setGeolocation(GENSET);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const dialog = await openMachineValues(page);
+  await expect(dialog).not.toContainText("Model:"); // a per-machine property has no model value
+  await dialog.getByRole("button", { name: "Use my current location" }).click();
+  await expect(dialog.getByLabel(GPS)).toHaveValue("11.016823, 76.955812");
+  await expect(dialog).toContainText("About 12 m accurate");
+  await saveDialog(page, "Save values");
+
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([GPS]);
+  await expect(properties.locator("dd")).toContainText("11.016823, 76.955812");
+  await expect(properties.locator("dd")).not.toContainText("this machine");
+  await expect(properties.getByRole("link", { name: "Open in Maps" })).toHaveAttribute("href", GENSET_MAP);
+  await expect(card(page, "History")).toContainText(`Property: ${GPS}: no value → 11.016823, 76.955812`);
+});
+
+test("S061: a pasted location with many decimals saves as 6 decimals", async ({ page }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const dialog = await openMachineValues(page);
+  await dialog.getByLabel(GPS).fill("11.0168234567, 76.9558123");
+  await saveDialog(page, "Save values");
+  await expect(card(page, "Properties").locator("dd")).toContainText("11.016823, 76.955812");
+});
+
+test("S061: a latitude of 95 is refused under its input", async ({ page, consoleWatch }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  consoleWatch.allowFailedRequest(`/api/equipment/${node.id}/properties`, 400);
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const dialog = await openMachineValues(page);
+  await dialog.getByLabel(GPS).fill("95, 76");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "The latitude must be between -90 and 90");
+  await expect(dialog.getByLabel(GPS)).toHaveClass(/is-invalid/);
+});
+
+test("S061: a blocked location permission shows the blocked message under the input", async ({ page }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  await page.context().clearPermissions();
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const dialog = await openMachineValues(page);
+  await dialog.getByRole("button", { name: "Use my current location" }).click();
+  await expect(dialog).toContainText(
+    "Location is blocked for Yantra in this browser. Allow it in the browser's settings, or type the location"
+  );
+  await expect(dialog.getByLabel(GPS)).toHaveValue("");
+});
+
+test("S061: a machine whose card has only GPS location shows no model line and no Edit model values", async ({ page }, testInfo) => {
+  const { node } = await propertySetup(propertyTag(testInfo));
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([GPS]);
+  await expect(properties.locator("dd")).toHaveText(["—"]);
+  await expect(properties).not.toContainText("Values from model");
+  await expect(properties.getByRole("button")).toHaveText(["Edit this machine's values"]);
+});
+
+test("S061: a property set on each machine is not in Edit model values", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const power = `E2E rated power ${tag}`;
+  const place = `E2E bay ${tag}`;
+  const { node } = await propertySetup(tag, {
+    properties: [{ name: power, data_type: "number", unit: "kW" }, { name: place, data_type: "text", per_item_only: true }],
+    values: { 0: "7.5" },
+  });
+  await asPerson(page, "engineer", `/equipment/${node.id}`);
+  const properties = card(page, "Properties");
+  await expect(properties.locator("dt")).toHaveText([place, power, GPS]);
+  await properties.getByRole("button", { name: "Edit model values" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel(power)).toHaveValue("7.5");
+  await expect(dialog.getByLabel(place)).toHaveCount(0);
+  await expect(dialog.getByLabel(GPS)).toHaveCount(0);
+});
+
+test("S061: a Portable machine with a GPS location shows the hint under it", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const { node, properties: [mobility] } = await propertySetup(tag, {
+    properties: [{ name: "Mobility", data_type: "choice", options: ["Fixed", "Mobile", "Portable"] }],
+  });
+  try {
+    const portable = mobility.options.find((o) => o.label === "Portable").id;
+    await setItemValues(node, { [await gpsId()]: "11.016823, 76.955812", [mobility.id]: portable });
+    await asPerson(page, "engineer", `/equipment/${node.id}`);
+    const properties = card(page, "Properties");
+    await expect(properties.locator("dt")).toHaveText([GPS, "Mobility"]);
+    await expect(properties.locator("dd").first()).toContainText("This machine moves. The location may be out of date.");
+  } finally {
+    // A property name is unique, and the projects share the lane's database
+    const api = await apiAs("admin");
+    try {
+      const res = await api.put(`/api/masters/properties/${mobility.id}`, { data: { name: `E2E mobility ${tag}` } });
+      expect(res.ok(), await res.text()).toBe(true);
+    } finally {
+      await api.dispose();
+    }
+  }
 });
