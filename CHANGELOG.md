@@ -1,5 +1,21 @@
 # What changed in Yantra
 
+## 0.1.12 — 28-10-2026
+- Equipment categories: group equipment classes under a category and filter the equipment list and the printed asset list by Category
+- Equipment and asset list: filter by property, with several conditions matched by All or Any
+- Equipment properties: set them for every class or for one machine, with a new Location type
+- Location: use your current location and open it in Maps
+- Machines that move show a hint about their location
+- Dialogs fill the whole screen on a phone
+- Save buttons show the reason when they are disabled
+- Sign out has a label
+- Masters appears in the menu for editors
+- Equipment list shows as cards on a phone
+- Team: add a person with their sites
+- Scanning an unknown QR code shows a clear message
+- Network and Labels settings ask for confirmation before changes
+- Messages use plainer wording
+
 ## 0.1.11 — 26-10-2026
 - Sign-in is stricter. Yantra accepts only correctly signed tokens (RS256) from the expected login server, and it allows 30 seconds of clock difference.
 - If the login server (Keycloak) is down, Yantra now says so with a clear "login server down" answer (503) instead of a general error.
