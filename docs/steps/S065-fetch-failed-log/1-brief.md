@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 28-10-2026
 Track: fix
-Status: Gate B — fix lane, 28-10-2026; CR r1: 1 nit, fixed
+Status: Done (committed 410ad3b; checks: 5 auto)
 Baseline: 33ce411 (working tree also holds S064's Status lines in INDEX.md and its brief)
 ```
 
