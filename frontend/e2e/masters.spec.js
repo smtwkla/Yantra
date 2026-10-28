@@ -644,7 +644,6 @@ test("S064: the Team search and site select filter the list", async ({ page }) =
 });
 
 test("S064 CR1-01: Add person with the row save and the list reload both failing still becomes Edit person; a second Save sends no POST", async ({ page, consoleWatch }, testInfo) => {
-  consoleWatch.allowBrowserError("fetch failed");
   consoleWatch.allowBrowserError("net::ERR_FAILED");
   const name = `E2E dropped ${propertyTag(testInfo)}`;
   const code = ownUnitCode();

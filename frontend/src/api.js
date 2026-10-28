@@ -12,15 +12,25 @@
 import { getToken, networkDenied } from "./stores/auth";
 import { NO_CONNECTION_TEXT, NOT_ANSWERING_TEXT } from "./utils/messages";
 
-// fetch() rejects with a TypeError when the network fails ("Failed to fetch", "Load failed");
-// it becomes a plain Error with status 0.  An abort (AbortError) is the caller's and goes on as it is.
+// fetch() rejects with a TypeError both for a lost connection and for a coding error (a bad
+// header value, a bad URL).  The browser's text for a lost connection is not standard, but each
+// engine has one: Chromium "Failed to fetch", WebKit "Load failed" (also when the page is left
+// while a request runs), Firefox "NetworkError when attempting to fetch resource.".  Those are
+// the user's network and are not logged: the screen shows NO_CONNECTION_TEXT.  Any other
+// TypeError is a coding error and is logged.  Either becomes a plain Error with status 0.
+// An abort (AbortError) is the caller's and goes on as it is.
+const NETWORK_FAILURE_MESSAGES = [
+  "Failed to fetch",
+  "Load failed",
+  "NetworkError when attempting to fetch resource.",
+];
+
 async function send(url, options) {
   try {
     return await fetch(url, options);
   } catch (cause) {
     if (!(cause instanceof TypeError)) throw cause;
-    // A TypeError is mostly the network, but a coding error (bad header value) looks the same
-    console.error("fetch failed", cause);
+    if (!NETWORK_FAILURE_MESSAGES.includes(cause.message)) console.error("fetch failed", cause);
     const err = new Error(NO_CONNECTION_TEXT, { cause });
     err.status = 0;
     err.code = null;

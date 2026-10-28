@@ -21,6 +21,7 @@ async function refusal(promise) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("api.js messages (S064 UX-06)", () => {
@@ -31,6 +32,30 @@ describe("api.js messages (S064 UX-06)", () => {
       expect(err.message).toBe(NO_CONNECTION_TEXT);
       expect(err.status).toBe(0);
     }
+  });
+
+  it.each([
+    ["Chromium", "Failed to fetch"],
+    ["WebKit", "Load failed"],
+    ["Firefox", "NetworkError when attempting to fetch resource."],
+  ])("a network text of %s logs nothing and is the no-connection text", async (_engine, text) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError(text); }));
+    const err = await refusal(apiGet("/api/x"));
+    expect(err.message).toBe(NO_CONNECTION_TEXT);
+    expect(err.status).toBe(0);
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it("a TypeError that is not a network text logs once and is the no-connection text", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Invalid value");
+    }));
+    const err = await refusal(apiGet("/api/x"));
+    expect(err.message).toBe(NO_CONNECTION_TEXT);
+    expect(err.status).toBe(0);
+    expect(logged).toHaveBeenCalledTimes(1);
   });
 
   it("an abort goes on as it is", async () => {
