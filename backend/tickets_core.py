@@ -79,14 +79,23 @@ DESCRIPTION_NEEDED = "Description is needed when no symptom is picked"
 DESCRIPTION_NEEDED_OTHER = "Describe the problem when the symptom is Other"
 
 
+TICKET_SERIAL_PREFIX = "TK"
+
+
+def format_serial(prefix, year, month, number):
+    """"IM", 2026, 10, 1 -> IM-2026-10-001; past 999 the number simply grows (the equipment-code
+    rule).  Shared by the month-numbered records: tickets (TK), improvements (IM, S067)."""
+    return f"{prefix}-{year:04d}-{month:02d}-{str(number).zfill(3)}"
+
+
 def format_ticket_serial(year, month, number):
-    """2026, 10, 1 -> TK-2026-10-001; past 999 the number simply grows (the equipment-code rule)."""
-    return f"TK-{year:04d}-{month:02d}-{str(number).zfill(3)}"
+    """2026, 10, 1 -> TK-2026-10-001."""
+    return format_serial(TICKET_SERIAL_PREFIX, year, month, number)
 
 
-def serial_scope(year, month):
-    """The serial_counters row of one month: TK:2026-10."""
-    return f"TK:{year:04d}-{month:02d}"
+def serial_scope(year, month, prefix=TICKET_SERIAL_PREFIX):
+    """The serial_counters row of one month: TK:2026-10 (IM:2026-10 for improvements)."""
+    return f"{prefix}:{year:04d}-{month:02d}"
 
 
 def parse_event_time(text):

@@ -3,7 +3,7 @@ Roadmap: R05 — Improvement and root-cause analysis (RCA)
 Doc: roadmap
 Author: Roadmapper (Opus)
 Date: 29-10-2026
-Status: Draft
+Status: Approved (gate R, 30-10-2026, KLA): R05.7, R05.8, R05.9 deferred; every other answer (a)
 ```
 
 # R05 — Improvement and root-cause analysis (RCA)
@@ -125,19 +125,38 @@ Who uses improvements and what each can do (in the app's words):
 - **Operator** (phone, later the kiosk)
   - I scan the press's QR and see the lesson: a picture and one line in Tamil.
 
+## Gate R (30-10-2026, KLA)
+
+- **Approved**, with **R05.7, R05.8 and R05.9 deferred** ("not needed now"). They stay in the
+  roadmap with status `deferred`, and their questions Q7.1, Q8.1 and Q9.1 stay open until one is
+  taken up.
+- **Every other question: (a)**, the recommendation: Q0.1, Q1.1–Q1.4, Q2.1–Q2.3, Q3.1, Q3.2,
+  Q4.1–Q4.3, Q5.1, Q6.1–Q6.3, Q10.1.
+- **Q0.2, the order:** KLA asked to plan and build the rest of R05 now (R05.1–R05.6, R05.10), one
+  step after the other, before R03's milestone 1. This goes beyond (a), which put only R05.1–R05.3
+  first.
+- **How the steps run (KLA):** each step is briefed and reviewed through all its rounds, then
+  coded without stopping at gate A, unless a review raises a defining, breaking or show-stopping
+  question. Gate B stays: KLA commits each step.
+- **Consequences of the deferrals (orchestrator):** without R05.8 there is no *Suggested* list
+  and no hint on the ticket page; the engineer starts each improvement by judgement. Without
+  R05.9 a *Preventive* countermeasure is done when its owner marks it done, like the other kinds.
+  Without R05.7 a lesson has no *shown to* record. Milestone 2 is R05.4 and R05.5; milestone 3 is
+  R05.6 and R05.10.
+
 ## Items
 
 | Item | Goal | Size | Track | Depends on | Status |
 |---|---|---|---|---|---|
-| R05.1 | Improvement record: start from tickets, the problem, linked tickets, the list; the ticket shows the link | L | full | — | open |
-| R05.2 | Why-why and the root cause | M | full | R05.1 | open |
-| R05.3 | Countermeasures: kind, owner, due date, done; on *Me › Open work* | L | full | R05.1 | open |
+| R05.1 | Improvement record: start from tickets, the problem, linked tickets, the list; the ticket shows the link | L | full | — | → S067 (backend) + S068 (screens), 30-10-2026 |
+| R05.2 | Why-why and the root cause | M | full | R05.1 | → S069, 30-10-2026 |
+| R05.3 | Countermeasures: kind, owner, due date, done; on *Me › Open work* | L | full | R05.1 | → S070, 30-10-2026 |
 | R05.4 | States, timeline and notes; the watch period; verified close | L | full | R05.2, R05.3 | open |
 | R05.5 | Alerts: countermeasure given to you, overdue, watch ended | M | full | R05.3, R05.4 | open |
 | R05.6 | One-point lessons: the first kind of the Procedures master | L | full | R05.3 | open |
-| R05.7 | Who was shown a lesson (completion records) | M | full | R05.6 | open |
-| R05.8 | *Suggested* improvements: the when-to-analyse rule | M | full | R05.1 | open |
-| R05.9 | A preventive countermeasure becomes a PM plan | M | full | R05.3, R03.2, R03.8 | open |
+| R05.7 | Who was shown a lesson (completion records) | M | full | R05.6 | deferred |
+| R05.8 | *Suggested* improvements: the when-to-analyse rule | M | full | R05.1 | deferred |
+| R05.9 | A preventive countermeasure becomes a PM plan | M | full | R05.3, R03.2, R03.8 | deferred |
 | R05.10 | The improvement register, printable for the review | S | full | R05.4 | open |
 
 **Size and the step rule (fact):** R05.1 adds two tables, a record and its ticket links, as R03
@@ -595,6 +614,8 @@ a new ticket (Plan § 9 Q4); the ISO 14224 cause list with five groups (S016); t
       register (a).
 
 ## Log
+
+- 30-10-2026 — Gate R: approved by KLA; R05.7, R05.8, R05.9 deferred; every other answer (a); the rest of R05 built now, before R03's milestone 1.
 
 - 29-10-2026 — First version (Draft): 10 items from KLA's request (TK-2026-10-002),
   Maintenance-Philosophy § 3 (focused improvement, training), Plan § 4.2, § 4.3a, § 4.6 and § 1

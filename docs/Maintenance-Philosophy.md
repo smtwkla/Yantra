@@ -434,6 +434,7 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Downtime | EN 13306 *down time*: while a breakdown's machine cannot run, failure to restoration (*time to restoration*); its mean is MTTR |
 | Repeat failure | The same fault back within 7 days of its back in service: a new ticket linked as *repeat of* — the fix did not hold (TPM focused improvement; ISO 9001 § 10.2) |
 | Not a fault | A ticket closed with a cause and remark because nothing was wrong (or a mis-operation); left out of failure counts |
+| Improvement | Yantra's record of one problem that tickets showed, analysed so it does not come back (`IM-YYYY-MM-NNN`, S067): the problem, the tickets behind it and their loss (breakdowns, downtime), a lead (an engineer or manager of the site). TPM *focused improvement* (*Kobetsu Kaizen*); ISO 9001 § 10.2.1 b, the "find out why" after the ticket's correction. Started from a ticket back in service or closed; a ticket is in at most one open improvement; a *not a fault* ticket is never analysed |
 | Failure mode | How a failure is seen — the operator's "symptom" (ISO 14224), per equipment class or General |
 | Failure cause | Why it failed: the circumstances in design, manufacture or use that led to it (ISO 14224) |
 | Cause group | ISO 14224's five groups of causes: design, fabrication / installation, operation / maintenance, management, miscellaneous |

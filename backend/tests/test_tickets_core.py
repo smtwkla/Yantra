@@ -11,7 +11,7 @@ from tickets_core import (
     INTENSITIES, INTENSITY_FILTERS, LABOUR_BEFORE_CLOSE, LABOUR_DATE_EARLY, LABOUR_DATE_FORMAT, LABOUR_DATE_FUTURE,
     LOWERING_NEEDS_REMARK, MODE_NEEDED, MOVES, NOTHING_TO_CHANGE, OPEN_STATES, PERSON_NEEDED, REMARK_MAX,
     REPEAT_WINDOW_DAYS, STARTED_AFTER_RESTORE, STARTED_ALREADY, STATES, TRADE_NEEDED, allowed_moves,
-    description_error, edit_lines, event_time_error, format_ticket_serial, is_breakdown, is_repeat_candidate, latest_restoration,
+    description_error, edit_lines, event_time_error, format_serial, format_ticket_serial, is_breakdown, is_repeat_candidate, latest_restoration,
     machine_and_component, parse_event_time, regrade_options, send_back_intensity, serial_scope, started_at_error,
     ticket_times, trade_error, validate_close, validate_edit, validate_event_time, validate_labour, validate_move,
     validate_raise, validate_regrade,
@@ -50,6 +50,17 @@ class TestSerial:
     def test_scope(self):
         assert serial_scope(2026, 10) == "TK:2026-10"
         assert serial_scope(2027, 3) == "TK:2027-03"
+
+    @pytest.mark.parametrize("number, serial", [
+        (1, "IM-2026-10-001"), (999, "IM-2026-10-999"), (1000, "IM-2026-10-1000"),
+    ])
+    def test_another_prefix(self, number, serial):
+        """S067 § 5.1: the improvements' IM serial through the same helper."""
+        assert format_serial("IM", 2026, 10, number) == serial
+
+    def test_scope_with_a_prefix(self):
+        assert serial_scope(2026, 10, "IM") == "IM:2026-10"
+        assert serial_scope(2027, 3, prefix="IM") == "IM:2027-03"
 
 
 class TestStates:

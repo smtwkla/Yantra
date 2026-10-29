@@ -123,6 +123,15 @@ PERMISSIONS = {
     # A.5.15).  The holders equal ticket:close's today, but the two can drift.
     "ticket:edit_notes": ("maint_engineer", "it_admin"),
 
+    # Improvements (S067, Q1.3 a): the record where a problem tickets showed is analysed so it
+    # does not come back (TPM focused improvement).  Read by the operator and up, as TPM wants
+    # the floor to see the analysis, and by IT admin, who reads only.  Edited by the engineer
+    # (so the manager), who leads the analysis; not IT admin (as R03 Q2.2 for PM, ISO 27001
+    # A.8.2).  The storekeeper holds neither.  Who may lead follows improvement:edit
+    # (improvements_core.may_lead).
+    "improvement:read": ("maint_operator", "it_admin"),
+    "improvement:edit": ("maint_engineer",),
+
     # Meter readings (S039): the operator logs the readings of the machines at the unit (TPM
     # autonomous maintenance), so the supervisor and the maintenance ladder inherit it, as
     # ticket:raise.  Not IT admin (U2): logging is plant work.  Removing a reading is a
@@ -176,4 +185,7 @@ SITE_SCOPED = frozenset({
     "ticket:close",
     "ticket:edit_notes",
     "reading:log",
+    # S067: checked at the improvement's site (its unit's), or the ticket's on a start
+    "improvement:read",
+    "improvement:edit",
 })

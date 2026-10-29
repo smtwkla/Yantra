@@ -22,8 +22,15 @@ user's token, so IT admin (a token role) is never assigned.
 
 LOCK ORDER (equipment.py's numbers): (1) the node raised on → (6) the serial counter →
 (7) the ticket row.  Ticket rows are locked only here and by documents.py (the ticket owner,
-through the functions below), always last; nothing that holds a ticket lock then takes an
-equipment, unit or counter lock.  Ancestors of the node are read plain, never locked.
+through the functions below), always last, and shared only by improvements.py (S067 § 5.4,
+below); nothing that holds a ticket lock then takes an equipment, unit or counter lock.  The one
+stated exception: improvements.py holds a ticket LOCK IN SHARE MODE and then its improvement
+insert takes shared foreign-key locks on the unit, the machine and the lead's person row.  No
+path holds those rows FOR UPDATE and then waits for a ticket FOR UPDATE, and every ticket write
+here holds the ticket FOR UPDATE, so a ticket write and a start or add wait for one another in
+one direction only (improvements.py's note says why, path by path).  This module never touches
+improvement rows: the detail reads improvement_tickets plain.  Ancestors of the node are read
+plain, never locked.
 Working a ticket (S018 § 5.3) — a move (S019's schedule, change plan and the start from
 scheduled included), re-grade, edit, assignment, labour or parts change (S020), a new work
 note (S027) — locks (7) explicitly, and nothing else explicitly.  A note's correction (S027
@@ -76,7 +83,9 @@ counted, a later one queues behind the code's lock, so "code frozen once used" i
 inactive code stays on tickets that already use it.
 
 Import direction: documents.py imports the ticket owner's read and lock functions from here;
-this module never imports documents.py.
+this module never imports documents.py.  improvements.py (S067) imports read_ticket,
+person_at_site and people_at_site from here; this module imports only improvements_core (pure),
+never improvements.py.
 """
 
 from datetime import datetime
@@ -92,8 +101,9 @@ import alerts
 from alerts_core import ASSIGNED_ALERT, close_alert, raise_alert, regrade_alert, send_back_alert
 from config_rbac import ASSIGNABLE_ROLES
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
-from equipment import IST, accessible_unit_ids, load_node_for_user
+from equipment import IST, load_node_for_user, unit_access_condition
 from equipment_core import SCRAPPED
+import improvements_core
 from tickets_core import (
     ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EDIT_NOTES_KEY, EVENT_LABELS, MACHINE_STOPPED_MOVES,
     MACHINE_STOPPED_NEEDED, NOTE_EVENT, NOTHING_TO_CHANGE, PART_NODE_NEEDED, PARTS_HINT_ACTION_CODES, PARTS_NOT_A_FAULT,
@@ -180,17 +190,10 @@ def _today():
 def _visible_condition(cur):
     """The access predicate (§ 5.3) as ``(sql, params)`` over ``t`` and ``m``; None when the
     user may see no ticket at all (an empty IN () would be an SQL error)."""
-    unit_ids = accessible_unit_ids(cur, READ_KEY)
-    if unit_ids is None:
-        return "1 = 1", []
-    if not unit_ids:
-        return None
-    ids = sorted(unit_ids)
-    placeholders = ", ".join(["%s"] * len(ids))
-    return f"(t.unit_id IN ({placeholders}) OR m.unit_id IN ({placeholders}))", ids + ids
+    return unit_access_condition(cur, READ_KEY, "t.unit_id", "m.unit_id")
 
 
-def _code_ref(row, prefix):
+def code_ref(row, prefix):
     """``{id, code, label}`` of a joined code (mode, cause, action), or None."""
     if row[f"{prefix}_id"] is None:
         return None
@@ -214,11 +217,11 @@ def _ticket_out(row, today):
         "component": ({"id": plain["c_id"], "code": plain["c_code"], "name": plain["c_name"]}
                       if plain["c_id"] is not None else None),
         "unit": {"id": plain["unit_id"], "code": plain["unit_code"], "site_code": plain["site_code"]},
-        "failure_mode": _code_ref(plain, "f"),
+        "failure_mode": code_ref(plain, "f"),
         "description": plain["description"],
         "reported_by": {"id": plain["rp_id"], "name": plain["rp_name"]} if plain["rp_id"] is not None else None,
-        "cause": _code_ref(plain, "fc"),
-        "action": _code_ref(plain, "ma"),
+        "cause": code_ref(plain, "fc"),
+        "action": code_ref(plain, "ma"),
         "not_a_fault": bool(plain["not_a_fault"]),
         "repeat_of": {"id": plain["rt_id"], "serial": plain["rt_serial"]} if plain["rt_id"] is not None else None,
         # S019: the current plan, set only while scheduled
@@ -359,7 +362,7 @@ def _latest_repeat_serial(cur, ticket_id):
     return row["serial"] if row else None
 
 
-def _person_at_site(cur, person_id, site_id):
+def person_at_site(cur, person_id, site_id):
     """An active person with a membership at the site -> ``{id, name, role}``, or None.  The
     role is the person's at that site (memberships), never the user's token."""
     cur.execute("SELECT p.id, p.name, ms.role FROM people p JOIN memberships ms ON ms.person_id = p.id"
@@ -371,7 +374,7 @@ def _own_person_at_site(cur, site_id):
     """The user's own person at the site (§ 5.2, § 5.8), or None: no Team record, or no
     membership there (IT admin is a token role)."""
     person_id = current_person_id(cur)
-    return None if person_id is None else _person_at_site(cur, person_id, site_id)
+    return None if person_id is None else person_at_site(cur, person_id, site_id)
 
 
 def _person_ref(person):
@@ -427,7 +430,54 @@ def _detail(cur, row):
         # Shown against now; the raise checks the new ticket's own time (§ 5.5)
         "can_raise_repeat": (RAISE_KEY in keys
                              and is_repeat_candidate(latest_restoration(state, row["not_a_fault"], events), now)),
+        **_improvement_fields(cur, row, keys),
     }
+
+
+def _improvement_fields(cur, row, keys):
+    """S067 § 5.3: the improvements this ticket is in, newest first, for a reader holding
+    improvement:read at the ticket's site, and of those only the ones the reader can open (A1);
+    and whether this user may start one from it (the key at the site, the start rule, not a
+    not-a-fault, no open link: every link, also one the user cannot open).  Plain reads: this
+    module never locks improvement rows."""
+    links = []
+    if improvements_core.EDIT_KEY in keys:
+        links = improvement_links(cur, row["id"])
+    can_start = (improvements_core.EDIT_KEY in keys
+                 and improvements_core.start_error(row["state"], row["not_a_fault"]) is None
+                 and improvements_core.link_error(row["serial"], links) is None)
+    shown = _readable_improvement_links(cur, row["id"]) if improvements_core.READ_KEY in keys else []
+    return {
+        "improvements": [{"id": link["improvement_id"], "serial": link["serial"], "state": link["state"]}
+                         for link in shown],
+        "can_start_improvement": can_start,
+    }
+
+
+_IMPROVEMENT_LINKS = ("SELECT i.id AS improvement_id, i.serial, i.state, it.open_link FROM improvement_tickets it"
+                      " JOIN improvements i ON i.id = it.improvement_id")
+
+
+def improvement_links(cur, ticket_id):
+    """All the ticket's improvement links, newest improvement first (by id, the serial order;
+    S067 BR1-13) -> ``[{improvement_id, serial, state, open_link}]``, read plain and unfiltered:
+    the one-open-link rule (improvements_core.link_error, here and in improvements.py) counts
+    every link, also one the user cannot open."""
+    cur.execute(f"{_IMPROVEMENT_LINKS} WHERE it.ticket_id = %s ORDER BY i.id DESC", (ticket_id,))
+    return cur.fetchall()
+
+
+def _readable_improvement_links(cur, ticket_id):
+    """The ticket's links the user can open (A1): the improvements' own predicate
+    (improvement:read at the improvement's unit or its machine's current unit, as
+    improvements._read_improvement checks), so the ticket page lists no link that answers 404."""
+    visible = unit_access_condition(cur, improvements_core.READ_KEY, "i.unit_id", "m.unit_id")
+    if visible is None:
+        return []
+    condition, params = visible
+    cur.execute(f"{_IMPROVEMENT_LINKS} JOIN equipment m ON m.id = i.equipment_id"
+                f" WHERE it.ticket_id = %s AND {condition} ORDER BY i.id DESC", [ticket_id, *params])
+    return cur.fetchall()
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +739,7 @@ def list_modes():
     return jsonify({"items": items})
 
 
-def _people_at_site(cur, site_id):
+def people_at_site(cur, site_id):
     """Active people with a membership at the site, by name, with their active trades
     ``[{id, name}]``, their role there and whether that role may be assigned (§ 5.8): the one
     people picker (reported by, the back-in-service person, labour, assignees)."""
@@ -714,7 +764,7 @@ def list_people():
     (ISO 27001 A.5.15)."""
     with get_db().cursor() as cur:
         site_id, _ = _picker_anchor(cur)
-        return jsonify({"items": _people_at_site(cur, site_id)})
+        return jsonify({"items": people_at_site(cur, site_id)})
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +784,7 @@ def _check_mode(cur, mode_id, machine_class_id, field="failure_mode_id"):
 def _check_person(cur, person_id, site_id, field):
     """An active person with a membership at the site (operators without a login included,
     S017 user decision 5; S018 § 5.8) -> ``{id, name, role}``; 400 on ``field`` otherwise."""
-    person = _person_at_site(cur, person_id, site_id)
+    person = person_at_site(cur, person_id, site_id)
     if person is None:
         raise ApiError(PERSON_AT_SITE, 400, field)
     return person
@@ -1194,7 +1244,7 @@ def add_assignee(ticket_id):
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         ticket = _lock_open_ticket(cur, ticket_id, ASSIGN_KEY)
-        person = _person_at_site(cur, clean["person_id"], ticket["site_id"])
+        person = person_at_site(cur, clean["person_id"], ticket["site_id"])
         if person is None or person["role"] not in ASSIGNABLE_ROLES:
             raise ApiError(ASSIGNEE_AT_SITE, 400, "person_id")
         event_id = _assign(cur, ticket_id, person["id"], _now())

@@ -187,6 +187,10 @@ app.register_blueprint(item_properties_bp, url_prefix="/api")
 from tickets import tickets_bp
 app.register_blueprint(tickets_bp, url_prefix="/api/tickets")
 
+from improvements import improvements_bp
+# The improvement record (S067): its own blueprint, beside the tickets it is started from
+app.register_blueprint(improvements_bp, url_prefix="/api/improvements")
+
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")
 

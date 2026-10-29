@@ -1092,6 +1092,49 @@ _MIGRATIONS = [
             ADD CONSTRAINT fk_equipment_classes_category
                 FOREIGN KEY IF NOT EXISTS (category_id) REFERENCES equipment_categories (id)""",
     ]),
+    # S067 — improvements (docs/steps/S067-improvement-record/1-brief.md § 4.1, R05.1): one problem
+    # analysed from one or more tickets (TPM focused improvement).  The unit and the machine are the
+    # first ticket's; the site is the unit's.  Serials IM-YYYY-MM-NNN through serial_counters rows
+    # IM:YYYY-MM.  state holds only 'analysing' (D3); R05.4 appends its values at the end.
+    # improvement_tickets.open_link is 1 while the improvement is open and NULL after (R05.4 sets
+    # it): the UNIQUE key allows one open link per ticket and any number of NULLs, so a ticket is
+    # in at most one open improvement (Q1.4 a, D4).  IF NOT EXISTS on both tables makes a
+    # half-applied v36 re-run.  No precondition: two new tables meet no production row.
+    # Rollback: the previous release reads neither table; the IM: counter rows stay unused.
+    (36, "Improvements and their tickets (S067)", [
+        """CREATE TABLE IF NOT EXISTS improvements (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            serial        VARCHAR(16) NOT NULL,
+            unit_id       INT NOT NULL,
+            equipment_id  INT NOT NULL,
+            state         ENUM('analysing') NOT NULL DEFAULT 'analysing',
+            title         VARCHAR(120) NOT NULL,
+            problem       VARCHAR(2000) NOT NULL,
+            lead_id       INT NOT NULL,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by    VARCHAR(100) NOT NULL,
+            updated_at    DATETIME NULL,
+            updated_by    VARCHAR(100) NULL,
+            CONSTRAINT uq_improvements_serial UNIQUE (serial),
+            KEY ix_improvements_unit_state (unit_id, state),
+            KEY ix_improvements_equipment (equipment_id),
+            CONSTRAINT fk_improvements_unit FOREIGN KEY (unit_id) REFERENCES units (id),
+            CONSTRAINT fk_improvements_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_improvements_lead FOREIGN KEY (lead_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS improvement_tickets (
+            improvement_id  INT NOT NULL,
+            ticket_id       INT NOT NULL,
+            open_link       TINYINT(1) NULL DEFAULT 1,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            PRIMARY KEY (improvement_id, ticket_id),
+            CONSTRAINT uq_improvement_tickets_open UNIQUE (ticket_id, open_link),
+            CONSTRAINT chk_improvement_tickets_open_link CHECK (open_link IS NULL OR open_link = 1),
+            CONSTRAINT fk_improvement_tickets_improvement FOREIGN KEY (improvement_id) REFERENCES improvements (id),
+            CONSTRAINT fk_improvement_tickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

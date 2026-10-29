@@ -22,7 +22,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   `per_item_only`, the `geo` data type, `value_lat` / `value_lng` and their
   CHECKs, S061) on 27-10-2026, and the migration v35 table
   `equipment_categories` with `equipment_classes.category_id` (S063) on
-  27-10-2026. The schema described here is at **migration v35**.
+  27-10-2026, and the migration v36 tables `improvements` and
+  `improvement_tickets` (S067) on 30-10-2026. The schema described here is at
+  **migration v36**.
 
 ## Conventions
 
@@ -74,7 +76,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `ticket_labour` | Person, trade worked, work date and minutes per ticket (S018) |
 | `ticket_assignees` | Ticket → people assigned, who and when (S018) |
 | `ticket_parts` | Parts fitted per ticket (S020): description, part number and its kind, maker, quantity and unit, the node fitted to |
-| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), later `PM-` |
+| `improvements` | An improvement (S067, v36; TPM focused improvement): one problem analysed from one or more tickets. Serial `IM-YYYY-MM-NNN` (`uq_improvements_serial`), the unit and the machine of the first ticket (fixed; the site is the unit's), state (`analysing` only in S067; R05.4 appends its states), title (up to 120), problem (up to 2000), lead (a person who may hold `improvement:edit` at the site when picked), who started it and when, last edit. Never deleted. Indexes `ix_improvements_unit_state`, `ix_improvements_equipment`. The tickets' symptom, cause and downtime are read from the tickets, never copied |
+| `improvement_tickets` | Improvement → the tickets it analyses (S067, v36), primary key `(improvement_id, ticket_id)`, who added it and when. `open_link` is 1 while the improvement is open and NULL after (R05.4 sets it); the unique key `uq_improvement_tickets_open (ticket_id, open_link)` lets a ticket be in only one open improvement, and `chk_improvement_tickets_open_link` allows only 1 or NULL. Removing a ticket deletes its row; the ticket row is never written |
+| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), `IM-` improvement serials per month (S067), later `PM-` |
 | `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
 | `task_queue` | Base pattern: alerts and emails (S021, S032), the daily access-log purge (S013); later PM generation and sync |
 | `app_settings` | Escalation times, upload limits, internal networks, label settings, etc. |
@@ -169,6 +173,18 @@ erDiagram
     int id PK
     varchar code UK
     int class_id FK "null"
+  }
+  improvement_tickets {
+    int improvement_id PK,FK
+    int ticket_id PK,FK
+    tinyint open_link UK "null"
+  }
+  improvements {
+    int id PK
+    varchar serial UK
+    int unit_id FK
+    int equipment_id FK
+    int lead_id FK
   }
   maintenance_actions {
     int id PK
@@ -352,6 +368,11 @@ erDiagram
   tickets o|--o{ tickets : "repeat_of_id"
   people o|--o{ tickets : "reported_by_id"
   units ||--o{ tickets : "unit_id"
+  units ||--o{ improvements : "unit_id"
+  equipment ||--o{ improvements : "equipment_id"
+  people ||--o{ improvements : "lead_id"
+  improvements ||--o{ improvement_tickets : "improvement_id"
+  tickets ||--o{ improvement_tickets : "ticket_id"
   sites ||--o{ units : "site_id"
   units ||--o{ user_units : "unit_id"
 ```

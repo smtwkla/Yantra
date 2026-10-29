@@ -18,6 +18,8 @@ only when the write needs it:
         (S033) — on create always (its code is the prefix), on update only when newly picked
     (5a) the type row, only when a write without a model newly picks a type (S033)
     (6) the serial_counters row
+    (6b) the improvement row (improvements.py, S067)
+    (7) the ticket row (tickets.py, S017)
 
 A write with a model never locks a type: it comes from the model, whose type never changes
 (S012 § 5.5); its name for the event comes from the plain re-read.  Class (5) before type
@@ -98,6 +100,16 @@ A write with a model never locks a type: it comes from the model, whose type nev
   FK lock, taken first the same way on an add or a change of node), which a scrap of that node
   holds FOR UPDATE, so the two serialise.  The scrap path does not look at parts lines: a line
   stays true as history when its node is scrapped later.
+- improvements.py (S067) starts an improvement under (6) the serial counter (scope IM:YYYY-MM,
+  taken only by starts) → (7) the ticket LOCK IN SHARE MODE, then inserts the improvement, whose
+  foreign keys take shared locks on the unit, the machine and the lead's person; adding a ticket
+  takes (6b) the improvement FOR UPDATE → (7) shared; removing a ticket and an edit take (6b)
+  alone (an edit's new lead: a shared lock on the person, its foreign key).  It never takes a
+  ticket or equipment row FOR UPDATE and never reads equipment.lifecycle
+  (a scrapped machine's tickets may still be analysed), so no path of this module waits on it
+  holding an exclusive lock; a scrap holds the machine FOR UPDATE and counts open tickets with a
+  plain read, so a start's shared FK lock on that machine waits for the scrap or the scrap for
+  the start, never both.  Its own note gives the deadlock check, path by path.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -328,6 +340,21 @@ def accessible_unit_ids(cur, key="equipment:read"):
     ids — an empty set is no access at all, not an error.  Memberships are read through the
     request's connection, the one ``cur`` belongs to."""
     return user_unit_ids(key)
+
+
+def unit_access_condition(cur, key, unit_column, machine_unit_column):
+    """The predicate of a record kept against a unit and a machine (tickets, S017 § 5.3;
+    improvements, S067 § 5.7): visible when the record's own unit or its machine's current unit
+    is among the units where the user holds ``key`` -> ``(sql, params)`` over the two columns
+    named; None when the user may see no such record (an empty IN () would be an SQL error)."""
+    unit_ids = accessible_unit_ids(cur, key)
+    if unit_ids is None:
+        return "1 = 1", []
+    if not unit_ids:
+        return None
+    ids = sorted(unit_ids)
+    placeholders = ", ".join(["%s"] * len(ids))
+    return f"({unit_column} IN ({placeholders}) OR {machine_unit_column} IN ({placeholders}))", ids + ids
 
 
 def _can_access(cur, unit_id):

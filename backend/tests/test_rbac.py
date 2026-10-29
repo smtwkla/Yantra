@@ -95,6 +95,15 @@ class TestRoleSources:
         assert holders == {"maint_engineer", "maint_manager", "it_admin"}
         assert "failure_codes:edit" not in SITE_SCOPED
 
+    def test_improvement_keys(self):
+        """S067 § 5.5, Q1.3 a: read by the operator and up and IT admin; edit by the engineer (so
+        the manager), not IT admin; neither for the storekeeper.  Both site-scoped."""
+        readers = {role for role in ROLES if "improvement:read" in compute_permissions([role])}
+        editors = {role for role in ROLES if "improvement:edit" in compute_permissions([role])}
+        assert readers == set(ROLES) - {"maint_storekeeper"}
+        assert editors == {"maint_engineer", "maint_manager"}
+        assert {"improvement:read", "improvement:edit"} <= SITE_SCOPED
+
     @pytest.mark.parametrize("key", ["ticket:read", "ticket:raise", "ticket:restore"])
     def test_ticket_keys(self, key):
         """S017 § 5.6, S018 § 5.7: every maintenance role, the supervisor and IT admin; not the
@@ -181,28 +190,30 @@ class TestComputePermissions:
         # the operator; work to the technician; assign and close to the engineer; all to IT admin.
         # S021: push:subscribe to every role ('*'): anyone may turn notifications on
         # S039: reading:log to the operator, so to the supervisor and the maintenance ladder; not IT admin
+        # S067: improvement:read to the operator and IT admin; improvement:edit to the engineer only
         ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
-                               "reading:log"}),
+                               "reading:log", "improvement:read"}),
         ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
-                               "ticket:work", "reading:log"}),
+                               "ticket:work", "reading:log", "improvement:read"}),
         ("maint_supervisor",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
-                               "reading:log"}),
+                               "reading:log", "improvement:read"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "push:subscribe", "equipment:edit", "people:edit",
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
-                               "ticket:edit_notes", "reading:log"}),
+                               "ticket:edit_notes", "reading:log", "improvement:read", "improvement:edit"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
                                "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
-                               "ticket:close", "ticket:edit_notes", "reading:log"}),
+                               "ticket:close", "ticket:edit_notes", "reading:log", "improvement:read",
+                               "improvement:edit"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
                                "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
-                               "ticket:edit_notes"}),
+                               "ticket:edit_notes", "improvement:read"}),
         ("maint_storekeeper", {"equipment:read", "masters:read", "push:subscribe"}),
     ])
     def test_role_matrix(self, role, expected):
