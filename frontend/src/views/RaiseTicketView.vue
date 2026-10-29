@@ -30,11 +30,12 @@
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { apiGet, apiPost, apiUpload } from "../api";
+import { apiGet, apiPost } from "../api";
 import EquipmentPicker from "../components/EquipmentPicker.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import { userPersonId } from "../stores/auth";
-import { ACCEPT, IPHONE_PHOTO_HINT, withoutExtension } from "../utils/documentTypes";
+import { usePhotoUploads } from "../composables/usePhotoUploads";
+import { ACCEPT, IPHONE_PHOTO_HINT } from "../utils/documentTypes";
 import { revealError } from "../utils/revealError";
 import { roleLabel } from "../utils/siteRoles";
 import {
@@ -46,8 +47,6 @@ import StartedAtFields from "./tickets/StartedAtFields.vue";
 
 const OTHER_MODE = "OTH";
 const DESCRIPTION_MAX = 1000;
-const TITLE_MAX = 200;
-const MB = 1024 * 1024;
 // The picked intensity button, in its badge's colour
 const PICKED_CLASS = { critical: "btn-danger", degraded: "btn-warning", initial: "btn-secondary" };
 
@@ -231,9 +230,6 @@ function restoreBody() {
 
 const ticket = ref(null);
 const photoLimitMb = ref(null);
-const uploads = ref([]); // {key, name, state: "uploading" | "done" | "failed", message}
-const uploading = computed(() => uploads.value.some((u) => u.state === "uploading"));
-let uploadKey = 0;
 
 async function loadPhotoLimit() {
   try {
@@ -243,30 +239,17 @@ async function loadPhotoLimit() {
   }
 }
 
-async function uploadOne(file) {
-  const entry = { key: ++uploadKey, name: file.name, state: "uploading", message: "" };
-  uploads.value.push(entry);
-  const row = uploads.value[uploads.value.length - 1];
-  if (photoLimitMb.value && file.size > photoLimitMb.value * MB) {
-    Object.assign(row, { state: "failed", message: `Larger than ${photoLimitMb.value} MB` });
-    return;
-  }
-  const body = new FormData();
-  body.append("kind", "photo");
-  body.append("title", withoutExtension(file.name).slice(0, TITLE_MAX));
-  body.append("file", file);
-  try {
-    await apiUpload(`/api/tickets/${ticket.value.id}/documents`, body);
-    row.state = "done";
-  } catch (err) {
-    Object.assign(row, { state: "failed", message: err.message });
-  }
-}
+// Each photo goes up the moment it is chosen (previews off); the rows are the composable's files (S071 § 5.6)
+const { files: uploads, add: addPhotos, uploadAll, uploading } = usePhotoUploads({
+  path: () => `/api/tickets/${ticket.value.id}/documents`,
+  maxMb: photoLimitMb,
+});
 
 async function onPhotosChosen(event) {
-  const files = [...event.target.files];
+  const chosen = [...event.target.files];
   event.target.value = ""; // the same photo can be picked again after a failure
-  for (const file of files) await uploadOne(file); // one at a time: kinder to a slow mobile link
+  addPhotos(chosen);
+  await uploadAll();
 }
 
 function done() {
@@ -300,7 +283,7 @@ function done() {
           <i
             class="fa-solid"
             :class="{
-              'fa-spinner fa-spin text-secondary': u.state === 'uploading',
+              'fa-spinner fa-spin text-secondary': u.state === 'uploading' || u.state === 'pending',
               'fa-check text-success': u.state === 'done',
               'fa-xmark text-danger': u.state === 'failed',
             }"

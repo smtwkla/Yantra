@@ -1,5 +1,5 @@
 // Words and small helpers for the improvement screens (S068; the record is S067's).
-import { minutesText } from "./ticketLabels";
+import { minutesText, toLocalDateValue } from "./ticketLabels";
 
 export const IMPROVEMENT_STATE_LABELS = {
   analysing: "Analysing",
@@ -73,4 +73,47 @@ export function defaultRootCause(whys) {
 export function defaultProblem(ticket) {
   const text = (ticket.description ?? "").trim() || ticket.failure_mode?.label || "";
   return text.slice(0, PROBLEM_MAX);
+}
+
+// Countermeasures (S071; the record and the rules are S070's)
+export const ACTION_TEXT_MAX = 500;
+export const DONE_TEXT_MAX = 1000;
+export const CANCEL_REASON_MAX = 500;
+export const DEFAULT_DUE_DAYS = 14;
+
+/** The six kinds with the one plain sentence each: S070 § 2's words, shown where the kind is chosen and under the card. */
+export const ACTION_KINDS = [
+  { key: "correction", label: "Correction", sentence: "Fixes this failure now, often already done on the ticket." },
+  { key: "corrective", label: "Corrective", sentence: "Removes the cause here, so this failure does not come back." },
+  { key: "preventive", label: "Preventive", sentence: "Adds regular work that stops the failure before it happens." },
+  { key: "design_out", label: "Design-out", sentence: "Changes the machine so this failure cannot happen." },
+  { key: "lesson", label: "Lesson", sentence: "Teaches the team what was learned." },
+  { key: "spread", label: "Spread", sentence: "Applies the fix to the similar machines." },
+];
+
+/** The kind's label; an unknown key is returned as it came. */
+export function actionKindLabel(key) {
+  return ACTION_KINDS.find((k) => k.key === key)?.label ?? key;
+}
+
+export const ACTION_STATE_LABELS = { open: "Open", done: "Done", cancelled: "Cancelled" };
+
+/** "Overdue 1 day", "Overdue 2 days"; 0 or less is "". */
+export function overdueText(days) {
+  if (!(days > 0)) return "";
+  return `Overdue ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/** "2 of 6 done" from the detail's `action_counts`; cancelled ones are in neither number; "" with none left. */
+export function actionCountsText(counts) {
+  const total = counts.open + counts.done;
+  return total > 0 ? `${counts.done} of ${total} done` : "";
+}
+
+/** The first due date offered: `today` (a Date) plus two weeks, "YYYY-MM-DD"; "" without a date. */
+export function defaultDueDate(today) {
+  if (!today) return "";
+  const due = new Date(today);
+  due.setDate(due.getDate() + DEFAULT_DUE_DAYS);
+  return toLocalDateValue(due);
 }

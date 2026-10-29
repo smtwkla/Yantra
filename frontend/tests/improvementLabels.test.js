@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  causeText, defaultProblem, defaultRootCause, defaultTitle, improvementStateLabel, lossText, PROBLEM_MAX, ROOT_CAUSE_MAX,
+  ACTION_KINDS, actionCountsText, actionKindLabel, causeText, defaultDueDate, defaultProblem, defaultRootCause, defaultTitle,
+  improvementStateLabel, lossText, overdueText, PROBLEM_MAX, ROOT_CAUSE_MAX,
   ticketCauses, TITLE_MAX, whyBody,
 } from "../src/utils/improvementLabels";
 
@@ -94,4 +95,44 @@ describe("whyBody", () => {
   it("keeps the evidence text when it is not blank", () => {
     expect(whyBody({ ...form, evidence: "photo" }, true, 3).evidence).toBe("photo");
   });
+});
+
+// S071: countermeasures
+describe("ACTION_KINDS", () => {
+  it("holds the six kinds with S070's sentences, word for word", () => {
+    expect(ACTION_KINDS.map((k) => [k.key, k.label, k.sentence])).toEqual([
+      ["correction", "Correction", "Fixes this failure now, often already done on the ticket."],
+      ["corrective", "Corrective", "Removes the cause here, so this failure does not come back."],
+      ["preventive", "Preventive", "Adds regular work that stops the failure before it happens."],
+      ["design_out", "Design-out", "Changes the machine so this failure cannot happen."],
+      ["lesson", "Lesson", "Teaches the team what was learned."],
+      ["spread", "Spread", "Applies the fix to the similar machines."],
+    ]);
+  });
+});
+
+describe("actionKindLabel", () => {
+  it("names a kind", () => expect(actionKindLabel("design_out")).toBe("Design-out"));
+  it("returns an unknown key as it is", () => expect(actionKindLabel("audit")).toBe("audit"));
+});
+
+describe("overdueText", () => {
+  it("reads 1 day", () => expect(overdueText(1)).toBe("Overdue 1 day"));
+  it("reads 2 days", () => expect(overdueText(2)).toBe("Overdue 2 days"));
+  it("is empty for 0", () => expect(overdueText(0)).toBe(""));
+});
+
+describe("actionCountsText", () => {
+  it("is empty with none", () => expect(actionCountsText({ open: 0, done: 0, cancelled: 0, overdue: 0 })).toBe(""));
+  it("reads done of all", () => expect(actionCountsText({ open: 4, done: 2, cancelled: 0, overdue: 1 })).toBe("2 of 6 done"));
+  it("leaves cancelled ones out of both numbers", () => {
+    expect(actionCountsText({ open: 0, done: 0, cancelled: 2, overdue: 0 })).toBe("");
+    expect(actionCountsText({ open: 1, done: 0, cancelled: 1, overdue: 0 })).toBe("0 of 1 done");
+  });
+});
+
+describe("defaultDueDate", () => {
+  it("is 14 days ahead", () => expect(defaultDueDate(new Date(2026, 9, 30, 10, 0))).toBe("2026-11-13"));
+  it("crosses a month end", () => expect(defaultDueDate(new Date(2026, 0, 25))).toBe("2026-02-08"));
+  it("is empty without a date", () => expect(defaultDueDate(undefined)).toBe(""));
 });

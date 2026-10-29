@@ -10,6 +10,8 @@
  * A model row shows "Model <label>" as plain text: Masters sections are not routes.
  * Since S017 a row can also be a ticket's photo: "Ticket <serial>" and its unit; Restore is
  * disabled on a closed ticket, as on scrapped equipment (the server refuses both).
+ * Since S071 a row can be a countermeasure's photo: "Countermeasure IM-… · Corrective" and its
+ * unit; Restore is disabled on a cancelled countermeasure (S070 § 5.8).
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -17,6 +19,7 @@ import PagerBar from "../../components/PagerBar.vue";
 import { useDebounced } from "../../composables/useDebounced";
 import { formatDateTime } from "../../utils/datetime";
 import { formatBytes } from "../../utils/format";
+import { actionKindLabel } from "../../utils/improvementLabels";
 
 const PAGE_SIZE = 50; // sent explicitly, so the pager and the request agree if the API default changes
 
@@ -83,6 +86,7 @@ const actionPath = (item, action) => `${item.path}/${item.id}/${action}`;
 function restoreBlocked(item) {
   if (item.lifecycle === "scrapped") return "Scrapped equipment cannot be changed";
   if (item.owner === "ticket" && item.state === "closed") return "Closed tickets cannot be changed";
+  if (item.owner === "action" && item.state === "cancelled") return "Cancelled countermeasures cannot be changed";
   return "";
 }
 
@@ -129,7 +133,7 @@ onMounted(load);
           v-model="searchText"
           type="search"
           class="form-control form-control-sm removed-search"
-          placeholder="Search equipment code, model, ticket, title or file name…"
+          placeholder="Search equipment code, model, ticket, improvement, title or file name…"
           aria-label="Search removed documents"
         />
         <select v-model="kind" class="form-select form-select-sm removed-kind" aria-label="Kind">
@@ -186,6 +190,11 @@ onMounted(load);
                 <td v-else-if="item.owner === 'ticket'">
                   Ticket {{ item.name }}
                   <div v-if="item.state === 'closed'" class="small">closed</div>
+                  <div class="small text-secondary">{{ item.unit }}</div>
+                </td>
+                <td v-else-if="item.owner === 'action'">
+                  Countermeasure {{ item.name }} · {{ actionKindLabel(item.action_kind) }}
+                  <div v-if="item.state === 'cancelled'" class="small">cancelled</div>
                   <div class="small text-secondary">{{ item.unit }}</div>
                 </td>
                 <td v-else>

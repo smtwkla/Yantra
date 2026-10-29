@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: 32eb122 + uncommitted S066–S069 (gate B), S070 (being coded); S071–S074 approved or in review, coded before S075
-Status: In review
+Baseline: 32eb122 + uncommitted S066–S070; S071–S074 coded before S075
+Status: Approved 30-10-2026 by KLA (delegated: R05 gate R, "start coding unless a defining question")
 From: R05.6 (first half: the record, its API and the documents owner; the screens are S077)
 ```
 
@@ -100,13 +100,13 @@ Names new in S070–S074 are marked so; the facts run shows them as missing unti
 - `backend/local_db.py`: migration **v41** (§ 4.1). S070's v38 starts at `backend/local_db.py:1186`;
   S072 adds v39, S074 v40. No `_PRECONDITIONS` entry (§ 4.1).
 - `backend/procedures_core.py` (new, pure): the kind, the keys, the serial, the bounds and messages,
-  `validate_lesson`, `lesson_link_error`, `lesson_flags` (§ 5). It imports `_text` and `_is_id` from
-  `backend/improvements_core.py` (D10).
+  `validate_lesson`, `lesson_link_error`, `lesson_machine_message`, `lesson_flags` (§ 5). It imports
+  `text_field` and `is_id` from `backend/improvements_core.py` (D10).
 - `backend/procedures.py` (new): the blueprint `procedures_bp` (§ 6), the lesson reads, the locks
   (§ 5.6) and the documents owner's four functions `read_procedure`, `read_procedure_for_change`,
   `lock_procedure_for_change`, `lock_procedure_for_purge` (§ 5.8), with a LOCK ORDER note. It imports
   `NODE_JOINS`, `accessible_unit_ids` and `load_node_for_user` from `backend/equipment.py`, and
-  `read_action` (new in S070) and `lesson_source` (new here) from `backend/improvements.py`;
+  `lesson_source` (new here) from `backend/improvements.py`;
   `next_counter` from `backend/db_helpers.py:78`.
 - `backend/app.py`: registers `procedures_bp` at `/api/procedures`, beside `improvements_bp`
   (`backend/app.py:192`).
@@ -120,8 +120,11 @@ Names new in S070–S074 are marked so; the facts run shows them as missing unti
   (§ 5.8).
 - `backend/file_store.py`: `_OWNER_FOLDERS` (`backend/file_store.py:23`) gains
   `"procedure": "procedures"`; the docstring's layout line.
+- `backend/improvements_core.py` **(S067)**: two public names, `text_field = _text` and `is_id =
+  _is_id`, with a comment (D10); the private names stay, so S070–S074's code is untouched.
 - `backend/improvements.py` **(S067, S070)**: `_actions` (`backend/improvements.py:351`) gains each
-  countermeasure's `lesson` and `can_write_lesson` (one more query, § 6.4); a new read
+  countermeasure's `lesson` and `can_write_lesson` (one more query, § 6.4; the machine's current site
+  and unit, § 5.7); a new read
   `lesson_source(cur, action_id)` for procedures.py (§ 5.9); the import-direction note
   (`backend/improvements.py:104`) names procedures.py as a new importer. No write route changes.
 - `backend/equipment.py`: docstring only. The global LOCK ORDER (`backend/equipment.py:9`) gains a
@@ -166,9 +169,9 @@ Names new in S070–S074 are marked so; the facts run shows them as missing unti
   of `procedures.py` joins those of `tickets.py` and `masters.py`. (The § SMTW-Review spec map is
   S077's.)
 
-**File count:** 17 code and test files (9 code: `local_db.py`, `procedures_core.py`,
-`procedures.py`, `app.py`, `config_rbac.py`, `documents.py`, `file_store.py`, `improvements.py`,
-`equipment.py`; 8 tests), 5 docs.
+**File count:** 18 code and test files (10 code: `local_db.py`, `procedures_core.py`,
+`procedures.py`, `app.py`, `config_rbac.py`, `documents.py`, `file_store.py`, `improvements_core.py`,
+`improvements.py`, `equipment.py`; 8 tests), 5 docs.
 
 ## 4. Data model
 
@@ -290,19 +293,20 @@ ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_docum
 
 `action_id` on a `POST`, or on a `PUT` while the stored `action_id` is NULL:
 
-1. The countermeasure through its improvement's predicate: `read_action(cur, action_id)` (new in
-   S070) → 404 becomes **400** "Choose a countermeasure" (`action_id`): a body field names a record
-   the user cannot open, as S067's lead (400). (`procedures.py` turns the 404 into the 400 by
-   reading first with `lesson_source`'s predicate, § 5.9, not by catching the error.)
+1. The countermeasure's improvement through its predicate: `lesson_source(cur, action_id)` (§ 5.9,
+   one plain read). `None` → **400** "Choose a countermeasure" (`action_id`): a body field names a
+   record the user cannot open, as S067's lead (400). No exception is caught.
 2. The countermeasure's row `LOCK IN SHARE MODE` (§ 5.6) → `lesson_link_error(kind, state)`:
    - kind not `lesson`: 409 "Only a countermeasure of kind Lesson links a lesson" (`action_id`);
    - `cancelled`: 409 "This countermeasure was cancelled" (`action_id`; S070's words);
    - `open` or `done`: allowed. The improvement may be in any state, closed too: linking writes only
      the lesson row, never the improvement (D8).
 3. **The machine:** the lesson's `equipment_id` must be the improvement's machine
-   (`improvements.equipment_id`, which never changes): else 400 "A lesson for this countermeasure
-   goes on HP003, the improvement's machine" (the code filled in; `equipment_id`). The class tick is
-   free. So every reader of the improvement can open its lesson (D9).
+   (`equipment_id` from `lesson_source`'s row; `improvements.equipment_id` never changes): else 400
+   `lesson_machine_message(code)`, "A lesson for this countermeasure goes on HP003, the improvement's
+   machine" (`equipment_id`; built in the core, as `keeps_a_ticket(machine_code)` in
+   `improvements_core.py`). The class tick is free. So every reader of the improvement can open its
+   lesson while the machine stays in a unit they may see (D9).
 4. **One lesson per countermeasure:** another lesson with this `action_id` → 409 "This
    countermeasure already has its lesson, OPL-007" (`action_id`). A race past the plain check meets
    `uq_procedures_action`: `UNIQUE_KEY_ERRORS["uq_procedures_action"] = ("action_id", "This
@@ -339,7 +343,8 @@ A lesson is **site-scoped while it is the machine's, and site-less once it is th
   on; the tick is part of the same write.
 - **Untick needs the machine's site:** it turns a site-less lesson back into a site's, so a writer at
   another site cannot pull a lesson onto a site where they hold no right.
-- A request with no identity gets `require_perm`'s 401, never admin. No field here changes who can
+- A request with no identity is refused with 401 by the auth layer before any route
+  (`require_auth`); `require_perm` answers 403 to a user without the key; never admin. No field here changes who can
   log in or what anyone sees beyond the lesson itself; the writer's name shows to every reader, no
   login, role or email.
 
@@ -350,30 +355,32 @@ decision comes from a locking read or from a plain read made after the lock that
 checks are plain reads, as every predicate.
 
 **Where procedures.py stands in the global order** (`backend/equipment.py:9`). It takes, per write,
-**either** (6) the `OPL` serial counter (create only) **or** (P) one procedures row `FOR UPDATE`
-(change, a document's owner lock), never both, and never two procedures rows. Then only shared
+**either** (6) the `OPL` serial counter (create only) **or** (6d) one procedures row `FOR UPDATE`
+(change, a document's owner lock; a new number, after S070's (6c)), never both, and never two
+procedures rows. Then only shared
 locks: a countermeasure row (6c, new in S070) `LOCK IN SHARE MODE` when linking, and the foreign-key
 shared locks of its insert or update (the machine (1), the class (5), the countermeasure (6c)).
-`equipment_documents` rows follow under (P), which nothing else locks.
+`equipment_documents` rows follow under (6d), which nothing else locks.
 
 **Create** (`POST /api/procedures`), one `transaction`:
 
 1. Plain reads, the transaction's first: the machine through `load_node_for_user(cur, equipment_id,
    for_update=False, key="procedure:edit")` (404 outside the units, 403 without the key at its
    site); its `class_id` for the tick.
-2. With `action_id`: `lesson_source` (the predicate, 400, § 5.3 (1)); then (6c) `SELECT id,
-   improvement_id, kind, state FROM improvement_actions WHERE id = %s LOCK IN SHARE MODE` → 409
-   (§ 5.3 (2)); the improvement's `equipment_id` (plain; never changes) → 400; the existing lesson
-   with this `action_id` (plain) → 409.
-3. (6) `next_counter(cur, "OPL")` (`backend/db_helpers.py:78`): only lesson creates take this row,
-   so two creates serialise here. A refused or failed create rolls the bump back: no gap.
+2. (6) `next_counter(cur, "OPL")` (`backend/db_helpers.py:78`): only lesson creates take this row,
+   so two creates serialise here. A refused or failed create rolls the bump back: no gap. (6) comes
+   before the shared lock, as improvements.py's start takes (6) before its shared ticket lock.
+3. With `action_id`: `lesson_source` (the predicate and the improvement's `equipment_id`, plain;
+   400, § 5.3 (1) and (3)); then (6c) `SELECT id, improvement_id, kind, state FROM improvement_actions
+   WHERE id = %s LOCK IN SHARE MODE` → 409 (§ 5.3 (2)); the existing lesson with this `action_id`
+   (plain) → 409.
 4. The `procedures` insert (shared FK locks on the machine, the class, the countermeasure; a lost
    race on the link meets `uq_procedures_action`, 409).
 5. The detail, read inside the transaction.
 
 **Change** (`PUT /api/procedures/<id>`):
 
-1. (P) `SELECT id, equipment_id, class_id, action_id, active, title, body FROM procedures WHERE id = %s
+1. (6d) `SELECT id, equipment_id, class_id, action_id, active, title, body FROM procedures WHERE id = %s
    FOR UPDATE`; 404 when missing.
 2. Plain reads: the rights of § 5.5 from the locked `class_id` (a machine lesson: the node
    predicate 404, the key at its site 403; a class lesson: `check_perm` 403); when `for_class`
@@ -382,8 +389,8 @@ shared locks of its insert or update (the machine (1), the class (5), the counte
 3. `update_row` of the changed fields, stamping `updated_at`, `updated_by` (a new class or
    countermeasure takes its shared FK lock).
 
-**A document of a lesson** (§ 5.8): the documents store's one owner lock is (P):
-1. (P) `FOR UPDATE` (the same statement); 404 when missing;
+**A document of a lesson** (§ 5.8): the documents store's one owner lock is (6d):
+1. (6d) `FOR UPDATE` (the same statement); 404 when missing;
 2. plain reads: the read right (§ 5.7) 404, the write or purge right of § 5.5 403, all decided by the
    locked `class_id`;
 3. the `equipment_documents` statement (an insert takes a shared lock on the procedures row, held).
@@ -393,23 +400,24 @@ shared locks of its insert or update (the machine (1), the class (5), the counte
 **No new deadlock cycle, checked against the notes:**
 - *The counter:* only lesson creates take the `OPL` row, and they hold nothing exclusive before it.
   Whoever holds a machine, class or countermeasure exclusive never waits on an `OPL` row.
-- *(P):* only procedures.py and the documents path lock a procedures row, one at a time, first in
+- *(6d):* only procedures.py and the documents path lock a procedures row, one at a time, first in
   their transaction. No other module locks or updates procedures rows; improvements.py reads them
-  plainly. So no path holds another lock and then waits on (P).
+  plainly. So no path holds another lock and then waits on (6d).
 - *The machine (1), the class (5):* a create or a change takes them shared through the foreign keys,
-  after (6) or (P). A node write (equipment.py: scrap, move, edit) and a class write (masters.py)
+  after (6) or (6d). A node write (equipment.py: scrap, move, edit) and a class write (masters.py)
   hold them exclusive and never wait on a procedures row or the `OPL` counter. InnoDB checks a
   child's foreign key only when the column changes, and updates of `equipment` and
   `equipment_classes` never change `id`, so they take no lock on procedures rows.
-- *(6c):* the link takes it shared, without (6b) first. S070–S074's writers take (6b) then (6c)
-  exclusive and never wait on (P) or the `OPL` counter, so a lesson create waiting on (6c) waits
+- *(6c):* the link takes it shared after (6) or (6d), without (6b). S070–S074's writers take (6b) then (6c)
+  exclusive and never wait on (6d) or the `OPL` counter, so a lesson create waiting on (6c) waits
   behind them and nothing waits on it. Two lesson writes on one countermeasure share the lock and
   meet on `uq_procedures_action`. S074 D4 rejected a scan that took (6c) before (6b)
   (`docs/steps/S074-improvement-alerts/1-brief.md` D4): that write then took the improvement too;
   this one never does.
 
 The coder writes this into procedures.py's LOCK ORDER note, adds a procedures.py bullet to
-equipment.py's order (as the properties.py bullet), and names the lesson lock in documents.py's
+equipment.py's order (as the properties.py bullet, numbering (6d) the procedures row after (6c)),
+and names the lesson lock in documents.py's
 *Locks* paragraph.
 
 ### 5.7 Permissions
@@ -433,11 +441,15 @@ supervisor), in `SITE_SCOPED` (Q6.3 a; D4). Reading needs no new key: **`equipme
   `can_change_class` = `edit_here`. The list's `can_add` = `edit_here` at the node's site. S077 shows
   each control from these, so no button ends in a 403 (S070 D10).
 - **The countermeasure's `can_write_lesson`** (§ 6.4): kind `lesson`, state not `cancelled`, no
-  lesson linked, and `has_perm_at("procedure:edit", site)` at the improvement's site (its machine's
-  site is the same: S067 § 5.7).
+  lesson linked, the improvement's machine's **current** unit in `accessible_unit_ids(cur)`, and
+  `has_perm_at("procedure:edit", that unit's site)`: the create's own checks (§ 5.5), so the button
+  never ends in a 404 or 403 after the machine moved to another site (the improvement's site is
+  fixed at its first ticket's unit, S067 § 5.7). The machine's unit and site come from one plain
+  read through `NODE_JOINS`.
 - **Who holds what** (Plan § 3 matrix): operator, supervisor, technician, storekeeper read lessons
   on the machines of their units; engineers and managers write at their site and change class
-  lessons anywhere; IT admin reads only (`equipment:read_all_units`: every unit).
+  lessons anywhere; IT admin reads (`equipment:read_all_units`: every unit), and restores or purges
+  removed photos (`equipment:purge_documents`), as for every owner.
 
 ### 5.8 Photos: the documents store's fifth owner
 
@@ -449,7 +461,7 @@ supervisor), in `SITE_SCOPED` (Q6.3 a; D4). Reading needs no new key: **`equipme
 - **The functions branch on the stored target** and say so in their docstrings: a machine lesson
   checks the node predicate (404) and the key at the machine's site (403); a class lesson needs
   nothing beyond `_owner_key`'s any-site check (`backend/documents.py:201`). `lock_procedure_for_*`
-  decide from the locked (P) row; `read_procedure_for_change` repeats the checks with plain reads
+  decide from the locked (6d) row; `read_procedure_for_change` repeats the checks with plain reads
   so a refused upload reads and writes no file (S006 § 5.6).
 - **No state rule:** a retired lesson's photos may be added, retitled and removed (§ 5.4); a
   scrapped machine's lesson too (§ 5.1).
@@ -469,17 +481,19 @@ supervisor), in `SITE_SCOPED` (Q6.3 a; D4). Reading needs no new key: **`equipme
   NULL, `action_kind` NULL. Its
   scope: `pr.class_id IS NOT NULL OR u.id IN (units where equipment:purge_documents is held)`; with
   no such units, only the class lessons' rows (as the model branch, which is never left out). The
-  search `q` matches the serial, the title and the original name. `_removed_item` gives a lesson row
+  search `q` matches the serial, the machine's code (`e.code`), the title and the original name. `_removed_item` gives a lesson row
   its unit and `full_path` None, as a countermeasure's.
 - **A removed photo** keeps its row and file (S006) and is not listed in the detail.
 
 ### 5.9 The source line
 
-`improvements.lesson_source(cur, action_id)` (new, plain read): the countermeasure's improvement as
-`{improvement: {id, serial, title}, action_id}` when the user may open the improvement (S067's
-predicate, `_visible_condition`, `backend/improvements.py:192`), else `None`. One query, no
-exception. The lesson detail's `source` is it; a reader without `improvement:read` there (the
-storekeeper) sees no line. procedures.py also uses it for § 5.3 (1).
+`improvements.lesson_source(cur, action_id)` (new, one plain read): the countermeasure's
+improvement as a row `{id, serial, title, equipment_id, site_id}` when the user may open the
+improvement (S067's predicate, `_visible_condition`, `backend/improvements.py:192`), else `None`. No
+exception. procedures.py builds the detail's `source` (`{improvement: {id, serial, title},
+action_id}`) from it, so a reader without `improvement:read` there (the storekeeper) sees no line,
+and uses `equipment_id` for § 5.3 (3). `site_id` decides no right: the key is checked at the
+machine's site (§ 5.5).
 
 ### 5.10 The database down
 
@@ -489,7 +503,9 @@ task, no alert.
 
 ## 6. API
 
-All under `procedures_bp` (`/api/procedures`), ids `<int:…>`. Every write answers with the lesson's
+All under `procedures_bp` (`/api/procedures`), ids `<int:…>`. The list and create routes are
+`procedures_bp.route("/", strict_slashes=False)`, as improvements.py's (`backend/improvements.py:451`),
+so `GET /api/procedures` is not a 308. Every write answers with the lesson's
 whole detail (one answer, one page copy, S068 BR1-09).
 
 | Route | Key | Body / query | Answer |
@@ -525,7 +541,8 @@ has_thumb}], can_edit, can_change_class}`.
   (`accessible_unit_ids`): the class line names it instead.
 - `documents`: not removed, **oldest first** (`created_at, id`): the order the writer added the
   photos is the lesson's order (mock-up 06: photo 1, then photo 2). The documents route's own list
-  stays newest first.
+  stays newest first, so *Edit photos* (S077, `DocumentsCards`) shows them the other way round; S077
+  decides what to show.
 - The names of `created_by` and `updated_by`: the person whose login it is, else the login, as
   S067's `created_by_name`.
 
@@ -583,12 +600,15 @@ number.
 - **D9. The link sits on the lesson (`procedures.action_id`, unique), not on the countermeasure.**
   One countermeasure, one lesson; the lesson remembers where it came from even if the improvement is
   closed. The machine must be the improvement's machine, so every reader of the improvement can open
-  the lesson. Rejected: `improvement_actions.procedure_id` (a write of S070's row, so of the
+  the lesson while the machine stays in a unit the reader may see (BR1-03). Rejected: `improvement_actions.procedure_id` (a write of S070's row, so of the
   improvement's timeline and locks); linking an existing lesson to several countermeasures (rare;
   the class tick already shares a lesson across machines).
-- **D10. `procedures_core` imports `_text` and `_is_id` from `improvements_core`.** One copy of the
-  text rule. Rejected: copying them (DRY); moving them to `api_common.py` now (S070–S074 are changing
-  `improvements_core.py`; a later tidy-up can lift them).
+- **D10. `procedures_core` imports `text_field` and `is_id`, public names given in
+  `improvements_core` to `_text` and `_is_id`** (the private names stay as aliases). One copy of the
+  text rule and no private import. Rejected: importing the private names (a rename inside
+  `improvements_core` would break `procedures_core` silently); a fourth private copy of `_is_id`
+  (three exist: `equipment_core.py:67`, `improvements_core.py:133`, `tickets_core.py:145`); moving
+  them to `api_common.py` now (S070–S074 are changing `improvements_core.py`).
 - **D11. Retire, not delete** (ISO 9001 § 7.5.3: obsolete documents kept and marked). The masters'
   `active` pattern. Rejected: delete (loses the record and the serial).
 
@@ -613,7 +633,7 @@ number.
 **Core:** `validate_lesson` (each message of § 5.2: missing on `POST`, empty after trim, 80 / 81 and
 1000 / 1001, a number, `null` on a `PUT`, a boolean `equipment_id`, `for_class` "yes", `active` on a
 `POST` ignored; the title "Keep  the\npanel" → "Keep the panel"; the body's line breaks kept; a Tamil
-title of 80 characters passes, 81 refused); `format_lesson_serial` (1 → `OPL-001`, 1000 →
+title of 80 characters passes, 81 refused); `lesson_machine_message("HP003")`; `format_lesson_serial` (1 → `OPL-001`, 1000 →
 `OPL-1000`); `lesson_link_error` (lesson open, lesson done → None; corrective, cancelled → each message);
 `lesson_flags` (machine and class lesson × `edit_here` × `edit_anywhere`).
 
@@ -646,7 +666,8 @@ key missing here" as S067 § 8.2:
   engineer elsewhere (class lesson: `can_edit` true, `can_change_class` false).
 - **The countermeasure:** the improvement detail's `lesson` after a create; `can_write_lesson` true for
   the engineer on an open *Lesson* countermeasure with no lesson, false after the lesson exists, on a
-  cancelled one, on another kind, and for the technician owner.
+  cancelled one, on another kind, for the technician owner, and after the machine moved to a unit of
+  another site where the engineer holds no key (BR1-03).
 - **The database down** (`db_down`, `backend/tests/conftest.py:213`): `POST /api/procedures` answers
   503.
 
@@ -719,6 +740,17 @@ None. S077 holds the Tamil checks on a phone and on paper.
 - **Length:** about 730 lines, past the size rule's 600, as S067 (664) and S070 (about 700) were.
   It is one concern (the backend); most of it is § 5.5's site rule, § 5.6's lock sequences and
   § 5.8's documents owner. No further cut.
+- **Judgements for KLA at gate B** (BR1-05). The orchestrator accepted these under KLA's delegation
+  (R05 gate R: "start coding unless a defining question"); none is defining, and each can be
+  narrowed later without a migration. They are named for KLA at gate B:
+  1. a class lesson is editable, retirable and its photos purgeable from any site (§ 5.5; D4; gate
+     R's rule for a site-less master, as model documents);
+  2. plain text, not Plan § 4.3a's Markdown body (D7);
+  3. a lesson does not mark its *Lesson* countermeasure done; the owner does (D8).
+- **Staleness check due before coding.** The brief was approved while S070 was being coded, and
+  S071–S074 land first. Before S075 is coded, a staleness review (`2-brief-review-s1.md`) checks the
+  migration number (v41), the LOCK ORDER notes ((6c), (6d)), `_actions`, `_removed_branches` and
+  the role matrix against the code then.
 - **No defining question.**
 
 ## 10. Amendments
@@ -727,4 +759,16 @@ None.
 
 ## Review log
 
-None yet.
+### Round 1 — `2-brief-review-r1.md` (Fable), answered 30-10-2026
+
+Sections changed: header (Status, Baseline), § 3 (backend, file count), § 5.3, § 5.5, § 5.6,
+§ 5.7, § 5.8, § 5.9, § 6, § 6.3, D9, D10, § 8.2, § 9.
+
+| Finding | Answer |
+|---|---|
+| BR1-01 minor | Accepted (a): a create takes (6) the `OPL` counter first, then (6c) shared, as the start in improvements.py takes (6) before its shared ticket lock; the note says so. § 5.6. |
+| BR1-02 minor | Accepted (a): one plain read, `lesson_source` → `{id, serial, title, equipment_id, site_id}` or `None`; then the (6c) shared select. `read_action` dropped from § 3's imports. § 3, § 5.3, § 5.6, § 5.9. |
+| BR1-03 minor | Accepted (a): `can_write_lesson` and the create check use the machine's current unit and site; D9 says "while the machine stays in a unit the reader may see"; a test after a cross-site move. § 3, § 5.3, § 5.7, D9, § 8.2. |
+| BR1-04 minor | Accepted (a): public aliases `text_field` and `is_id` in `improvements_core.py`; `improvements_core.py` joins § 3 (18 files). § 3, D10. |
+| BR1-05 minor | Accepted (b): the three judgements (class lesson changed from any site; D7 plain text; D8 the lesson does not mark its countermeasure done) are accepted by the orchestrator under KLA's delegation and named for KLA at gate B. § 9. |
+| BR1-06…BR1-12 nits | Accepted: BR1-06 `e.code` in the removed list's search (§ 5.8); BR1-07 the 401 is the auth layer's, `require_perm` answers 403 (§ 5.5); BR1-08 IT admin restores and purges removed photos (§ 5.7); BR1-09 `lesson_machine_message(code)` in the core (§ 3, § 5.3, § 8.2); BR1-10 `strict_slashes=False` on `/` (§ 6); BR1-11 the procedures row is (6d) (§ 5.6); BR1-12 the two photo orders named, S077 decides (§ 6.3). |

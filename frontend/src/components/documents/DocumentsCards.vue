@@ -41,6 +41,9 @@ const props = defineProps({
   // A floor screen (the ticket page): "Add photo" is a large full-width button
   largeAdd: { type: Boolean, default: false },
 });
+// After a successful upload, title edit or remove (S071 BR1-07): a page that shows a count of the
+// owner's items reloads it. Other callers ignore it.
+const emit = defineEmits(["changed"]);
 
 const MANAGED_IN = { model: "Models" };
 
@@ -221,6 +224,7 @@ async function remove(doc) {
     await apiDelete(`${props.basePath}/${doc.id}`);
     confirmingRemoveId.value = null;
     await load();
+    emit("changed");
   } catch (err) {
     actionError.value = err.message;
   } finally {
@@ -228,6 +232,12 @@ async function remove(doc) {
     if (doc.kind === "photo") await viewer.value.close();
     removing.value = false;
   }
+}
+
+// The upload and the title dialogs: show the new list, then tell the parent
+async function onSaved() {
+  await load();
+  emit("changed");
 }
 
 // The equipment page calls this after a node edit: a new model brings other documents
@@ -379,9 +389,9 @@ defineExpose({ reload: load });
       :base-path="basePath"
       :every-site="Boolean(everySite)"
       :upload-max-mb="uploadMaxMb"
-      @saved="load"
+      @saved="onSaved"
     />
-    <DocumentTitleModal ref="titleModal" :base-path="basePath" @saved="load" />
+    <DocumentTitleModal ref="titleModal" :base-path="basePath" @saved="onSaved" />
     <PhotoViewer
       ref="viewer"
       :photos="allPhotos"

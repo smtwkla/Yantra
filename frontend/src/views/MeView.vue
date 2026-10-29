@@ -1,7 +1,9 @@
 <script setup>
 /**
  * Me (docs/steps/S031-me-page/1-brief.md): three tabs, all read-only.
- *   Open work     — the open tickets assigned to me (GET /api/tickets?assigned=me&state=open);
+ *   Open work     — the open tickets assigned to me (GET /api/tickets?assigned=me&state=open),
+ *                   and above them my open countermeasures (S071: GET /api/improvements/actions/mine,
+ *                   page 1 only, for improvement:read holders), each with Mark done;
  *   Raised by me  — the tickets I raised or that name me the reporter (?raised=me&state=…);
  *   My activity   — every timeline line I recorded (GET /api/tickets/activity).
  * The tab, the state and the page live in the URL query, as the Tickets filters do, so Back
@@ -10,6 +12,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
+import CountermeasureItem from "../components/CountermeasureItem.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
 import TicketRow from "../components/TicketRow.vue";
@@ -18,6 +21,7 @@ import { ensureMyUnits, noUnits } from "../stores/equipment";
 import { formatDateTime } from "../utils/datetime";
 import { NO_UNITS_TEXT } from "../utils/messages";
 import { activityDetail, defaultMeTab, EVENT_LABELS, isBackdated } from "../utils/ticketLabels";
+import MarkDoneDialog from "./improvements/MarkDoneDialog.vue";
 
 const PAGE_SIZE = 50; // the API default
 const TABS = [
@@ -36,6 +40,8 @@ const route = useRoute();
 const router = useRouter();
 
 const page = ref(null); // {items, total, page, per_page}
+const actions = ref({ items: [], total: 0 }); // my open countermeasures (S071); empty on every other tab and page
+const markDoneDialog = ref(null);
 const loading = ref(true);
 const loadError = ref("");
 const now = ref(new Date());
@@ -68,6 +74,7 @@ function chooseTab(key) {
 // tab, or a nav tap on Me that returns to the default tab)
 watch(tab, () => {
   page.value = null;
+  actions.value = { items: [], total: 0 };
 });
 const chooseState = (value) => go({ state: value });
 const choosePage = (value) => go({ state: raisedState.value, pageNo: value });
@@ -87,6 +94,12 @@ function listUrl() {
   return `/api/tickets?${params}`;
 }
 
+// The countermeasures sit above the tickets on page 1 of Open work only (the pager counts tickets)
+async function loadActions() {
+  const wanted = tab.value === "open" && pageNumber.value === 1 && userPermissions.value.includes("improvement:read");
+  return wanted ? apiGet("/api/improvements/actions/mine") : { items: [], total: 0 };
+}
+
 async function load() {
   if (route.name !== "me") return; // the route is changing to another page
   // A typed /me by a user without ticket:read shows for a moment before App.vue redirects: no call
@@ -95,9 +108,10 @@ async function load() {
   loading.value = true;
   loadError.value = "";
   try {
-    const [result] = await Promise.all([apiGet(listUrl()), ensureMyUnits()]);
+    const [result, mine] = await Promise.all([apiGet(listUrl()), loadActions(), ensureMyUnits()]);
     if (seq !== loadSeq) return;
     page.value = result;
+    actions.value = mine;
     now.value = new Date();
   } catch (err) {
     if (seq === loadSeq) loadError.value = err.message;
@@ -154,6 +168,19 @@ const emptyText = computed(() => {
     <div v-else-if="loading && !page" class="text-secondary">Loading…</div>
     <div v-else-if="noUnits" class="text-secondary">{{ NO_UNITS_TEXT }}</div>
     <template v-else-if="page">
+      <template v-if="actions.items.length">
+        <h6 class="mb-2" data-testid="me-countermeasures">Countermeasures ({{ actions.total }})</h6>
+        <ul class="list-group mb-3">
+          <CountermeasureItem
+            v-for="a in actions.items"
+            :key="a.id"
+            :action="a"
+            show-improvement
+            @mark-done="markDoneDialog.open({ improvementId: a.improvement.id, action: a })"
+          />
+        </ul>
+        <h6 class="mb-2">Tickets</h6>
+      </template>
       <div v-if="page.total > 0 && countText" class="text-secondary small mb-2">{{ countText }}</div>
       <div v-if="page.total === 0 && notInTeam" class="text-secondary">
         <template v-if="isItAdmin">You are not in Team. Add yourself in Masters › Team to be assigned tickets.</template>
@@ -183,6 +210,7 @@ const emptyText = computed(() => {
         <TicketRow v-for="t in page.items" :key="t.id" :ticket="t" :now="now" />
       </div>
     </template>
+    <MarkDoneDialog ref="markDoneDialog" @saved="load" @reload="load" />
     <PagerBar
       v-if="page && !loadError && !noUnits"
       :page="pageNumber"

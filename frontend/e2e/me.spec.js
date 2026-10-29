@@ -2,10 +2,15 @@
 // its own ticket on the seed's extruder through the API (setup) and finds it by serial, because
 // other specs in the same lane add tickets too.  The tickets are closed after each test.
 import { test, expect } from "./support/test.js";
-import { expectNoSidewaysScroll } from "./support/dialogs.js";
+import { expectDialogFits, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
+import { addActionByApi, raiseFixed, startImprovementByApi, TEST_PHOTO } from "./support/improvements.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
 import { navItem } from "./support/nav.js";
-import { causeId, moveByApi, raiseByApi } from "./support/tickets.js";
+import { causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
+
+// S071: the overdue test answers the countermeasures call with page.route.  WebKit does not route a
+// request while the app's service worker (S021) controls the page, so none is started (as readings.spec.js).
+test.use({ serviceWorkers: "block" });
 
 let seed;
 let raised = []; // this test's tickets, closed after it
@@ -142,4 +147,57 @@ test("S031: the three tabs fit the screen width", { tag: "@device" }, async ({ p
     await expect(tabButton(page, name)).toBeInViewport();
   }
   await expectNoSidewaysScroll(page);
+});
+
+// ---------------------------------------------------------------------------------------------
+// S071: my open countermeasures on Open work
+// ---------------------------------------------------------------------------------------------
+
+/** A countermeasure owned by Kannan in a new improvement -> {improvement, action}. */
+async function kannansMeasure(description, text) {
+  const ticket = await raiseFixed(seed.extruder.id, description);
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text });
+  return { improvement, action };
+}
+
+test("S071: Kannan marks his countermeasure done from Me with a photo; the row leaves Me and the photo is on the improvement page", async ({ page }) => {
+  const { improvement, action } = await kannansMeasure("S071 me: gasket", "S071 me: replace the torn door gasket");
+  await asPerson(page, "technician", "/me");
+  await expect(page.getByTestId("me-countermeasures")).toHaveText(/^Countermeasures \(\d+\)$/);
+  const row = page.locator(`li[data-action="${action.id}"]`);
+  await expect(row).toContainText("S071 me: replace the torn door gasket");
+  await expect(row).toContainText(improvement.serial);
+  await expect(row).toContainText("Corrective");
+
+  await row.getByRole("button", { name: "Mark done", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("What did you do?").fill("New gasket fitted.");
+  await dialog.locator("input[type=file]").setInputFiles(TEST_PHOTO);
+  await expect(dialog.locator('li[data-photo="test-photo.jpg"]')).toBeVisible();
+  await saveDialog(page, "Mark done");
+  await expect(row).toHaveCount(0);
+
+  await page.goto(`/tickets/improvements/${improvement.id}`);
+  const done = page.locator(`li[data-action="${action.id}"]`);
+  await expect(done).toContainText("Done");
+  await expect(done).toContainText("New gasket fitted.");
+  await done.getByRole("button", { name: "Photos (1)", exact: true }).click();
+  await expect(done.locator(".photo-tile")).toHaveCount(1);
+});
+
+test("S071: an overdue countermeasure shows Overdue 2 days on a red row", async ({ page }) => {
+  const { action } = await kannansMeasure("S071 me: overdue", "S071 me: overdue job");
+  // The API refuses a due date before the problem, which in a test is today: give the answer its overdue days
+  const api = await apiAs("technician");
+  const real = await (await api.get("/api/improvements/actions/mine")).json();
+  await api.dispose();
+  await page.route("**/api/improvements/actions/mine", (route) => route.fulfill({
+    json: { ...real, items: real.items.map((item) => ({ ...item, overdue_days: 2 })) },
+  }));
+  await asPerson(page, "technician", "/me");
+  const row = page.locator(`li[data-action="${action.id}"]`);
+  await expect(row).toContainText("Overdue 2 days");
+  await expect(row).toHaveClass(/list-group-item-danger/);
 });

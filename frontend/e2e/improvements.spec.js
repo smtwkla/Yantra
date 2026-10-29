@@ -3,9 +3,9 @@
 // the screens. Every dialog opened must fit (expectDialogFits).
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
-import { addTicketByApi, raiseFixed, startImprovementByApi } from "./support/improvements.js";
+import { addActionByApi, addTicketByApi, markDoneByApi, raiseFixed, startImprovementByApi, TEST_PHOTO, uploadActionPhotoByApi } from "./support/improvements.js";
 import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
-import { actionId, causeId, istDay, moveByApi, saveDialog } from "./support/tickets.js";
+import { actionId, causeId, istDay, moveByApi, saveDialog, shownDay } from "./support/tickets.js";
 
 let seed;
 
@@ -345,4 +345,163 @@ test("S069: the operator reads the whys and the root cause, with no button to ch
   for (const name of ["Add why", "Edit why 1", "Remove why 1", "Set root cause", "Edit root cause"]) {
     await expect(page.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// S071: the countermeasures card, its dialogs, the inline cancel and the photos
+// ---------------------------------------------------------------------------------------------
+
+/** The countermeasures card, and its row for the action `id`. */
+const measureCard = (page) => page.getByTestId("countermeasures");
+const measureRow = (page, id) => measureCard(page).locator(`li[data-action="${id}"]`);
+
+/** Open *Add countermeasure* and fill it (the date is left at its default); the dialog must fit. -> the dialog. */
+async function fillAction(page, { kind, text, owner }) {
+  await measureCard(page).getByRole("button", { name: "Add countermeasure", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Kind", { exact: true }).selectOption({ label: kind });
+  await dialog.getByLabel("What will be done", { exact: true }).fill(text);
+  await dialog.getByLabel("Owner", { exact: true }).selectOption({ label: owner });
+  return dialog;
+}
+
+test("S071: the engineer adds a countermeasure, changes its due date, adds a second and cancels it on its row", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 plan: torn door gasket");
+  const improvement = await startImprovementByApi(ticket);
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  const card = measureCard(page);
+  await expect(card).toContainText("No countermeasures yet.");
+  await expect(card).toContainText("Add what the team will do about the root cause.");
+  // The six kinds are said under the card, always
+  for (const sentence of ["Fixes this failure now, often already done on the ticket.", "Applies the fix to the similar machines."]) {
+    await expect(page.getByTestId("kind-help")).toContainText(sentence);
+  }
+
+  const dialog = await fillAction(page, { kind: "Corrective", text: "Replace the torn door gasket", owner: "Kannan (technician)" });
+  await expect(dialog.getByTestId("kind-sentence")).toHaveText("Removes the cause here, so this failure does not come back.");
+  await expect(dialog.getByLabel("Due date", { exact: true })).toHaveValue(istDay(14));
+  await saveDialog(page, "Add countermeasure");
+
+  const first = card.locator("li[data-action]").first();
+  await expect(first).toContainText("Corrective");
+  await expect(first).toContainText("Open");
+  await expect(first).toContainText("Replace the torn door gasket");
+  await expect(first).toContainText("Owner: Kannan (technician)");
+  await expect(card.locator(".card-header")).toContainText("Countermeasures (0 of 1 done)");
+
+  // Change the due date
+  const due = istDay(20);
+  await page.getByRole("button", { name: "Change countermeasure 1", exact: true }).click();
+  await expectDialogFits(page);
+  const change = await openDialog(page);
+  await expect(change.locator(".modal-title")).toHaveText("Change countermeasure");
+  await change.getByLabel("Due date", { exact: true }).fill(due);
+  await saveDialog(page, "Save countermeasure");
+  await expect(first).toContainText(`due ${shownDay(due)}`);
+
+  // A second one, cancelled on its row
+  await fillAction(page, { kind: "Preventive", text: "Add the door seal to the PM plan", owner: "Kannan (technician)" });
+  await saveDialog(page, "Add countermeasure");
+  await expect(card.locator("li[data-action]")).toHaveCount(2);
+  const second = card.locator("li[data-action]").nth(1);
+  await page.getByRole("button", { name: "Cancel countermeasure 2", exact: true }).click();
+  await expect(second).toContainText("Cancel this countermeasure? It stays on the record with your reason.");
+  const cancel = second.getByRole("button", { name: "Cancel countermeasure", exact: true });
+  await expect(cancel).toBeDisabled();
+  await second.getByLabel("Why cancel it?").fill("Added by mistake");
+  await cancel.click();
+  await expect(second).toContainText("Cancelled");
+  await expect(second).toContainText("by Priya (engineer): Added by mistake");
+  await expect(card.locator(".card-header")).toContainText("Countermeasures (0 of 1 done)");
+  await expect(page.getByRole("button", { name: "Cancel countermeasure 2", exact: true })).toHaveCount(0);
+});
+
+test("S071: the engineer marks done a countermeasure owned by a person with no login; the row says who recorded it", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 proxy: fitter job");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { owner: "Ramesh (operator, no phone)", text: "S071 proxy: clean the contacts" });
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  const row = measureRow(page, action.id);
+  await row.getByRole("button", { name: "Mark done", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByTestId("done-target")).toHaveText("S071 proxy: clean the contacts");
+  await dialog.getByLabel("What did you do?").fill("Contacts cleaned by the fitter.");
+  await saveDialog(page, "Mark done");
+
+  await expect(row).toContainText("Done");
+  await expect(row).toContainText("recorded by Priya (engineer)");
+  await expect(row).toContainText("Contacts cleaned by the fitter.");
+  await expect(row.getByRole("button", { name: "Add photos", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Mark done", exact: true })).toHaveCount(0);
+  await expect(measureCard(page).locator(".card-header")).toContainText("Countermeasures (1 of 1 done)");
+});
+
+test("S071: a technician who is not the owner and an operator see the rows but none of the buttons", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 access: read only");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text: "S071 access: the owner's job" });
+  for (const who of ["technician2", "operator"]) {
+    await asPerson(page, who, `/tickets/improvements/${improvement.id}`);
+    await expect(measureRow(page, action.id)).toContainText("S071 access: the owner's job");
+    await expect(page.getByTestId("kind-help")).toContainText("Teaches the team what was learned.");
+    for (const name of ["Mark done", "Change countermeasure 1", "Cancel countermeasure 1", "Add countermeasure"]) {
+      await expect(page.getByRole("button", { name, exact: true }), `${who} sees ${name}`).toHaveCount(0);
+    }
+  }
+});
+
+test("S071: the manager removes a countermeasure photo, then restores it in Settings", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 photo: gasket");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text: "S071 photo: fit the gasket" });
+  await markDoneByApi(improvement, action);
+  await uploadActionPhotoByApi(action, "Gasket fitted");
+  await asPerson(page, "manager", `/tickets/improvements/${improvement.id}`);
+  const row = measureRow(page, action.id);
+  await row.getByRole("button", { name: "Photos (1)", exact: true }).click();
+  await row.getByRole("button", { name: "Gasket fitted" }).click();
+  const viewer = page.locator(".modal.show");
+  await viewer.getByRole("button", { name: "Remove", exact: true }).click();
+  await viewer.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  // The count is true again: no photos left on a done row reads "Add photos"
+  await expect(row.getByRole("button", { name: "Add photos", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Photos (1)", exact: true })).toHaveCount(0);
+
+  await page.goto("/settings");
+  await page.getByRole("searchbox", { name: "Search removed documents" }).fill(improvement.serial);
+  const removed = page.locator("tr", { hasText: "Gasket fitted" });
+  await expect(removed).toContainText(`Countermeasure ${improvement.serial} · Corrective`);
+  await removed.getByRole("button", { name: "Restore" }).click();
+  await expect(page.getByText("Restored 'Gasket fitted'.")).toBeVisible();
+  await expect(removed).toHaveCount(0);
+});
+
+test("S071: a photo the server refuses leaves the countermeasure done and the dialog open to add it again", async ({ page, consoleWatch }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 refused: bad photo");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text: "S071 refused: job with a bad photo" });
+  consoleWatch.allowFailedRequest(`/api/improvements/actions/${action.id}/documents`, 400);
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  const row = measureRow(page, action.id);
+  await row.getByRole("button", { name: "Mark done", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("What did you do?").fill("Done, with a photo that is not a photo.");
+  await dialog.locator("input[type=file]").setInputFiles({ name: "bad.jpg", mimeType: "image/jpeg", buffer: Buffer.from("not an image") });
+  await dialog.locator(".modal-footer button[type=submit]").click();
+
+  await expect(dialog.getByText("Marked done. A photo was not saved. Add it again, or close.")).toBeVisible();
+  await expect(dialog.locator('li[data-photo="bad.jpg"]')).toBeVisible();
+  await expect(dialog.locator(".modal-footer").getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  await expect(dialog.locator(".modal-footer button[type=submit]")).toHaveCount(0);
+  await expect(row).toContainText("Done");
+  // In the close-only phase a chosen photo goes up at once; closing then leaves the row at "Photos (1)"
+  await dialog.locator("input[type=file]").setInputFiles(TEST_PHOTO);
+  await expect(dialog.locator('li[data-photo="test-photo.jpg"] .fa-check')).toBeVisible();
+  await dialog.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Photos (1)", exact: true })).toBeVisible();
 });

@@ -6,21 +6,28 @@
  * note on the two causes. On a wide screen the problem and the tickets take the left half, the
  * analysis the right half.
  *
+ * S071's card *Countermeasures* (docs/steps/S071-countermeasure-screens/1-brief.md § 5.1; mock-up
+ * 03-countermeasures.html) runs across the full width under both columns.
+ *
  * Every control follows the detail's `permissions`, `is_open` and each ticket's `removable`, so
  * no button ends in a refusal. Each write answers with the whole detail, which replaces the page's
  * copy, so the header, the loss line and the rows always agree.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { apiDelete, apiGet } from "../api";
+import { apiDelete, apiGet, apiPost } from "../api";
+import CountermeasureItem from "../components/CountermeasureItem.vue";
+import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import TicketsTabs from "../components/TicketsTabs.vue";
 import { formatDateTime } from "../utils/datetime";
 import { causeGroupLabel } from "../stores/masters";
-import { causeText, improvementStateLabel, lossText, ticketCauses } from "../utils/improvementLabels";
+import { ACTION_KINDS, actionCountsText, causeText, improvementStateLabel, lossText, ticketCauses } from "../utils/improvementLabels";
 import { minutesText } from "../utils/ticketLabels";
+import ActionDialog from "./improvements/ActionDialog.vue";
 import AddTicketDialog from "./improvements/AddTicketDialog.vue";
 import ImprovementDialog from "./improvements/ImprovementDialog.vue";
+import MarkDoneDialog from "./improvements/MarkDoneDialog.vue";
 import RootCauseDialog from "./improvements/RootCauseDialog.vue";
 import WhyDialog from "./improvements/WhyDialog.vue";
 
@@ -42,6 +49,12 @@ const whyDialog = ref(null);
 const rootCauseDialog = ref(null);
 const confirmingRemoveWhyId = ref(null);
 const removeWhyError = ref("");
+const actionDialog = ref(null);
+const markDoneDialog = ref(null);
+const cancellingId = ref(null); // the countermeasure that asks for a reason: one at a time
+const cancelBusy = ref(false);
+const cancelError = ref(null); // {field, message} of the last refused cancel
+const photosOpenId = ref(null); // the countermeasure whose photo cards show under its row: one at a time
 
 const canEdit = computed(() => Boolean(improvement.value?.is_open) && (improvement.value?.permissions ?? []).includes("improvement:edit"));
 
@@ -77,6 +90,8 @@ function onSaved(result) {
   removeError.value = "";
   confirmingRemoveWhyId.value = null;
   removeWhyError.value = "";
+  cancellingId.value = null;
+  cancelError.value = null;
 }
 
 function askRemove(t) {
@@ -115,6 +130,29 @@ async function removeWhy(why) {
   } finally {
     removing.value = false;
   }
+}
+
+function askCancel(action) {
+  cancellingId.value = action.id;
+  cancelError.value = null;
+}
+
+async function cancelAction(action, reason) {
+  cancelBusy.value = true;
+  cancelError.value = null;
+  try {
+    onSaved(await apiPost(`/api/improvements/${improvement.value.id}/actions/${action.id}/cancel`, { reason }));
+  } catch (err) {
+    cancelError.value = { field: err.field, message: err.message };
+    // A stale row (409, no field): the owner marked it done meanwhile, so show what is true now
+    if (!err.field && err.status === 409) load();
+  } finally {
+    cancelBusy.value = false;
+  }
+}
+
+function togglePhotos(action) {
+  photosOpenId.value = photosOpenId.value === action.id ? null : action.id;
 }
 
 // "Priya (engineer), 29-10-2026 11:52", and who changed it when that is someone else
@@ -307,10 +345,56 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
       </div>
 
+      <div class="card mt-3" data-testid="countermeasures">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>
+            Countermeasures<template v-if="actionCountsText(improvement.action_counts)"> ({{ actionCountsText(improvement.action_counts) }})</template>
+          </span>
+          <button v-if="canEdit" type="button" class="btn btn-outline-primary" @click="actionDialog.openAdd()">
+            <i class="fa-solid fa-plus me-1"></i>Add countermeasure
+          </button>
+        </div>
+        <ul v-if="improvement.actions.length" class="list-group list-group-flush">
+          <CountermeasureItem
+            v-for="(a, i) in improvement.actions"
+            :key="a.id"
+            :action="a"
+            :number="i + 1"
+            :cancelling="cancellingId === a.id"
+            :cancel-busy="cancelBusy"
+            :cancel-error="cancellingId === a.id ? cancelError : null"
+            :photos-open="photosOpenId === a.id"
+            @change="actionDialog.openChange(a)"
+            @ask-cancel="askCancel(a)"
+            @keep="cancellingId = null"
+            @cancel="(reason) => cancelAction(a, reason)"
+            @mark-done="markDoneDialog.open({ improvementId: improvement.id, action: a })"
+            @photos="togglePhotos(a)"
+          >
+            <DocumentsCards
+              v-if="photosOpenId === a.id"
+              :base-path="`/api/improvements/actions/${a.id}/documents`"
+              :can-edit="a.can_add_photo"
+              large-add
+              @changed="load"
+            />
+          </CountermeasureItem>
+        </ul>
+        <div v-else class="card-body">
+          <p class="mb-0">No countermeasures yet.</p>
+          <p v-if="canEdit" class="mb-0 text-secondary">Add what the team will do about the root cause.</p>
+        </div>
+        <div class="card-footer small text-secondary" data-testid="kind-help">
+          <div v-for="k in ACTION_KINDS" :key="k.key"><em>{{ k.label }}</em>: {{ k.sentence }}</div>
+        </div>
+      </div>
+
       <ImprovementDialog ref="editDialog" @saved="onSaved" />
       <AddTicketDialog ref="addDialog" :improvement="improvement" @saved="onSaved" />
       <WhyDialog ref="whyDialog" :improvement="improvement" @saved="onSaved" />
       <RootCauseDialog ref="rootCauseDialog" :improvement="improvement" @saved="onSaved" />
+      <ActionDialog ref="actionDialog" :improvement="improvement" @saved="onSaved" />
+      <MarkDoneDialog ref="markDoneDialog" @saved="onSaved" @reload="load" />
     </template>
   </div>
 </template>
