@@ -1222,6 +1222,110 @@ _MIGRATIONS = [
             CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
                    + (action_id IS NOT NULL) = 1)""",
     ]),
+    # S072 — the states, the watch, the close and the timeline (docs/steps/S072-improvement-
+    # verified-close/1-brief.md § 4.1, R05.4).  The state ENUM gains five values (appended: no row
+    # changes; ready_to_verify is computed, never stored, D1).  improvements gains the watch
+    # (watch_days, watch_from), the close (closed_at, closed_by, close_remark) and the follow-up a
+    # *not effective* close starts (follow_up_of_id, at most one per improvement).
+    # improvement_events is the timeline, as ticket_events: one line per change, who and when;
+    # remark the new text, earlier the replaced one (ISO 9001 § 7.5.3).  The backfill writes the
+    # lines the rows of R05.1-R05.3 show, one INSERT per kind guarded by "no line of this kind
+    # yet" (no route writes a line before v39 is complete: the app serves only a migrated
+    # database), then two idempotent UPDATEs give the rows the states they earn, then the CHECKs.
+    # IF NOT EXISTS on the table, each column, the unique key, the foreign key and each CHECK
+    # makes a half-applied v39 re-run.  No precondition: production holds no improvement row
+    # (v36-v39 ship in one release, S072 § 9); every CHECK holds for every row the backfill leaves.
+    # Rollback: a release before v39 reads neither the table nor the new columns; it would show a
+    # new state's raw key.
+    (39, "States, timeline and the verified close (S072)", [
+        """ALTER TABLE improvements MODIFY COLUMN state
+            ENUM('analysing','actions_open','watching','closed_effective','closed_not_effective','dropped')
+            NOT NULL DEFAULT 'analysing'""",
+        """ALTER TABLE improvements
+            ADD COLUMN IF NOT EXISTS watch_days      SMALLINT      NOT NULL DEFAULT 90 AFTER contributing_causes,
+            ADD COLUMN IF NOT EXISTS watch_from      DATETIME      NULL AFTER watch_days,
+            ADD COLUMN IF NOT EXISTS closed_at       DATETIME      NULL AFTER watch_from,
+            ADD COLUMN IF NOT EXISTS closed_by       VARCHAR(100)  NULL AFTER closed_at,
+            ADD COLUMN IF NOT EXISTS close_remark    VARCHAR(1000) NULL AFTER closed_by,
+            ADD COLUMN IF NOT EXISTS follow_up_of_id INT           NULL AFTER close_remark,
+            ADD UNIQUE KEY IF NOT EXISTS uq_improvements_follow_up (follow_up_of_id),
+            ADD CONSTRAINT fk_improvements_follow_up
+                FOREIGN KEY IF NOT EXISTS (follow_up_of_id) REFERENCES improvements (id)""",
+        # ticket_id and action_id name the ticket or countermeasure a line is about.  No why_id:
+        # a removed why's row is deleted (S069 D6), so a why line carries its text.
+        """CREATE TABLE IF NOT EXISTS improvement_events (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            improvement_id  INT NOT NULL,
+            event           VARCHAR(30) NOT NULL,
+            occurred_at     DATETIME NOT NULL,
+            from_state      VARCHAR(30) NULL,
+            to_state        VARCHAR(30) NULL,
+            ticket_id       INT NULL,
+            action_id       INT NULL,
+            remark          TEXT NULL,
+            earlier         TEXT NULL,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            KEY ix_improvement_events_improvement (improvement_id, occurred_at, id),
+            CONSTRAINT fk_improvement_events_improvement FOREIGN KEY (improvement_id) REFERENCES improvements (id),
+            CONSTRAINT fk_improvement_events_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id),
+            CONSTRAINT fk_improvement_events_action FOREIGN KEY (action_id) REFERENCES improvement_actions (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        # The backfill: the times are what the rows show (the root cause's is approximate: S069's
+        # update_row stamps updated_at for every edit of the row); edits before v39 have no line.
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, created_by)
+            SELECT id, 'started', created_at, created_by FROM improvements
+            WHERE NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'started')""",
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, ticket_id, created_by)
+            SELECT improvement_id, 'ticket_linked', created_at, ticket_id, created_by FROM improvement_tickets
+            WHERE NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'ticket_linked')""",
+        # improvements_core.why_line's shape: CONCAT is NULL for a NULL evidence, CONCAT_WS skips it
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, remark, created_by)
+            SELECT improvement_id, 'why_added', created_at,
+                   CONCAT_WS(' ', CONCAT(position, '.'), question, CONCAT('Because: ', answer),
+                             CONCAT('Evidence: ', evidence)),
+                   created_by FROM improvement_whys
+            WHERE NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'why_added')""",
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, remark, created_by)
+            SELECT i.id, 'root_cause_set', COALESCE(i.updated_at, i.created_at),
+                   CONCAT(fc.code, ' ', fc.label, ': ', i.root_cause), COALESCE(i.updated_by, i.created_by)
+            FROM improvements i JOIN failure_causes fc ON fc.id = i.root_cause_id
+            WHERE NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'root_cause_set')""",
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, action_id, remark, created_by)
+            SELECT improvement_id, 'action_added', created_at, id, text, created_by FROM improvement_actions
+            WHERE NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'action_added')""",
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, action_id, remark, created_by)
+            SELECT improvement_id, 'action_done', done_at, id, done_text, done_by FROM improvement_actions
+            WHERE state = 'done'
+              AND NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'action_done')""",
+        """INSERT INTO improvement_events (improvement_id, event, occurred_at, action_id, remark, created_by)
+            SELECT improvement_id, 'action_cancelled', cancelled_at, id, cancel_reason, cancelled_by
+            FROM improvement_actions WHERE state = 'cancelled'
+              AND NOT EXISTS (SELECT 1 FROM improvement_events WHERE event = 'action_cancelled')""",
+        # The states the rows earn (improvements_core.working_state and watch_start), no
+        # state_changed line (no actor; the backfilled lines show why).  Both are idempotent.
+        """UPDATE improvements SET state = 'actions_open'
+            WHERE state = 'analysing' AND root_cause_id IS NOT NULL""",
+        """UPDATE improvements i JOIN (
+                SELECT improvement_id, MAX(done_at) AS last_done, SUM(state = 'open') AS n_open,
+                       SUM(state = 'done') AS n_done,
+                       MAX(CASE WHEN state = 'done' AND kind IN ('correction','corrective','preventive','design_out')
+                                THEN done_at END) AS last_machine_done
+                FROM improvement_actions GROUP BY improvement_id) a ON a.improvement_id = i.id
+            SET i.state = 'watching', i.watch_from = COALESCE(a.last_machine_done, a.last_done)
+            WHERE i.state = 'actions_open' AND a.n_open = 0 AND a.n_done >= 1""",
+        """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_watch_days
+            CHECK (watch_days BETWEEN 30 AND 365)""",
+        """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_watch_from
+            CHECK ((state IN ('analysing','actions_open') AND watch_from IS NULL)
+                   OR (state IN ('watching','closed_effective','closed_not_effective') AND watch_from IS NOT NULL)
+                   OR state = 'dropped')""",
+        """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_closed
+            CHECK ((state IN ('closed_effective','closed_not_effective','dropped'))
+                   = (closed_at IS NOT NULL AND closed_by IS NOT NULL))""",
+        """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_close_remark
+            CHECK (state NOT IN ('closed_not_effective','dropped') OR close_remark IS NOT NULL)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

@@ -431,11 +431,11 @@ def _detail(cur, row):
         # Shown against now; the raise checks the new ticket's own time (§ 5.5)
         "can_raise_repeat": (RAISE_KEY in keys
                              and is_repeat_candidate(latest_restoration(state, row["not_a_fault"], events), now)),
-        **_improvement_fields(cur, row, keys),
+        **_improvement_fields(cur, row, keys, now),
     }
 
 
-def _improvement_fields(cur, row, keys):
+def _improvement_fields(cur, row, keys, now):
     """S067 § 5.3: the improvements this ticket is in, newest first, for a reader holding
     improvement:read at the ticket's site, and of those only the ones the reader can open (A1);
     and whether this user may start one from it (the key at the site, the start rule, not a
@@ -449,13 +449,18 @@ def _improvement_fields(cur, row, keys):
                  and improvements_core.link_error(row["serial"], links) is None)
     shown = _readable_improvement_links(cur, row["id"]) if improvements_core.READ_KEY in keys else []
     return {
-        "improvements": [{"id": link["improvement_id"], "serial": link["serial"], "state": link["state"]}
+        # S072 § 5.2: the display state (Ready to verify from the clock); the start rule above
+        # reads open_link, never the state
+        "improvements": [{"id": link["improvement_id"], "serial": link["serial"],
+                          "state": improvements_core.display_state(link["state"], link["watch_from"],
+                                                                   link["watch_days"], now)}
                          for link in shown],
         "can_start_improvement": can_start,
     }
 
 
-_IMPROVEMENT_LINKS = ("SELECT i.id AS improvement_id, i.serial, i.state, it.open_link FROM improvement_tickets it"
+_IMPROVEMENT_LINKS = ("SELECT i.id AS improvement_id, i.serial, i.state, i.watch_from, i.watch_days, it.open_link"
+                      " FROM improvement_tickets it"
                       " JOIN improvements i ON i.id = it.improvement_id")
 
 

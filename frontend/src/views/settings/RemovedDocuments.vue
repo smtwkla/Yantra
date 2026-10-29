@@ -11,7 +11,8 @@
  * Since S017 a row can also be a ticket's photo: "Ticket <serial>" and its unit; Restore is
  * disabled on a closed ticket, as on scrapped equipment (the server refuses both).
  * Since S071 a row can be a countermeasure's photo: "Countermeasure IM-… · Corrective" and its
- * unit; Restore is disabled on a cancelled countermeasure (S070 § 5.8).
+ * unit; Restore is disabled on a cancelled countermeasure (S070 § 5.8), and since S072 A1 also
+ * when its improvement is closed or dropped, as on a closed ticket.
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -87,6 +88,8 @@ function restoreBlocked(item) {
   if (item.lifecycle === "scrapped") return "Scrapped equipment cannot be changed";
   if (item.owner === "ticket" && item.state === "closed") return "Closed tickets cannot be changed";
   if (item.owner === "action" && item.state === "cancelled") return "Cancelled countermeasures cannot be changed";
+  // S072 A1: a closed or dropped improvement is read-only
+  if (item.owner === "action" && item.improvement_open === false) return "Closed improvements cannot be changed";
   return "";
 }
 

@@ -786,6 +786,25 @@ class TestActionDocuments:
         assert manager.post(f"{url}/{photo['id']}/purge").status_code == 204
         assert owner_files("action", case.action["id"]) == []
 
+    def test_the_removed_list_says_when_the_improvement_is_closed(self, case, user_at_sites):
+        """S072 A1: the item carries improvement_open, so the list offers Restore only while the
+        improvement is open; the restore route's own refusal stays (409)."""
+        url = action_docs_url(case.action)
+        photo = action_photo(case.technician, case.action)
+        assert case.technician.delete(f"{url}/{photo['id']}").status_code == 204
+        manager, _ = user_at_sites([(case.site, "maint_manager", "all")])
+
+        def item():
+            items = manager.get("/api/equipment/removed-documents",
+                                query_string={"q": case.improvement["serial"]}).get_json()["items"]
+            return next(i for i in items if i["id"] == photo["id"])
+        assert item()["improvement_open"] is True
+        res = case.engineer.post(f"/api/improvements/{case.improvement['id']}/drop", json={"reason": "Duplicate"})
+        assert res.status_code == 200, res.get_json()
+        assert (item()["improvement_open"], item()["state"]) == (False, "cancelled")
+        res = manager.post(f"{url}/{photo['id']}/restore")
+        assert (res.status_code, res.get_json()["error"]) == (409, "This improvement is closed")
+
     def test_the_removed_list_shows_the_countermeasure(self, case, user_at_sites, make_ticket, make_equipment,
                                                        make_site, unit):
         url = action_docs_url(case.action)

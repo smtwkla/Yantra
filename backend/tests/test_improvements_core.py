@@ -16,6 +16,9 @@ from improvements_core import (
     PROBLEM_TOO_LONG, START_FROM_STATES, START_STATE, TICKET_NEEDED, TITLE_NEEDED, TITLE_NOT_TEXT, TITLE_TOO_LONG,
     already_in, is_open, keeps_a_ticket, link_error, loss, may_lead, removal_error, start_error,
     validate_improvement, validate_link,
+    ACTION_KIND_LABELS, CLOSED_STATES, IMPROVEMENT_CLOSED, READY_TO_VERIFY, VERIFY_NOT_YET, WATCH_DAYS_RANGE,
+    WATCH_KINDS, action_line, close_error, display_state, dropped_reason, root_cause_line, validate_close,
+    validate_note, watch_figures, watch_start, watch_until, why_line, with_watch_ended, working_state,
 )
 from tickets_core import STATES
 
@@ -90,9 +93,16 @@ class TestValidateLink:
 
 class TestStates:
 
-    def test_only_analysing_and_it_is_open(self):
-        assert IMPROVEMENT_OPEN_STATES == ("analysing",)
-        assert is_open("analysing") and not is_open("closed")
+    def test_three_open_states_and_three_closed_ones(self):
+        """S072 § 5.1: the working states are open; the closes and the drop are not."""
+        assert IMPROVEMENT_OPEN_STATES == ("analysing", "actions_open", "watching")
+        assert CLOSED_STATES == ("closed_effective", "closed_not_effective", "dropped")
+        assert all(is_open(state) for state in IMPROVEMENT_OPEN_STATES)
+        assert not any(is_open(state) for state in CLOSED_STATES)
+
+    def test_ready_to_verify_is_not_an_open_state(self):
+        """BR1-03: is_open takes the stored state only, so no caller may pass the display state."""
+        assert is_open(READY_TO_VERIFY) is False
 
 
 class TestStart:
@@ -476,3 +486,234 @@ class TestActionFlags:
             "can_change": False, "can_mark_done": True, "can_add_photo": True}
         assert action_flags(True, "done", False, True) == {
             "can_change": False, "can_mark_done": False, "can_add_photo": True}
+
+
+# ---------------------------------------------------------------------------
+# S072: the states, the watch, the closes, the timeline's lines (§ 8.2)
+# ---------------------------------------------------------------------------
+
+T0 = datetime(2026, 11, 20, 15, 30)
+
+
+def act(kind="corrective", state="open", done_at=None):
+    return {"kind": kind, "state": state, "done_at": done_at}
+
+
+class TestWorkingState:
+
+    def test_no_root_cause_is_analysing_even_with_all_done(self):
+        assert working_state("analysing", False, [act(state="done", done_at=T0)]) == "analysing"
+
+    @pytest.mark.parametrize("actions", [
+        [],                                                    # root cause and nothing
+        [act()],                                               # one open
+        [act(state="cancelled"), act(state="cancelled")],      # all cancelled: nothing to watch
+    ])
+    def test_actions_open(self, actions):
+        assert working_state("analysing", True, actions) == "actions_open"
+
+    def test_one_done_one_cancelled_is_watching(self):
+        assert working_state("actions_open", True, [act(state="done", done_at=T0), act(state="cancelled")]) == (
+            "watching")
+
+    @pytest.mark.parametrize("kind", ["lesson", "spread"])
+    def test_an_open_lesson_or_spread_keeps_the_watch(self, kind):
+        assert working_state("watching", True, [act(state="done", done_at=T0), act(kind)]) == "watching"
+
+    @pytest.mark.parametrize("kind", WATCH_KINDS)
+    def test_an_open_machine_kind_ends_the_watch(self, kind):
+        assert working_state("watching", True, [act(state="done", done_at=T0), act(kind)]) == "actions_open"
+
+    def test_an_open_lesson_before_the_watch_keeps_actions_open(self):
+        assert working_state("actions_open", True, [act(state="done", done_at=T0), act("lesson")]) == (
+            "actions_open")
+
+    def test_the_watch_kinds(self):
+        assert WATCH_KINDS == ("correction", "corrective", "preventive", "design_out")
+
+
+class TestWatchStart:
+
+    def test_the_latest_machine_kind_done(self):
+        later = T0 + timedelta(days=2)
+        assert watch_start([act("correction", "done", T0), act("preventive", "done", later), act()]) == later
+
+    def test_a_later_lesson_is_ignored(self):
+        assert watch_start([act("corrective", "done", T0), act("lesson", "done", T0 + timedelta(days=5))]) == T0
+
+    def test_only_lessons_done_take_their_latest(self):
+        later = T0 + timedelta(days=1)
+        assert watch_start([act("lesson", "done", T0), act("spread", "done", later)]) == later
+
+    def test_nothing_done(self):
+        assert watch_start([act(), act(state="cancelled")]) is None
+
+
+class TestDisplayState:
+
+    def test_watch_until(self):
+        assert watch_until(T0, 90) == datetime(2027, 2, 18, 15, 30)
+
+    def test_a_minute_before_and_at_the_end(self):
+        until = watch_until(T0, 30)
+        assert display_state("watching", T0, 30, until - timedelta(minutes=1)) == "watching"
+        assert display_state("watching", T0, 30, until) == "ready_to_verify"
+
+    @pytest.mark.parametrize("state", ["analysing", "actions_open", *CLOSED_STATES])
+    def test_no_other_state_becomes_ready(self, state):
+        assert display_state(state, T0, 30, T0 + timedelta(days=400)) == state
+
+
+class TestCloseError:
+
+    def test_ready_may_close(self):
+        assert close_error(READY_TO_VERIFY, T0) is None
+
+    @pytest.mark.parametrize("state", ["analysing", "actions_open"])
+    def test_not_yet(self, state):
+        assert close_error(state, None) == VERIFY_NOT_YET
+
+    def test_while_watching_names_the_end(self):
+        assert close_error("watching", datetime(2027, 2, 18, 15, 30)) == (
+            "The watch ends on 18-02-2027. Verify after it.")
+
+    @pytest.mark.parametrize("state", CLOSED_STATES)
+    def test_closed(self, state):
+        assert close_error(state, T0) == IMPROVEMENT_CLOSED
+
+
+class TestWatchDays:
+
+    @pytest.mark.parametrize("days", [30, 90, 365])
+    def test_in_range(self, days):
+        assert validate_improvement({"watch_days": days}, False) == ({"watch_days": days}, [])
+
+    @pytest.mark.parametrize("days", [29, 366, True, None, "90", 90.0])
+    def test_refused(self, days):
+        assert _errors({"watch_days": days}, creating=False) == [("watch_days", WATCH_DAYS_RANGE)]
+
+    def test_absent_stays(self):
+        assert validate_improvement({"title": "Dust"}, False) == ({"title": "Dust"}, [])
+
+    def test_not_taken_on_a_start(self):
+        clean, errors = validate_improvement({**GOOD, "watch_days": 5}, True)
+        assert errors == [] and "watch_days" not in clean
+
+
+class TestCloseBodies:
+
+    def test_effective_remark_is_optional(self):
+        for body in ({}, {"remark": None}, {"remark": "   "}):
+            assert validate_close(body, False, "remark") == ({"remark": None}, [])
+        assert validate_close({"remark": " Held "}, False, "remark") == ({"remark": "Held"}, [])
+
+    @pytest.mark.parametrize("needed, field, body, message", [
+        (True, "remark", {}, "Say why it did not work"),
+        (True, "remark", {"remark": "  "}, "Say why it did not work"),
+        (True, "remark", {"remark": 5}, "Remark must be text"),
+        (True, "remark", {"remark": "x" * 1001}, "Remark: up to 1000 characters"),
+        (False, "remark", {"remark": "x" * 1001}, "Remark: up to 1000 characters"),
+        (False, "remark", {"remark": 5}, "Remark must be text"),
+        (True, "reason", {}, "Say why it is dropped"),
+        (True, "reason", {"reason": []}, "Reason must be text"),
+        (True, "reason", {"reason": "x" * 1001}, "Reason: up to 1000 characters"),
+    ])
+    def test_refusals(self, needed, field, body, message):
+        assert validate_close(body, needed, field)[1] == [{"field": field, "message": message}]
+
+    def test_1000_characters_pass(self):
+        assert validate_close({"reason": "x" * 1000}, True, "reason") == ({"reason": "x" * 1000}, [])
+
+    def test_the_note(self):
+        assert validate_note({"remark": "  Oil\nchecked  "}) == ({"remark": "Oil\nchecked"}, [])
+        assert validate_note({"remark": "x" * 1000})[1] == []
+        for body, message in (({}, "Write the note"), ({"remark": ""}, "Write the note"),
+                              ({"remark": 3}, "Note must be text"), ({"remark": "x" * 1001}, "Note: up to 1000 characters")):
+            assert validate_note(body)[1] == [{"field": "remark", "message": message}]
+
+    def test_the_dropped_reason_is_cut_to_500(self):
+        assert dropped_reason("Moved to IM-2") == "Dropped with the improvement: Moved to IM-2"
+        assert len(dropped_reason("x" * 1000)) == 500
+
+
+def ticket(occurred_at, intensity="critical", mode=11, downtime=60, tid=1):
+    return {"id": tid, "serial": f"TK-{tid}", "occurred_at": occurred_at, "intensity": intensity,
+            "failure_mode_id": mode, "machine_code": "HP003", "symptom": {"id": mode, "code": "ST", "label": "Won't start"},
+            "downtime_minutes": downtime}
+
+
+class TestWatchFigures:
+
+    def test_before_and_after_split_at_the_start(self):
+        tickets = [ticket(T0 - timedelta(days=10), tid=1), ticket(T0 - timedelta(days=95), tid=2),
+                   ticket(T0, tid=3, downtime=30), ticket(T0 + timedelta(days=5), "initial", mode=12, tid=4, downtime=None)]
+        figures = watch_figures(tickets, {11}, T0, 90, T0 + timedelta(days=20))
+        assert figures["before"] == {"days": 90, "breakdowns": 1, "symptom_breakdowns": 1, "downtime_minutes": 60}
+        assert figures["after"] == {"days": 20, "breakdowns": 1, "symptom_breakdowns": 1, "downtime_minutes": 30}
+        assert [r["id"] for r in figures["repeats"]] == [3]
+
+    def test_a_ticket_at_the_watch_end_is_a_repeat_out_of_the_watch(self):
+        until = watch_until(T0, 30)
+        figures = watch_figures([ticket(until, tid=7)], {11}, T0, 30, until + timedelta(days=3))
+        assert figures["after"]["breakdowns"] == 0 and figures["after"]["days"] == 30
+        assert figures["repeats"] == [{"id": 7, "serial": "TK-7", "occurred_at": until, "intensity": "critical",
+                                       "machine_code": "HP003", "symptom": {"id": 11, "code": "ST", "label": "Won't start"},
+                                       "in_watch": False}]
+
+    def test_no_symptoms_gives_nulls(self):
+        figures = watch_figures([ticket(T0 + timedelta(days=1))], set(), T0, 30, T0 + timedelta(days=2))
+        assert figures["after"]["symptom_breakdowns"] is None and figures["before"]["symptom_breakdowns"] is None
+        assert figures["after"]["breakdowns"] == 1 and figures["repeats"] == []
+
+    def test_a_degraded_repeat_counts_as_a_repeat_not_a_breakdown(self):
+        figures = watch_figures([ticket(T0 + timedelta(days=1), "degraded")], {11}, T0, 30, T0 + timedelta(days=2))
+        assert figures["after"]["breakdowns"] == 0 and [r["intensity"] for r in figures["repeats"]] == ["degraded"]
+
+    def test_a_closed_improvements_end(self):
+        closed_at = T0 + timedelta(days=10)
+        figures = watch_figures([ticket(T0 + timedelta(days=12))], {11}, T0, 30, closed_at)
+        assert figures["after"]["days"] == 10 and figures["after"]["breakdowns"] == 0 and figures["repeats"] == []
+
+
+class TestLines:
+
+    def test_why_line(self):
+        assert why_line(3, "Why is there dust?", "The door seal is torn", None) == (
+            "3. Why is there dust? Because: The door seal is torn")
+        assert why_line(1, "Why?", "Dust", "Photo of the panel") == "1. Why? Because: Dust Evidence: Photo of the panel"
+
+    def test_root_cause_line(self):
+        assert root_cause_line("4.2", "Management error", "No cleaning standard", None) == (
+            "4.2 Management error: No cleaning standard")
+        assert root_cause_line("4.2", "Management error", "No standard", "Old seal") == (
+            "4.2 Management error: No standard\nOther causes: Old seal")
+
+    def test_action_line(self):
+        assert action_line("corrective", "Fit a sealed block", "Kannan", "maint_technician", date(2026, 11, 8)) == (
+            "Corrective: Fit a sealed block. Owner Kannan (technician), due 08-11-2026.")
+        assert action_line("design_out", "Move the panel", "Ravi", None, date(2026, 1, 2)) == (
+            "Design-out: Move the panel. Owner Ravi, due 02-01-2026.")
+
+    def test_the_kind_words(self):
+        """S070 § 2's six codes and words; frontend/tests/improvementLabels.test.js asserts the same."""
+        assert ACTION_KIND_LABELS == {"correction": "Correction", "corrective": "Corrective",
+                                      "preventive": "Preventive", "design_out": "Design-out", "lesson": "Lesson",
+                                      "spread": "Spread"}
+        assert tuple(ACTION_KIND_LABELS) == ACTION_KINDS
+
+
+class TestWatchEnded:
+
+    def lines(self, *times):
+        return [{"id": i, "occurred_at": t} for i, t in enumerate(times, start=1)]
+
+    def test_placed_by_time_newest_first(self):
+        until = T0 + timedelta(days=30)
+        lines = self.lines(until + timedelta(days=1), until - timedelta(days=1))
+        out = with_watch_ended(lines, True, until)
+        assert [line["id"] for line in out] == [1, None, 2]
+        assert out[1]["event"] == "watch_ended" and out[1]["occurred_at"] == until and out[1]["by_name"] is None
+
+    def test_not_shown(self):
+        lines = self.lines(T0)
+        assert with_watch_ended(lines, False, T0) == lines

@@ -417,6 +417,23 @@ test("S071: the engineer adds a countermeasure, changes its due date, adds a sec
   await expect(page.getByRole("button", { name: "Cancel countermeasure 2", exact: true })).toHaveCount(0);
 });
 
+test("S071: a cancel refused because the owner marked it done meanwhile shows the row done, with no cancel ask left", async ({ page, consoleWatch }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S071 stale cancel: done meanwhile");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text: "S071 stale cancel: fit the new gasket" });
+  consoleWatch.allowFailedRequest(`/api/improvements/${improvement.id}/actions/${action.id}/cancel`, 409);
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  const row = measureRow(page, action.id);
+  await page.getByRole("button", { name: "Cancel countermeasure 1", exact: true }).click();
+  await row.getByLabel("Why cancel it?").fill("Not needed");
+  await markDoneByApi(improvement, action, "technician");   // the owner, on another phone
+  await row.getByRole("button", { name: "Cancel countermeasure", exact: true }).click();
+
+  await expect(row).toContainText("Done");
+  await expect(row).not.toContainText("Cancel this countermeasure?");
+  await expect(row.getByLabel("Why cancel it?")).toHaveCount(0);
+});
+
 test("S071: the engineer marks done a countermeasure owned by a person with no login; the row says who recorded it", async ({ page }) => {
   const ticket = await raiseFixed(seed.extruder.id, "S071 proxy: fitter job");
   const improvement = await startImprovementByApi(ticket);

@@ -1,8 +1,16 @@
 // Words and small helpers for the improvement screens (S068; the record is S067's).
 import { minutesText, toLocalDateValue } from "./ticketLabels";
 
+// S072 D13: the floor reads the badge, so the closed states say what happened in plain words;
+// ISO's terms (effective, not effective) stay in the API codes
 export const IMPROVEMENT_STATE_LABELS = {
   analysing: "Analysing",
+  actions_open: "Actions open",
+  watching: "Watching",
+  ready_to_verify: "Ready to verify",
+  closed_effective: "Closed: it worked",
+  closed_not_effective: "Closed: did not work",
+  dropped: "Dropped",
 };
 
 /** The state's words; an unknown state (a later step's) is shown as it came. */

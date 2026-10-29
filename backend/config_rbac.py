@@ -131,6 +131,14 @@ PERMISSIONS = {
     # (improvements_core.may_lead).
     "improvement:read": ("maint_operator", "it_admin"),
     "improvement:edit": ("maint_engineer",),
+    # S072, Q4.2 a: an engineer or manager of the site decides whether the fix worked (the
+    # verified close, ISO 9001 § 10.2.1 d); the lead may too, a recorded departure from ISO 27001
+    # A.5.3 (the plant has few engineers; the detail shows closed.by_lead).  Equal to
+    # improvement:edit's holders today; the two can drift (as ticket:edit_notes).
+    "improvement:verify": ("maint_engineer",),
+    # S072, Q1.3 a, D6: every reader at the site adds a note to the timeline; not IT admin, who
+    # reads only, so this key, not improvement:read.
+    "improvement:note": ("maint_operator",),
 
     # Meter readings (S039): the operator logs the readings of the machines at the unit (TPM
     # autonomous maintenance), so the supervisor and the maintenance ladder inherit it, as
@@ -188,4 +196,7 @@ SITE_SCOPED = frozenset({
     # S067: checked at the improvement's site (its unit's), or the ticket's on a start
     "improvement:read",
     "improvement:edit",
+    # S072: checked at the improvement's site
+    "improvement:verify",
+    "improvement:note",
 })

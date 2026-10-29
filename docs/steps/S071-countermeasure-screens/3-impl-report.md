@@ -228,9 +228,25 @@ Source: `4-code-review-r1.md` (2 minor, 4 nits). Runs: frontend unit suite (`s07
   run: the value comes from the browser's local date (`defaultDueDate`), so the fault would have to
   be put into the unit-tested helper; a wrong offset there already fails `improvementLabels` tests.
 
+### Round 2 (in S072's fix round)
+
+Source: `4-code-review-r2.md` (1 nit). Done in S072's fix round 1, by the orchestrator's choice.
+
+- **CR2-01 Fixed.** After a refused cancel (409, no field), `ImprovementDetailView.cancelAction`
+  now reloads and then calls `closeStaleCancel(action.id)`. That clears `cancellingId` when the
+  reloaded row has no `can_change` (it is done or cancelled now); a row that is still open keeps
+  its ask. `load()` catches its own errors, so the follow-up step always runs.
+  - **Test:** `e2e/improvements.spec.js` › "S071: a cancel refused because the owner marked it
+    done meanwhile shows the row done, with no cancel ask left". The engineer opens the cancel
+    ask and types a reason; the owner (technician) marks it done through the API; the tap on
+    *Cancel countermeasure* gets the 409. Fails without the fix:
+    `expect(row).not.toContainText("Cancel this countermeasure?")` (the ask stayed open);
+    passes with it (phone-chromium, alone). Then `e2e/improvements.spec.js e2e/settings.spec.js`
+    at Normal: 22 passed.
+
 ## Docs updated (Round 1)
 
-none, because the round changes no behaviour a doc describes.
+none, because the round changes no behaviour a doc describes. Round 2: none, for the same reason.
 
 ## Feedback (Round 1)
 

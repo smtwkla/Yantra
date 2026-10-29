@@ -108,7 +108,10 @@ A write with a model never locks a type: it comes from the model, whose type nev
   taken only by starts) → (7) the ticket LOCK IN SHARE MODE, then inserts the improvement, whose
   foreign keys take shared locks on the unit, the machine and the lead's person; adding a ticket
   takes (6b) the improvement FOR UPDATE → (7) shared; removing a ticket and an edit take (6b)
-  alone (an edit's new lead: a shared lock on the person, its foreign key).  It never takes a
+  alone (an edit's new lead: a shared lock on the person, its foreign key).  S072: every write
+  inserts its timeline line under (6b) (a line naming a ticket takes (7) shared, as an add); a
+  close as *not effective* takes (6) the counter (IM:YYYY-MM) → (6b) → (7) shared for the
+  follow-up's links; a drop takes (6b) → (6c) by id order.  It never takes a
   ticket or equipment row FOR UPDATE and never reads equipment.lifecycle
   (a scrapped machine's tickets may still be analysed), so no path of this module waits on it
   holding an exclusive lock; a scrap holds the machine FOR UPDATE and counts open tickets with a

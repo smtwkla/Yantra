@@ -145,10 +145,18 @@ async function cancelAction(action, reason) {
   } catch (err) {
     cancelError.value = { field: err.field, message: err.message };
     // A stale row (409, no field): the owner marked it done meanwhile, so show what is true now
-    if (!err.field && err.status === 409) load();
+    // and close its cancel ask when the reloaded row can no longer be cancelled (S071 CR2-01)
+    if (!err.field && err.status === 409) load().then(() => closeStaleCancel(action.id));
   } finally {
     cancelBusy.value = false;
   }
+}
+
+// load() catches its own errors, so this runs after every reload; a row still open keeps its ask
+function closeStaleCancel(actionId) {
+  if (cancellingId.value !== actionId) return;
+  const row = improvement.value?.actions.find((a) => a.id === actionId);
+  if (!row?.can_change) cancellingId.value = null;
 }
 
 function togglePhotos(action) {

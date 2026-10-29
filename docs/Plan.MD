@@ -130,6 +130,8 @@ with each module. First cut of the main keys:
 | `ticket:edit_notes` | | | | ✓ | ✓ | ✓ |
 | `improvement:read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `improvement:edit` | | | | ✓ | ✓ | |
+| `improvement:verify` | | | | ✓ | ✓ | |
+| `improvement:note` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
@@ -197,6 +199,14 @@ neither. The lead of an improvement is an active person whose role at its site g
 `improvement:edit`, so the lead list follows the key. A ticket page lists only the
 improvements its reader can open (`improvement:read` at the improvement's unit or its
 machine's unit; S067 A1).
+`improvement:verify` and `improvement:note` (S072, R05.4, 30-10-2026; both site-scoped).
+`improvement:verify` closes an improvement after its watch as *it worked* or *did not work*
+(ISO 9001 § 10.2.1 d): engineer and manager, the lead too, recorded on the close (a departure
+from ISO 27001 A.5.3: the plant has few engineers). Its holders equal `improvement:edit`'s
+today; the two can drift. `improvement:note` adds a note to the improvement's timeline: every
+reader at the site, operator and up, but not IT admin, who reads only (a key of its own,
+because IT admin also holds `improvement:read`; a departure from R05's key list). *Drop* is
+`improvement:edit`'s.
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -408,10 +418,23 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   and a due date from the day the problem happened to a year ahead; *overdue* is computed. A
   countermeasure is open, done (what was done, when, who recorded it; the time not before the
   problem) or cancelled with a reason. Done and cancelled are final and nothing is deleted (ISO
-  9001 § 7.5.3): until R05.4 brings undo with its timeline, a wrong *done* stays and the
-  engineer adds a new countermeasure. A photo of the work goes to the documents store (its
+  9001 § 7.5.3): a wrong *done* stays and the engineer adds a new countermeasure (R05.4 added
+  no undo, S072 § 9 Q2). A photo of the work goes to the documents store (its
   fourth owner, `DATA_DIR/improvement-actions/<id>/`). *My open countermeasures*
   (`GET /api/improvements/actions/mine`) feeds *Me › Open work*.
+  **States, timeline and the verified close (S072, 30-10-2026; R05.4, backend; the screens are
+  S073's):** an improvement moves by itself from *Analysing* to *Actions open* (the root cause
+  is set) to *Watching* (no countermeasure open and at least one done; a *Lesson* or *Spread*
+  added during the watch does not end it). The watch lasts 90 days by default (30–365, set per
+  improvement) from the last countermeasure done on the machines; *Ready to verify* is computed
+  from the clock once it ends. Yantra counts the breakdowns, those with the same symptom and the
+  downtime on the linked tickets' machines in the watch against the same days before it, and
+  lists every ticket with that symptom since the watch began. An engineer or manager then closes
+  it as *it worked* or *did not work*; *did not work* starts a follow-up improvement with the
+  same tickets. *Drop* (with a reason) ends an open improvement and cancels its open
+  countermeasures. A closed or dropped improvement is read-only. Every change writes a line on
+  its timeline (`improvement_events`, who and when, the replaced text), and anyone at the site
+  but IT admin adds notes.
 - **Production marks "back in service" too** (decided 16-10-2026, sorting-line use case): the
   supervisor, or whoever has operator rights at the unit, can record "back in service" and
   name the technician who did the work from Team. Standard CMMS requester sign-off: production

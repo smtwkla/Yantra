@@ -74,6 +74,7 @@ from equipment_core import SCRAPPED
 from masters_core import model_label
 from settings import upload_max_mb
 from improvements import lock_action_for_change, lock_action_for_purge, read_action, read_action_for_change
+from improvements_core import is_open
 from tickets import lock_ticket_for_change, lock_ticket_for_purge, read_ticket, read_ticket_for_change
 
 logger = logging.getLogger(__name__)
@@ -472,27 +473,30 @@ _REMOVED_DOC_COLUMNS = (
 _REMOVED_NODE_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'equipment' AS owner, e.id AS owner_id, e.id AS equipment_id, e.code,"
     " e.name, e.level, e.lifecycle, s.code AS site_code, u.code AS unit_code, p.code AS p_code, gp.code AS gp_code,"
-    " NULL AS mf_name, NULL AS m_designation, NULL AS owner_state, NULL AS action_kind"
+    " NULL AS mf_name, NULL AS m_designation, NULL AS owner_state, NULL AS action_kind, NULL AS improvement_state"
     " FROM equipment_documents d JOIN equipment e ON e.id = d.equipment_id" + NODE_JOINS
 )
 _REMOVED_MODEL_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'model' AS owner, m.id AS owner_id, NULL AS equipment_id, NULL AS code,"
     " NULL AS name, NULL AS level, NULL AS lifecycle, NULL AS site_code, NULL AS unit_code, NULL AS p_code,"
-    " NULL AS gp_code, mf.name AS mf_name, m.designation AS m_designation, NULL AS owner_state, NULL AS action_kind"
+    " NULL AS gp_code, mf.name AS mf_name, m.designation AS m_designation, NULL AS owner_state, NULL AS action_kind,"
+    " NULL AS improvement_state"
     " FROM equipment_documents d JOIN equipment_models m ON m.id = d.model_id"
     " JOIN manufacturers mf ON mf.id = m.manufacturer_id"
 )
 _REMOVED_TICKET_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'ticket' AS owner, t.id AS owner_id, NULL AS equipment_id, NULL AS code,"
     " t.serial AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
-    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, t.state AS owner_state, NULL AS action_kind"
+    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, t.state AS owner_state, NULL AS action_kind,"
+    " NULL AS improvement_state"
     " FROM equipment_documents d JOIN tickets t ON t.id = d.ticket_id"
     " JOIN units u ON u.id = t.unit_id JOIN sites s ON s.id = u.site_id"
 )
 _REMOVED_ACTION_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'action' AS owner, a.id AS owner_id, NULL AS equipment_id, NULL AS code,"
     " i.serial AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
-    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, a.state AS owner_state, a.kind AS action_kind"
+    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, a.state AS owner_state, a.kind AS action_kind,"
+    " i.state AS improvement_state"
     " FROM equipment_documents d JOIN improvement_actions a ON a.id = d.action_id"
     " JOIN improvements i ON i.id = a.improvement_id"
     " JOIN units u ON u.id = i.unit_id JOIN sites s ON s.id = u.site_id"
@@ -500,7 +504,7 @@ _REMOVED_ACTION_BRANCH = (
 
 # Columns the item is built from, not shown as they are
 _JOIN_COLUMNS = ("owner_id", "site_code", "unit_code", "p_code", "gp_code", "mf_name", "m_designation",
-                 "owner_state")
+                 "owner_state", "improvement_state")
 
 
 def _removed_item(row):
@@ -509,7 +513,8 @@ def _removed_item(row):
     path, for a model its label as ``name`` with the node fields null, for a ticket its serial
     as ``name``, its unit and its ``state`` (a closed ticket refuses restore), for a
     countermeasure its improvement's serial as ``name``, its unit, its ``state`` (a cancelled
-    one refuses restore) and its ``action_kind``."""
+    one refuses restore), its ``action_kind`` and ``improvement_open`` (S072 A1: a closed or
+    dropped improvement refuses restore too)."""
     item = row_to_dict({key: value for key, value in row.items() if key not in _JOIN_COLUMNS})
     item["path"] = OWNERS[row["owner"]].path.format(row["owner_id"])
     if row["owner"] == "model":
@@ -519,6 +524,8 @@ def _removed_item(row):
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = None
         item["state"] = row["owner_state"]
+        if row["owner"] == "action":
+            item["improvement_open"] = is_open(row["improvement_state"])
     else:
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = node_path(row)

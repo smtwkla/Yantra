@@ -3,6 +3,8 @@
 An improvement is the record where the team analyses one problem that tickets showed, so it
 does not happen again (TPM focused improvement; ISO 9001 § 10.2.1 b).  This module holds the
 states, the field validation, the start, link and remove rules, who may lead, and the loss.
+S069 and S070 add the why-why chain, the root cause and the countermeasures; S072 the working
+states, the watch and its figures, the closes and the timeline's lines.
 improvements.py (the shell) feeds them the rows it has locked or read.
 """
 
@@ -16,14 +18,28 @@ from tickets_core import (
 
 READ_KEY = "improvement:read"
 EDIT_KEY = "improvement:edit"
+# S072 § 5.8: who decides whether the fix worked, and who adds a note to the timeline
+VERIFY_KEY = "improvement:verify"
+NOTE_KEY = "improvement:note"
 
 SERIAL_PREFIX = "IM"
 
-# The states (D3): only Analysing in S067; R05.4 appends its states, here and to the ENUM.
+# The states (S067 D3; S072 § 5.1, R05.4).  The first three move by themselves when the data
+# changes (working_state); the closes are decisions.  These are the stored values (the ENUM).
 ANALYSING = "analysing"
-STATES = (ANALYSING,)
-# "Open" is asked in one place, so R05.4 only widens this tuple
-IMPROVEMENT_OPEN_STATES = (ANALYSING,)
+ACTIONS_OPEN = "actions_open"
+WATCHING = "watching"
+CLOSED_EFFECTIVE = "closed_effective"
+CLOSED_NOT_EFFECTIVE = "closed_not_effective"
+DROPPED = "dropped"
+STATES = (ANALYSING, ACTIONS_OPEN, WATCHING, CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE, DROPPED)
+# Computed from the clock, never stored (S072 D1): a watching improvement whose watch has ended
+READY_TO_VERIFY = "ready_to_verify"
+# "Open" is asked of the STORED state only (BR1-03): is_open(READY_TO_VERIFY) is False, so no
+# caller passes the display state to is_open; the detail and the ticket page compute is_open
+# from the row before they show the display state.
+IMPROVEMENT_OPEN_STATES = (ANALYSING, ACTIONS_OPEN, WATCHING)
+CLOSED_STATES = (CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE, DROPPED)
 
 # Q1.1 a: a ticket starts an improvement once the machine is back in service, or after its close
 START_FROM_STATES = (BACK_IN_SERVICE, CLOSED)
@@ -152,8 +168,8 @@ def _text(body, field, maximum, needed, too_long, not_text, clean, errors):
 def validate_improvement(body, creating):
     """The start (``creating``) or edit body -> ``(clean, errors)`` for clean_body (§ 5.2).  On a
     start every field is required; on an edit an absent field stays as it is (not in ``clean``),
-    and ``lead_id`` may not be null.  ``ticket_id`` is taken only on a start; unknown fields are
-    ignored."""
+    and ``lead_id`` may not be null.  ``ticket_id`` is taken only on a start, ``watch_days``
+    (S072 § 5.3) only on an edit; unknown fields are ignored."""
     clean, errors = {}, []
     if creating:
         if _is_id(body.get("ticket_id")):
@@ -172,6 +188,12 @@ def validate_improvement(body, creating):
             clean["lead_id"] = body["lead_id"]
         else:
             errors.append({"field": "lead_id", "message": LEAD_NEEDED})
+    if not creating and "watch_days" in body:
+        days = body["watch_days"]
+        if isinstance(days, int) and not isinstance(days, bool) and WATCH_DAYS_MIN <= days <= WATCH_DAYS_MAX:
+            clean["watch_days"] = days
+        else:
+            errors.append({"field": "watch_days", "message": WATCH_DAYS_RANGE})
     return clean, errors
 
 
@@ -459,3 +481,233 @@ def action_flags(improvement_open, state, may_edit, is_owner):
         "can_mark_done": improvement_open and state == ACTION_OPEN and may_act,
         "can_add_photo": improvement_open and state != ACTION_CANCELLED and may_act,
     }
+
+
+# ---------------------------------------------------------------------------
+# The states, the watch, the close and the timeline (S072 § 5; ISO 9001 § 10.2.1 d, § 7.5.3)
+# ---------------------------------------------------------------------------
+
+# The kinds that act on the linked machines (S070 § 2): only these end and start the watch (D3).
+# A Lesson or a Spread changes nothing on the machines the watch counts.
+WATCH_KINDS = ("correction", "corrective", "preventive", "design_out")
+
+# Q4.1 a: 90 days by default (dust builds up over months), set per improvement
+WATCH_DAYS_DEFAULT = 90
+WATCH_DAYS_MIN = 30
+WATCH_DAYS_MAX = 365
+WATCH_DAYS_RANGE = f"Choose a watch of {WATCH_DAYS_MIN} to {WATCH_DAYS_MAX} days"
+
+CLOSE_TEXT_MAX = 1000
+VERIFY_NOT_YET = "Verify once every countermeasure is done and the watch has ended"
+NOTE_NEEDED = "Write the note"
+NOTE_TOO_LONG = f"Note: up to {CLOSE_TEXT_MAX} characters"
+NOTE_NOT_TEXT = "Note must be text"
+# The close bodies' one text field -> (needed, too long, not text) (§ 5.3)
+_CLOSE_MESSAGES = {
+    "remark": ("Say why it did not work", f"Remark: up to {CLOSE_TEXT_MAX} characters", "Remark must be text"),
+    "reason": ("Say why it is dropped", f"Reason: up to {CLOSE_TEXT_MAX} characters", "Reason must be text"),
+}
+DROPPED_WITH = "Dropped with the improvement: "
+
+# The timeline's events (§ 5.6), the names improvement_events.event holds
+STARTED = "started"
+EDITED = "edited"
+TICKET_LINKED = "ticket_linked"
+TICKET_REMOVED = "ticket_removed"
+WHY_ADDED = "why_added"
+WHY_CHANGED = "why_changed"
+WHY_REMOVED = "why_removed"
+ROOT_CAUSE_SET = "root_cause_set"
+ROOT_CAUSE_CHANGED = "root_cause_changed"
+ACTION_ADDED = "action_added"
+ACTION_CHANGED = "action_changed"
+ACTION_DONE_EVENT = "action_done"
+ACTION_CANCELLED_EVENT = "action_cancelled"
+STATE_CHANGED = "state_changed"
+NOTE = "note"
+# The close events carry the state's name; watch_ended is computed, never stored (D1)
+WATCH_ENDED = "watch_ended"
+
+# The six kind words of S070 § 2, for the timeline's lines (the frontend's ACTION_KINDS keeps
+# the same words, as WAITING_REASONS and its copy)
+ACTION_KIND_LABELS = {
+    "correction": "Correction", "corrective": "Corrective", "preventive": "Preventive",
+    "design_out": "Design-out", "lesson": "Lesson", "spread": "Spread",
+}
+# The fields of an edit line, in their order (tickets_core.edit_lines' labels)
+EDIT_LABELS = {"title": "Title", "problem": "Problem", "lead": "Lead", "watch": "Watch"}
+ACTION_EDIT_LABELS = {"kind": "Kind", "text": "What will be done", "owner": "Owner", "due": "Due"}
+
+
+def watch_ends(until):
+    return f"The watch ends on {until:%d-%m-%Y}. Verify after it."
+
+
+def watch_days_text(days):
+    return f"{days} days"
+
+
+def working_state(stored_state, root_cause_set, actions):
+    """The working state the data earns (§ 5.1, D2), never chosen by a button.  ``actions``: the
+    improvement's countermeasures, each with ``kind``, ``state`` and ``done_at``.
+    1. no root cause -> Analysing (Q2.2 a: the root cause comes before Watching);
+    2. watching, and no countermeasure of a WATCH_KINDS kind open -> stays Watching (a Lesson or
+       Spread added during the watch does not end it, D3);
+    3. none open and at least one done -> Watching;
+    4. else Actions open (also when every one was cancelled: nothing was done to watch)."""
+    if not root_cause_set:
+        return ANALYSING
+    open_kinds = [a["kind"] for a in actions if a["state"] == ACTION_OPEN]
+    if stored_state == WATCHING and not any(kind in WATCH_KINDS for kind in open_kinds):
+        return WATCHING
+    if not open_kinds and any(a["state"] == ACTION_DONE for a in actions):
+        return WATCHING
+    return ACTIONS_OPEN
+
+
+def watch_start(actions):
+    """When the watch starts (§ 5.1, D3, D4): the latest done_at of the done countermeasures of a
+    WATCH_KINDS kind; when none of those is done (only lessons or spreads), the latest done_at of
+    any done one; None when nothing is done."""
+    done = [a for a in actions if a["state"] == ACTION_DONE]
+    times = [a["done_at"] for a in done if a["kind"] in WATCH_KINDS] or [a["done_at"] for a in done]
+    return max(times) if times else None
+
+
+def watch_until(watch_from, watch_days):
+    """The watch's end, a datetime (§ 5.2): done 20-11-2026 15:30 + 90 days -> 18-02-2027 15:30."""
+    return watch_from + timedelta(days=watch_days)
+
+
+def display_state(state, watch_from, watch_days, now):
+    """The state an answer shows (§ 5.2, D1): Ready to verify once a watching improvement's watch
+    has ended, else the stored state.  Never passed to is_open (BR1-03)."""
+    if state == WATCHING and watch_from is not None and now >= watch_until(watch_from, watch_days):
+        return READY_TO_VERIFY
+    return state
+
+
+def close_error(shown_state, until):
+    """May the improvement be closed as effective or not effective now (§ 5.1's table)?
+    ``shown_state`` is the display state; ``until`` the watch's end (None before the watch).
+    -> None, or the refusal (a 409).  The two closes refuse the same cells."""
+    if shown_state == READY_TO_VERIFY:
+        return None
+    if shown_state in CLOSED_STATES:
+        return IMPROVEMENT_CLOSED
+    if shown_state == WATCHING:
+        return watch_ends(until)
+    return VERIFY_NOT_YET
+
+
+def validate_close(body, needed, field):
+    """A close body's one text (§ 5.3): ``field`` is ``remark`` (the closes) or ``reason`` (the
+    drop).  ``needed``: required, 1..CLOSE_TEXT_MAX after trim; else optional, absent, null or
+    empty -> None.  -> ``(clean, errors)``; unknown fields are ignored."""
+    needed_message, too_long, not_text = _CLOSE_MESSAGES[field]
+    clean, errors = {}, []
+    if needed:
+        if body.get(field) is not None:
+            _text(body, field, CLOSE_TEXT_MAX, needed_message, too_long, not_text, clean, errors)
+        else:
+            errors.append({"field": field, "message": needed_message})
+    else:
+        clean[field] = None
+        if field in body:
+            _optional_text(body, field, CLOSE_TEXT_MAX, too_long, not_text, clean, errors)
+    return clean, errors
+
+
+def validate_note(body, _creating=True):
+    """The note body ``{remark}`` (§ 5.3, § 5.5): required, trimmed at its ends (line breaks
+    inside kept), 1..CLOSE_TEXT_MAX."""
+    clean, errors = {}, []
+    if body.get("remark") is not None:
+        _text(body, "remark", CLOSE_TEXT_MAX, NOTE_NEEDED, NOTE_TOO_LONG, NOTE_NOT_TEXT, clean, errors)
+    else:
+        errors.append({"field": "remark", "message": NOTE_NEEDED})
+    return clean, errors
+
+
+def dropped_reason(reason):
+    """A countermeasure's cancel reason when its improvement is dropped (D10), cut to the cancel
+    reason's bound."""
+    return f"{DROPPED_WITH}{reason}"[:CANCEL_REASON_MAX]
+
+
+def _window(rows, days, symptom_ids):
+    breakdowns = [t for t in rows if is_breakdown(t["intensity"])]
+    return {
+        "days": days,
+        "breakdowns": len(breakdowns),
+        "symptom_breakdowns": (sum(1 for t in breakdowns if t["failure_mode_id"] in symptom_ids)
+                               if symptom_ids else None),
+        "downtime_minutes": sum(t["downtime_minutes"] or 0 for t in rows),
+    }
+
+
+def watch_figures(tickets, symptom_ids, watch_from, watch_days, end):
+    """The watch's facts (§ 5.4, D4, D5; ISO 9001 § 10.2.1 d): the machines' tickets in the
+    ``watch_days`` before ``watch_from`` against the days after it, to ``end`` (now, or the close)
+    or the watch's end, whichever is first; and the repeats.  ``tickets``: the machines' tickets
+    (not-a-fault already left out), each with ``id``, ``serial``, ``occurred_at``, ``intensity``,
+    ``failure_mode_id``, ``machine_code``, ``symptom`` and ``downtime_minutes``; ``symptom_ids``
+    the linked tickets' symptoms (failure modes, ISO 14224).  A ticket counts on the side of its
+    occurred_at, its downtime in full.  Repeats: every ticket with one of the symptoms from
+    ``watch_from`` to ``end``, any intensity (a degraded return is still a return), ``in_watch``
+    False once past the watch's end.  -> ``{before, after, repeats}``."""
+    until = watch_until(watch_from, watch_days)
+    after_end = min(end, until)
+    begin = watch_from - timedelta(days=watch_days)
+    before = [t for t in tickets if begin <= t["occurred_at"] < watch_from]
+    after = [t for t in tickets if watch_from <= t["occurred_at"] < after_end]
+    repeats = [{
+        "id": t["id"], "serial": t["serial"], "occurred_at": t["occurred_at"], "intensity": t["intensity"],
+        "machine_code": t["machine_code"], "symptom": t["symptom"], "in_watch": t["occurred_at"] < until,
+    } for t in tickets
+        if symptom_ids and t["failure_mode_id"] in symptom_ids and watch_from <= t["occurred_at"] < end]
+    return {
+        "before": _window(before, watch_days, symptom_ids),
+        "after": _window(after, max((after_end - watch_from).days, 0), symptom_ids),
+        "repeats": repeats,
+    }
+
+
+def why_line(position, question, answer, evidence):
+    """A why as one timeline line: "3. Why …? Because: … Evidence: …" (the evidence only when
+    set; v39's backfill writes the same shape)."""
+    parts = [f"{position}.", question, f"Because: {answer}"]
+    if evidence:
+        parts.append(f"Evidence: {evidence}")
+    return " ".join(parts)
+
+
+def root_cause_line(cause_code, cause_label, text, contributing):
+    """The root cause as a timeline line: "4.2 Management error: <text>", and a second line
+    "Other causes: …" when set."""
+    line = f"{cause_code} {cause_label}: {text}"
+    return f"{line}\nOther causes: {contributing}" if contributing else line
+
+
+def role_word(role):
+    """A site role as one plain word for a line: maint_technician -> technician."""
+    return role.removeprefix("maint_").replace("_", " ")
+
+
+def action_line(kind, text, owner_name, owner_role, due):
+    """A new countermeasure as a timeline line: "Corrective: <text>. Owner Kannan (technician),
+    due 08-11-2026."  ``owner_role`` None leaves the bracket out."""
+    owner = f"{owner_name} ({role_word(owner_role)})" if owner_role else owner_name
+    return f"{ACTION_KIND_LABELS[kind]}: {text}. Owner {owner}, due {due:%d-%m-%Y}."
+
+
+def with_watch_ended(lines, show, until):
+    """The timeline, newest first, with the computed *Watch ended* line in its place by time
+    (§ 5.6, D1) when ``show`` (the display state is Ready to verify, or the improvement was closed
+    effective or not effective).  ``lines`` carry ``occurred_at`` as datetimes."""
+    if not show:
+        return lines
+    ended = {"id": None, "event": WATCH_ENDED, "occurred_at": until, "by_name": None, "from_state": None,
+             "to_state": None, "ticket": None, "action": None, "remark": None, "earlier": None}
+    place = next((i for i, line in enumerate(lines) if line["occurred_at"] <= until), len(lines))
+    return [*lines[:place], ended, *lines[place:]]

@@ -6,7 +6,12 @@ and the root cause with the contributing causes (columns of improvements).  S070
 countermeasures (improvement_actions; ISO 9001 § 10.2.1 c): add, change, cancel, mark done, the
 user's own open ones, the owner choices, and the documents store's fourth owner (read_action and
 its lock functions, imported by documents.py).  Who marks one done is decided by data: its owner,
-or an improvement:edit holder at the site (as Plan § 3's pm_job:work); no new key.
+or an improvement:edit holder at the site (as Plan § 3's pm_job:work); no new key.  S072 adds the
+working states (analysing → actions open → watching, moved by _settle_state from the data, D2),
+Ready to verify computed from the clock (D1), the watch and its figures, notes, the verified close
+(effective; not effective, which starts a follow-up), the drop, and the timeline
+(improvement_events): EVERY write of this module writes its line in the same transaction as the
+change, after it, under (6b) (D8).  A closed or dropped improvement is read-only (409).
 
 Thin shell: improvements_core holds the rules (the states, the fields, start, link and remove,
 who may lead, the loss); this module checks access, locks, reads the rows the rules need and
@@ -59,6 +64,32 @@ guards it is held.
   improvement_id (it never changes; 404) → (6b) FOR UPDATE → (6c) FOR UPDATE → plain reads (the
   predicate 404, the right 403, the open state and not cancelled 409, from the locked rows) →
   the equipment_documents statement (an insert share-locks the countermeasure, held).
+- S072: every route above adds, at its end and still under its locks, its timeline line and,
+  for the root cause and the countermeasure add, change, done and cancel, _settle_state (a plain
+  read of the countermeasures' kind, state and done_at, safe because every countermeasure write
+  takes (6b) first, then an UPDATE of the held improvement row).  Event rows are only inserted,
+  never locked or updated; an insert takes shared foreign-key locks on the improvement (held),
+  on the ticket when ticket_id is set ((7) shared, after (6b): Remove ticket gains the edge Add
+  ticket already had) and on the countermeasure when action_id is set (held (6c), or inserted
+  in the same transaction).  The edit also refuses a closed improvement now.
+- Add note (S072): (6b) FOR UPDATE → plain reads (the predicate 404, improvement:note at the
+  site 403, open 409) → the note line.
+- Close as effective (S072): (6b) FOR UPDATE → plain reads (the predicate 404,
+  improvement:verify at the site 403, close_error from the locked row and the clock 409) → the
+  row closed (no updated_*) → its links' open_link NULL (S067 D4) → the line.
+- Not effective (S072): (6) the serial counter, IM:YYYY-MM, before (6b) as the global order
+  says, its SELECT the first plain read → (6b) the old improvement FOR UPDATE → plain reads (404,
+  403, close_error 409, from the locked row) → the old links by a locking read (FOR UPDATE: the
+  counter's SELECT fixed the snapshot, so a plain read would miss a link written while the route
+  waited for (6b); every link write takes (6b) first, and _close updates these same rows, so no
+  new edge) → the old row closed, its links' open_link NULL, its line →
+  the follow-up's insert (shared FK locks on the unit, the machine, the lead and the old
+  improvement, held) → one link per old ticket ((7) shared each; the old links freed
+  uq_improvement_tickets_open in this transaction) → the follow-up's lines.  A refusal rolls
+  back, the counter bump included.
+- Drop (S072): (6b) FOR UPDATE → plain reads (404, improvement:edit 403, open 409) → the open
+  countermeasures (6c) FOR UPDATE in one statement by id order, each cancelled with its line →
+  the row dropped, its links' open_link NULL, the line.
 - Reads (list, detail, leads, mine, owners; the ticket detail in tickets.py): plain, no lock.
 One open link per ticket is race-free: two writers linking one ticket both hold its shared
 lock, may both pass the plain check, and then meet on uq_improvement_tickets_open; the second
@@ -96,6 +127,15 @@ No new deadlock cycle:
   improvement (held) and the owner's people row, never a unit; masters.py's person edit (person
   → memberships → person_units → units) never waits on an improvement or a countermeasure row,
   so it makes no cycle.  S069's cause freeze locks no countermeasure.
+- S072 adds no lock level.  (6) → (6b) on Not effective: nothing holds an improvement row and
+  then takes a counter (a start holds (6) and takes (7) shared and its own new row only); two
+  Not effective on one improvement serialise on (6) in the same month, else on (6b), and the
+  second finds it closed.  (6b) → (7) shared: as Add ticket; ticket writes never touch
+  improvement rows.  (6b) → (6c): the drop takes its countermeasures by id order, every other
+  writer takes one after (6b), so no two paths hold (6c) rows in opposite orders.  The
+  follow-up's insert takes the unit's and the lead's shared FK locks, as a start: the same
+  accepted deadlock with a person's site-row edit (1213, a rare JSON 500, a retry).  No route of
+  S072 changes root_cause_id, so S069's cause freeze is untouched.
 The cause freeze is race-free as the tickets' (tickets.py LOCK ORDER): a root-cause write that
 holds the cause's shared lock commits before the code change gets its exclusive lock, and the
 count sees it; a later one waits behind the cause's lock and then sees the new code, which is
@@ -105,7 +145,7 @@ Import direction: this module imports read_ticket, improvement_links, person_at_
 people_at_site from tickets.py; tickets.py never imports this module (only improvements_core).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify
 
@@ -116,15 +156,21 @@ from auth_utils import current_person_id, has_perm_at, permissions_at_site, requ
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
 from equipment import IST, unit_access_condition
 from improvements_core import (
-    ACTION_CANCELLED, ACTION_DONE, ACTION_OPEN, ACTIONS_FULL, ACTIONS_MAX, ALREADY_OPEN_RACE, CAUSE_ACTIVE, EDIT_KEY,
-    IMPROVEMENT_CLOSED, IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT, OWNER_AT_SITE, OWNER_OR_EDITOR, READ_KEY,
-    SERIAL_PREFIX, TICKET_FROM_LIST, TICKET_OTHER_SITE, WHYS_FULL, WHYS_MAX, action_counts, action_flags,
-    action_state_error, done_time_error, due_date_error, is_open, link_error, loss, may_lead, overdue_days,
-    position_error, removal_error, renumber, reorder, start_error, validate_action, validate_cancel, validate_done,
-    validate_improvement, validate_link, validate_root_cause, validate_why,
+    ACTION_ADDED, ACTION_CANCELLED, ACTION_CANCELLED_EVENT, ACTION_CHANGED, ACTION_DONE, ACTION_DONE_EVENT,
+    ACTION_EDIT_LABELS, ACTION_KIND_LABELS, ACTION_OPEN, ACTIONS_FULL, ACTIONS_MAX, ALREADY_OPEN_RACE, CAUSE_ACTIVE,
+    CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE, DROPPED, EDIT_KEY, EDIT_LABELS, EDITED, IMPROVEMENT_CLOSED,
+    IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT, NOTE, NOTE_KEY, OWNER_AT_SITE, OWNER_OR_EDITOR, READ_KEY,
+    READY_TO_VERIFY, ROOT_CAUSE_CHANGED, ROOT_CAUSE_SET, SERIAL_PREFIX, STARTED, STATE_CHANGED, TICKET_FROM_LIST,
+    TICKET_LINKED, TICKET_OTHER_SITE, TICKET_REMOVED, VERIFY_KEY, WATCHING, WHY_ADDED, WHY_CHANGED, WHY_REMOVED,
+    WHYS_FULL, WHYS_MAX, action_counts, action_flags, action_line, action_state_error, close_error, display_state,
+    done_time_error, dropped_reason, due_date_error, is_open, link_error, loss, may_lead, overdue_days,
+    position_error, removal_error, renumber, reorder, root_cause_line, start_error, validate_action,
+    validate_cancel, validate_close, validate_done, validate_improvement, validate_link, validate_note,
+    validate_root_cause, validate_why, watch_days_text, watch_figures, watch_start, watch_until, why_line,
+    with_watch_ended, working_state,
 )
 from tickets import code_ref, improvement_links, people_at_site, person_at_site, read_ticket
-from tickets_core import format_serial, is_breakdown, serial_scope, ticket_times
+from tickets_core import edit_lines, format_serial, is_breakdown, serial_scope, ticket_times
 
 improvements_bp = Blueprint("improvements", __name__)
 
@@ -142,20 +188,28 @@ _IMPROVEMENT_FROM = (
     " JOIN people l ON l.id = i.lead_id"
     " LEFT JOIN people cp ON cp.username = i.created_by"
     " LEFT JOIN failure_causes rc ON rc.id = i.root_cause_id"
+    # S072: who closed it, and the improvement it follows and the one that followed it (at most
+    # one each: uq_improvements_follow_up), so the joins never add a row
+    " LEFT JOIN people clp ON clp.username = i.closed_by"
+    " LEFT JOIN improvements fo ON fo.id = i.follow_up_of_id"
+    " LEFT JOIN improvements fu ON fu.follow_up_of_id = i.id"
 )
-# The list builds its items field by field, so the root-cause columns add nothing to it (S069 § 6)
+# The list builds its items field by field, so the root-cause and close columns add nothing to
+# it (S069 § 6); it reads watch_from and watch_days for the display state (S072 § 5.2)
 _IMPROVEMENT_COLUMNS = (
     "SELECT i.id, i.serial, i.state, i.title, i.problem, i.created_at, i.created_by, i.updated_at, i.updated_by,"
     " i.unit_id, u.code AS unit_code, s.id AS site_id, s.code AS site_code,"
     " m.id AS m_id, m.code AS m_code, m.name AS m_name,"
     " l.id AS lead_id, l.name AS lead_name, l.active AS lead_active, cp.name AS created_by_name,"
     " i.root_cause, i.contributing_causes, rc.id AS rc_id, rc.code AS rc_code, rc.label AS rc_label,"
-    " rc.cause_group AS rc_group, rc.active AS rc_active"
+    " rc.cause_group AS rc_group, rc.active AS rc_active,"
+    " i.watch_days, i.watch_from, i.closed_at, i.closed_by, i.close_remark, clp.id AS closed_by_person_id,"
+    " clp.name AS closed_by_name, fo.id AS fo_id, fo.serial AS fo_serial, fu.id AS fu_id, fu.serial AS fu_serial"
 )
 
 # (6b): the improvement's decision columns, and the values an edit compares with
-_LOCK_IMPROVEMENT = ("SELECT id, state, unit_id, equipment_id, title, problem, lead_id,"
-                     " root_cause, root_cause_id, contributing_causes FROM improvements"
+_LOCK_IMPROVEMENT = ("SELECT id, serial, state, unit_id, equipment_id, title, problem, lead_id,"
+                     " root_cause, root_cause_id, contributing_causes, watch_days, watch_from FROM improvements"
                      " WHERE id = %s FOR UPDATE")
 # (7), shared: the start and add rules are decided from this row
 _SHARE_TICKET = "SELECT id, state, not_a_fault, unit_id, equipment_id FROM tickets WHERE id = %s LOCK IN SHARE MODE"
@@ -183,6 +237,55 @@ def _today():
 
 def _in(values):
     return ", ".join(["%s"] * len(values))
+
+
+def _stamp():
+    """Now to the second: a timeline line's time and the close's (DATETIME has no fraction)."""
+    return _now().replace(microsecond=0)
+
+
+# ---------------------------------------------------------------------------
+# The timeline and the working state (S072 § 5.1, § 5.6)
+# ---------------------------------------------------------------------------
+
+def _add_event(cur, improvement_id, event, occurred_at, from_state=None, to_state=None, ticket_id=None,
+               action_id=None, remark=None, earlier=None):
+    """Write one timeline line, in the write's transaction, after the change it records (D8;
+    as tickets._add_event).  Event rows are only inserted, never locked or updated."""
+    insert_row(cur, "improvement_events", {
+        "improvement_id": improvement_id, "event": event, "occurred_at": occurred_at, "from_state": from_state,
+        "to_state": to_state, "ticket_id": ticket_id, "action_id": action_id, "remark": remark, "earlier": earlier,
+    }, actor())
+
+
+def _names(cur, person_ids):
+    """People's names for an edit line, in one plain read -> ``{id: name}``."""
+    ids = sorted({person_id for person_id in person_ids if person_id is not None})
+    if not ids:
+        return {}
+    cur.execute(f"SELECT id, name FROM people WHERE id IN ({_in(ids)})", ids)
+    return {row["id"]: row["name"] for row in cur.fetchall()}
+
+
+def _settle_state(cur, improvement_id, locked, root_cause_set):
+    """Give the improvement the working state its data earns (§ 5.1, D2), under (6b), after the
+    route's own write.  The countermeasures are a plain read: every countermeasure write takes
+    (6b) first.  Writes state and watch_from with a plain UPDATE (no updated_*, D16) and a
+    state_changed line when the state moves; an improvement that is not open is never settled."""
+    if not is_open(locked["state"]):
+        return
+    cur.execute("SELECT kind, state, done_at FROM improvement_actions WHERE improvement_id = %s", (improvement_id,))
+    actions = cur.fetchall()
+    state = working_state(locked["state"], root_cause_set, actions)
+    watch_from = watch_start(actions) if state == WATCHING else None
+    if state == locked["state"] and watch_from == locked["watch_from"]:
+        return
+    cur.execute("UPDATE improvements SET state = %s, watch_from = %s WHERE id = %s", (state, watch_from, improvement_id))
+    if state != locked["state"]:
+        now = _stamp()
+        _add_event(cur, improvement_id, STATE_CHANGED, now,
+                   from_state=display_state(locked["state"], locked["watch_from"], locked["watch_days"], now),
+                   to_state=state)
 
 
 # ---------------------------------------------------------------------------
@@ -398,12 +501,109 @@ def _unit(row):
     return {"id": row["unit_id"], "code": row["unit_code"], "site_id": row["site_id"], "site_code": row["site_code"]}
 
 
+def _ref(plain, prefix):
+    return {"id": plain[f"{prefix}_id"], "serial": plain[f"{prefix}_serial"]} if plain[f"{prefix}_id"] else None
+
+
+# The watch's tickets (§ 5.4): the machines' tickets from watch_days before the watch to the end,
+# not-a-fault left out (there was no failure), served by ix_tickets_equipment_state
+_WATCH_TICKETS = (
+    "SELECT t.id, t.serial, t.occurred_at, t.intensity, t.failure_mode_id, m.code AS m_code,"
+    " f.code AS f_code, f.label AS f_label"
+    " FROM tickets t JOIN equipment m ON m.id = t.equipment_id LEFT JOIN failure_modes f ON f.id = t.failure_mode_id"
+)
+
+
+def _figures(cur, row, tickets, end):
+    """The watch's figures (§ 5.4) on the linked tickets' machines and symptoms, to ``end``.
+    Every reader sees them, also tickets of a unit the reader cannot open (serial, time, machine
+    and symptom only, as S067 D8)."""
+    machines = sorted({(t["machine"]["id"], t["machine"]["code"]) for t in tickets}, key=lambda m: m[1])
+    symptoms = {t["failure_mode"]["id"]: t["failure_mode"] for t in tickets if t["failure_mode"]}
+    watch_from, days = row["watch_from"], row["watch_days"]
+    machine_ids = [machine_id for machine_id, _ in machines]
+    rows = []
+    if machine_ids:
+        cur.execute(f"{_WATCH_TICKETS} WHERE t.equipment_id IN ({_in(machine_ids)}) AND t.not_a_fault = 0"
+                    " AND t.occurred_at >= %s AND t.occurred_at < %s ORDER BY t.occurred_at, t.id",
+                    [*machine_ids, watch_from - timedelta(days=days), end])
+        rows = cur.fetchall()
+    events = _events_by_ticket(cur, [r["id"] for r in rows])
+    watch_tickets = [{
+        "id": r["id"], "serial": r["serial"], "occurred_at": r["occurred_at"], "intensity": r["intensity"],
+        "failure_mode_id": r["failure_mode_id"], "machine_code": r["m_code"],
+        "symptom": ({"id": r["failure_mode_id"], "code": r["f_code"], "label": r["f_label"]}
+                    if r["failure_mode_id"] else None),
+        "downtime_minutes": ticket_times(events[r["id"]], end)["downtime_minutes"],
+    } for r in rows]
+    figures = watch_figures(watch_tickets, set(symptoms), watch_from, days, end)
+    return {
+        "machines": [{"id": machine_id, "code": code} for machine_id, code in machines],
+        "symptoms": sorted(symptoms.values(), key=lambda s: s["code"]),
+        **figures,
+        "repeats": [row_to_dict(repeat) for repeat in figures["repeats"]],
+    }
+
+
+def _watch(cur, row, tickets, now):
+    """``{days, from, until, ended, figures}`` (§ 6); figures from the watch's start, to now for
+    an open improvement and to the close for a closed or dropped one (BR1-14)."""
+    watch_from = row["watch_from"]
+    if watch_from is None:
+        return {"days": row["watch_days"], "from": None, "until": None, "ended": False, "figures": None}
+    until = watch_until(watch_from, row["watch_days"])
+    end = now if is_open(row["state"]) else row["closed_at"]
+    return {"days": row["watch_days"], **row_to_dict({"from": watch_from, "until": until}), "ended": now >= until,
+            "figures": _figures(cur, row, tickets, end)}
+
+
+_TIMELINE = (
+    "SELECT e.id, e.event, e.occurred_at, e.created_by, p.name AS by_name, e.from_state, e.to_state, e.ticket_id,"
+    " t.serial AS t_serial, e.action_id, a.kind AS a_kind, a.text AS a_text, e.remark, e.earlier"
+    " FROM improvement_events e LEFT JOIN people p ON p.username = e.created_by"
+    " LEFT JOIN tickets t ON t.id = e.ticket_id LEFT JOIN improvement_actions a ON a.id = e.action_id"
+    " WHERE e.improvement_id = %s ORDER BY e.occurred_at DESC, e.id DESC"
+)
+
+
+def _timeline(cur, row, shown_state):
+    """The timeline, newest first (§ 5.6), one query, with the computed *Watch ended* line once
+    the watch has ended (ready to verify, or closed effective or not effective)."""
+    cur.execute(_TIMELINE, (row["id"],))
+    lines = [{
+        "id": r["id"], "event": r["event"], "occurred_at": r["occurred_at"], "by_name": r["by_name"] or r["created_by"],
+        "from_state": r["from_state"], "to_state": r["to_state"],
+        "ticket": {"id": r["ticket_id"], "serial": r["t_serial"]} if r["ticket_id"] else None,
+        "action": {"id": r["action_id"], "kind": r["a_kind"], "text": r["a_text"]} if r["action_id"] else None,
+        "remark": r["remark"], "earlier": r["earlier"],
+    } for r in cur.fetchall()]
+    ended = shown_state == READY_TO_VERIFY or row["state"] in (CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE)
+    until = watch_until(row["watch_from"], row["watch_days"]) if row["watch_from"] else None
+    return [row_to_dict(line) for line in with_watch_ended(lines, ended and until is not None, until)]
+
+
+def _closed(plain, row):
+    """``{at, by_name, by_lead, remark}`` of a closed or dropped improvement, else None.  by_lead:
+    the person whose login closed it is the lead (ISO 27001 A.5.3's recorded departure); admin,
+    with no Team record, never is."""
+    if row["closed_at"] is None:
+        return None
+    return {"at": plain["closed_at"], "by_name": plain["closed_by_name"] or plain["closed_by"],
+            "by_lead": row["closed_by_person_id"] is not None and row["closed_by_person_id"] == row["lead_id"],
+            "remark": plain["close_remark"]}
+
+
 def _detail(cur, row):
     """The improvement page's data (§ 6): the record, its tickets with each one's removable, the
-    loss, the lead's standing today, the user's keys at the improvement's site, and since S070
-    the countermeasures with their counts and the time the problem happened."""
-    tickets = _linked_tickets(cur, [row["id"]], _now())[row["id"]]
+    loss, the lead's standing today, the user's keys at the improvement's site, since S070 the
+    countermeasures with their counts and the time the problem happened, and since S072 the
+    display state, the watch, the close, the follow-ups, the timeline and the decision flags.
+    is_open is the stored state's (BR1-03), taken before the display state replaces it."""
+    now = _now()
+    tickets = _linked_tickets(cur, [row["id"]], now)[row["id"]]
     open_now = is_open(row["state"])
+    shown_state = display_state(row["state"], row["watch_from"], row["watch_days"], now)
+    keys = set(permissions_at_site(row["site_id"]))
     machine = _machine(row)
     links = [{"id": t["id"], "equipment_id": t["machine"]["id"]} for t in tickets]
     for ticket, link in zip(tickets, links):
@@ -414,7 +614,7 @@ def _detail(cur, row):
     return {
         "id": plain["id"],
         "serial": plain["serial"],
-        "state": plain["state"],
+        "state": shown_state,
         "is_open": open_now,
         "title": plain["title"],
         "problem": plain["problem"],
@@ -435,7 +635,17 @@ def _detail(cur, row):
         "actions": actions,
         "action_counts": action_counts(actions),
         "problem_at": row_to_dict({"at": _problem_at(cur, row["id"])})["at"],
-        "permissions": sorted(permissions_at_site(row["site_id"])),
+        "permissions": sorted(keys),
+        "watch": _watch(cur, row, tickets, now),
+        "closed": _closed(plain, row),
+        "follow_up_of": _ref(plain, "fo"),
+        "follow_up": _ref(plain, "fu"),
+        "timeline": _timeline(cur, row, shown_state),
+        # § 5.8: the screens follow these, so no control ends in a 403 or a 409 (S068 D6)
+        "can_verify": shown_state == READY_TO_VERIFY and VERIFY_KEY in keys,
+        "can_drop": open_now and EDIT_KEY in keys,
+        "can_add_note": open_now and NOTE_KEY in keys,
+        "can_edit_watch": open_now and EDIT_KEY in keys,
     }
 
 
@@ -471,12 +681,14 @@ def list_improvements():
         cur.execute(f"{_IMPROVEMENT_COLUMNS}{_IMPROVEMENT_FROM} WHERE {where} ORDER BY i.id DESC LIMIT %s OFFSET %s",
                     [*params, per_page, (page - 1) * per_page])
         rows = cur.fetchall()
-        linked = _linked_tickets(cur, [row["id"] for row in rows], _now())
+        now = _now()
+        linked = _linked_tickets(cur, [row["id"] for row in rows], now)
     items = []
     for row in rows:
         plain = row_to_dict(row)
         items.append({
-            "id": plain["id"], "serial": plain["serial"], "state": plain["state"], "title": plain["title"],
+            "id": plain["id"], "serial": plain["serial"],
+            "state": display_state(row["state"], row["watch_from"], row["watch_days"], now), "title": plain["title"],
             "machine": _machine(plain), "unit": _unit(plain), "lead": {"id": plain["lead_id"], "name": plain["lead_name"]},
             "loss": loss(linked[row["id"]]), "created_at": plain["created_at"],
         })
@@ -542,28 +754,60 @@ def start_improvement():
             "problem": clean["problem"],
             "lead_id": clean["lead_id"],
         }, actor())
-        insert_row(cur, "improvement_tickets", {"improvement_id": improvement_id, "ticket_id": ticket["id"]}, actor())
+        _link_tickets(cur, improvement_id, [ticket["id"]], _stamp())
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail), 201
+
+
+def _link_tickets(cur, improvement_id, ticket_ids, now, remark=None):
+    """A new improvement's links and its first lines, one shape on every path (BR1-05): started
+    (no ticket; ``remark`` names the improvement a follow-up comes from), then one ticket_linked
+    per ticket."""
+    _add_event(cur, improvement_id, STARTED, now, remark=remark)
+    for ticket_id in ticket_ids:
+        insert_row(cur, "improvement_tickets", {"improvement_id": improvement_id, "ticket_id": ticket_id}, actor())
+        _add_event(cur, improvement_id, TICKET_LINKED, now, ticket_id=ticket_id)
 
 
 @improvements_bp.route("/<int:improvement_id>", methods=["PUT"])
 @require_perm(EDIT_KEY)
 def edit_improvement(improvement_id):
-    """Title, problem and lead (§ 5.2): a field equal to the stored one is not written, and an
-    edit that changes nothing writes nothing.  The lead is checked only when it changes, so a
-    lead who has since left the site stays until someone picks another (§ 5.6)."""
+    """Title, problem, lead and, since S072, the watch's length (§ 5.2, S072 D14): a field equal
+    to the stored one is not written, and an edit that changes nothing writes nothing, no line
+    either.  The lead is checked only when it changes, so a lead who has since left the site
+    stays until someone picks another (§ 5.6).  A closed improvement is read-only (S072: 409).
+    A changed watch changes no stored state: the display state follows from the clock (D1)."""
     clean = clean_body(validate_improvement, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         locked = _lock_improvement(cur, improvement_id)   # (6b)
         row = _check_improvement(cur, improvement_id)
+        _require_open(locked)
         changes = {field: value for field, value in clean.items() if value != locked[field]}
         if "lead_id" in changes:
             _check_lead(cur, changes["lead_id"], row["site_id"])
         update_row(cur, "improvements", improvement_id, changes, actor())
+        if changes:
+            _add_event(cur, improvement_id, EDITED, _stamp(), remark=_edit_line(cur, locked, changes))
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
+
+
+def _edit_line(cur, locked, changes):
+    """The edit's line (BR1-04): "Label: old → new" per changed field, in display values (the
+    leads' names, "90 days"); the old values are in the line, so earlier stays NULL."""
+    names = _names(cur, [locked["lead_id"], changes.get("lead_id")])
+    old = {"title": locked["title"], "problem": locked["problem"], "lead": names.get(locked["lead_id"]),
+           "watch": watch_days_text(locked["watch_days"])}
+    new = {}
+    for field, value in changes.items():
+        if field == "lead_id":
+            new["lead"] = names.get(value)
+        elif field == "watch_days":
+            new["watch"] = watch_days_text(value)
+        else:
+            new[field] = value
+    return edit_lines(old, new, EDIT_LABELS)
 
 
 @improvements_bp.route("/<int:improvement_id>/tickets", methods=["POST"])
@@ -593,6 +837,7 @@ def add_ticket(improvement_id):
         if message:
             raise ApiError(message, 409, "ticket_id")
         insert_row(cur, "improvement_tickets", {"improvement_id": improvement_id, "ticket_id": ticket_id}, actor())
+        _add_event(cur, improvement_id, TICKET_LINKED, _stamp(), ticket_id=ticket_id)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail), 201
 
@@ -618,6 +863,8 @@ def remove_ticket(improvement_id, ticket_id):
             raise ApiError(message, 409)
         cur.execute("DELETE FROM improvement_tickets WHERE improvement_id = %s AND ticket_id = %s",
                     (improvement_id, ticket_id))
+        # The line's foreign key takes the ticket's shared lock: (6b) -> (7) shared, as Add ticket
+        _add_event(cur, improvement_id, TICKET_REMOVED, _stamp(), ticket_id=ticket_id)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -628,11 +875,11 @@ def remove_ticket(improvement_id, ticket_id):
 
 def _lock_for_analysis(cur, improvement_id):
     """Every S069 write's start (§ 5.1): (6b), then the predicate 404, the key at the site 403
-    and the open state 409 -> the locked row."""
+    and the open state 409 -> ``(the locked row, the visible row)``."""
     locked = _lock_improvement(cur, improvement_id)   # (6b)
-    _check_improvement(cur, improvement_id)
+    row = _check_improvement(cur, improvement_id)
     _require_open(locked)
-    return locked
+    return locked, row
 
 
 def _chain(cur, improvement_id):
@@ -670,8 +917,14 @@ def add_why(improvement_id):
         if n >= WHYS_MAX:
             raise ApiError(WHYS_FULL, 409)
         insert_row(cur, "improvement_whys", {"improvement_id": improvement_id, "position": n + 1, **clean}, actor())
+        _add_event(cur, improvement_id, WHY_ADDED, _stamp(),
+                   remark=why_line(n + 1, clean["question"], clean["answer"], clean["evidence"]))
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail), 201
+
+
+def _why_text(why):
+    return why_line(why["position"], why["question"], why["answer"], why["evidence"])
 
 
 @improvements_bp.route("/<int:improvement_id>/whys/<int:why_id>", methods=["PUT"])
@@ -699,6 +952,9 @@ def edit_why(improvement_id, why_id):
                     shifted.append((pair_id, position))
         update_row(cur, "improvement_whys", why_id, changes, actor())
         _shift(cur, shifted)
+        if changes:   # the other whys' shifts write no line
+            _add_event(cur, improvement_id, WHY_CHANGED, _stamp(), remark=_why_text({**why, **changes}),
+                       earlier=_why_text(why))
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -706,14 +962,16 @@ def edit_why(improvement_id, why_id):
 @improvements_bp.route("/<int:improvement_id>/whys/<int:why_id>", methods=["DELETE"])
 @require_perm(EDIT_KEY)
 def remove_why(improvement_id, why_id):
-    """The row is deleted, no history in this step (D6); the lines after it move up."""
+    """The row is deleted (S069 D6); the lines after it move up.  Since S072 the timeline keeps
+    the removed why's text (why_removed, earlier)."""
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         _lock_for_analysis(cur, improvement_id)
-        _read_why(cur, improvement_id, why_id)
+        why = _read_why(cur, improvement_id, why_id)
         rest = [pair for pair in _chain(cur, improvement_id) if pair[0] != why_id]
         cur.execute("DELETE FROM improvement_whys WHERE id = %s", (why_id,))
         _shift(cur, renumber(rest))
+        _add_event(cur, improvement_id, WHY_REMOVED, _stamp(), earlier=_why_text(why))
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -728,14 +986,25 @@ def set_root_cause(improvement_id):
     clean = clean_body(validate_root_cause, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked = _lock_for_analysis(cur, improvement_id)
+        locked, row = _lock_for_analysis(cur, improvement_id)   # row: the old cause's code and label
         changes = {field: value for field, value in clean.items() if value != locked[field]}
+        old_cause = (row["rc_code"], row["rc_label"])
+        new_cause = old_cause
         if "root_cause_id" in changes:
-            cur.execute("SELECT active FROM failure_causes WHERE id = %s", (changes["root_cause_id"],))
+            cur.execute("SELECT active, code, label FROM failure_causes WHERE id = %s", (changes["root_cause_id"],))
             cause = cur.fetchone()
             if cause is None or not cause["active"]:
                 raise ApiError(CAUSE_ACTIVE, 400, "root_cause_id")
+            new_cause = (cause["code"], cause["label"])
         update_row(cur, "improvements", improvement_id, changes, actor())
+        if changes:
+            merged = {**locked, **changes}
+            first = locked["root_cause_id"] is None
+            _add_event(cur, improvement_id, ROOT_CAUSE_SET if first else ROOT_CAUSE_CHANGED, _stamp(),
+                       remark=root_cause_line(*new_cause, merged["root_cause"], merged["contributing_causes"]),
+                       earlier=None if first else root_cause_line(*old_cause, locked["root_cause"],
+                                                                   locked["contributing_causes"]))
+        _settle_state(cur, improvement_id, locked, root_cause_set=True)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -778,9 +1047,12 @@ def _require_owner_or_editor(cur, site_id, owner_id):
 
 
 def _check_owner(cur, owner_id, site_id):
-    """§ 5.3, D3: an active person with a membership at the site, any role, a login or not."""
-    if person_at_site(cur, owner_id, site_id) is None:
+    """§ 5.3, D3: an active person with a membership at the site, any role, a login or not ->
+    ``{id, name, role}`` (S072: the add's line names the owner and their role)."""
+    person = person_at_site(cur, owner_id, site_id)
+    if person is None:
         raise ApiError(OWNER_AT_SITE, 400, "owner_id")
+    return person
 
 
 def _check_due(cur, improvement_id, due):
@@ -813,11 +1085,34 @@ def add_action(improvement_id):
         if count(cur, "SELECT COUNT(*) AS n FROM improvement_actions WHERE improvement_id = %s",
                  (improvement_id,)) >= ACTIONS_MAX:
             raise ApiError(ACTIONS_FULL, 409)
-        _check_owner(cur, clean["owner_id"], row["site_id"])
+        owner = _check_owner(cur, clean["owner_id"], row["site_id"])
         _check_due(cur, improvement_id, clean["due_date"])
-        insert_row(cur, "improvement_actions", {"improvement_id": improvement_id, **clean}, actor())
+        action_id = insert_row(cur, "improvement_actions", {"improvement_id": improvement_id, **clean}, actor())
+        _add_event(cur, improvement_id, ACTION_ADDED, _stamp(), action_id=action_id,
+                   remark=action_line(clean["kind"], clean["text"], owner["name"], owner["role"], clean["due_date"]))
+        # An open countermeasure of a WATCH_KINDS kind ends Watching (D3)
+        _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail), 201
+
+
+def _action_edit_line(cur, action, changes):
+    """A countermeasure change's line: "Label: old → new" per changed field, the kind as its
+    word, the owner as the name, the due date DD-MM-YYYY; earlier NULL (the old value is in it)."""
+    names = _names(cur, [action["owner_id"], changes.get("owner_id")])
+
+    def shown(values):
+        out = {}
+        if "kind" in values:
+            out["kind"] = ACTION_KIND_LABELS[values["kind"]]
+        if "text" in values:
+            out["text"] = values["text"]
+        if "owner_id" in values:
+            out["owner"] = names.get(values["owner_id"])
+        if "due_date" in values:
+            out["due"] = f"{values['due_date']:%d-%m-%Y}"
+        return out
+    return edit_lines(shown(action), shown(changes), ACTION_EDIT_LABELS)
 
 
 @improvements_bp.route("/<int:improvement_id>/actions/<int:action_id>", methods=["PUT"])
@@ -840,6 +1135,11 @@ def edit_action(improvement_id, action_id):
         if "due_date" in changes:
             _check_due(cur, improvement_id, changes["due_date"])
         update_row(cur, "improvement_actions", action_id, changes, actor())
+        if changes:
+            _add_event(cur, improvement_id, ACTION_CHANGED, _stamp(), action_id=action_id,
+                       remark=_action_edit_line(cur, action, changes))
+        # A kind changed into or out of WATCH_KINDS can end or keep the watch
+        _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -858,13 +1158,16 @@ def mark_action_done(improvement_id, action_id):
         _require_owner_or_editor(cur, row["site_id"], action["owner_id"])
         _require_open(locked)
         _refuse_state("done", action)
-        now = _now().replace(microsecond=0)
+        now = _stamp()
         done_at = clean["done_at"] or now
         message = done_time_error(done_at, now, _problem_at(cur, improvement_id))
         if message:
             raise ApiError(message, 400, "done_at")
         cur.execute("UPDATE improvement_actions SET state = %s, done_text = %s, done_at = %s, done_by = %s"
                     " WHERE id = %s", (ACTION_DONE, clean["done_text"], done_at, actor(), action_id))
+        _add_event(cur, improvement_id, ACTION_DONE_EVENT, done_at, action_id=action_id, remark=clean["done_text"])
+        # The last open one done starts the watch (§ 5.1)
+        _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -880,11 +1183,18 @@ def cancel_action(improvement_id, action_id):
         _check_improvement(cur, improvement_id)   # 404, 403
         _require_open(locked)
         _refuse_state("cancel", action)
-        cur.execute("UPDATE improvement_actions SET state = %s, cancel_reason = %s, cancelled_at = %s,"
-                    " cancelled_by = %s WHERE id = %s",
-                    (ACTION_CANCELLED, clean["reason"], _now().replace(microsecond=0), actor(), action_id))
+        _cancel(cur, improvement_id, action_id, clean["reason"], _stamp())
+        # The last open one cancelled starts the watch, when one is done (§ 5.1)
+        _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
+
+
+def _cancel(cur, improvement_id, action_id, reason, now):
+    """Cancel one locked open countermeasure with its reason, and its line (S070; S072's drop)."""
+    cur.execute("UPDATE improvement_actions SET state = %s, cancel_reason = %s, cancelled_at = %s,"
+                " cancelled_by = %s WHERE id = %s", (ACTION_CANCELLED, reason, now, actor(), action_id))
+    _add_event(cur, improvement_id, ACTION_CANCELLED_EVENT, now, action_id=action_id, remark=reason)
 
 
 @improvements_bp.route("/actions/mine")
@@ -933,6 +1243,132 @@ def list_owners():
         require_perm_at(EDIT_KEY, site_id)
         items = [{"id": p["id"], "name": p["name"]} for p in people_at_site(cur, site_id)]
     return jsonify({"items": items})
+
+
+# ---------------------------------------------------------------------------
+# Notes, the verified close and the drop (S072 § 5.5, § 5.7; LOCK ORDER above)
+# ---------------------------------------------------------------------------
+
+@improvements_bp.route("/<int:improvement_id>/notes", methods=["POST"])
+@require_perm(NOTE_KEY)
+def add_note(improvement_id):
+    """A note on the timeline by any reader at the site but IT admin (Q1.3 a, D6); open only
+    (D12).  No correction of a note (§ 9 Q3)."""
+    clean = clean_body(validate_note, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked = _lock_improvement(cur, improvement_id)   # (6b)
+        row = _read_improvement(cur, improvement_id)       # 404
+        require_perm_at(NOTE_KEY, row["site_id"])           # 403
+        _require_open(locked)                               # 409
+        _add_event(cur, improvement_id, NOTE, _stamp(), remark=clean["remark"])
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail), 201
+
+
+def _lock_for_close(cur, improvement_id, key):
+    """A close's or a drop's start: (6b), the predicate 404, ``key`` at the site 403 -> the
+    locked row."""
+    locked = _lock_improvement(cur, improvement_id)   # (6b)
+    row = _read_improvement(cur, improvement_id)
+    require_perm_at(key, row["site_id"])
+    return locked
+
+
+def _require_ready(locked, now):
+    """§ 5.1: verify only after the watch (D11), from the locked row and the clock (D1): 409."""
+    until = watch_until(locked["watch_from"], locked["watch_days"]) if locked["watch_from"] else None
+    message = close_error(display_state(locked["state"], locked["watch_from"], locked["watch_days"], now), until)
+    if message:
+        raise ApiError(message, 409)
+
+
+def _close(cur, improvement_id, state, now, remark):
+    """The row closed (no updated_*, D16) and its links' open_link NULL, so its tickets may start
+    or join another improvement (S067 D4)."""
+    cur.execute("UPDATE improvements SET state = %s, closed_at = %s, closed_by = %s, close_remark = %s WHERE id = %s",
+                (state, now, actor(), remark, improvement_id))
+    cur.execute("UPDATE improvement_tickets SET open_link = NULL WHERE improvement_id = %s", (improvement_id,))
+
+
+@improvements_bp.route("/<int:improvement_id>/verify/effective", methods=["POST"])
+@require_perm(VERIFY_KEY)
+def close_effective(improvement_id):
+    """*Close: it worked* (ISO 9001 § 10.2.1 d): by an engineer or manager of the site, the lead
+    too (Q4.2 a), once the watch has ended."""
+    remark = clean_body(lambda body, _creating: validate_close(body, False, "remark"), creating=True)["remark"]
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked = _lock_for_close(cur, improvement_id, VERIFY_KEY)
+        now = _stamp()
+        _require_ready(locked, now)
+        _close(cur, improvement_id, CLOSED_EFFECTIVE, now, remark)
+        _add_event(cur, improvement_id, CLOSED_EFFECTIVE, now, from_state=READY_TO_VERIFY, to_state=CLOSED_EFFECTIVE,
+                   remark=remark)
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/<int:improvement_id>/verify/not-effective", methods=["POST"])
+@require_perm(VERIFY_KEY)
+def close_not_effective(improvement_id):
+    """*Did not work — analyse again* (Q1.4 a, D9): the old one closed with its remark, and a
+    follow-up started with the old title, problem, lead, watch and tickets; nothing of the
+    analysis is copied.  Answers the follow-up's detail, 201.  The counter (6) comes before (6b),
+    as the global order says; a refusal rolls the bump back, so no number is lost."""
+    remark = clean_body(lambda body, _creating: validate_close(body, True, "remark"), creating=True)["remark"]
+    now = _stamp()
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        number = next_counter(cur, serial_scope(now.year, now.month, SERIAL_PREFIX))   # (6)
+        locked = _lock_for_close(cur, improvement_id, VERIFY_KEY)                   # (6b)
+        _require_ready(locked, now)
+        # A locking read: the counter's SELECT fixed the snapshot before (6b) was held, so a plain
+        # read would miss a link added or removed while this route waited (CR1-01).  _close
+        # updates exactly these rows, so the lock adds no edge.
+        cur.execute("SELECT ticket_id FROM improvement_tickets WHERE improvement_id = %s ORDER BY ticket_id"
+                    " FOR UPDATE", (improvement_id,))
+        ticket_ids = [r["ticket_id"] for r in cur.fetchall()]
+        _close(cur, improvement_id, CLOSED_NOT_EFFECTIVE, now, remark)
+        _add_event(cur, improvement_id, CLOSED_NOT_EFFECTIVE, now, from_state=READY_TO_VERIFY,
+                   to_state=CLOSED_NOT_EFFECTIVE, remark=remark)
+        follow_up_id = insert_row(cur, "improvements", {
+            "serial": format_serial(SERIAL_PREFIX, now.year, now.month, number),
+            "unit_id": locked["unit_id"],
+            "equipment_id": locked["equipment_id"],
+            "title": locked["title"],
+            "problem": locked["problem"],
+            "lead_id": locked["lead_id"],
+            "watch_days": locked["watch_days"],
+            "follow_up_of_id": improvement_id,
+        }, actor())
+        # _close freed uq_improvement_tickets_open in this transaction, so the links fit
+        _link_tickets(cur, follow_up_id, ticket_ids, now, remark=f"Follow-up of {locked['serial']}")
+        detail = _detail_response(cur, follow_up_id)
+    return jsonify(detail), 201
+
+
+@improvements_bp.route("/<int:improvement_id>/drop", methods=["POST"])
+@require_perm(EDIT_KEY)
+def drop_improvement(improvement_id):
+    """*Drop* an open improvement with a reason (engineers and managers).  Its open
+    countermeasures are cancelled with it, each with its line (D10), taken (6c) by id order."""
+    reason = clean_body(lambda body, _creating: validate_close(body, True, "reason"), creating=True)["reason"]
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked = _lock_for_close(cur, improvement_id, EDIT_KEY)
+        _require_open(locked)
+        now = _stamp()
+        cur.execute("SELECT id FROM improvement_actions WHERE improvement_id = %s AND state = %s ORDER BY id"
+                    " FOR UPDATE", (improvement_id, ACTION_OPEN))   # (6c), by id
+        for action in cur.fetchall():
+            _cancel(cur, improvement_id, action["id"], dropped_reason(reason), now)
+        _close(cur, improvement_id, DROPPED, now, reason)
+        _add_event(cur, improvement_id, DROPPED, now,
+                   from_state=display_state(locked["state"], locked["watch_from"], locked["watch_days"], now),
+                   to_state=DROPPED, remark=reason)
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
 
 
 # ---------------------------------------------------------------------------

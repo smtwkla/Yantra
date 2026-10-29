@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_KINDS, actionCountsText, actionKindLabel, causeText, defaultDueDate, defaultProblem, defaultRootCause, defaultTitle,
-  improvementStateLabel, lossText, overdueText, PROBLEM_MAX, ROOT_CAUSE_MAX,
+  IMPROVEMENT_STATE_LABELS, improvementStateLabel, lossText, overdueText, PROBLEM_MAX, ROOT_CAUSE_MAX,
   ticketCauses, TITLE_MAX, whyBody,
 } from "../src/utils/improvementLabels";
 
@@ -9,6 +9,17 @@ const ticket = (extra = {}) => ({ machine: { code: "HP003" }, failure_mode: null
 
 describe("improvementStateLabel", () => {
   it("names a known state", () => expect(improvementStateLabel("analysing")).toBe("Analysing"));
+  it("names the seven states in plain words (S072 D13)", () => {
+    expect(Object.fromEntries(Object.keys(IMPROVEMENT_STATE_LABELS).map((s) => [s, improvementStateLabel(s)]))).toEqual({
+      analysing: "Analysing",
+      actions_open: "Actions open",
+      watching: "Watching",
+      ready_to_verify: "Ready to verify",
+      closed_effective: "Closed: it worked",
+      closed_not_effective: "Closed: did not work",
+      dropped: "Dropped",
+    });
+  });
   it("shows an unknown state as it came", () => expect(improvementStateLabel("verifying")).toBe("verifying"));
 });
 
