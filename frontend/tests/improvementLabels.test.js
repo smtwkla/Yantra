@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_KINDS, actionCountsText, actionKindLabel, causeText, defaultDueDate, defaultProblem, defaultRootCause, defaultTitle,
+  ACTION_KINDS, actionCountsText, actionKindLabel, causeText, closedLine, defaultDueDate, eventLabel, figureRows,
+  IMPROVEMENT_EVENT_LABELS, improvementStateBadgeClass, repeatText, machinesText, symptomsText, watchEndDate, watchLine, defaultProblem, defaultRootCause, defaultTitle,
   IMPROVEMENT_STATE_LABELS, improvementStateLabel, lossText, overdueText, PROBLEM_MAX, ROOT_CAUSE_MAX,
   ticketCauses, TITLE_MAX, whyBody,
 } from "../src/utils/improvementLabels";
@@ -146,4 +147,140 @@ describe("defaultDueDate", () => {
   it("is 14 days ahead", () => expect(defaultDueDate(new Date(2026, 9, 30, 10, 0))).toBe("2026-11-13"));
   it("crosses a month end", () => expect(defaultDueDate(new Date(2026, 0, 25))).toBe("2026-02-08"));
   it("is empty without a date", () => expect(defaultDueDate(undefined)).toBe(""));
+});
+
+describe("eventLabel", () => {
+  it("names every event of the timeline", () => {
+    expect(Object.keys(IMPROVEMENT_EVENT_LABELS)).toHaveLength(19);
+    expect(eventLabel("started")).toBe("Started");
+    expect(eventLabel("edited")).toBe("Changed");
+    expect(eventLabel("ticket_linked")).toBe("Ticket added");
+    expect(eventLabel("ticket_removed")).toBe("Ticket removed");
+    expect(eventLabel("why_added")).toBe("Why added");
+    expect(eventLabel("why_changed")).toBe("Why changed");
+    expect(eventLabel("why_removed")).toBe("Why removed");
+    expect(eventLabel("root_cause_set")).toBe("Root cause set");
+    expect(eventLabel("root_cause_changed")).toBe("Root cause changed");
+    expect(eventLabel("action_added")).toBe("Countermeasure added");
+    expect(eventLabel("action_changed")).toBe("Countermeasure changed");
+    expect(eventLabel("action_done")).toBe("Countermeasure done");
+    expect(eventLabel("action_cancelled")).toBe("Countermeasure cancelled");
+    expect(eventLabel("state_changed")).toBe("State changed");
+    expect(eventLabel("note")).toBe("Note");
+    expect(eventLabel("closed_effective")).toBe("Closed: it worked");
+    expect(eventLabel("closed_not_effective")).toBe("Closed: did not work");
+    expect(eventLabel("dropped")).toBe("Dropped");
+    expect(eventLabel("watch_ended")).toBe("Watch ended — ready to verify");
+  });
+  it("shows an unknown event as it came", () => expect(eventLabel("audited")).toBe("audited"));
+});
+
+describe("improvementStateBadgeClass", () => {
+  it("colours the closing states and keeps the open ones plain", () => {
+    expect(improvementStateBadgeClass("ready_to_verify")).toBe("text-bg-warning");
+    expect(improvementStateBadgeClass("closed_effective")).toBe("text-bg-success");
+    expect(improvementStateBadgeClass("closed_not_effective")).toBe("text-bg-danger");
+    expect(improvementStateBadgeClass("dropped")).toBe("text-bg-secondary");
+    expect(improvementStateBadgeClass("watching")).toBe("text-bg-light border");
+  });
+});
+
+describe("watchLine", () => {
+  const watch = { days: 90, from: "2026-11-20T15:30:00+05:30", until: "2027-02-18T15:30:00+05:30" };
+  it("says how long the watch will be before it starts", () => {
+    expect(watchLine({ state: "actions_open", watch: { days: 90, from: null, until: null } }))
+      .toBe("Watch: 90 days after the last countermeasure is done");
+    expect(watchLine({ state: "analysing", watch: { days: 120, from: null, until: null } }))
+      .toBe("Watch: 120 days after the last countermeasure is done");
+  });
+  it("gives the dates while watching", () => {
+    expect(watchLine({ state: "watching", watch })).toBe("Watching since 20-11-2026 · until 18-02-2027");
+  });
+  it("says ready to verify when the watch has ended", () => {
+    expect(watchLine({ state: "ready_to_verify", watch })).toBe("Watched 90 days, until 18-02-2027 · ready to verify");
+  });
+  it("gives no line for a closed state (closedLine does)", () => {
+    expect(watchLine({ state: "closed_effective", watch })).toBe("");
+  });
+});
+
+describe("closedLine", () => {
+  const closed = (extra = {}) => ({ at: "2027-02-18T15:30:00+05:30", by_name: "Arun (manager)", by_lead: false, remark: null, ...extra });
+  it("reads each closed state", () => {
+    expect(closedLine(closed(), "closed_effective")).toBe("Closed 18-02-2027 by Arun (manager): it worked");
+    expect(closedLine(closed(), "closed_not_effective")).toBe("Closed 18-02-2027 by Arun (manager): did not work");
+    expect(closedLine(closed(), "dropped")).toBe("Dropped 18-02-2027 by Arun (manager)");
+  });
+  it("marks the lead who closed their own improvement", () => {
+    expect(closedLine(closed({ by_name: "Priya (engineer)", by_lead: true }), "closed_not_effective"))
+      .toBe("Closed 18-02-2027 by Priya (engineer), the lead: did not work");
+    expect(closedLine(closed({ by_lead: true }), "dropped")).toBe("Dropped 18-02-2027 by Arun (manager), the lead");
+  });
+});
+
+describe("figureRows", () => {
+  const symptom = { id: 1, code: "1", label: "Won't start" };
+  const figures = (after, symptoms = [symptom]) => ({
+    symptoms,
+    before: { days: 90, breakdowns: 3, symptom_breakdowns: symptoms.length ? 2 : null, downtime_minutes: 300 },
+    after: { symptom_breakdowns: symptoms.length ? 0 : null, breakdowns: 0, downtime_minutes: 0, ...after },
+  });
+  it("builds the rows and a 'so far' header while the watch runs", () => {
+    const table = figureRows(figures({ days: 41 }), null);
+    expect(table.headers).toEqual(["", "90 days before", "41 days so far"]);
+    expect(table.rows).toEqual([
+      { label: "Breakdowns", before: "3", after: "0" },
+      { label: "Of them: Won't start", before: "2", after: "0" },
+      { label: "Downtime", before: "5 h", after: "0 min" },
+    ]);
+  });
+  it("leaves out the symptom row when there are no symptoms", () => {
+    const table = figureRows(figures({ days: 41 }, []), null);
+    expect(table.rows.map((r) => r.label)).toEqual(["Breakdowns", "Downtime"]);
+  });
+  it("joins several symptoms with 'or'", () => {
+    const two = [symptom, { id: 2, code: "2", label: "Jams" }];
+    expect(figureRows(figures({ days: 5 }, two), null).rows[1].label).toBe("Of them: Won't start or Jams");
+  });
+  it("reads '90 days after' when the watch has ended, or the improvement is closed effective", () => {
+    expect(figureRows(figures({ days: 90 }), null, true).headers[2]).toBe("90 days after");
+    expect(figureRows(figures({ days: 90 }), { at: "x" }).headers[2]).toBe("90 days after");
+  });
+  it("reads '20 days after' for a record dropped 20 days into its watch", () => {
+    expect(figureRows(figures({ days: 20 }), { at: "x" }).headers[2]).toBe("20 days after");
+  });
+});
+
+describe("repeatText", () => {
+  const repeat = { occurred_at: "2027-01-05T09:10:00+05:30", intensity: "critical", symptom: { label: "Won't start" }, in_watch: true };
+  it("gives the date, the symptom and the severity", () => {
+    expect(repeatText(repeat)).toBe("on 05-01-2027 (Won't start, breakdown)");
+  });
+  it("says so when the repeat is after the watch", () => {
+    expect(repeatText({ ...repeat, intensity: "degraded", in_watch: false })).toBe("on 05-01-2027 (Won't start, defect, after the watch)");
+  });
+});
+
+describe("watchEndDate", () => {
+  it("adds 90 days across a year end", () => expect(watchEndDate("2026-11-20T15:30:00+05:30", 90)).toBe("2027-02-18"));
+  it("uses the date part whatever the time zone", () => {
+    expect(watchEndDate("2026-11-20T23:59:00", 1)).toBe("2026-11-21");
+    expect(watchEndDate("2026-11-20T00:01:00+05:30", 0)).toBe("2026-11-20");
+  });
+  it("gives empty for no date", () => {
+    expect(watchEndDate(null, 90)).toBe("");
+    expect(watchEndDate("soon", 90)).toBe("");
+  });
+});
+
+describe("machinesText and symptomsText", () => {
+  const figures = { machines: [{ code: "MCC1" }, { code: "MCC2" }], symptoms: [{ label: "Won't start" }, { label: "Trips" }] };
+  it("joins the machine codes with commas", () => {
+    expect(machinesText(figures)).toBe("MCC1, MCC2");
+    expect(machinesText({ machines: [] })).toBe("");
+  });
+  it("joins the symptom labels with 'or'", () => {
+    expect(symptomsText(figures)).toBe("Won't start or Trips");
+    expect(symptomsText({ symptoms: [] })).toBe("");
+  });
 });

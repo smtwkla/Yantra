@@ -16,3 +16,8 @@ export function formatDateTime(value) {
   const date = `${d}-${mo}-${y}`;
   return h ? `${date} ${h}:${mi}` : date;
 }
+
+/** The date part only: "2026-10-12T08:05:00+05:30" → "12-10-2026"; else "". */
+export function formatDate(value) {
+  return formatDateTime(value).slice(0, 10);
+}

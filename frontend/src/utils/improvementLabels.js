@@ -1,5 +1,6 @@
 // Words and small helpers for the improvement screens (S068; the record is S067's).
-import { minutesText, toLocalDateValue } from "./ticketLabels";
+import { formatDate } from "./datetime";
+import { INTENSITY_LABELS, minutesText, toLocalDateValue } from "./ticketLabels";
 
 // S072 D13: the floor reads the badge, so the closed states say what happened in plain words;
 // ISO's terms (effective, not effective) stay in the API codes
@@ -124,4 +125,118 @@ export function defaultDueDate(today) {
   const due = new Date(today);
   due.setDate(due.getDate() + DEFAULT_DUE_DAYS);
   return toLocalDateValue(due);
+}
+
+// The watch, the closes and the timeline (S073; the rules and the API are S072's)
+export const WATCH_DAYS_MIN = 30;
+export const WATCH_DAYS_MAX = 365;
+export const NOTE_MAX = 1000;
+// Not REMARK_MAX: ticketLabels.REMARK_MAX is the ticket's 120
+export const CLOSE_REMARK_MAX = 1000;
+
+/** The state badge's colour (S073 § 5.1); the open states keep the plain light badge. */
+export const IMPROVEMENT_STATE_BADGE = {
+  ready_to_verify: "text-bg-warning",
+  closed_effective: "text-bg-success",
+  closed_not_effective: "text-bg-danger",
+  dropped: "text-bg-secondary",
+};
+
+/** The class of the state badge. */
+export function improvementStateBadgeClass(state) {
+  return IMPROVEMENT_STATE_BADGE[state] ?? "text-bg-light border";
+}
+
+export const IMPROVEMENT_EVENT_LABELS = {
+  started: "Started",
+  edited: "Changed",
+  ticket_linked: "Ticket added",
+  ticket_removed: "Ticket removed",
+  why_added: "Why added",
+  why_changed: "Why changed",
+  why_removed: "Why removed",
+  root_cause_set: "Root cause set",
+  root_cause_changed: "Root cause changed",
+  action_added: "Countermeasure added",
+  action_changed: "Countermeasure changed",
+  action_done: "Countermeasure done",
+  action_cancelled: "Countermeasure cancelled",
+  state_changed: "State changed",
+  note: "Note",
+  closed_effective: "Closed: it worked",
+  closed_not_effective: "Closed: did not work",
+  dropped: "Dropped",
+  watch_ended: "Watch ended — ready to verify",
+};
+
+/** The timeline event's words; an unknown event is shown as it came. */
+export function eventLabel(event) {
+  return IMPROVEMENT_EVENT_LABELS[event] ?? event;
+}
+
+/**
+ * The day `days` after the date part of an IST string ("2026-11-20T15:30:00+05:30"), "YYYY-MM-DD".
+ * Calendar arithmetic on the date part in UTC, so the browser's time zone and summer time never
+ * move it (BR1-02); "" for anything that is not a date.
+ */
+export function watchEndDate(from, days) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(typeof from === "string" ? from : "");
+  if (!m) return "";
+  const end = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(days)));
+  return end.toISOString().slice(0, 10);
+}
+
+/** The header's line while the watch has not been closed: before it starts, running, or ready. */
+export function watchLine(improvement) {
+  const { watch, state } = improvement;
+  if (state === "watching") return `Watching since ${formatDate(watch.from)} · until ${formatDate(watch.until)}`;
+  if (state === "ready_to_verify") return `Watched ${watch.days} days, until ${formatDate(watch.until)} · ready to verify`;
+  if (state === "analysing" || state === "actions_open") return `Watch: ${watch.days} days after the last countermeasure is done`;
+  return "";
+}
+
+const CLOSED_WORDS = { closed_effective: ["Closed", ": it worked"], closed_not_effective: ["Closed", ": did not work"], dropped: ["Dropped", ""] };
+
+/** "Closed 18-02-2027 by Arun (manager): it worked"; ", the lead" after the name when the lead closed it. */
+export function closedLine(closed, state) {
+  const [word, outcome] = CLOSED_WORDS[state] ?? ["Closed", ""];
+  return `${word} ${formatDate(closed.at)} by ${closed.by_name}${closed.by_lead ? ", the lead" : ""}${outcome}`;
+}
+
+/** The watch's machines as one text: "MCC1, MCC2". */
+export const machinesText = (figures) => figures.machines.map((m) => m.code).join(", ");
+
+/** The watch's symptoms as one text: "Won't start or Trips". */
+export const symptomsText = (figures) => figures.symptoms.map((s) => s.label).join(" or ");
+
+const dayCount = (days, ending) => `${days} days ${ending}`;
+
+/**
+ * The figures table (S073 § 5.2): `{headers: ["", before, third], rows: [{label, before, after}]}`.
+ * The third header is built from `after.days` in every case (BR2-01): "… days after" once the
+ * improvement is closed or the watch has ended, else "… days so far".
+ */
+export function figureRows(figures, closed, ended = false) {
+  const { before, after, symptoms } = figures;
+  const rows = [{ label: "Breakdowns", before: String(before.breakdowns), after: String(after.breakdowns) }];
+  if (symptoms.length) {
+    rows.push({
+      label: `Of them: ${symptomsText(figures)}`,
+      before: String(before.symptom_breakdowns), after: String(after.symptom_breakdowns),
+    });
+  }
+  rows.push({ label: "Downtime", before: minutesText(before.downtime_minutes), after: minutesText(after.downtime_minutes) });
+  return {
+    headers: ["", dayCount(before.days, "before"), dayCount(after.days, closed || ended ? "after" : "so far")],
+    rows,
+  };
+}
+
+/** A repeat after its serial: "on 05-01-2027 (Won't start, breakdown)", "after the watch" when past the end. */
+export function repeatText(repeat) {
+  const parts = [];
+  if (repeat.symptom) parts.push(repeat.symptom.label);
+  parts.push((INTENSITY_LABELS[repeat.intensity] ?? repeat.intensity).toLowerCase());
+  if (!repeat.in_watch) parts.push("after the watch");
+  return `on ${formatDate(repeat.occurred_at)} (${parts.join(", ")})`;
 }

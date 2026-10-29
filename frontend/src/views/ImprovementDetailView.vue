@@ -7,7 +7,9 @@
  * analysis the right half.
  *
  * S071's card *Countermeasures* (docs/steps/S071-countermeasure-screens/1-brief.md § 5.1; mock-up
- * 03-countermeasures.html) runs across the full width under both columns.
+ * 03-countermeasures.html) runs across the full width under both columns. S073 adds the state line
+ * under the header, the card *Did it come back?* (once the watch has started), the card *Timeline*,
+ * the five dialogs and *Drop improvement* at the foot; every button follows the detail's `can_*`.
  *
  * Every control follows the detail's `permissions`, `is_open` and each ticket's `removable`, so
  * no button ends in a refusal. Each write answers with the whole detail, which replaces the page's
@@ -22,13 +24,20 @@ import IntensityBadge from "../components/IntensityBadge.vue";
 import TicketsTabs from "../components/TicketsTabs.vue";
 import { formatDateTime } from "../utils/datetime";
 import { causeGroupLabel } from "../stores/masters";
-import { ACTION_KINDS, actionCountsText, causeText, improvementStateLabel, lossText, ticketCauses } from "../utils/improvementLabels";
+import {
+  ACTION_KINDS, actionCountsText, causeText, closedLine, improvementStateBadgeClass, improvementStateLabel, lossText, ticketCauses, watchLine,
+} from "../utils/improvementLabels";
 import { minutesText } from "../utils/ticketLabels";
 import ActionDialog from "./improvements/ActionDialog.vue";
 import AddTicketDialog from "./improvements/AddTicketDialog.vue";
+import DropDialog from "./improvements/DropDialog.vue";
 import ImprovementDialog from "./improvements/ImprovementDialog.vue";
+import ImprovementTimeline from "./improvements/ImprovementTimeline.vue";
 import MarkDoneDialog from "./improvements/MarkDoneDialog.vue";
 import RootCauseDialog from "./improvements/RootCauseDialog.vue";
+import VerifyDialog from "./improvements/VerifyDialog.vue";
+import WatchCard from "./improvements/WatchCard.vue";
+import WatchDialog from "./improvements/WatchDialog.vue";
 import WhyDialog from "./improvements/WhyDialog.vue";
 
 const route = useRoute();
@@ -54,7 +63,17 @@ const markDoneDialog = ref(null);
 const cancellingId = ref(null); // the countermeasure that asks for a reason: one at a time
 const cancelBusy = ref(false);
 const cancelError = ref(null); // {field, message} of the last refused cancel
+const verifyDialog = ref(null);
+const watchDialog = ref(null);
+const dropDialog = ref(null);
 const photosOpenId = ref(null); // the countermeasure whose photo cards show under its row: one at a time
+
+// The watch card shows once the watch has started (S073 § 5.2); before it the header line carries the button
+const watchStarted = computed(() => Boolean(improvement.value?.watch.from));
+const stateLine = computed(() => {
+  const i = improvement.value;
+  return i.closed ? closedLine(i.closed, i.state) : watchLine(i);
+});
 
 const canEdit = computed(() => Boolean(improvement.value?.is_open) && (improvement.value?.permissions ?? []).includes("improvement:edit"));
 
@@ -204,11 +223,34 @@ watch(() => route.params.id, load, { immediate: true });
       <div class="mb-3">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <h4 class="mb-0 me-2">{{ improvement.serial }}</h4>
-          <span class="badge text-bg-light border state-badge">{{ improvementStateLabel(improvement.state) }}</span>
+          <span class="badge state-badge" :class="improvementStateBadgeClass(improvement.state)">{{ improvementStateLabel(improvement.state) }}</span>
         </div>
         <p class="fw-semibold mt-2 mb-1 text-break" data-testid="improvement-title">{{ improvement.title }}</p>
         <p class="small text-secondary mb-0">
           Started {{ formatDateTime(improvement.created_at) }} by {{ improvement.created_by_name }} · lead {{ improvement.lead.name }}
+        </p>
+        <div v-if="stateLine" class="d-flex flex-wrap align-items-center gap-2 mt-1" data-testid="state-line">
+          <span class="small">{{ stateLine }}</span>
+          <button
+            v-if="!watchStarted && improvement.can_edit_watch"
+            type="button"
+            class="btn btn-outline-primary"
+            @click="watchDialog.open()"
+          >
+            Change watch
+          </button>
+        </div>
+        <p v-if="improvement.closed?.remark" class="small text-secondary mt-1 mb-0 remark-text" data-testid="close-remark">
+          {{ improvement.closed.remark }}
+        </p>
+        <p v-if="improvement.follow_up_of || improvement.follow_up" class="small mt-1 mb-0">
+          <router-link v-if="improvement.follow_up_of" :to="`/tickets/improvements/${improvement.follow_up_of.id}`">
+            Follow-up of {{ improvement.follow_up_of.serial }}
+          </router-link>
+          <span v-if="improvement.follow_up_of && improvement.follow_up"> · </span>
+          <router-link v-if="improvement.follow_up" :to="`/tickets/improvements/${improvement.follow_up.id}`">
+            Analysed again in {{ improvement.follow_up.serial }}
+          </router-link>
         </p>
       </div>
 
@@ -397,19 +439,36 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
       </div>
 
+      <WatchCard
+        v-if="watchStarted"
+        :improvement="improvement"
+        @verify="(mode) => verifyDialog.open(mode)"
+        @edit-watch="watchDialog.open()"
+      />
+
+      <ImprovementTimeline :improvement="improvement" @saved="onSaved" @reload="load" />
+
+      <div v-if="improvement.can_drop" class="mt-4 text-end">
+        <button type="button" class="btn btn-outline-danger" @click="dropDialog.open()">Drop improvement</button>
+      </div>
+
       <ImprovementDialog ref="editDialog" @saved="onSaved" />
       <AddTicketDialog ref="addDialog" :improvement="improvement" @saved="onSaved" />
       <WhyDialog ref="whyDialog" :improvement="improvement" @saved="onSaved" />
       <RootCauseDialog ref="rootCauseDialog" :improvement="improvement" @saved="onSaved" />
       <ActionDialog ref="actionDialog" :improvement="improvement" @saved="onSaved" />
       <MarkDoneDialog ref="markDoneDialog" @saved="onSaved" @reload="load" />
+      <VerifyDialog ref="verifyDialog" :improvement="improvement" @saved="onSaved" @reload="load" />
+      <WatchDialog ref="watchDialog" :improvement="improvement" @saved="onSaved" />
+      <DropDialog ref="dropDialog" :improvement="improvement" @saved="onSaved" @reload="load" />
     </template>
   </div>
 </template>
 
 <style scoped>
 .problem-text,
-.analysis-text {
+.analysis-text,
+.remark-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

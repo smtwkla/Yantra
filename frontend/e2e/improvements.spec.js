@@ -5,7 +5,7 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { addActionByApi, addTicketByApi, markDoneByApi, raiseFixed, startImprovementByApi, TEST_PHOTO, uploadActionPhotoByApi } from "./support/improvements.js";
 import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
-import { actionId, causeId, istDay, moveByApi, saveDialog, shownDay } from "./support/tickets.js";
+import { actionId, causeId, istDay, istLocal, moveByApi, raiseByApi, saveDialog, shownDay } from "./support/tickets.js";
 
 let seed;
 
@@ -40,7 +40,8 @@ test("S068: the engineer starts an improvement from a back-in-service ticket and
   await expect(ticketRow(page, ticket.serial)).toBeVisible();
 
   // Back on the ticket: the line is there and the button is gone
-  await page.getByRole("link", { name: ticket.serial }).click();
+  // The timeline's "Ticket added" line links the serial too (S073 BR1-01)
+  await ticketRow(page, ticket.serial).getByRole("link", { name: ticket.serial }).click();
   await expect(page.getByText(/Analysed in IM-\d{4}-\d{2}-\d{3} · Analysing/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Start improvement", exact: true })).toHaveCount(0);
 });
@@ -88,7 +89,8 @@ test("S068: the engineer edits the problem text", async ({ page }) => {
   const dialog = await openDialog(page);
   await dialog.getByLabel("Problem").fill("S068 edit: the contactor chatters when the motor starts");
   await saveDialog(page, "Save improvement");
-  await expect(page.getByText("S068 edit: the contactor chatters when the motor starts")).toBeVisible();
+  // The page's problem text; the timeline's "Changed" line repeats it (S073)
+  await expect(page.locator(".problem-text")).toHaveText("S068 edit: the contactor chatters when the motor starts");
 });
 
 test("S068: the Improvements tab lists the improvement, the Unit filter narrows, Closed is empty", async ({ page }) => {
@@ -175,9 +177,9 @@ test("S068: the storekeeper typing the list address sees a plain line and no Ret
 /**
  * Close a back-in-service `ticket` through the API (S069: a ticket's own cause beside the root
  * cause): the technician logs 30 min of labour, then the engineer closes it with the cause
- * `causeCode`, action 1 (Replace) and the ticket's first symptom, as tickets-parts.spec.js does.
+ * `causeCode`, action 1 (Replace) and the ticket's first symptom (or `symptomId`), as tickets-parts.spec.js does.
  */
-async function closeByApi(ticket, causeCode) {
+async function closeByApi(ticket, causeCode, symptomId = null) {
   const kannan = await personId("technician");
   const technician = await apiAs("technician");
   try {
@@ -191,9 +193,9 @@ async function closeByApi(ticket, causeCode) {
     await technician.dispose();
   }
   const engineer = await apiAs("engineer");
-  let modeId;
+  let modeId = symptomId;
   try {
-    modeId = (await (await engineer.get(`/api/tickets/modes?ticket_id=${ticket.id}`)).json()).items[0].id;
+    if (modeId === null) modeId = (await (await engineer.get(`/api/tickets/modes?ticket_id=${ticket.id}`)).json()).items[0].id;
   } finally {
     await engineer.dispose();
   }
@@ -521,4 +523,196 @@ test("S071: a photo the server refuses leaves the countermeasure done and the di
   await dialog.locator(".modal-footer").getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator(".modal.show")).toHaveCount(0);
   await expect(row.getByRole("button", { name: "Photos (1)", exact: true })).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------
+// S073: the states, the watch, the timeline and the verified close
+// ---------------------------------------------------------------------------------------------
+
+const MINUTES_PER_DAY = 24 * 60;
+
+/**
+ * An improvement that is *Ready to verify* (S072 § 5.2), made through the API: a ticket on
+ * `machine` (the MCC1 mill, which no other spec closes tickets on, so no repeat shows) raised as admin (who may back-date) 40 days back and fixed, closed with the machine's
+ * first symptom, an improvement led by Priya with its root cause, one *Corrective* countermeasure
+ * done 35 days back, and a watch of 30 days, which ended 5 days ago. -> {improvement, ticket, modeId}.
+ */
+async function readyImprovement(machine = seed.mcc1Mill) {
+  const kannan = await personId("technician");
+  const ticket = await raiseByApi("admin", {
+    equipment_id: machine.id,
+    intensity: "critical",
+    description: "S073 set-up: the press did not start",
+    occurred_at: istLocal(40 * MINUTES_PER_DAY),
+    restore: { person_id: kannan, occurred_at: istLocal(40 * MINUTES_PER_DAY - 50) },
+  });
+  const closed = await closeByApi(ticket, "3.4");
+  const improvement = await startImprovementByApi(ticket);
+  const engineer = await apiAs("engineer");
+  try {
+    let res = await engineer.put(`/api/improvements/${improvement.id}/root-cause`,
+      { data: { root_cause: "S073 set-up: no PM plan", root_cause_id: await causeId("4.2") } });
+    expect(res.status(), await res.text()).toBe(200);
+    const { action } = await addActionByApi(improvement, { text: "S073 set-up: fit the new seal" });
+    res = await engineer.post(`/api/improvements/${improvement.id}/actions/${action.id}/done`,
+      { data: { done_text: "S073 set-up: done", done_at: istLocal(35 * MINUTES_PER_DAY) } });
+    expect(res.status(), await res.text()).toBe(200);
+    res = await engineer.put(`/api/improvements/${improvement.id}`, { data: { watch_days: 30 } });
+    expect(res.status(), await res.text()).toBe(200);
+    return { improvement: await res.json(), ticket, modeId: closed.failure_mode?.id };
+  } finally {
+    await engineer.dispose();
+  }
+}
+
+/** The improvement page's header badge. */
+const stateBadgeOf = (page) => page.locator(".state-badge");
+const timelineCard = (page) => page.getByTestId("improvement-timeline");
+
+test("S073: the manager sees the watch after 30 days, taps Close: it worked, and the page reads closed", async ({ page }) => {
+  const { improvement } = await readyImprovement();
+  await asPerson(page, "manager", `/tickets/improvements/${improvement.id}`);
+
+  await expect(stateBadgeOf(page)).toHaveText("Ready to verify");
+  const watchCard = page.getByTestId("watch-card");
+  await expect(watchCard).toContainText("Did it come back?");
+  await expect(watchCard).toContainText(/No ticket with the symptom .* since \d{2}-\d{2}-\d{4}\./);
+  await expect(watchCard.getByRole("row", { name: /^Breakdowns/ })).toBeVisible();
+  await expect(watchCard.getByRole("row", { name: /^Downtime/ })).toBeVisible();
+  await expect(watchCard.getByRole("columnheader", { name: "30 days after" })).toBeVisible();
+  await expectNoSidewaysScroll(page);
+
+  await page.getByRole("button", { name: "Close: it worked", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByTestId("verify-consequence")).toHaveText(`${improvement.serial} closes and cannot be changed after.`);
+  await dialog.getByLabel("Remark (optional)").fill("Checked the panels on three presses.");
+  await saveDialog(page, "Close: it worked");
+
+  await expect(stateBadgeOf(page)).toHaveText("Closed: it worked");
+  await expect(page.getByTestId("state-line")).toContainText(/^Closed \d{2}-\d{2}-\d{4} by Arun \(manager\): it worked$/);
+  await expect(page.getByTestId("close-remark")).toHaveText("Checked the panels on three presses.");
+  for (const name of ["Edit", "Add ticket", "Add why", "Add countermeasure", "Add note", "Drop improvement", "Change watch",
+    "Close: it worked", "Did not work — analyse again"]) {
+    await expect(page.getByRole("button", { name, exact: true }), `a closed page shows ${name}`).toHaveCount(0);
+  }
+  await expect(timelineCard(page).locator("li").first()).toContainText("Closed: it worked");
+});
+
+test("S073: the lead taps Did not work, is asked why, and lands on the new improvement with the same ticket", async ({ page, consoleWatch }) => {
+  const { improvement, ticket } = await readyImprovement();
+  consoleWatch.allowFailedRequest("/verify/not-effective", 400);
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+
+  await page.getByRole("button", { name: "Did not work — analyse again", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByTestId("verify-consequence")).toContainText("A new improvement starts with its tickets, and you go there.");
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "Say why it did not work");
+  await dialog.getByLabel("Why did it not work?").fill("The dust came back on the third press.");
+  await saveDialog(page, "Close and analyse again");
+
+  await expect(page).not.toHaveURL(new RegExp(`/improvements/${improvement.id}$`));
+  await expect(stateBadgeOf(page)).toHaveText("Analysing");
+  await expect(page.getByRole("link", { name: `Follow-up of ${improvement.serial}` })).toBeVisible();
+  await expect(page.getByText("Tickets (1)")).toBeVisible();
+  await expect(ticketRow(page, ticket.serial)).toBeVisible();
+
+  await page.getByRole("link", { name: `Follow-up of ${improvement.serial}` }).click();
+  await expect(stateBadgeOf(page)).toHaveText("Closed: did not work");
+  await expect(page.getByTestId("state-line")).toContainText(/^Closed \d{2}-\d{2}-\d{4} by Priya \(engineer\), the lead: did not work$/);
+  await expect(page.getByTestId("close-remark")).toHaveText("The dust came back on the third press.");
+  await expect(page.getByRole("link", { name: /^Analysed again in IM-/ })).toBeVisible();
+});
+
+test("S073: a repeat of the symptom in the watch is shown with its ticket", async ({ page }) => {
+  // A machine of its own, so the repeat shows on no other test's watch
+  const { improvement, modeId } = await readyImprovement(seed.gearbox);
+  const repeat = await raiseByApi("admin", {
+    equipment_id: seed.gearbox.id,
+    intensity: "critical",
+    description: "S073 set-up: it came back",
+    occurred_at: istLocal(10 * MINUTES_PER_DAY),
+    restore: { person_id: await personId("technician"), occurred_at: istLocal(10 * MINUTES_PER_DAY - 50) },
+  });
+  await closeByApi(repeat, "3.4", modeId);
+  await asPerson(page, "manager", `/tickets/improvements/${improvement.id}`);
+
+  const warning = page.getByTestId("watch-card").locator(".alert-warning");
+  await expect(warning).toContainText(/Came back \d+ times?:/);
+  await expect(warning.getByRole("link", { name: repeat.serial })).toBeVisible();
+  await expect(warning).toContainText("Check whether it has the same cause.");
+  await expectNoSidewaysScroll(page);
+});
+
+test("S073: the operator adds a note to the timeline; IT admin sees no Add note", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S073 note: dust on the panel");
+  const improvement = await startImprovementByApi(ticket);
+  await asPerson(page, "operator", `/tickets/improvements/${improvement.id}`);
+
+  await timelineCard(page).getByRole("button", { name: "Add note", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Note").fill("The same dust on the panel of press 4.");
+  await saveDialog(page, "Save note");
+  const first = timelineCard(page).locator("li").first();
+  await expect(first).toContainText("Note");
+  await expect(first).toContainText("The same dust on the panel of press 4.");
+  await expect(first).toContainText("Muthu (operator)");
+
+  await asPerson(page, "it_admin", `/tickets/improvements/${improvement.id}`);
+  await expect(timelineCard(page).locator("li").first()).toContainText("The same dust on the panel of press 4.");
+  await expect(page.getByRole("button", { name: "Add note", exact: true })).toHaveCount(0);
+});
+
+test("S073: the lead changes the watch to 120 days; the end date moves and the timeline says so", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S073 watch: change the length");
+  const improvement = await startImprovementByApi(ticket);
+  const engineer = await apiAs("engineer");
+  try {
+    let res = await engineer.put(`/api/improvements/${improvement.id}/root-cause`,
+      { data: { root_cause: "S073 watch: no PM plan", root_cause_id: await causeId("4.2") } });
+    expect(res.status(), await res.text()).toBe(200);
+    const { action } = await addActionByApi(improvement, { text: "S073 watch: fit the new seal" });
+    await markDoneByApi(improvement, action);
+    res = await engineer.get(`/api/improvements/${improvement.id}`);
+    expect((await res.json()).state).toBe("watching");
+  } finally {
+    await engineer.dispose();
+  }
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  await expect(stateBadgeOf(page)).toHaveText("Watching");
+  await expect(page.getByTestId("state-line")).toContainText(`until ${shownDay(istDay(90))}`);
+
+  await page.getByRole("button", { name: "Change watch", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Watch for (days)").fill("120");
+  await expect(dialog.getByTestId("watch-ends")).toHaveText(`Ends on ${shownDay(istDay(120))}`);
+  await saveDialog(page, "Save watch");
+
+  await expect(page.getByTestId("state-line")).toContainText(`until ${shownDay(istDay(120))}`);
+  const first = timelineCard(page).locator("li").first();
+  await expect(first).toContainText("Changed");
+  await expect(first).toContainText("Watch: 90 days → 120 days");
+});
+
+test("S073: the lead drops an improvement with an open countermeasure; the countermeasure is cancelled", async ({ page }) => {
+  const ticket = await raiseFixed(seed.extruder.id, "S073 drop: started by mistake");
+  const improvement = await startImprovementByApi(ticket);
+  const { action } = await addActionByApi(improvement, { text: "S073 drop: the job that is not needed" });
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+
+  await page.getByRole("button", { name: "Drop improvement", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog).toContainText(`Drop ${improvement.serial}? Its open countermeasures are cancelled. You cannot undo this.`);
+  await dialog.getByLabel("Why drop it?").fill("Started by mistake.");
+  await saveDialog(page, "Drop improvement");
+
+  await expect(stateBadgeOf(page)).toHaveText("Dropped");
+  await expect(page.getByTestId("state-line")).toContainText(/^Dropped \d{2}-\d{2}-\d{4} by Priya \(engineer\), the lead$/);
+  await expect(measureRow(page, action.id)).toContainText("Cancelled");
+  await expect(page.getByRole("button", { name: "Drop improvement", exact: true })).toHaveCount(0);
 });
