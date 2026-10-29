@@ -20,6 +20,8 @@ only when the write needs it:
     (6) the serial_counters row
     (6b) the improvement row (improvements.py, S067); then, on a root-cause write, the failure
         cause's shared foreign-key lock (S069)
+    (6c) the countermeasure row (improvement_actions, improvements.py, S070), always after its
+        improvement (6b)
     (7) the ticket row (tickets.py, S017)
 
 A write with a model never locks a type: it comes from the model, whose type never changes
@@ -48,10 +50,11 @@ A write with a model never locks a type: it comes from the model, whose type nev
 - Every write checks its key at the record's site (S011 § 5.4) inside the three choke
   points below (load_node_for_user, _load_target_node, _lock_target_unit), after their
   own refusals, so no write route can skip it.
-- documents.py (S006, S008, S012, S017) takes exactly one owner lock per write, briefly: the
-  node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4) or a ticket row
-  (7, below), never two; then it touches only equipment_documents rows, which nothing else
-  locks.  So it adds no lock cycle.
+- documents.py (S006, S008, S012, S017, S070) takes exactly one owner lock per write, briefly:
+  the node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4), a ticket row
+  (7, below) or a countermeasure's, which takes its improvement (6b) then the countermeasure
+  (6c), in that order; never two owners'.  Then it touches only equipment_documents rows,
+  which nothing else locks.  So it adds no lock cycle.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

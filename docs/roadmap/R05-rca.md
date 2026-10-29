@@ -153,11 +153,11 @@ Who uses improvements and what each can do (in the app's words):
 | R05.3 | Countermeasures: kind, owner, due date, done; on *Me › Open work* | L | full | R05.1 | → S070 (backend) + S071 (screens), 30-10-2026 |
 | R05.4 | States, timeline and notes; the watch period; verified close | L | full | R05.2, R05.3 | → S072 (backend) + S073 (screens), 30-10-2026 |
 | R05.5 | Alerts: countermeasure given to you, overdue, watch ended | M | full | R05.3, R05.4 | → S074, 30-10-2026 |
-| R05.6 | One-point lessons: the first kind of the Procedures master | L | full | R05.3 | open |
+| R05.6 | One-point lessons: the first kind of the Procedures master | L | full | R05.3 | → S075 (backend) + S077 (screens), 30-10-2026 |
 | R05.7 | Who was shown a lesson (completion records) | M | full | R05.6 | deferred |
 | R05.8 | *Suggested* improvements: the when-to-analyse rule | M | full | R05.1 | deferred |
 | R05.9 | A preventive countermeasure becomes a PM plan | M | full | R05.3, R03.2, R03.8 | deferred |
-| R05.10 | The improvement register, printable for the review | S | full | R05.4 | open |
+| R05.10 | The improvement register, printable for the review | S | full | R05.4 | → S076, 30-10-2026 |
 
 **Size and the step rule (fact):** R05.1 adds two tables, a record and its ticket links, as R03
 counted a plan and its items (R03 § Items, feedback raised there). It is one concern with two

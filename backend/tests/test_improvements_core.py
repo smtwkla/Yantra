@@ -1,9 +1,13 @@
-"""Improvements — pure rules (S067 § 8.2, S069 § 8.2; no DB)."""
+"""Improvements — pure rules (S067 § 8.2, S069 § 8.2, S070 § 8.2; no DB)."""
+
+from datetime import date, datetime, timedelta
 
 import pytest
 
 from config_rbac import SITE_ROLES
 from improvements_core import (
+    ACTION_KINDS, ACTIONS_FULL, action_counts, action_flags, action_state_error, done_time_error, due_date_error,
+    overdue_days, validate_action, validate_cancel, validate_done,
     ANSWER_NEEDED, ANSWER_NOT_TEXT, ANSWER_TOO_LONG, CAUSE_NEEDED, CONTRIBUTING_NOT_TEXT, CONTRIBUTING_TOO_LONG,
     EVIDENCE_NOT_TEXT, EVIDENCE_TOO_LONG, QUESTION_NEEDED, QUESTION_NOT_TEXT, QUESTION_TOO_LONG, ROOT_CAUSE_NEEDED,
     POSITION_NOT_NUMBER, ROOT_CAUSE_NOT_TEXT, ROOT_CAUSE_TOO_LONG, WHYS_FULL, WHYS_MAX, position_error, renumber, reorder,
@@ -290,3 +294,185 @@ class TestValidateRootCause:
 
     def test_contributing_causes_absent_stays(self):
         assert "contributing_causes" not in validate_root_cause(ROOT, True)[0]
+
+
+# ---------------------------------------------------------------------------
+# Countermeasures (S070 § 8.2)
+# ---------------------------------------------------------------------------
+
+ACTION = {"kind": "corrective", "text": "Fit a sealed contact block", "owner_id": 5, "due_date": "2026-11-15"}
+TODAY = date(2026, 10, 30)
+NOW = datetime(2026, 10, 30, 10, 0)
+PROBLEM_AT = datetime(2026, 10, 28, 15, 15)
+
+
+def _action_errors(body, creating=True):
+    return [(e["field"], e["message"]) for e in validate_action(body, creating)[1]]
+
+
+class TestValidateAction:
+
+    def test_a_good_add(self):
+        assert validate_action(ACTION, True) == ({**ACTION, "due_date": date(2026, 11, 15)}, [])
+
+    @pytest.mark.parametrize("kind", ACTION_KINDS)
+    def test_each_kind(self, kind):
+        assert _action_errors({**ACTION, "kind": kind}) == []
+
+    def test_trims_and_ignores_unknown_fields(self):
+        clean, errors = validate_action({**ACTION, "text": "  Seal it  ", "due_date": " 2026-11-15 ",
+                                         "state": "done", "done_text": "x", "reason": "y"}, True)
+        assert errors == [] and clean["text"] == "Seal it" and clean["due_date"] == date(2026, 11, 15)
+        assert set(clean) == {"kind", "text", "owner_id", "due_date"}
+
+    @pytest.mark.parametrize("field, message", [
+        ("kind", "Choose the kind"), ("text", "Enter what will be done"), ("owner_id", "Choose the owner"),
+        ("due_date", "Enter the date as YYYY-MM-DD"),
+    ])
+    def test_each_field_is_required_on_an_add(self, field, message):
+        assert _action_errors({k: v for k, v in ACTION.items() if k != field}) == [(field, message)]
+
+    @pytest.mark.parametrize("field", ["kind", "text", "owner_id", "due_date"])
+    def test_null_on_a_change_is_refused(self, field):
+        assert [f for f, _ in _action_errors({field: None}, creating=False)] == [field]
+
+    def test_a_change_takes_only_what_is_sent(self):
+        assert validate_action({"text": "New"}, False) == ({"text": "New"}, [])
+        assert validate_action({}, False) == ({}, [])
+
+    def test_text_bounds(self):
+        assert _action_errors({**ACTION, "text": "x" * 500}) == []
+        assert _action_errors({**ACTION, "text": "x" * 501}) == [("text", "What will be done: up to 500 characters")]
+        assert _action_errors({**ACTION, "text": "   "}) == [("text", "Enter what will be done")]
+        assert _action_errors({**ACTION, "text": 4}) == [("text", "What will be done must be text")]
+
+    @pytest.mark.parametrize("kind", ["Corrective", "kaizen", 3])
+    def test_an_unknown_kind(self, kind):
+        assert _action_errors({**ACTION, "kind": kind}) == [("kind", "Choose the kind")]
+
+    @pytest.mark.parametrize("owner", [True, 0, "5", 1.5])
+    def test_owner_must_be_an_id(self, owner):
+        assert _action_errors({**ACTION, "owner_id": owner}) == [("owner_id", "Choose the owner")]
+
+    @pytest.mark.parametrize("due", ["31-10-2026", "2026-02-30", "", 20261031])
+    def test_a_bad_due_date(self, due):
+        assert _action_errors({**ACTION, "due_date": due}) == [("due_date", "Enter the date as YYYY-MM-DD")]
+
+
+class TestValidateDone:
+
+    def test_now_is_not_given(self):
+        assert validate_done({"done_text": " Fitted "}) == ({"done_text": "Fitted", "done_at": None}, [])
+        assert validate_done({"done_text": "Fitted", "done_at": None}) == ({"done_text": "Fitted", "done_at": None}, [])
+
+    def test_a_time_is_parsed(self):
+        assert validate_done({"done_text": "Fitted", "done_at": "2026-10-29 14:30"})[0]["done_at"] == (
+            datetime(2026, 10, 29, 14, 30))
+
+    def test_a_bad_time(self):
+        assert validate_done({"done_text": "Fitted", "done_at": "29-10-2026 14:30"})[1] == [
+            {"field": "done_at", "message": "Enter the time as YYYY-MM-DD HH:MM"}]
+
+    def test_done_text_bounds(self):
+        assert validate_done({"done_text": "x" * 1000})[1] == []
+        assert validate_done({"done_text": "x" * 1001})[1] == [
+            {"field": "done_text", "message": "What you did: up to 1000 characters"}]
+        assert validate_done({})[1] == [{"field": "done_text", "message": "Say what you did"}]
+        assert validate_done({"done_text": "  "})[1] == [{"field": "done_text", "message": "Say what you did"}]
+        assert validate_done({"done_text": 4})[1] == [{"field": "done_text", "message": "What you did must be text"}]
+
+
+class TestValidateCancel:
+
+    def test_reason(self):
+        assert validate_cancel({"reason": " Duplicate "}) == ({"reason": "Duplicate"}, [])
+        assert validate_cancel({})[1] == [{"field": "reason", "message": "Say why it is cancelled"}]
+        assert validate_cancel({"reason": "x" * 500})[1] == []
+        assert validate_cancel({"reason": "x" * 501})[1] == [
+            {"field": "reason", "message": "Reason: up to 500 characters"}]
+        assert validate_cancel({"reason": 4})[1] == [{"field": "reason", "message": "Reason must be text"}]
+
+
+class TestDates:
+
+    def test_due_date_from_the_problem_to_a_year_ahead(self):
+        problem = PROBLEM_AT.date()
+        assert due_date_error(problem, problem, TODAY) is None
+        assert due_date_error(problem - timedelta(days=1), problem, TODAY) == (
+            "Choose a date from 28-10-2026, the day the problem happened")
+        assert due_date_error(TODAY + timedelta(days=365), problem, TODAY) is None
+        assert due_date_error(TODAY + timedelta(days=366), problem, TODAY) == "Choose a date within a year"
+        assert due_date_error(date(2020, 1, 1), None, TODAY) is None
+
+    def test_done_time(self):
+        assert done_time_error(NOW + timedelta(minutes=5), NOW, PROBLEM_AT) is None
+        assert done_time_error(NOW + timedelta(minutes=6), NOW, PROBLEM_AT) == "That time is in the future"
+        assert done_time_error(PROBLEM_AT, NOW, PROBLEM_AT) is None
+        assert done_time_error(PROBLEM_AT - timedelta(minutes=1), NOW, PROBLEM_AT) == (
+            "Not before the problem happened, 28-10-2026 15:15")
+        assert done_time_error(NOW - timedelta(days=60), NOW, None) is None
+
+    def test_done_time_in_the_minute_of_a_problem_with_seconds_passes(self):
+        # CR1-03: a ticket raised with Now stores seconds; the message shows only the minute
+        problem = PROBLEM_AT.replace(second=42)
+        assert done_time_error(PROBLEM_AT, NOW, problem) is None
+        assert done_time_error(PROBLEM_AT - timedelta(minutes=1), NOW, problem) == (
+            "Not before the problem happened, 28-10-2026 15:15")
+
+
+class TestActionStates:
+
+    @pytest.mark.parametrize("operation, state, message", [
+        ("change", "open", None),
+        ("change", "done", "Only an open countermeasure can be changed"),
+        ("change", "cancelled", "Only an open countermeasure can be changed"),
+        ("done", "open", None),
+        ("done", "done", "This countermeasure is already done"),
+        ("done", "cancelled", "This countermeasure was cancelled"),
+        ("cancel", "open", None),
+        ("cancel", "done", "A done countermeasure cannot be cancelled"),
+        ("cancel", "cancelled", "This countermeasure is already cancelled"),
+        ("photo", "open", None),
+        ("photo", "done", None),
+        ("photo", "cancelled", "This countermeasure was cancelled"),
+    ])
+    def test_the_table(self, operation, state, message):
+        assert action_state_error(operation, state) == message
+
+    def test_overdue_days(self):
+        assert overdue_days("open", TODAY - timedelta(days=1), TODAY) == 1
+        assert overdue_days("open", TODAY, TODAY) == 0
+        assert overdue_days("open", TODAY + timedelta(days=3), TODAY) == 0
+        assert overdue_days("done", TODAY - timedelta(days=4), TODAY) == 0
+        assert overdue_days("cancelled", TODAY - timedelta(days=4), TODAY) == 0
+
+    def test_counts(self):
+        actions = [{"state": "open", "overdue_days": 2}, {"state": "open", "overdue_days": 0},
+                   {"state": "done", "overdue_days": 0}, {"state": "cancelled", "overdue_days": 0}]
+        assert action_counts(actions) == {"open": 2, "done": 1, "cancelled": 1, "overdue": 1}
+        assert action_counts([]) == {"open": 0, "done": 0, "cancelled": 0, "overdue": 0}
+
+    def test_the_bound_message(self):
+        assert ACTIONS_FULL == "An improvement holds up to 30 countermeasures. Change an open one instead."
+
+
+class TestActionFlags:
+
+    @pytest.mark.parametrize("improvement_open", [True, False])
+    @pytest.mark.parametrize("state", ["open", "done", "cancelled"])
+    @pytest.mark.parametrize("may_edit", [True, False])
+    @pytest.mark.parametrize("is_owner", [True, False])
+    def test_every_combination(self, improvement_open, state, may_edit, is_owner):
+        flags = action_flags(improvement_open, state, may_edit, is_owner)
+        acts = may_edit or is_owner
+        assert flags == {
+            "can_change": improvement_open and state == "open" and may_edit,
+            "can_mark_done": improvement_open and state == "open" and acts,
+            "can_add_photo": improvement_open and state != "cancelled" and acts,
+        }
+
+    def test_the_owner_without_the_key(self):
+        assert action_flags(True, "open", False, True) == {
+            "can_change": False, "can_mark_done": True, "can_add_photo": True}
+        assert action_flags(True, "done", False, True) == {
+            "can_change": False, "can_mark_done": False, "can_add_photo": True}

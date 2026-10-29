@@ -264,6 +264,15 @@ test("S069: the engineer writes three whys, the second dialog shows the first an
   await expect(whyRow(page, 1)).toContainText("1. Why was there dust on the faces?");
   await expect(whyRow(page, 2)).toContainText("2. Why did the press not start?");
   await expect(whyRow(page, 3)).toContainText("3. Why did the contactor not close?");
+
+  // A text-only edit does not resend the place (S069 A1): the PUT body has no position
+  await page.getByRole("button", { name: "Edit why 2", exact: true }).click();
+  const textDialog = await openDialog(page);
+  await textDialog.getByLabel("Because").fill("The start button circuit was dead.");
+  const put = page.waitForRequest((req) => req.method() === "PUT" && /\/whys\/\d+$/.test(req.url()));
+  await saveDialog(page, "Save why");
+  expect((await put).postDataJSON()).not.toHaveProperty("position");
+  await expect(whyRow(page, 2)).toContainText("The start button circuit was dead.");
 });
 
 test("S069: the engineer removes why 2 after the confirmation on the row; the rest are numbered 1 and 2", async ({ page }) => {

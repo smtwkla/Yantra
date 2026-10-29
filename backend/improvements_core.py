@@ -6,8 +6,13 @@ states, the field validation, the start, link and remove rules, who may lead, an
 improvements.py (the shell) feeds them the rows it has locked or read.
 """
 
+from datetime import date, timedelta
+
 from access_core import compute_permissions
-from tickets_core import BACK_IN_SERVICE, CLOSED, is_breakdown
+from tickets_core import (
+    BACK_IN_SERVICE, CLOSED, EVENT_TIME_FUTURE, FUTURE_SKEW, LABOUR_DATE_FORMAT, PLANNED_DATE_MAX_DAYS,
+    PLANNED_DATE_TOO_FAR, is_breakdown, parse_event_time,
+)
 
 READ_KEY = "improvement:read"
 EDIT_KEY = "improvement:edit"
@@ -70,6 +75,51 @@ CAUSE_NEEDED = "Choose the cause"
 CAUSE_ACTIVE = "Choose an active cause from the list"
 CONTRIBUTING_TOO_LONG = f"Other causes: up to {CONTRIBUTING_MAX} characters"
 CONTRIBUTING_NOT_TEXT = "Other causes must be text"
+
+
+# Countermeasures (S070 § 5; ISO 9001 § 10.2.1 c).  The six kinds (Q3.1 a): Correction fixes this
+# failure now; Corrective removes its cause here; Preventive adds regular work (EN 13306);
+# Design-out changes the machine (TPM maintenance prevention); Lesson teaches the team (TPM
+# one-point lesson); Spread applies the fix to the similar machines (TPM yokoten).
+ACTION_KINDS = ("correction", "corrective", "preventive", "design_out", "lesson", "spread")
+ACTION_OPEN = "open"
+ACTION_DONE = "done"
+ACTION_CANCELLED = "cancelled"
+# Done and cancelled are final (D5)
+ACTION_STATES = (ACTION_OPEN, ACTION_DONE, ACTION_CANCELLED)
+
+ACTIONS_MAX = 30
+ACTION_TEXT_MAX = 500
+DONE_TEXT_MAX = 1000
+CANCEL_REASON_MAX = 500
+
+KIND_NEEDED = "Choose the kind"
+ACTION_TEXT_NEEDED = "Enter what will be done"
+ACTION_TEXT_TOO_LONG = f"What will be done: up to {ACTION_TEXT_MAX} characters"
+ACTION_TEXT_NOT_TEXT = "What will be done must be text"
+OWNER_NEEDED = "Choose the owner"
+OWNER_AT_SITE = "Choose a person of this site"
+DONE_TEXT_NEEDED = "Say what you did"
+DONE_TEXT_TOO_LONG = f"What you did: up to {DONE_TEXT_MAX} characters"
+DONE_TEXT_NOT_TEXT = "What you did must be text"
+REASON_NEEDED = "Say why it is cancelled"
+REASON_TOO_LONG = f"Reason: up to {CANCEL_REASON_MAX} characters"
+REASON_NOT_TEXT = "Reason must be text"
+ACTIONS_FULL = f"An improvement holds up to {ACTIONS_MAX} countermeasures. Change an open one instead."
+OWNER_OR_EDITOR = "Only the owner, or an engineer or manager of this site, can do this"
+ONLY_OPEN_CHANGES = "Only an open countermeasure can be changed"
+ALREADY_DONE = "This countermeasure is already done"
+WAS_CANCELLED = "This countermeasure was cancelled"
+DONE_NOT_CANCELLED = "A done countermeasure cannot be cancelled"
+ALREADY_CANCELLED = "This countermeasure is already cancelled"
+
+# What a countermeasure in each state refuses, per operation (§ 5.5): None = allowed
+_STATE_REFUSALS = {
+    "change": {ACTION_DONE: ONLY_OPEN_CHANGES, ACTION_CANCELLED: ONLY_OPEN_CHANGES},
+    "done": {ACTION_DONE: ALREADY_DONE, ACTION_CANCELLED: WAS_CANCELLED},
+    "cancel": {ACTION_DONE: DONE_NOT_CANCELLED, ACTION_CANCELLED: ALREADY_CANCELLED},
+    "photo": {ACTION_CANCELLED: WAS_CANCELLED},
+}
 
 
 def already_in(ticket_serial, improvement_serial):
@@ -266,4 +316,146 @@ def loss(tickets):
         "tickets": len(tickets),
         "breakdowns": sum(1 for t in tickets if is_breakdown(t["intensity"])),
         "downtime_minutes": sum(t["downtime_minutes"] or 0 for t in tickets),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Countermeasures (S070 § 5)
+# ---------------------------------------------------------------------------
+
+def _required(body, field, creating):
+    """A field a POST needs and a PUT may leave out, but never send as null: is it to be read?
+    -> (read it, missing).  ``missing`` is True when it is required here and not given."""
+    if field in body and body[field] is not None:
+        return True, False
+    return False, creating or field in body
+
+
+def validate_action(body, creating):
+    """The add (``creating``) or change body of a countermeasure -> ``(clean, errors)`` for
+    clean_body (§ 5.2).  On an add every field is required; on a change an absent field stays as
+    it is and none may be null.  Whether the owner may own it (the shell's person_at_site) and
+    the due date's range (due_date_error) are checked after.  Unknown fields, the state and the
+    done and cancel fields are ignored."""
+    clean, errors = {}, []
+    read, missing = _required(body, "kind", creating)
+    if read and body["kind"] in ACTION_KINDS:
+        clean["kind"] = body["kind"]
+    elif read or missing:
+        errors.append({"field": "kind", "message": KIND_NEEDED})
+    read, missing = _required(body, "text", creating)
+    if read:
+        _text(body, "text", ACTION_TEXT_MAX, ACTION_TEXT_NEEDED, ACTION_TEXT_TOO_LONG, ACTION_TEXT_NOT_TEXT,
+              clean, errors)
+    elif missing:
+        errors.append({"field": "text", "message": ACTION_TEXT_NEEDED})
+    read, missing = _required(body, "owner_id", creating)
+    if read and _is_id(body["owner_id"]):
+        clean["owner_id"] = body["owner_id"]
+    elif read or missing:
+        errors.append({"field": "owner_id", "message": OWNER_NEEDED})
+    read, missing = _required(body, "due_date", creating)
+    due = _iso_date(body["due_date"]) if read else None
+    if due is not None:
+        clean["due_date"] = due
+    elif read or missing:
+        errors.append({"field": "due_date", "message": LABOUR_DATE_FORMAT})
+    return clean, errors
+
+
+def _iso_date(value):
+    """``YYYY-MM-DD`` (trimmed) -> the date, or None for anything else."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def validate_done(body, _creating=True):
+    """The mark-done body -> ``(clean, errors)`` (§ 5.2).  ``done_at`` absent or null is None:
+    the S051 *Now* tick sends nothing and the server's clock decides."""
+    clean, errors = {}, []
+    if body.get("done_text") is not None:
+        _text(body, "done_text", DONE_TEXT_MAX, DONE_TEXT_NEEDED, DONE_TEXT_TOO_LONG, DONE_TEXT_NOT_TEXT,
+              clean, errors)
+    else:
+        errors.append({"field": "done_text", "message": DONE_TEXT_NEEDED})
+    clean["done_at"] = None
+    if body.get("done_at") is not None:
+        value, message = parse_event_time(body["done_at"])
+        if message:
+            errors.append({"field": "done_at", "message": message})
+        else:
+            clean["done_at"] = value
+    return clean, errors
+
+
+def validate_cancel(body, _creating=True):
+    """The cancel body ``{reason}`` -> ``(clean, errors)`` (§ 5.2)."""
+    clean, errors = {}, []
+    if body.get("reason") is not None:
+        _text(body, "reason", CANCEL_REASON_MAX, REASON_NEEDED, REASON_TOO_LONG, REASON_NOT_TEXT, clean, errors)
+    else:
+        errors.append({"field": "reason", "message": REASON_NEEDED})
+    return clean, errors
+
+
+def due_date_error(due, problem_date, today):
+    """§ 5.3, D7: from the day the problem happened (the earliest linked ticket's date; None
+    sets no floor) to today + PLANNED_DATE_MAX_DAYS.  A date in the past is allowed: a
+    correction already done is recorded with its true dates.  -> the message, or None."""
+    if problem_date is not None and due < problem_date:
+        return f"Choose a date from {problem_date:%d-%m-%Y}, the day the problem happened"
+    if due > today + timedelta(days=PLANNED_DATE_MAX_DAYS):
+        return PLANNED_DATE_TOO_FAR
+    return None
+
+
+def done_time_error(done_at, now, problem_at):
+    """§ 5.3, D6: not more than FUTURE_SKEW ahead of now, and not before the problem happened
+    (the earliest linked ticket's time; None sets no floor).  No 7-day limit.  -> the message,
+    or None.  The floor is the minute shown in the message: a ticket raised with *Now* stores
+    seconds, and a done time typed in that same minute must pass."""
+    if done_at > now + FUTURE_SKEW:
+        return EVENT_TIME_FUTURE
+    if problem_at is not None and done_at < problem_at.replace(second=0, microsecond=0):
+        return f"Not before the problem happened, {problem_at:%d-%m-%Y %H:%M}"
+    return None
+
+
+def action_state_error(operation, state):
+    """May ``operation`` (change, done, cancel, photo) act on a countermeasure in ``state``
+    (§ 5.5)?  None, or the refusal (a 409)."""
+    return _STATE_REFUSALS[operation].get(state)
+
+
+def overdue_days(state, due_date, today):
+    """§ 5.4: the days an open countermeasure is past its due date; 0 when due today or later,
+    done or cancelled.  Computed, never stored."""
+    if state != ACTION_OPEN:
+        return 0
+    return max((today - due_date).days, 0)
+
+
+def action_counts(actions):
+    """``actions``, each with ``state`` and ``overdue_days`` -> ``{open, done, cancelled,
+    overdue}`` (S071's "2 of 6 done"; R05.4's *Watching* reads ``open``)."""
+    counts = dict.fromkeys(ACTION_STATES, 0)
+    for action in actions:
+        counts[action["state"]] += 1
+    counts["overdue"] = sum(1 for action in actions if action["overdue_days"] > 0)
+    return counts
+
+
+def action_flags(improvement_open, state, may_edit, is_owner):
+    """What the user may do on one countermeasure (§ 5.7), so no control ends in a 403 or a 409.
+    ``may_edit``: improvement:edit at the improvement's site; ``is_owner``: the user's own Team
+    record owns it."""
+    may_act = may_edit or is_owner
+    return {
+        "can_change": improvement_open and state == ACTION_OPEN and may_edit,
+        "can_mark_done": improvement_open and state == ACTION_OPEN and may_act,
+        "can_add_photo": improvement_open and state != ACTION_CANCELLED and may_act,
     }

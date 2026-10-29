@@ -203,6 +203,14 @@ user may work is decided by data, not by more permissions: the plan's performer
 (operator or maintenance) and the user's units. An operator therefore works
 CIL jobs at their units and nothing else.
 
+A countermeasure of an improvement (S070, R05.3, 30-10-2026) is marked done in the same way:
+by data, with no new key. Its **owner** (a person of the improvement's site, picked from Team)
+marks their own countermeasure done and adds its photos with `improvement:read`; an
+`improvement:edit` holder at the site adds, changes and cancels countermeasures and marks any
+done, also for an owner without a login or without `improvement:read` (the storekeeper), who
+never sees it. A user is the owner when their own Team record is; IT admin, with no Team
+record, owns none and reads only.
+
 ## 4. Modules
 
 ### 4.1 Equipment register
@@ -394,6 +402,16 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   ticket row is never written: the improvement only links it. The ticket detail lists its
   improvements and says whether this user may start one (`GET /api/tickets/<id>`:
   `improvements`, `can_start_improvement`). The screens are S068's.
+  **Countermeasures (S070, 30-10-2026; R05.3, backend; the screens are S071's):** an
+  improvement holds up to 30, each with a kind (Correction, Corrective, Preventive, Design-out,
+  Lesson, Spread), what will be done, an owner (any active person of the site, a login or not)
+  and a due date from the day the problem happened to a year ahead; *overdue* is computed. A
+  countermeasure is open, done (what was done, when, who recorded it; the time not before the
+  problem) or cancelled with a reason. Done and cancelled are final and nothing is deleted (ISO
+  9001 § 7.5.3): until R05.4 brings undo with its timeline, a wrong *done* stays and the
+  engineer adds a new countermeasure. A photo of the work goes to the documents store (its
+  fourth owner, `DATA_DIR/improvement-actions/<id>/`). *My open countermeasures*
+  (`GET /api/improvements/actions/mine`) feeds *Me › Open work*.
 - **Production marks "back in service" too** (decided 16-10-2026, sorting-line use case): the
   supervisor, or whoever has operator rights at the unit, can record "back in service" and
   name the technician who did the work from Team. Standard CMMS requester sign-off: production

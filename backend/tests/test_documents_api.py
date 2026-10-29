@@ -1,10 +1,12 @@
 """Documents and photos on equipment — the API, against the test DB and a temporary
 DATA_DIR (conftest.py).  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
-Node documents (S006); model documents and the node's inherited group (S012) at the end."""
+Node documents (S006); model documents and the node's inherited group (S012); ticket photos and
+documents (S017, S018); a countermeasure's (S070) at the end."""
 
 import errno
 import os
 from io import BytesIO
+from types import SimpleNamespace
 
 import pymysql
 import pytest
@@ -18,6 +20,7 @@ from tests.documents_helpers import (
     EQUIPMENT, JPEG, PDF, docs_url, folder_files, jpeg_with_size, listed, listed_at, model_docs_url, owner_files,
     refusal, scrap, upload, upload_to, uploaded, uploaded_to,
 )
+from tests.ticket_helpers import now_ist
 
 SIZE_MESSAGE_1_MB = "The file is larger than 1 MB"
 
@@ -499,6 +502,22 @@ class TestOwnerCheckConstraint:
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]
 
+    def test_a_ticket_and_a_countermeasure_together_are_refused(self, make_equipment, make_ticket, db_rows, uniq):
+        """S070 § 8.3: the fourth owner counts in the same CHECK."""
+        ticket = make_ticket(make_equipment())
+        db_rows("INSERT INTO improvements (serial, unit_id, equipment_id, title, problem, lead_id, created_by)"
+                " SELECT %s, t.unit_id, t.equipment_id, 'x', 'x', (SELECT MIN(id) FROM people), 'test'"
+                " FROM tickets t WHERE t.id = %s", (f"IM-CHK-{ticket['id']}", ticket["id"]))
+        db_rows("INSERT INTO improvement_actions (improvement_id, kind, text, owner_id, due_date, created_by)"
+                " SELECT MAX(id), 'lesson', 'x', (SELECT MIN(id) FROM people), CURDATE(), 'test' FROM improvements")
+        action_id = db_rows("SELECT MAX(id) AS id FROM improvement_actions")[0]["id"]
+        with pytest.raises(pymysql.err.OperationalError) as caught:
+            db_rows("INSERT INTO equipment_documents (ticket_id, action_id, kind, title, original_name, stored_name,"
+                    " content_type, size_bytes, created_by) VALUES (%s, %s, 'photo', 'x', 'x.jpg', %s,"
+                    " 'image/jpeg', 1, 'test')", (ticket["id"], action_id, f"chk-{uniq.username()}.jpg"))
+        assert caught.value.args[0] == 4025
+        assert "chk_equipment_documents_owner" in caught.value.args[1]
+
 
 # ---------------------------------------------------------------------------
 # Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise; documents too since S018
@@ -614,3 +633,182 @@ class TestTicketPhotos:
             res = upload_to(operator, url)
             assert res.status_code == 403
             assert res.get_json()["error"] == "You don't have permission for this. Ask your engineer or IT."
+
+
+# ---------------------------------------------------------------------------
+# A countermeasure's photos (S070 § 5.8): the fourth owner, read by improvement:read through the
+# improvement's predicate; written by the countermeasure's owner or improvement:edit at the site
+# ---------------------------------------------------------------------------
+
+OWNER_OR_EDITOR = "Only the owner, or an engineer or manager of this site, can do this"
+
+
+def action_docs_url(action):
+    return f"/api/improvements/actions/{action['id']}/documents"
+
+
+def action_photo(client, action, **kwargs):
+    return uploaded_to(client, action_docs_url(action), kind="photo", title="Sealed block fitted", data=JPEG,
+                       filename="IMG_7.jpg", **kwargs)
+
+
+@pytest.fixture
+def case(user_at_sites, make_equipment, make_ticket, set_ticket_state, unit):
+    """An improvement on a fresh ticket of the unit, with one countermeasure owned by a technician
+    of the site -> a namespace: site, engineer and technician (clients), owner (the technician's
+    person), improvement, action, and new_action() for another countermeasure of it."""
+    site = {"id": unit["site_id"]}
+    engineer, lead = user_at_sites([(site, "maint_engineer", "all")])
+    technician, owner = user_at_sites([(site, "maint_technician", "all")])
+    ticket = make_ticket(make_equipment(unit=unit))
+    set_ticket_state(ticket, "back_in_service")
+    res = engineer.post("/api/improvements", json={"ticket_id": ticket["id"], "title": "Contactor trips",
+                                                   "problem": "Dust in the panel", "lead_id": lead["id"]})
+    assert res.status_code == 201, res.get_json()
+    improvement = res.get_json()
+
+    def new_action():
+        res = engineer.post(f"/api/improvements/{improvement['id']}/actions", json={
+            "kind": "design_out", "text": "Fit a sealed contact block", "owner_id": owner["id"],
+            "due_date": now_ist().date().isoformat()})
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()["actions"][-1]
+
+    return SimpleNamespace(site=site, engineer=engineer, technician=technician, owner=owner,
+                           improvement=improvement, action=new_action(), new_action=new_action)
+
+
+def cancel_action(case, action):
+    res = case.engineer.post(f"/api/improvements/{case.improvement['id']}/actions/{action['id']}/cancel",
+                             json={"reason": "Not needed"})
+    assert res.status_code == 200, res.get_json()
+
+
+class TestActionDocuments:
+
+    def test_the_owner_uploads_lists_opens_retitles_and_removes(self, case, db_rows):
+        url = action_docs_url(case.action)
+        photo = action_photo(case.technician, case.action)
+        assert (photo["kind"], photo["has_thumb"], photo["created_by"]) == (
+            "photo", True, case.technician._headers["X-Test-User"])
+        stored = db_rows("SELECT stored_name, action_id, ticket_id FROM equipment_documents WHERE id = %s",
+                         (photo["id"],))[0]
+        assert (stored["action_id"], stored["ticket_id"]) == (case.action["id"], None)
+        assert owner_files("action", case.action["id"]) == sorted([stored["stored_name"],
+                                                                   f"{stored['stored_name']}.thumb.jpg"])
+        assert file_store.owner_folder("action", case.action["id"]).endswith(
+            os.path.join("improvement-actions", str(case.action["id"])))
+        page = listed_at(case.technician, url)
+        assert [d["id"] for d in page["items"]] == [photo["id"]] and "inherited" not in page
+        res = case.technician.get(f"{url}/{photo['id']}/file")
+        assert (res.status_code, res.data) == (200, JPEG)
+        assert res.headers["X-Content-Type-Options"] == "nosniff"
+        assert "private" in res.headers["Cache-Control"] and "public" not in res.headers["Cache-Control"]
+        assert case.technician.get(f"{url}/{photo['id']}/thumb").status_code == 200
+        res = case.technician.put(f"{url}/{photo['id']}", json={"title": "Block in place"})
+        assert (res.status_code, res.get_json()["title"]) == (200, "Block in place")
+        assert case.technician.delete(f"{url}/{photo['id']}").status_code == 204
+        assert listed_at(case.technician, url)["items"] == []
+
+    def test_a_technician_who_is_not_the_owner_is_403(self, case, user_at_sites):
+        url = action_docs_url(case.action)
+        other, _ = user_at_sites([(case.site, "maint_technician", "all")])
+        assert refusal(upload_to(other, url, kind="photo", data=JPEG, filename="a.jpg")) == (403, None, OWNER_OR_EDITOR)
+        assert owner_files("action", case.action["id"]) == []
+        photo = action_photo(case.technician, case.action)
+        assert refusal(other.put(f"{url}/{photo['id']}", json={"title": "x"})) == (403, None, OWNER_OR_EDITOR)
+        assert refusal(other.delete(f"{url}/{photo['id']}")) == (403, None, OWNER_OR_EDITOR)
+        # Every reader sees it
+        assert [d["id"] for d in listed_at(other, url)["items"]] == [photo["id"]]
+
+    def test_the_engineer_uploads_a_photo_and_a_document(self, case):
+        assert action_photo(case.engineer, case.action)["kind"] == "photo"
+        assert uploaded_to(case.engineer, action_docs_url(case.action))["kind"] == "document"
+
+    def test_readers(self, case, user_at_sites, user_with_units, make_unit, role_client):
+        url = action_docs_url(case.action)
+        photo = action_photo(case.engineer, case.action)
+        operator, _ = user_at_sites([(case.site, "maint_operator", "all")])
+        assert [d["id"] for d in listed_at(operator, url)["items"]] == [photo["id"]]
+        assert operator.get(f"{url}/{photo['id']}/file").status_code == 200
+        assert upload_to(operator, url, kind="photo", data=JPEG, filename="a.jpg").status_code == 403
+        it_admin = role_client("it_admin")
+        assert it_admin.get(f"{url}/{photo['id']}/file").status_code == 200
+        assert refusal(upload_to(it_admin, url, kind="photo", data=JPEG, filename="a.jpg")) == (
+            403, None, OWNER_OR_EDITOR)
+        elsewhere = user_with_units("maint_operator", [make_unit()])
+        assert elsewhere.get(url).status_code == 404
+        assert elsewhere.get(f"{url}/{photo['id']}/file").status_code == 404
+        assert role_client("maint_storekeeper").get(url).status_code == 403
+
+    def test_a_cancelled_countermeasure_refuses_writes_and_restore(self, case, user_at_sites):
+        url = action_docs_url(case.action)
+        kept = action_photo(case.engineer, case.action)
+        removed = action_photo(case.engineer, case.action)
+        assert case.engineer.delete(f"{url}/{removed['id']}").status_code == 204
+        cancel_action(case, case.action)
+        cancelled = (409, None, "This countermeasure was cancelled")
+        assert refusal(upload_to(case.technician, url, kind="photo", data=JPEG, filename="b.jpg")) == cancelled
+        assert refusal(case.engineer.put(f"{url}/{kept['id']}", json={"title": "x"})) == cancelled
+        assert refusal(case.engineer.delete(f"{url}/{kept['id']}")) == cancelled
+        manager, _ = user_at_sites([(case.site, "maint_manager", "all")])
+        assert refusal(manager.post(f"{url}/{removed['id']}/restore")) == cancelled
+        # Still listed and served; a removed one can still be erased (disposition, S008 § 5.3)
+        assert [d["id"] for d in listed_at(case.engineer, url)["items"]] == [kept["id"]]
+        assert case.engineer.get(f"{url}/{kept['id']}/file").status_code == 200
+        assert manager.post(f"{url}/{removed['id']}/purge").status_code == 204
+
+    def test_a_done_countermeasure_still_takes_photos(self, case):
+        res = case.technician.post(
+            f"/api/improvements/{case.improvement['id']}/actions/{case.action['id']}/done",
+            json={"done_text": "Fitted"})
+        assert res.status_code == 200, res.get_json()
+        assert action_photo(case.technician, case.action)["kind"] == "photo"
+
+    def test_a_document_of_another_countermeasure_is_404(self, case):
+        photo = action_photo(case.engineer, case.action)
+        other = case.new_action()
+        url = action_docs_url(other)
+        assert case.engineer.get(f"{url}/{photo['id']}/file").status_code == 404
+        assert case.engineer.put(f"{url}/{photo['id']}", json={"title": "x"}).status_code == 404
+        assert case.engineer.delete(f"{url}/{photo['id']}").status_code == 404
+        assert case.engineer.get(action_docs_url({"id": 999999999})).status_code == 404
+
+    def test_restore_and_purge_by_the_manager(self, case, user_at_sites):
+        url = action_docs_url(case.action)
+        photo = action_photo(case.technician, case.action)
+        assert case.technician.delete(f"{url}/{photo['id']}").status_code == 204
+        assert case.engineer.post(f"{url}/{photo['id']}/restore").status_code == 403
+        manager, _ = user_at_sites([(case.site, "maint_manager", "all")])
+        res = manager.post(f"{url}/{photo['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, photo["id"])
+        assert case.technician.delete(f"{url}/{photo['id']}").status_code == 204
+        assert manager.post(f"{url}/{photo['id']}/purge").status_code == 204
+        assert owner_files("action", case.action["id"]) == []
+
+    def test_the_removed_list_shows_the_countermeasure(self, case, user_at_sites, make_ticket, make_equipment,
+                                                       make_site, unit):
+        url = action_docs_url(case.action)
+        photo = action_photo(case.technician, case.action)
+        assert case.technician.delete(f"{url}/{photo['id']}").status_code == 204
+        ticket = make_ticket(make_equipment(unit=unit))
+        ticket_doc = uploaded_to(case.engineer, f"/api/tickets/{ticket['id']}/documents")
+        assert case.engineer.delete(f"/api/tickets/{ticket['id']}/documents/{ticket_doc['id']}").status_code == 204
+        manager, _ = user_at_sites([(case.site, "maint_manager", "all")])
+        serial = case.improvement["serial"]
+        res = manager.get("/api/equipment/removed-documents", query_string={"q": serial})
+        assert res.status_code == 200
+        items = res.get_json()["items"]
+        assert [i["id"] for i in items] == [photo["id"]]
+        item = items[0]
+        assert {k: item[k] for k in ("owner", "path", "name", "state", "action_kind", "full_path")} == {
+            "owner": "action", "path": f"/api/improvements/actions/{case.action['id']}/documents", "name": serial,
+            "state": "open", "action_kind": "design_out", "full_path": None}
+        assert item["unit"].endswith(f".{unit['code']}")
+        ticket_items = manager.get("/api/equipment/removed-documents",
+                                   query_string={"q": ticket["serial"]}).get_json()["items"]
+        assert [(i["owner"], i["state"], i["action_kind"]) for i in ticket_items] == [("ticket", "raised", None)]
+        # Outside the units where the purge key is held: not listed
+        other_manager, _ = user_at_sites([(make_site(), "maint_manager", "all")])
+        assert other_manager.get("/api/equipment/removed-documents", query_string={"q": serial}).get_json()[
+            "items"] == []

@@ -232,9 +232,9 @@ screens; its API is covered by the backend tests.)
 
 ### Round 1
 
-Amendment A1 (brief § 10) is in. All six findings answered.
+Amendment A1 (brief Â§ 10) is in. All six findings answered.
 
-- **CR1-01 (minor) — Fixed.** The body is built by a new `whyBody(form, isEdit, openedPosition)` in
+- **CR1-01 (minor) â€” Fixed.** The body is built by a new `whyBody(form, isEdit, openedPosition)` in
   `frontend/src/utils/improvementLabels.js`. `WhyDialog.vue` remembers the place the edit opened with
   (`openedPosition`, set in `openChange`) and sends `position` only when the select differs from it.
   The server is unchanged. The comment on the chain-of-one refusal line is reworded. Tests: four
@@ -244,18 +244,18 @@ Amendment A1 (brief § 10) is in. All six findings answered.
   restore the old always-send code to see the assertion fail, because the test targets the new
   function; after the fix, 23 passed. The old behaviour is the case "none on an edit with the place
   unchanged", which that function now guards.
-- **CR1-02 (nit) — Fixed.** `_root_cause` in `backend/improvements.py` uses
-  `{**code_ref(plain, "rc"), "cause_group": …, "active": …}`. Backend improvement tests: 192 passed
+- **CR1-02 (nit) â€” Fixed.** `_root_cause` in `backend/improvements.py` uses
+  `{**code_ref(plain, "rc"), "cause_group": â€¦, "active": â€¦}`. Backend improvement tests: 192 passed
   (`YANTRA_TEST_RUN=s069f1`; `test_improvements_core.py`, `test_improvements_api.py`,
   `test_improvement_whys_api.py`).
-- **CR1-03 (nit) — Fixed.** The operator test no longer asserts the empty state is absent (it could
+- **CR1-03 (nit) â€” Fixed.** The operator test no longer asserts the empty state is absent (it could
   not fail); the empty state is asserted on an improvement with no whys in the test at line 316.
-- **CR1-04 (nit) — Fixed.** `POSITION_NOT_NUMBER` in `improvements_core.py`, beside the other
+- **CR1-04 (nit) â€” Fixed.** `POSITION_NOT_NUMBER` in `improvements_core.py`, beside the other
   messages; `test_position_must_be_an_integer` now asserts the field and this constant.
-- **CR1-05 (nit) — Fixed.** `askRemove` clears the why's confirmation and error; `askRemoveWhy`
+- **CR1-05 (nit) â€” Fixed.** `askRemove` clears the why's confirmation and error; `askRemoveWhy`
   clears the ticket's. Only one confirmation shows, so the shared `removing` flag is safe. No new
   test: no browser test opens both, and the change is two assignments.
-- **CR1-06 (nit) — Deferred.** `closeByApi` stays in `e2e/improvements.spec.js`. S073 also needs a
+- **CR1-06 (nit) â€” Deferred.** `closeByApi` stays in `e2e/improvements.spec.js`. S073 also needs a
   closed ticket and moves it to `e2e/support/` then, with its own WebKit run (a change to
   `e2e/support/` runs `screens.spec.js` on `phone-webkit`).
 
@@ -263,12 +263,22 @@ Runs: frontend `improvementLabels.test.js` 23 passed; backend files above 192 pa
 build` clean (chunk-size warning only); `tooling/run-e2e-tests.bat e2e/improvements.spec.js
 e2e/screens.spec.js`: 29 passed, 1 skipped (the existing per-device skip).
 
-Docs updated: none, because A1 changes no route, message or screen text; the brief's § 10 already
+Docs updated: none, because A1 changes no route, message or screen text; the brief's Â§ 10 already
 records it.
 
 #### Feedback
 
 - none
+
+
+### Round 2 (in S070's fix round)
+
+- **CR2-01 Fixed.** The first S069 browser test ends with a text-only *Save why* on why 2; it
+  takes the `PUT` with `page.waitForRequest` and asserts `postDataJSON()` has no `position`.
+  Passes (improvements.spec.js, 33 passed with settings and screens). No red run: the code under
+  test (A1) is already correct, so the assertion only guards it.
+- **CR2-02 Fixed.** The `v-else-if` refusal line under a chain of one and its comment are removed
+  from `WhyDialog.vue`. `npx vite build` ok.
 
 ## Feedback
 

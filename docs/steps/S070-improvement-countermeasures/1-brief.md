@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 32eb122 + uncommitted S066, S067, S068 (in code review); S069 coded before S070
-Status: Approved 30-10-2026 by KLA (delegated: R05 gate R, "start coding unless a defining question")
+Status: Gate B 30-10-2026 (verify review r2 running) — approved 30-10-2026 by KLA (delegated)
 From: R05.3 (first half: the record and its API; the screens are S071)
 ```
 

@@ -1,14 +1,15 @@
 """Documents and photos on equipment (docs/steps/S006-equipment-documents/1-brief.md), on a
 node or, since S012, on an equipment model (docs/steps/S012-equipment-models; the owner
 design of the dropped S009), and since S017 photos on a ticket (docs/steps/S017-raise-tickets),
-since S018 its documents too (docs/steps/S018-work-tickets, user decision 5).
+since S018 its documents too (docs/steps/S018-work-tickets, user decision 5), and since S070 on
+a countermeasure of an improvement (docs/steps/S070-improvement-countermeasures, § 5.8).
 
 Thin shell: documents_core holds the rules (file type from the first bytes, titles,
 names, thumbnails); file_store does the file I/O; this module checks access and the
 scrapped rule, orders the writes and serves files.
 
-Owners (OWNERS below): a document belongs to exactly one node, model or ticket (the owner
-CHECK, v9 and v12).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
+Owners (OWNERS below): a document belongs to exactly one node, model, ticket or countermeasure
+(the owner CHECK, v9, v12 and v38).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
 are stacked route decorators whose ``defaults`` name the owner.  Each owner carries its keys
 as data (S017 § 5.5); every owner takes every kind (S018 removed the ticket's photos-only rule): the route checks the owner's key held at any site
 (check_perm), then the owner's read or lock function checks it at the record's site.  Node documents follow the
@@ -20,6 +21,11 @@ node's list also returns its model's documents as an ``inherited`` group, looked
 Ticket photos and documents follow the ticket's access predicate (tickets.py) and are added,
 retitled and removed by ticket:raise at the ticket's site, never on a closed ticket (the ticket
 page offers *Add document* to ticket:work holders only, S018 § 3).
+A countermeasure's photos and documents follow its improvement's access predicate
+(improvements.py) and are added, retitled and removed by the countermeasure's owner or by
+improvement:edit at the improvement's site (owner by data, S070 D4: the write key is
+improvement:read, and improvements.py's lock functions branch on the key), never on a closed
+improvement or a cancelled countermeasure.
 
 Upload order (S006 § 5.6): every check and the thumbnail first, then the files are
 written with no transaction open, then a short transaction locks the owner and inserts.
@@ -28,17 +34,19 @@ transaction fails, the files just written are removed.
 
 Locks: a document write takes exactly one owner lock — the node row (lock (1) of
 equipment.py's order, re-checking scrapped, access and the site key from the locked row),
-the model row (4) or the ticket row (7, tickets.py's order) — and then only
-equipment_documents rows, which nothing else locks.  It never holds two owner locks, so it
-cannot join a cycle with equipment.py (node → … → model → class), masters.py (manufacturer →
-model → class → type) or tickets.py (node → counter → ticket).  The owner lock also
+the model row (4), the ticket row (7, tickets.py's order) or, for a countermeasure, its
+improvement (6b) then the countermeasure (6c) in that order (improvements.py's order, after a
+plain read of the countermeasure's improvement_id) — and then only equipment_documents rows,
+which nothing else locks.  It never holds two owners' locks, so it cannot join a cycle with
+equipment.py (node → … → model → class), masters.py (manufacturer → model → class → type),
+tickets.py (node → counter → ticket) or improvements.py ((6b) → (6c)).  The owner lock also
 serialises a title edit with a remove (S006 § 5.8).
 
 Files are served only through these routes, after the access check (ISO 27001 A.8.3).
 A removed document keeps its row and its file (ISO 55001 controlled information) but is
 no longer listed or served.  A removed document can be restored or deleted for good by
-equipment:purge_documents (S008), node, model and ticket documents alike (S012 § 5.6,
-S017 § 5.5).
+equipment:purge_documents (S008), node, model, ticket and countermeasure documents alike
+(S012 § 5.6, S017 § 5.5, S070 § 5.8).
 """
 
 import logging
@@ -65,6 +73,7 @@ from equipment import NODE_JOINS, SCRAPPED_MESSAGE, accessible_unit_ids, load_no
 from equipment_core import SCRAPPED
 from masters_core import model_label
 from settings import upload_max_mb
+from improvements import lock_action_for_change, lock_action_for_purge, read_action, read_action_for_change
 from tickets import lock_ticket_for_change, lock_ticket_for_purge, read_ticket, read_ticket_for_change
 
 logger = logging.getLogger(__name__)
@@ -169,15 +178,24 @@ OWNERS = {
     "ticket": Owner("ticket_id", "/api/tickets/{}/documents", "ticket",
                     read_ticket, read_ticket_for_change, lock_ticket_for_change, lock_ticket_for_purge,
                     "ticket:read", "ticket:raise", "equipment:purge_documents"),
+    # A countermeasure's photo of the work (S070 D4).  The write key is improvement:read, so a
+    # technician owner passes _owner_key; the narrower rule (the owner, or improvement:edit at
+    # the improvement's site) is applied by the read and lock functions, which branch on the key.
+    "action": Owner("action_id", "/api/improvements/actions/{}/documents", "countermeasure",
+                    read_action, read_action_for_change, lock_action_for_change, lock_action_for_purge,
+                    "improvement:read", "improvement:read", "equipment:purge_documents"),
 }
 
-# The collection prefixes, one stacked route decorator each
+# The collection prefixes, one stacked route decorator each.  The countermeasure's cannot meet
+# improvements_bp's /<int:improvement_id>: "actions" is not an integer.
 _NODE_DOCS = "/equipment/<int:owner_id>/documents"
 _MODEL_DOCS = "/masters/equipment-models/<int:owner_id>/documents"
 _TICKET_DOCS = "/tickets/<int:owner_id>/documents"
+_ACTION_DOCS = "/improvements/actions/<int:owner_id>/documents"
 _FOR_NODE = {"defaults": {"owner": "equipment"}}
 _FOR_MODEL = {"defaults": {"owner": "model"}}
 _FOR_TICKET = {"defaults": {"owner": "ticket"}}
+_FOR_ACTION = {"defaults": {"owner": "action"}}
 
 
 def _owner_key(owner, which):
@@ -233,6 +251,7 @@ def _inherited(cur, node):
 @documents_bp.route(_NODE_DOCS, strict_slashes=False, **_FOR_NODE)
 @documents_bp.route(_MODEL_DOCS, strict_slashes=False, **_FOR_MODEL)
 @documents_bp.route(_TICKET_DOCS, strict_slashes=False, **_FOR_TICKET)
+@documents_bp.route(_ACTION_DOCS, strict_slashes=False, **_FOR_ACTION)
 def list_documents(owner, owner_id):
     _owner_key(owner, "read_key")
     with get_db().cursor() as cur:
@@ -296,6 +315,7 @@ def _write_files(owner, owner_id, name, data, thumb):
 @documents_bp.route(_NODE_DOCS, methods=["POST"], strict_slashes=False, **_FOR_NODE)
 @documents_bp.route(_MODEL_DOCS, methods=["POST"], strict_slashes=False, **_FOR_MODEL)
 @documents_bp.route(_TICKET_DOCS, methods=["POST"], strict_slashes=False, **_FOR_TICKET)
+@documents_bp.route(_ACTION_DOCS, methods=["POST"], strict_slashes=False, **_FOR_ACTION)
 def upload_document(owner, owner_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -373,6 +393,7 @@ def _serve(owner, owner_id, doc_id, thumbnail):
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>/file", **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>/file", **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/file", **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/file", **_FOR_ACTION)
 def get_document_file(owner, owner_id, doc_id):
     return _serve(owner, owner_id, doc_id, thumbnail=False)
 
@@ -380,6 +401,7 @@ def get_document_file(owner, owner_id, doc_id):
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>/thumb", **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>/thumb", **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/thumb", **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/thumb", **_FOR_ACTION)
 def get_document_thumb(owner, owner_id, doc_id):
     return _serve(owner, owner_id, doc_id, thumbnail=True)
 
@@ -397,6 +419,7 @@ def _validate_title_body(body, _creating):
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_ACTION)
 def update_document_title(owner, owner_id, doc_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -416,6 +439,7 @@ def update_document_title(owner, owner_id, doc_id):
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_ACTION)
 def remove_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -437,7 +461,10 @@ def remove_document(owner, owner_id, doc_id):
 # Every branch of the UNION ALL gives these columns, in this order.  The node branch is
 # S008's query (an inner join to the node and NODE_JOINS); the model branch has no unit
 # condition (model documents are visible at every site); the ticket branch is scoped by the
-# ticket's own unit, as the node branch by the node's (S017 § 5.5).
+# ticket's own unit, as the node branch by the node's (S017 § 5.5); the countermeasure branch
+# by its improvement's unit (S070 § 5.8).  owner_state is the ticket's or the countermeasure's
+# state (a closed ticket and a cancelled countermeasure refuse restore); action_kind is the
+# countermeasure's kind, NULL in the other branches.
 _REMOVED_DOC_COLUMNS = (
     "d.id, d.kind, d.title, d.original_name, d.content_type, d.size_bytes, d.created_at,"
     " d.created_by, d.removed_at, d.removed_by"
@@ -445,53 +472,77 @@ _REMOVED_DOC_COLUMNS = (
 _REMOVED_NODE_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'equipment' AS owner, e.id AS owner_id, e.id AS equipment_id, e.code,"
     " e.name, e.level, e.lifecycle, s.code AS site_code, u.code AS unit_code, p.code AS p_code, gp.code AS gp_code,"
-    " NULL AS mf_name, NULL AS m_designation, NULL AS ticket_state"
+    " NULL AS mf_name, NULL AS m_designation, NULL AS owner_state, NULL AS action_kind"
     " FROM equipment_documents d JOIN equipment e ON e.id = d.equipment_id" + NODE_JOINS
 )
 _REMOVED_MODEL_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'model' AS owner, m.id AS owner_id, NULL AS equipment_id, NULL AS code,"
     " NULL AS name, NULL AS level, NULL AS lifecycle, NULL AS site_code, NULL AS unit_code, NULL AS p_code,"
-    " NULL AS gp_code, mf.name AS mf_name, m.designation AS m_designation, NULL AS ticket_state"
+    " NULL AS gp_code, mf.name AS mf_name, m.designation AS m_designation, NULL AS owner_state, NULL AS action_kind"
     " FROM equipment_documents d JOIN equipment_models m ON m.id = d.model_id"
     " JOIN manufacturers mf ON mf.id = m.manufacturer_id"
 )
 _REMOVED_TICKET_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'ticket' AS owner, t.id AS owner_id, NULL AS equipment_id, NULL AS code,"
     " t.serial AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
-    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, t.state AS ticket_state"
+    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, t.state AS owner_state, NULL AS action_kind"
     " FROM equipment_documents d JOIN tickets t ON t.id = d.ticket_id"
     " JOIN units u ON u.id = t.unit_id JOIN sites s ON s.id = u.site_id"
+)
+_REMOVED_ACTION_BRANCH = (
+    f"SELECT {_REMOVED_DOC_COLUMNS}, 'action' AS owner, a.id AS owner_id, NULL AS equipment_id, NULL AS code,"
+    " i.serial AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code, u.code AS unit_code, NULL AS p_code,"
+    " NULL AS gp_code, NULL AS mf_name, NULL AS m_designation, a.state AS owner_state, a.kind AS action_kind"
+    " FROM equipment_documents d JOIN improvement_actions a ON a.id = d.action_id"
+    " JOIN improvements i ON i.id = a.improvement_id"
+    " JOIN units u ON u.id = i.unit_id JOIN sites s ON s.id = u.site_id"
 )
 
 # Columns the item is built from, not shown as they are
 _JOIN_COLUMNS = ("owner_id", "site_code", "unit_code", "p_code", "gp_code", "mf_name", "m_designation",
-                 "ticket_state")
+                 "owner_state")
 
 
 def _removed_item(row):
     """A removed-list row as the API shows it: ``owner`` and ``path`` (the owner's documents
     URL, which the card joins with the id and /restore or /purge); for a node its unit and
     path, for a model its label as ``name`` with the node fields null, for a ticket its serial
-    as ``name``, its unit and its ``state`` (a closed ticket refuses restore)."""
+    as ``name``, its unit and its ``state`` (a closed ticket refuses restore), for a
+    countermeasure its improvement's serial as ``name``, its unit, its ``state`` (a cancelled
+    one refuses restore) and its ``action_kind``."""
     item = row_to_dict({key: value for key, value in row.items() if key not in _JOIN_COLUMNS})
     item["path"] = OWNERS[row["owner"]].path.format(row["owner_id"])
     if row["owner"] == "model":
         item["name"] = model_label(row["mf_name"], row["m_designation"])
         item["unit"] = item["full_path"] = None
-    elif row["owner"] == "ticket":
+    elif row["owner"] in ("ticket", "action"):
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = None
-        item["state"] = row["ticket_state"]
+        item["state"] = row["owner_state"]
     else:
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = node_path(row)
     return item
 
 
+def _scoped_branch(branch_sql, search_column, unit_column, common, common_params, pattern, unit_ids):
+    """One owner's branch as ``(sql, params)``: the common conditions, the search over the
+    owner's column, the title and the original name, and the unit scope (None = every unit)."""
+    conditions, params = list(common), list(common_params)
+    if pattern:
+        conditions.append(f"({search_column} LIKE %s OR d.title LIKE %s OR d.original_name LIKE %s)")
+        params.extend([pattern] * 3)
+    if unit_ids is not None:
+        conditions.append(f"{unit_column} IN ({', '.join(['%s'] * len(unit_ids))})")
+        params.extend(sorted(unit_ids))
+    return f"{branch_sql} WHERE {' AND '.join(conditions)}", params
+
+
 def _removed_branches(cur, kind, q):
-    """The UNION ALL's branches as ``[(sql, params)]``: the node and ticket branches scoped to
-    the units where equipment:purge_documents is held (S011; a ticket by its own unit) and
-    left out when there are none — not the whole list; the model branch at every site."""
+    """The UNION ALL's branches as ``[(sql, params)]``: the node, ticket and countermeasure
+    branches scoped to the units where equipment:purge_documents is held (S011; a ticket by its
+    own unit, a countermeasure by its improvement's) and left out when there are none — not the
+    whole list; the model branch at every site."""
     common, common_params = ["d.removed_at IS NOT NULL"], []
     if kind:
         common.append("d.kind = %s")
@@ -501,24 +552,13 @@ def _removed_branches(cur, kind, q):
     branches = []
     unit_ids = accessible_unit_ids(cur, "equipment:purge_documents")
     if unit_ids is None or unit_ids:
-        conditions, params = list(common), list(common_params)
-        if pattern:
-            # The original name too: phone photos are IMG_2034 in both title and file name
-            conditions.append("(e.code LIKE %s OR d.title LIKE %s OR d.original_name LIKE %s)")
-            params.extend([pattern] * 3)
-        if unit_ids is not None:
-            conditions.append(f"u.id IN ({', '.join(['%s'] * len(unit_ids))})")
-            params.extend(sorted(unit_ids))
-        branches.append((f"{_REMOVED_NODE_BRANCH} WHERE {' AND '.join(conditions)}", params))
-
-        conditions, params = list(common), list(common_params)
-        if pattern:
-            conditions.append("(t.serial LIKE %s OR d.title LIKE %s OR d.original_name LIKE %s)")
-            params.extend([pattern] * 3)
-        if unit_ids is not None:
-            conditions.append(f"t.unit_id IN ({', '.join(['%s'] * len(unit_ids))})")
-            params.extend(sorted(unit_ids))
-        branches.append((f"{_REMOVED_TICKET_BRANCH} WHERE {' AND '.join(conditions)}", params))
+        # The original name is searched too: phone photos are IMG_2034 in both title and file name
+        for branch_sql, search_column, unit_column in (
+                (_REMOVED_NODE_BRANCH, "e.code", "u.id"),
+                (_REMOVED_TICKET_BRANCH, "t.serial", "t.unit_id"),
+                (_REMOVED_ACTION_BRANCH, "i.serial", "i.unit_id")):
+            branches.append(_scoped_branch(branch_sql, search_column, unit_column, common, common_params,
+                                           pattern, unit_ids))
 
     conditions, params = list(common), list(common_params)
     if pattern:
@@ -550,12 +590,14 @@ def list_removed_documents():
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_ACTION)
 def restore_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "purge_key")
     column = OWNERS[owner].column
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        # The one owner lock; 404; 403; a node also refuses scrapped, a ticket closed (409)
+        # The one owner lock; 404; 403; a node also refuses scrapped, a ticket closed, a
+        # countermeasure a closed improvement or its own cancel (409)
         OWNERS[owner].lock_for_change(cur, owner_id, key)
         cur.execute("SELECT id, title, kind, removed_by, removed_at FROM equipment_documents "
                     f"WHERE id = %s AND {column} = %s AND removed_at IS NOT NULL", (doc_id, owner_id))
@@ -596,6 +638,7 @@ def _remove_stored_files(owner, owner_id, doc):
 @documents_bp.route(f"{_NODE_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_NODE)
 @documents_bp.route(f"{_MODEL_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_MODEL)
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_TICKET)
+@documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_ACTION)
 def purge_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "purge_key")
     column = OWNERS[owner].column

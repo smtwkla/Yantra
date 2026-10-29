@@ -173,7 +173,7 @@ app.register_blueprint(equipment_bp, url_prefix="/api/equipment")
 
 from documents import documents_bp
 # Its routes spell out /equipment/..., /masters/equipment-models/... and /tickets/<id>/documents
-# (three owners, S012, S017); Flask matches the longer rule, so no clash with tickets_bp
+# and /improvements/actions/<id>/documents (four owners, S012, S017, S070); Flask matches the longer rule, so no clash with tickets_bp
 app.register_blueprint(documents_bp, url_prefix="/api")
 
 from meters import meters_bp

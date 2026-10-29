@@ -25,7 +25,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   27-10-2026, and the migration v36 tables `improvements` and
   `improvement_tickets` (S067) on 30-10-2026, and the migration v37 table
   `improvement_whys` with the `improvements` root-cause columns (S069) on
-  30-10-2026. The schema described here is at **migration v37**.
+  30-10-2026, and the migration v38 table `improvement_actions` with
+  `equipment_documents.action_id` and the four-owner CHECK (S070) on
+  30-10-2026. The schema described here is at **migration v38**.
 
 ## Conventions
 
@@ -60,7 +62,7 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `model_property_values` | A model's value of a property (S043, v31), one row per model and property (primary key): exactly one of `value_number` (`DECIMAL(16,4)`), `value_text` (up to 100), `value_bool`, `option_id` and, since v34, `value_lat` is filled (`chk_model_property_one_value`); which one follows the property's data type (checked in the code). A Location (`geo`, v34) is `value_lat` `DECIMAL(8,6)` and `value_lng` `DECIMAL(9,6)`: both or neither (`chk_model_property_geo_pair`), latitude −90 to 90 and longitude −180 to 180 (`chk_model_property_geo_range`). The option's foreign key is `(option_id, property_id)`, so it must be this property's. No row = no value. Shown on the equipment page's *Properties* card, where an item's own value (`equipment_property_values`) wins |
 | `equipment_property_values` | An equipment item's own value of a property of its class (S044, v33), where its nameplate differs from its model's; it wins over the model's on that item only. One row per item and property (primary key `(equipment_id, property_id)`); the same value columns, CHECKs (`chk_equipment_property_one_value`, and since v34 `chk_equipment_property_geo_pair` and `chk_equipment_property_geo_range`) and option foreign key `(option_id, property_id)` as `model_property_values`. No row = the model's value applies. A model or class change leaves the rows alone: a value of a property the new class lacks is hidden, not deleted. Each set, change and clear writes a `property` event |
 | `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002); since v30 also `meter_added`, `meter_removed` and `meter_limits` (the limits in force on both sides, S038); since v33 `property` (an item's own property value set, changed or cleared: "<property>: <value>" on each side, the model's value in force marked "(model)", S044) |
-| `equipment_documents` | Files attached to equipment, an equipment model (S012) or a ticket (photos, S017) — exactly one owner: kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
+| `equipment_documents` | Files attached to equipment, an equipment model (S012), a ticket (photos, S017) or a countermeasure (`action_id`, S070, v38: a photo of the work) — exactly one owner (`chk_equipment_documents_owner` counts the four columns; index `ix_equipment_documents_action (action_id, removed_at)`): kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1); email, copied from the Keycloak login token at each login, never typed, shown only to IT admin and its owner (S032, v27) |
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
 | `person_trades` | Person → trades, none or more (S010 A1) |
@@ -79,6 +81,7 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `ticket_parts` | Parts fitted per ticket (S020): description, part number and its kind, maker, quantity and unit, the node fitted to |
 | `improvements` | An improvement (S067, v36; TPM focused improvement): one problem analysed from one or more tickets. Serial `IM-YYYY-MM-NNN` (`uq_improvements_serial`), the unit and the machine of the first ticket (fixed; the site is the unit's), state (`analysing` only in S067; R05.4 appends its states), title (up to 120), problem (up to 2000), lead (a person who may hold `improvement:edit` at the site when picked), who started it and when, last edit. Never deleted. Indexes `ix_improvements_unit_state`, `ix_improvements_equipment`. The tickets' symptom, cause and downtime are read from the tickets, never copied. S069 (v37) adds the root cause: `root_cause` (text, up to 500) and `root_cause_id` (→ `failure_causes`, the list the tickets use), both set or both NULL (`chk_improvements_root_cause`), set and changed but never cleared; index `ix_improvements_root_cause` (the cause's code freeze counts through it); and `contributing_causes` (free text, up to 2000, NULL when none) |
 | `improvement_whys` | The why-why chain of an improvement (S069, v37; TPM why-why): one line per *Why? / Because*, `position` 1..n with no gap (`chk_improvement_whys_position` ≥ 1; kept by the API under the improvement's lock, no unique key), question (up to 300), answer (up to 1000), evidence (up to 500, NULL when none), who wrote it and when, who changed it last and when. A removed why is deleted (no history until R05.4). Index `ix_improvement_whys_position (improvement_id, position)` |
+| `improvement_actions` | The countermeasures of an improvement (S070, v38; ISO 9001 § 10.2.1 c): kind (`correction`, `corrective`, `preventive`, `design_out`, `lesson`, `spread`), what will be done (up to 500), owner (→ `people`: any active member of the site, with or without a login), due date, state (`open`, `done`, `cancelled`; done and cancelled are final). Done: what was done (up to 1000), when, who recorded it — all three set exactly when done (`chk_improvement_actions_done`). Cancelled: reason (up to 500), when, who — all three set exactly when cancelled (`chk_improvement_actions_cancelled`). Who added it and when; the last change of the plan (kind, text, owner, due date). Never deleted (ISO 9001 § 7.5.3); at most 30 per improvement (the API). Overdue is computed, never stored. Indexes `ix_improvement_actions_improvement (improvement_id, id)`, `ix_improvement_actions_owner_state (owner_id, state, due_date)` (*my open countermeasures*) |
 | `improvement_tickets` | Improvement → the tickets it analyses (S067, v36), primary key `(improvement_id, ticket_id)`, who added it and when. `open_link` is 1 while the improvement is open and NULL after (R05.4 sets it); the unique key `uq_improvement_tickets_open (ticket_id, open_link)` lets a ticket be in only one open improvement, and `chk_improvement_tickets_open_link` allows only 1 or NULL. Removing a ticket deletes its row; the ticket row is never written |
 | `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), `IM-` improvement serials per month (S067), later `PM-` |
 | `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
@@ -150,6 +153,7 @@ erDiagram
     int equipment_id FK "null"
     int model_id FK "null"
     int ticket_id FK "null"
+    int action_id FK "null"
     varchar stored_name UK
   }
   equipment_events {
@@ -175,6 +179,11 @@ erDiagram
     int id PK
     varchar code UK
     int class_id FK "null"
+  }
+  improvement_actions {
+    int id PK
+    int improvement_id FK
+    int owner_id FK
   }
   improvement_tickets {
     int improvement_id PK,FK
@@ -383,6 +392,9 @@ erDiagram
   tickets ||--o{ improvement_tickets : "ticket_id"
   improvements ||--o{ improvement_whys : "improvement_id"
   failure_causes o|--o{ improvements : "root_cause_id"
+  improvements ||--o{ improvement_actions : "improvement_id"
+  people ||--o{ improvement_actions : "owner_id"
+  improvement_actions o|--o{ equipment_documents : "action_id"
   sites ||--o{ units : "site_id"
   units ||--o{ user_units : "unit_id"
 ```

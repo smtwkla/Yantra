@@ -1171,6 +1171,57 @@ _MIGRATIONS = [
         """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_root_cause
             CHECK ((root_cause IS NULL) = (root_cause_id IS NULL))""",
     ]),
+    # S070 — countermeasures (docs/steps/S070-improvement-countermeasures/1-brief.md § 4.1, R05.3):
+    # what the team does about an improvement's root cause, each with a kind, an owner and a due
+    # date (ISO 9001 § 10.2.1 c).  Never deleted: a cancel keeps the row with its reason (ISO 9001
+    # § 7.5.3).  The two CHECKs have v21's shape: a done row carries its text, time and recorder, a
+    # row that is not done never all three; the same for cancelled.  equipment_documents gains the
+    # fourth owner, the countermeasure (a photo of the work): the owner CHECK is dropped and added
+    # again with its name, as the v12 squash did; every existing row has one of the three old
+    # owners and action_id NULL, so it meets the new CHECK.  IF NOT EXISTS on the table, the
+    # column, the key, the foreign key and the CHECK, and DROP ... IF EXISTS, make a half-applied
+    # v38 re-run.  No precondition: a new table, a nullable column and a CHECK every existing row
+    # meets; nothing is converted or dropped.  Rollback: a release before v38 never reads
+    # improvement_actions, and its documents queries name their columns and join their own owner.
+    (38, "Countermeasures and their photos (S070)", [
+        """CREATE TABLE IF NOT EXISTS improvement_actions (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            improvement_id  INT NOT NULL,
+            kind            ENUM('correction','corrective','preventive','design_out','lesson','spread') NOT NULL,
+            text            VARCHAR(500) NOT NULL,
+            owner_id        INT NOT NULL,
+            due_date        DATE NOT NULL,
+            state           ENUM('open','done','cancelled') NOT NULL DEFAULT 'open',
+            done_text       VARCHAR(1000) NULL,
+            done_at         DATETIME NULL,
+            done_by         VARCHAR(100) NULL,
+            cancel_reason   VARCHAR(500) NULL,
+            cancelled_at    DATETIME NULL,
+            cancelled_by    VARCHAR(100) NULL,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            updated_at      DATETIME NULL,
+            updated_by      VARCHAR(100) NULL,
+            KEY ix_improvement_actions_improvement (improvement_id, id),
+            KEY ix_improvement_actions_owner_state (owner_id, state, due_date),
+            CONSTRAINT fk_improvement_actions_improvement FOREIGN KEY (improvement_id) REFERENCES improvements (id),
+            CONSTRAINT fk_improvement_actions_owner FOREIGN KEY (owner_id) REFERENCES people (id),
+            CONSTRAINT chk_improvement_actions_done
+                CHECK ((state = 'done') = (done_text IS NOT NULL AND done_at IS NOT NULL AND done_by IS NOT NULL)),
+            CONSTRAINT chk_improvement_actions_cancelled
+                CHECK ((state = 'cancelled') = (cancel_reason IS NOT NULL AND cancelled_at IS NOT NULL
+                                                AND cancelled_by IS NOT NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_documents
+            ADD COLUMN IF NOT EXISTS action_id INT NULL AFTER ticket_id,
+            ADD KEY IF NOT EXISTS ix_equipment_documents_action (action_id, removed_at),
+            ADD CONSTRAINT fk_equipment_documents_action
+                FOREIGN KEY IF NOT EXISTS (action_id) REFERENCES improvement_actions (id)""",
+        "ALTER TABLE equipment_documents DROP CONSTRAINT IF EXISTS chk_equipment_documents_owner",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+            CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
+                   + (action_id IS NOT NULL) = 1)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

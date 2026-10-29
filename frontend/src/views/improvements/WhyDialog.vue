@@ -110,7 +110,5 @@ defineExpose({ openAdd, openChange });
       </select>
       <div v-if="fieldError('position')" class="invalid-feedback d-block">{{ fieldError("position") }}</div>
     </div>
-    <!-- a chain of one has no select: a position refusal (an out-of-date page) shows here -->
-    <div v-else-if="isEdit && fieldError('position')" class="invalid-feedback d-block mb-3">{{ fieldError("position") }}</div>
   </FormModal>
 </template>

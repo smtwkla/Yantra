@@ -2,7 +2,11 @@
 not happen again (TPM focused improvement; docs/steps/S067-improvement-record/1-brief.md).  This
 step: start one from a ticket, its detail, edit, add and remove tickets, the list and the lead
 choices.  The screens are S068's.  S069 adds the analysis: the why-why chain (improvement_whys)
-and the root cause with the contributing causes (columns of improvements).
+and the root cause with the contributing causes (columns of improvements).  S070 adds the
+countermeasures (improvement_actions; ISO 9001 § 10.2.1 c): add, change, cancel, mark done, the
+user's own open ones, the owner choices, and the documents store's fourth owner (read_action and
+its lock functions, imported by documents.py).  Who marks one done is decided by data: its owner,
+or an improvement:edit holder at the site (as Plan § 3's pm_job:work); no new key.
 
 Thin shell: improvements_core holds the rules (the states, the fields, start, link and remove,
 who may lead, the loss); this module checks access, locks, reads the rows the rules need and
@@ -43,7 +47,19 @@ guards it is held.
 - Set root cause (S069): (6b) FOR UPDATE → plain reads (the cause's active flag only when the
   cause changes) → the update; a new root_cause_id takes a shared lock on that failure_causes
   row through the foreign key.  That is the one new edge: (6b) → a failure cause, shared.
-- Reads (list, detail, leads; the ticket detail in tickets.py): plain, no lock.
+- Countermeasures (S070 § 5.6).  Add: (6b) FOR UPDATE → plain reads (the transaction's first:
+  the predicate 404, the key 403, the open state 409, the count 409, the owner 400, the problem's
+  time and the due date 400) → the insert (shared FK locks on the improvement, held, and the
+  owner's people row).  Change, mark done, cancel: (6b) FOR UPDATE → (6c) the countermeasure row
+  FOR UPDATE (_lock_action; 404) → plain reads (the predicate 404, the key or the owner rule 403,
+  the open state 409, the countermeasure's state from (6c) 409, then the owner, the due date or
+  the done time 400) → the update (a new owner takes a shared lock on that person).  The
+  problem's time (the earliest linked ticket) is read under (6b), so the links cannot change.
+- A countermeasure's document (documents.py, its one owner lock): a plain read of the row's
+  improvement_id (it never changes; 404) → (6b) FOR UPDATE → (6c) FOR UPDATE → plain reads (the
+  predicate 404, the right 403, the open state and not cancelled 409, from the locked rows) →
+  the equipment_documents statement (an insert share-locks the countermeasure, held).
+- Reads (list, detail, leads, mine, owners; the ticket detail in tickets.py): plain, no lock.
 One open link per ticket is race-free: two writers linking one ticket both hold its shared
 lock, may both pass the plain check, and then meet on uq_improvement_tickets_open; the second
 insert waits for the first transaction and fails with a duplicate key (UNIQUE_KEY_ERRORS: 409).
@@ -72,7 +88,14 @@ No new deadlock cycle:
   root_cause_id to that cause (InnoDB checks a foreign key only when the column changes), and
   its row's committed entry then names the old cause: the code change of cause C never waits
   on a writer that waits for C.  A write that keeps its cause takes no cause lock.  No route
-  here locks a ticket, and no masters write locks an improvement or a why.
+  here locks a ticket, and no masters write locks an improvement or a why;
+- (6b) → (6c) (S070): every countermeasure writer takes its improvement first; nothing takes a
+  countermeasure and then an improvement (the documents path reads improvement_id with a plain
+  read before (6b)).  (6c) → equipment_documents rows: nothing else locks those.  No route here
+  takes a ticket lock with a countermeasure.  An add or a change of owner share-locks only the
+  improvement (held) and the owner's people row, never a unit; masters.py's person edit (person
+  → memberships → person_units → units) never waits on an improvement or a countermeasure row,
+  so it makes no cycle.  S069's cause freeze locks no countermeasure.
 The cause freeze is race-free as the tickets' (tickets.py LOCK ORDER): a root-cause write that
 holds the cause's shared lock commits before the code change gets its exclusive lock, and the
 count sees it; a later one waits behind the cause's lock and then sees the new code, which is
@@ -89,14 +112,16 @@ from flask import Blueprint, jsonify
 from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
 )
-from auth_utils import permissions_at_site, require_perm, require_perm_at
+from auth_utils import current_person_id, has_perm_at, permissions_at_site, require_perm, require_perm_at
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
 from equipment import IST, unit_access_condition
 from improvements_core import (
-    ALREADY_OPEN_RACE, CAUSE_ACTIVE, EDIT_KEY, IMPROVEMENT_CLOSED, IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT,
-    READ_KEY, SERIAL_PREFIX, TICKET_FROM_LIST, TICKET_OTHER_SITE, WHYS_FULL, WHYS_MAX, is_open, link_error, loss,
-    may_lead, position_error, removal_error, renumber, reorder, start_error, validate_improvement, validate_link,
-    validate_root_cause, validate_why,
+    ACTION_CANCELLED, ACTION_DONE, ACTION_OPEN, ACTIONS_FULL, ACTIONS_MAX, ALREADY_OPEN_RACE, CAUSE_ACTIVE, EDIT_KEY,
+    IMPROVEMENT_CLOSED, IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT, OWNER_AT_SITE, OWNER_OR_EDITOR, READ_KEY,
+    SERIAL_PREFIX, TICKET_FROM_LIST, TICKET_OTHER_SITE, WHYS_FULL, WHYS_MAX, action_counts, action_flags,
+    action_state_error, done_time_error, due_date_error, is_open, link_error, loss, may_lead, overdue_days,
+    position_error, removal_error, renumber, reorder, start_error, validate_action, validate_cancel, validate_done,
+    validate_improvement, validate_link, validate_root_cause, validate_why,
 )
 from tickets import code_ref, improvement_links, people_at_site, person_at_site, read_ticket
 from tickets_core import format_serial, is_breakdown, serial_scope, ticket_times
@@ -149,6 +174,11 @@ _LINKED_TICKETS = (
 def _now():
     """The IST wall clock, naive, as every DATETIME is stored (as tickets.py)."""
     return datetime.now(IST).replace(tzinfo=None)
+
+
+def _today():
+    """The IST date of now: the due date's range and *overdue* (S070 § 5.3, § 5.4)."""
+    return _now().date()
 
 
 def _in(values):
@@ -269,6 +299,89 @@ def _whys(cur, improvement_id):
     return whys
 
 
+_ACTION_COLUMNS = (
+    "SELECT a.id, a.kind, a.text, a.owner_id, a.due_date, a.state, a.done_text, a.done_at, a.done_by,"
+    " a.cancel_reason, a.cancelled_at, a.cancelled_by, a.created_at, a.created_by, a.updated_at,"
+    " o.name AS owner_name, o.active AS owner_active, o.username IS NOT NULL AS owner_has_login,"
+    " cp.name AS created_by_name, dp.name AS done_by_name, xp.name AS cancelled_by_name"
+    " FROM improvement_actions a JOIN people o ON o.id = a.owner_id"
+    " LEFT JOIN people cp ON cp.username = a.created_by"
+    " LEFT JOIN people dp ON dp.username = a.done_by"
+    " LEFT JOIN people xp ON xp.username = a.cancelled_by"
+)
+
+
+def _problem_at(cur, improvement_id):
+    """When the problem happened: the earliest linked ticket's occurred_at (S070 § 5.3), the
+    floor of a countermeasure's due date and done time.  Links change only under (6b)."""
+    cur.execute("SELECT MIN(t.occurred_at) AS at FROM improvement_tickets it JOIN tickets t ON t.id = it.ticket_id"
+                " WHERE it.improvement_id = %s", (improvement_id,))
+    return cur.fetchone()["at"]
+
+
+def _by_name(plain, column):
+    """Who a login column names: the person whose login it is, else the login; None when empty."""
+    return (plain[f"{column}_name"] or plain[column]) if plain[column] else None
+
+
+def _site_members(cur, person_ids, site_id):
+    """Which of these people are active members of the site today (who may own a countermeasure,
+    § 5.3), in one query."""
+    if not person_ids:
+        return set()
+    cur.execute("SELECT DISTINCT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id"
+                f" WHERE p.active = 1 AND ms.site_id = %s AND p.id IN ({_in(person_ids)})", [site_id, *person_ids])
+    return {row["id"] for row in cur.fetchall()}
+
+
+def _action_documents(cur, action_ids):
+    """The documents not removed of these countermeasures, newest first, in one query ->
+    ``{action_id: [{id, kind, title, has_thumb}, …]}``."""
+    result = {action_id: [] for action_id in action_ids}
+    if action_ids:
+        cur.execute("SELECT id, action_id, kind, title, has_thumb FROM equipment_documents"
+                    f" WHERE action_id IN ({_in(action_ids)}) AND removed_at IS NULL"
+                    " ORDER BY created_at DESC, id DESC", list(action_ids))
+        for row in cur.fetchall():
+            result[row["action_id"]].append({"id": row["id"], "kind": row["kind"], "title": row["title"],
+                                             "has_thumb": bool(row["has_thumb"])})
+    return result
+
+
+def _actions(cur, improvement_id, site_id, improvement_open):
+    """The countermeasures in the order they were added (§ 6), each with its owner's standing
+    today, its overdue days and what the user may do on it (action_flags).  Three queries for
+    any number (the rows, the owners' memberships, the documents)."""
+    cur.execute(f"{_ACTION_COLUMNS} WHERE a.improvement_id = %s ORDER BY a.id", (improvement_id,))
+    rows = cur.fetchall()
+    if not rows:
+        return []
+    members = _site_members(cur, sorted({row["owner_id"] for row in rows}), site_id)
+    documents = _action_documents(cur, [row["id"] for row in rows])
+    today = _today()
+    may_edit = has_perm_at(EDIT_KEY, site_id)
+    person_id = current_person_id(cur)
+    actions = []
+    for row in rows:
+        plain = row_to_dict(row)
+        actions.append({
+            "id": plain["id"], "kind": plain["kind"], "text": plain["text"],
+            "owner": {"id": plain["owner_id"], "name": plain["owner_name"], "active": bool(plain["owner_active"]),
+                      "has_login": bool(plain["owner_has_login"]), "may_own": plain["owner_id"] in members},
+            "due_date": plain["due_date"], "state": plain["state"],
+            "overdue_days": overdue_days(row["state"], row["due_date"], today),
+            "done_text": plain["done_text"], "done_at": plain["done_at"], "done_by_name": _by_name(plain, "done_by"),
+            "cancel_reason": plain["cancel_reason"], "cancelled_at": plain["cancelled_at"],
+            "cancelled_by_name": _by_name(plain, "cancelled_by"),
+            "created_at": plain["created_at"], "created_by_name": _by_name(plain, "created_by"),
+            "updated_at": plain["updated_at"],
+            **action_flags(improvement_open, row["state"], may_edit,
+                           person_id is not None and person_id == row["owner_id"]),
+            "documents": documents[row["id"]],
+        })
+    return actions
+
+
 def _root_cause(plain):
     """The root cause as the page shows it, or None (text and cause are both set or neither)."""
     if plain["root_cause"] is None:
@@ -287,7 +400,8 @@ def _unit(row):
 
 def _detail(cur, row):
     """The improvement page's data (§ 6): the record, its tickets with each one's removable, the
-    loss, the lead's standing today and the user's keys at the improvement's site."""
+    loss, the lead's standing today, the user's keys at the improvement's site, and since S070
+    the countermeasures with their counts and the time the problem happened."""
     tickets = _linked_tickets(cur, [row["id"]], _now())[row["id"]]
     open_now = is_open(row["state"])
     machine = _machine(row)
@@ -295,6 +409,7 @@ def _detail(cur, row):
     for ticket, link in zip(tickets, links):
         ticket["removable"] = open_now and removal_error(link, links, machine) is None
     lead_now = person_at_site(cur, row["lead_id"], row["site_id"])
+    actions = _actions(cur, row["id"], row["site_id"], open_now)
     plain = row_to_dict(row)
     return {
         "id": plain["id"],
@@ -317,6 +432,9 @@ def _detail(cur, row):
         "whys": _whys(cur, plain["id"]),
         "root_cause": _root_cause(plain),
         "contributing_causes": plain["contributing_causes"],
+        "actions": actions,
+        "action_counts": action_counts(actions),
+        "problem_at": row_to_dict({"at": _problem_at(cur, row["id"])})["at"],
         "permissions": sorted(permissions_at_site(row["site_id"])),
     }
 
@@ -620,3 +738,269 @@ def set_root_cause(improvement_id):
         update_row(cur, "improvements", improvement_id, changes, actor())
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
+
+
+# ---------------------------------------------------------------------------
+# Countermeasures (S070; LOCK ORDER above)
+# ---------------------------------------------------------------------------
+
+# (6c): the countermeasure's decision columns, and the values a change compares with
+_LOCK_ACTION = ("SELECT id, improvement_id, state, kind, text, owner_id, due_date FROM improvement_actions"
+                " WHERE id = %s AND improvement_id = %s FOR UPDATE")
+
+
+def _lock_action(cur, improvement_id, action_id):
+    """(6c), after (6b) -> the locked row; a countermeasure of another improvement or an unknown
+    one -> 404."""
+    cur.execute(_LOCK_ACTION, (action_id, improvement_id))
+    action = cur.fetchone()
+    if action is None:
+        raise ApiError("Not found", 404)
+    return action
+
+
+def _refuse_state(operation, action):
+    """The countermeasure's own state (§ 5.5), from its locked row: 409."""
+    message = action_state_error(operation, action["state"])
+    if message:
+        raise ApiError(message, 409)
+
+
+def _require_owner_or_editor(cur, site_id, owner_id):
+    """Owner by data (§ 5.7, as Plan § 3's pm_job:work): improvement:edit at the improvement's
+    site, or the user's own Team record owns the countermeasure; else 403.  A user with no Team
+    record (IT admin) owns nothing."""
+    if has_perm_at(EDIT_KEY, site_id):
+        return
+    person_id = current_person_id(cur)
+    if person_id is None or person_id != owner_id:
+        raise ApiError(OWNER_OR_EDITOR, 403)
+
+
+def _check_owner(cur, owner_id, site_id):
+    """§ 5.3, D3: an active person with a membership at the site, any role, a login or not."""
+    if person_at_site(cur, owner_id, site_id) is None:
+        raise ApiError(OWNER_AT_SITE, 400, "owner_id")
+
+
+def _check_due(cur, improvement_id, due):
+    """§ 5.3, D7: from the day the problem happened to a year ahead."""
+    problem_at = _problem_at(cur, improvement_id)
+    message = due_date_error(due, problem_at.date() if problem_at else None, _today())
+    if message:
+        raise ApiError(message, 400, "due_date")
+
+
+def _lock_for_actions(cur, improvement_id, action_id=None):
+    """A countermeasure write's start (§ 5.6): (6b), then (6c) when ``action_id`` is given ->
+    ``(locked improvement, locked countermeasure or None)``.  The checks come after, as plain
+    reads, in the order § 5.1 gives."""
+    locked = _lock_improvement(cur, improvement_id)   # (6b)
+    action = _lock_action(cur, improvement_id, action_id) if action_id is not None else None   # (6c)
+    return locked, action
+
+
+@improvements_bp.route("/<int:improvement_id>/actions", methods=["POST"])
+@require_perm(EDIT_KEY)
+def add_action(improvement_id):
+    """A countermeasure with its kind, text, owner and due date, up to ACTIONS_MAX (§ 5.2)."""
+    clean = clean_body(validate_action, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, _ = _lock_for_actions(cur, improvement_id)
+        row = _check_improvement(cur, improvement_id)   # 404, 403
+        _require_open(locked)
+        if count(cur, "SELECT COUNT(*) AS n FROM improvement_actions WHERE improvement_id = %s",
+                 (improvement_id,)) >= ACTIONS_MAX:
+            raise ApiError(ACTIONS_FULL, 409)
+        _check_owner(cur, clean["owner_id"], row["site_id"])
+        _check_due(cur, improvement_id, clean["due_date"])
+        insert_row(cur, "improvement_actions", {"improvement_id": improvement_id, **clean}, actor())
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail), 201
+
+
+@improvements_bp.route("/<int:improvement_id>/actions/<int:action_id>", methods=["PUT"])
+@require_perm(EDIT_KEY)
+def edit_action(improvement_id, action_id):
+    """Kind, text, owner and due date of an open countermeasure: a field equal to the stored one
+    is not written, and a change of nothing writes nothing.  The owner and the due date are
+    checked only when they change, so an owner who has since left the site stays until someone
+    picks another (§ 5.3)."""
+    clean = clean_body(validate_action, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, action = _lock_for_actions(cur, improvement_id, action_id)
+        row = _check_improvement(cur, improvement_id)   # 404, 403
+        _require_open(locked)
+        _refuse_state("change", action)
+        changes = {field: value for field, value in clean.items() if value != action[field]}
+        if "owner_id" in changes:
+            _check_owner(cur, changes["owner_id"], row["site_id"])
+        if "due_date" in changes:
+            _check_due(cur, improvement_id, changes["due_date"])
+        update_row(cur, "improvement_actions", action_id, changes, actor())
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/<int:improvement_id>/actions/<int:action_id>/done", methods=["POST"])
+@require_perm(READ_KEY)
+def mark_action_done(improvement_id, action_id):
+    """What was done and when (§ 5.2), by the owner or an improvement:edit holder (§ 5.7).  No
+    done_at is *Now*: the server's clock.  done_by is who recorded it; updated_* stay the last
+    change of the plan (D8)."""
+    clean = clean_body(validate_done, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, action = _lock_for_actions(cur, improvement_id, action_id)
+        row = _read_improvement(cur, improvement_id)   # 404
+        _require_owner_or_editor(cur, row["site_id"], action["owner_id"])
+        _require_open(locked)
+        _refuse_state("done", action)
+        now = _now().replace(microsecond=0)
+        done_at = clean["done_at"] or now
+        message = done_time_error(done_at, now, _problem_at(cur, improvement_id))
+        if message:
+            raise ApiError(message, 400, "done_at")
+        cur.execute("UPDATE improvement_actions SET state = %s, done_text = %s, done_at = %s, done_by = %s"
+                    " WHERE id = %s", (ACTION_DONE, clean["done_text"], done_at, actor(), action_id))
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/<int:improvement_id>/actions/<int:action_id>/cancel", methods=["POST"])
+@require_perm(EDIT_KEY)
+def cancel_action(improvement_id, action_id):
+    """An open countermeasure cancelled with a reason; the row stays (ISO 9001 § 7.5.3, D5)."""
+    clean = clean_body(validate_cancel, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, action = _lock_for_actions(cur, improvement_id, action_id)
+        _check_improvement(cur, improvement_id)   # 404, 403
+        _require_open(locked)
+        _refuse_state("cancel", action)
+        cur.execute("UPDATE improvement_actions SET state = %s, cancel_reason = %s, cancelled_at = %s,"
+                    " cancelled_by = %s WHERE id = %s",
+                    (ACTION_CANCELLED, clean["reason"], _now().replace(microsecond=0), actor(), action_id))
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/actions/mine")
+@require_perm(READ_KEY)
+def my_actions():
+    """The user's open countermeasures of open improvements inside the predicate, by due date
+    (*Me › Open work*, D9).  A user with no Team record owns none."""
+    with get_db().cursor() as cur:
+        person_id = current_person_id(cur)
+        visible = _visible_condition(cur)
+        if person_id is None or visible is None:
+            return jsonify({"items": [], "total": 0})
+        where = (f"a.owner_id = %s AND a.state = %s AND i.state IN ({_in(IMPROVEMENT_OPEN_STATES)})"
+                 f" AND {visible[0]}")
+        params = [person_id, ACTION_OPEN, *IMPROVEMENT_OPEN_STATES, *visible[1]]
+        from_ = (" FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id"
+                 " JOIN equipment m ON m.id = i.equipment_id JOIN units u ON u.id = i.unit_id")
+        total = count(cur, f"SELECT COUNT(*) AS n{from_} WHERE {where}", params)
+        cur.execute("SELECT a.id, a.kind, a.text, a.due_date, a.state, i.id AS i_id, i.serial, i.title, i.state AS i_state,"
+                    f" u.site_id, m.id AS m_id, m.code AS m_code, m.name AS m_name{from_} WHERE {where}"
+                    " ORDER BY a.due_date, a.id LIMIT %s", [*params, MAX_PER_PAGE])
+        rows = cur.fetchall()
+    today = _today()
+    items = []
+    for row in rows:
+        flags = action_flags(is_open(row["i_state"]), row["state"], has_perm_at(EDIT_KEY, row["site_id"]), True)
+        items.append({
+            "id": row["id"], "kind": row["kind"], "text": row["text"], "due_date": row["due_date"].isoformat(),
+            "overdue_days": overdue_days(row["state"], row["due_date"], today),
+            "can_mark_done": flags["can_mark_done"], "can_add_photo": flags["can_add_photo"],
+            "improvement": {"id": row["i_id"], "serial": row["serial"], "title": row["title"], "machine": _machine(row)},
+        })
+    return jsonify({"items": items, "total": total})
+
+
+@improvements_bp.route("/owners")
+@require_perm(EDIT_KEY)
+def list_owners():
+    """Who may own a countermeasure (§ 5.3, D3): every active person of the improvement's site,
+    any role, a login or not, by name."""
+    improvement_id = int_arg("improvement_id", None, minimum=1)
+    if improvement_id is None:
+        raise ApiError("improvement_id is required", 400, "improvement_id")
+    with get_db().cursor() as cur:
+        site_id = _read_improvement(cur, improvement_id)["site_id"]
+        require_perm_at(EDIT_KEY, site_id)
+        items = [{"id": p["id"], "name": p["name"]} for p in people_at_site(cur, site_id)]
+    return jsonify({"items": items})
+
+
+# ---------------------------------------------------------------------------
+# The documents store's fourth owner: the countermeasure (S070 § 5.8; documents.OWNERS)
+# ---------------------------------------------------------------------------
+
+def _action_row(cur, action_id):
+    """Plain read of a countermeasure's improvement_id, state and owner; 404 when missing."""
+    cur.execute("SELECT id, improvement_id, state, owner_id FROM improvement_actions WHERE id = %s", (action_id,))
+    action = cur.fetchone()
+    if action is None:
+        raise ApiError("Not found", 404)
+    return action
+
+
+def _document_rights(cur, key, site_id, owner_id):
+    """documents.py passes the owner's key for the operation, so this branches on it: the write
+    key improvement:read (D4) -> the owner or improvement:edit at the improvement's site (§ 5.7);
+    the purge key (restore) -> that key at the site."""
+    if key == READ_KEY:
+        _require_owner_or_editor(cur, site_id, owner_id)
+    else:
+        require_perm_at(key, site_id)
+
+
+def read_action(cur, action_id, _key=None):
+    """documents.py's ``read``: the countermeasure through its improvement's predicate; 404 when
+    missing or not visible -> the countermeasure's row with its improvement's site and state."""
+    action = _action_row(cur, action_id)
+    improvement = _read_improvement(cur, action["improvement_id"])
+    return {**action, "site_id": improvement["site_id"], "improvement_state": improvement["state"]}
+
+
+def read_action_for_change(cur, action_id, key):
+    """documents.py's ``read_for_change``: a write's early refusals from plain reads, so a refused
+    upload reads and writes no file.  ``key`` is improvement:read (upload) -> the owner or
+    improvement:edit at the site, 403; then the improvement open and the countermeasure not
+    cancelled, 409.  The decisions that count are lock_action_for_change's."""
+    action = read_action(cur, action_id)
+    _document_rights(cur, key, action["site_id"], action["owner_id"])
+    if not is_open(action["improvement_state"]):
+        raise ApiError(IMPROVEMENT_CLOSED, 409)
+    _refuse_state("photo", action)
+    return action
+
+
+def _lock_action_for_documents(cur, action_id):
+    """The one owner lock of a countermeasure's document (§ 5.6): a plain read of its
+    improvement_id (it never changes; 404), then (6b) and (6c), then the predicate (404) ->
+    ``(locked improvement, locked countermeasure, the improvement's visible row)``."""
+    improvement_id = _action_row(cur, action_id)["improvement_id"]
+    locked, action = _lock_for_actions(cur, improvement_id, action_id)
+    return locked, action, _read_improvement(cur, improvement_id)
+
+
+def lock_action_for_change(cur, action_id, key):
+    """documents.py's ``lock_for_change`` (upload, retitle, remove, restore), in the write
+    transaction: 404, then by ``key`` — improvement:read, the write key: the owner or
+    improvement:edit at the site; the purge key (restore): that key at the site — 403, then the
+    improvement open and the countermeasure not cancelled, 409, all from the locked rows."""
+    locked, action, row = _lock_action_for_documents(cur, action_id)
+    _document_rights(cur, key, row["site_id"], action["owner_id"])
+    _require_open(locked)
+    _refuse_state("photo", action)
+
+
+def lock_action_for_purge(cur, action_id, key):
+    """documents.py's ``lock_for_purge``: as lock_action_for_change with the purge key and no
+    state check: erasing a file is disposition of information (S008 § 5.3)."""
+    _, _, row = _lock_action_for_documents(cur, action_id)
+    require_perm_at(key, row["site_id"])

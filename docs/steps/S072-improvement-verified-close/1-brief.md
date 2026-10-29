@@ -885,7 +885,16 @@ None. S073 holds them.
 
 ## 10. Amendments
 
-None.
+### A1 — Removed countermeasure photos on a closed improvement (30-10-2026, from S070 CR1-04)
+
+- **Why:** S070's removed-documents item carries only the countermeasure's state. Once this step
+  closes and drops improvements, *Restore* on a removed countermeasure photo of a closed
+  improvement ends in a 409 the list did not warn about.
+- **Rule:** the removed-documents item of a countermeasure photo also carries whether its
+  improvement is open; the list shows *Restore* only when it is, as it does for a closed ticket's
+  photos. The restore route's own refusal stays.
+- **Approval:** decided by the orchestrator under KLA's delegation for R05, 30-10-2026; shown to
+  KLA at gate B.
 
 ## Review log
 
