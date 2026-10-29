@@ -31,6 +31,7 @@ impl report or any code.
    machine: a `uv run --no-project python` or `node -e` snippet, a read-only
    PowerShell line, a `--list` run. Keep scripts in the session scratchpad or
    `scratch/`; name the file in the report so the user can run it again.
+   The shell rules: `docs/steps/README.md` § Shell on Windows.
 4. **Say what you could not verify**, and what the user would have to do to
    check it (the exact command, the machine, what to look for).
 
@@ -84,7 +85,7 @@ End your file with `## Feedback` (25-10-2026, by KLA): what in the workflow, the
 rules cost you time or got in your way during this run, so the system can be improved. Not the
 step's findings, and no praise.
 
-- At most 5 items, one line each, in the form `- <label>: <what happened> (<evidence>)`, where the
+- At most 5 items, one bullet each (a long one may wrap onto indented lines), in the form `- <label>: <what happened> (<evidence>)`, where the
   label is one of:
   - `waste` — time or tokens spent for nothing (a run repeated, a file read that did not matter,
     a long wait);

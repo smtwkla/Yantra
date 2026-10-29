@@ -47,6 +47,10 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
 
 ## What to check
 
+A step with no screen and no business rule (tooling, docs, process): skip
+*Standards*, *Use on the floor* and the product plan unless the brief cites
+them.
+
 - Read the brief, plus everything it lists as background:
   - the repo's product plan and domain docs (settings: *Plan and domain docs*)
   - the relevant sections of `.claude/SMTW-WebApp-Base.md`
@@ -59,8 +63,9 @@ write `2-brief-review-sN.md`, with findings `BS<n>-<nn>`:
   the brief cites, whether it exists, where it is defined, and which code and
   test files use it. Verify claims from it first; open code only where it
   leaves a question (behaviour, semantics, a rule). Don't re-grep what it
-  already lists. A claim about a name it doesn't list (not in backticks) is
-  still yours to check. If no facts file was given, say so in the verdict.
+  already lists; its *Screen text in the tests* section lists the test lines
+  that use each control the brief writes as `"Label"`. A claim about a name
+  it doesn't list (not in backticks) is still yours to check. If no facts file was given, say so in the verdict.
 - Look for:
   - contradictions with the repo's product plan's decisions;
   - rules the coder would otherwise have to decide alone;
@@ -171,7 +176,7 @@ End your file with `## Feedback` (25-10-2026, by KLA): what in the workflow, the
 rules cost you time or got in your way during this run, so the system can be improved. Not the
 step's findings, and no praise.
 
-- At most 5 items, one line each, in the form `- <label>: <what happened> (<evidence>)`, where the
+- At most 5 items, one bullet each (a long one may wrap onto indented lines), in the form `- <label>: <what happened> (<evidence>)`, where the
   label is one of:
   - `waste` — time or tokens spent for nothing (a run repeated, a file read that did not matter,
     a long wait);
@@ -206,8 +211,8 @@ Follow CLAUDE-COMMON § Writing style:
   an image, installing, a setting, another repo) is neither done nor skipped
   silently: name it at the top of your final message under **QUESTIONS FOR
   THE USER**, with why the review needs it.
-- **Shell text** (27-10-2026): run a `.bat` wrapper quoted, with
-  backslashes: `cmd //c "tooling\step-brief-facts.bat S0NN"`.
+- **Shell** (29-10-2026): read `docs/steps/README.md` § Shell on Windows before your first Bash
+  call; it holds the rules for scripts, `.bat` wrappers and chained commands.
 - Never approve a brief. Approval is the user's.
 - Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
   come from the user's IDE: not findings (`docs/steps/README.md` § IDE

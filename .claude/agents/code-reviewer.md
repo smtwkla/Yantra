@@ -28,8 +28,10 @@ review file there.
   untracked files included. A plain `git diff <ref>` lists them as deleted and
   mixes in the earlier step's files. In round 2 and later, `diff S00N
   --from-round N` shows only the fix round's change (the orchestrator names
-  N; `rounds S00N` lists them). From the Bash tool, call
-  `uv run --no-project python tooling/steps/step_snapshot.py diff …`.
+  N; `rounds S00N` lists them). The diff leaves out the step's own
+  `docs/steps/S00N-*/` folder, which you read in full anyway; paths after
+  `--` replace that (`diff S00N --from-round 2 -- backend`). From the Bash
+  tool, call `uv run --no-project python tooling/steps/step_snapshot.py diff …`.
   Read the touched files in full where needed, not only the hunks.
 - The engineering rules: `.claude/CLAUDE-COMMON.md`, `.claude/CLAUDE.md`, and
   the relevant sections of `.claude/SMTW-WebApp-Base.md`.
@@ -152,7 +154,9 @@ review file there.
     and what that diff touches;
   - don't re-read the rest of the step; anything there you notice in passing
     is reported only if it is a `blocker` or `major`;
-  - tests: the repo's command for all suites (settings: *Unit tests*); check
+  - tests: the suites of what the fix round changed; the repo's command for
+    all suites (settings: *Unit tests*) when it changed code outside one
+    suite's folder; check
     that the coder ran the **targeted**
     browser specs of what the fix round changed (re-run only what a finding of
     yours needs);
@@ -191,7 +195,7 @@ End your file with `## Feedback` (25-10-2026, by KLA): what in the workflow, the
 rules cost you time or got in your way during this run, so the system can be improved. Not the
 step's findings, and no praise.
 
-- At most 5 items, one line each, in the form `- <label>: <what happened> (<evidence>)`, where the
+- At most 5 items, one bullet each (a long one may wrap onto indented lines), in the form `- <label>: <what happened> (<evidence>)`, where the
   label is one of:
   - `waste` — time or tokens spent for nothing (a run repeated, a file read that did not matter,
     a long wait);
@@ -227,10 +231,8 @@ Follow CLAUDE-COMMON § Writing style:
   another repo) is neither done nor skipped silently: name it at the top of
   your final message under **QUESTIONS FOR THE USER**, with why the review
   needs it.
-- **Shell text** (27-10-2026): run a `.bat` wrapper quoted, with
-  backslashes: `cmd //c "tooling\run-tests.bat …"`; read the summary line
-  before you call a run green (a run that ran nothing failed); write nothing
-  through a heredoc.
+- **Shell** (29-10-2026): read `docs/steps/README.md` § Shell on Windows before your first Bash
+  call; it holds the rules for scripts, `.bat` wrappers and chained commands.
 - Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
   come from the user's IDE: not findings (`docs/steps/README.md` § IDE
   reformatting). Read diffs with `git diff -w --ignore-cr-at-eol`.

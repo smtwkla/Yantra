@@ -1,0 +1,3 @@
+# Git stores text files with LF; each checkout uses the machine's own line endings (core.autocrlf).
+# Stops CRLF and LF mixing in the repo (agents' feedback S055, S056, S064; 29-10-2026).
+* text=auto

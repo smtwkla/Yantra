@@ -43,12 +43,12 @@ progress:
 | `4-code-review-r1.md`, `-r2.md`, … | Code reviewer | One file per review round, reviewing the working-tree diff against the brief |
 
 **Feedback** (25-10-2026, by KLA). Every file an agent writes — advice, brief review, impl report,
-code review — ends with `## Feedback`: at most 5 one-line items labelled `waste`, `hindrance`,
+code review — ends with `## Feedback`: at most 5 items, one bullet each, labelled `waste`, `hindrance`,
 `rule` or `idea`, each with its evidence, or `- none` (the agents' instructions give the form).
 `/step feedback` collects them across steps (`tooling/step-feedback.bat`), by default only the
 items not yet in the repo's **feedback log** `docs/steps/feedback-log.md` (27-10-2026): one row
-per item read, with what was decided (`acted`, `dropped` or `noted`). The log is the repo's own
-file, like the index; the step skill § Feedback gives its form.
+per item read, with its theme and what was decided (`acted`, `dropped` or `noted`). The log is the
+repo's own file, like the index; the step skill § Feedback gives its form.
 
 ## Header block
 
@@ -282,6 +282,28 @@ of content. That is expected and never needs the user's attention:
 - **Edit the file as it is now.** Re-read it before an edit and match the
   current text: the Edit tool, not a script holding an older copy or assuming
   LF line endings and the old table padding.
+
+## Shell on Windows
+
+Every agent reads this before its first Bash call (29-10-2026, from the agents' feedback on S048–S064:
+runs lost to quoting, to a `cd` that stayed, and to a chain that stopped on an empty `grep`). The
+Bash tool is Git Bash on Windows.
+
+1. **Text and scripts go to a file first.** Change a file with the Edit or Write tool. For a script
+   (a one-off fix over several files, a check), write it with the Write tool to the session
+   scratchpad or `scratch/`, then run `uv run --no-project python <file>`. Never put the script or
+   multi-line text inline: no heredoc, no `echo`, no `python -c` with quotes in it.
+2. **A `.bat` wrapper runs from the repo root**, quoted, with backslashes:
+   `cd "<repo root>" && cmd //c "tooling\run-tests.bat …"` in one command. The Bash tool keeps the
+   last `cd`, so a relative path fails after a `cd frontend`.
+3. **A step tool runs directly**: `uv run --no-project python tooling/steps/<tool>.py …`, not through
+   its `.bat` (`cmd //c` garbles a quoted argument on its way in).
+4. **Chain read-only commands with `;`, not `&&`.** `grep` exits 1 when it finds nothing, and `&&`
+   then stops the rest.
+5. **`MSYS_NO_PATHCONV=1`** before a command whose argument has a `/` that is not a path
+   (`git show refs/steps/S0NN:<file>`); Git Bash turns it into a Windows path otherwise.
+6. **Read the summary line** of a test run before you call it green: it must name the tests that
+   ran. A run that ran nothing failed.
 
 ## Orchestrated mode (one terminal)
 

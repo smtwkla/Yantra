@@ -211,7 +211,11 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
         *Self-check, repo items*). For each
         new test, its fixture and whether the session DB gives its starting
         state. The browser specs (targeted or full) and the repo's browser-test
-        conventions (settings: *Browser tests*).
+        conventions (settings: *Browser tests*). A control the step hides,
+        renames or moves: write its label in the brief as `"Label"` (double
+        quotes inside the backticks), so the facts run lists the browser-test
+        lines that use it; put each line in § Tests (29-10-2026, S064: 34 such
+        lines found only in review).
      6. **No rule left to the coder**: every input's missing, empty,
         wrong-type and boundary case; a `PUT` without a field; the bounds of a
         setting; where a new screen or menu item lives.
@@ -431,7 +435,10 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      impl report's `## Manual checks`, the rest as a plain list, and that their
      rows are in the repo's device-check list for the user or the named person
      (settings: *Device checks*). The user decides which checks are which and may skip
-     any.
+     any;
+   - the feedback count, in one line: the `unread:` line of
+     `tooling/step-feedback.bat --new`, and "propose `/step feedback`" when it is 20 or more
+     (§ Feedback).
 
    **Snapshot at gate B** (§ Snapshots): when the step reaches gate B, run
    `tooling/step-snapshot.bat snapshot S00N "S00N: <commit message>;"` and
@@ -504,23 +511,34 @@ readings, `0-advice-power-readings.md`).
 ## Feedback
 
 Every agent ends its file with `## Feedback` (25-10-2026, by KLA; README § Folder and files): at
-most 5 one-line items, `waste`, `hindrance`, `rule` or `idea`, each with its evidence, or `- none`.
+most 5 items, one bullet each, `waste`, `hindrance`, `rule` or `idea`, each with its evidence, or
+`- none`.
 
 - **Tell each subagent** in its spawn prompt that its file ends with the section (its agent file
-  gives the form).
+  gives the form), and name the themes dropped at the last triage (the log's newest section), so it
+  does not report them again.
 - **At each gate**, read the feedback of the files written since the last gate. When an item
   recurs or cost real time, name it in one line ("Feedback: the coder lost 3 runs to cmd quoting —
   see `/step feedback`"). Fix nothing in the workflow without the user's OK.
+- **When to triage** (29-10-2026): the gate B report ends with the unread count
+  (`tooling/step-feedback.bat --new`, its `unread:` line) and proposes `/step feedback` when it is
+  20 or more.
 - **`/step feedback`** runs `tooling/step-feedback.bat --new` (all steps, or the IDs given): every
-  unread item with its step, file and label. Group the items that say the same thing, count them,
-  and propose the few changes that would save the most; the user decides.
+  unread item with its step, file and label, and `--themes` once: the log's rows counted by theme.
+  Group the items that say the same thing, give each group a theme (an existing one when it fits),
+  count them, and propose the few changes that would save the most; the user decides. Prefer
+  fixing a tool over adding a rule: of the changes made on 27-10-2026, the tool fixes ended their
+  themes and the prose rule did not.
+- **A theme noted twice** (29-10-2026): a theme whose last two decisions were `noted` (`--themes`
+  marks it) is decided `acted` or `dropped` at this triage; `noted` is not offered for it.
 - **The feedback log** (27-10-2026, by KLA): `docs/steps/feedback-log.md`, one table row per item
-  read, `| Step | File | Label | Item | Decision |`. An item is read when its row is there. Once
-  the user has decided, run `tooling/step-feedback.bat --rows` (the unread items as rows, the
-  decision cell empty), fill each decision and append the rows under a heading with the date:
-  `acted: <the change>`, `dropped: <the reason>`, or `noted` (read, no change; a later item
-  saying the same thing comes back as unread). Copy the rows as printed: the item cell is the
-  key. Feedback read only at a gate is not logged.
+  read, `| Step | File | Label | Item | Theme | Decision |`. An item is read when its row is there.
+  Once the user has decided, run `tooling/step-feedback.bat --rows` (the unread items as rows, the
+  theme and decision cells empty), fill each theme (a short tag, e.g. `facts-path`) and decision,
+  and append the rows under a heading `## DD-MM-YYYY — …`: `acted: <the change>`,
+  `dropped: <the reason>` (the agents are told not to report it again), or `noted` (read, no change;
+  a later item saying the same thing comes back as unread, and its theme count grows). Copy the
+  rows as printed: the item cell is the key. Feedback read only at a gate is not logged.
 - Feedback is about the workflow, the tools and the rules, never a second list of findings.
 
 ## Snapshots
@@ -538,6 +556,9 @@ next step's coder carries on in the same working tree.
   since a `.bat` argument holds none). From the Bash tool, call
   `uv run --no-project python tooling/steps/step_snapshot.py …` directly:
   `cmd //c` garbles a quoted message on its way to the `.bat`.
+- **Diff** (29-10-2026): `diff S00N [--from-round n] [--stat] [-- <path>…]`
+  leaves out the step's own `docs/steps/S00N-*/` folder unless paths are
+  named; a spawn prompt names the command only, no list of files to skip.
   A fix after gate B re-runs `snapshot` for the same step; only the newest
   snapshot can be replaced.
 - **Rounds** (27-10-2026): `snapshot` also runs after every coder hand-back

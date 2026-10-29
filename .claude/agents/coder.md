@@ -77,14 +77,8 @@ The orchestrator gives you one of three tasks:
     installing, a setting, another repo, a service), do not do it and do not
     skip it silently: stop and return it under **QUESTIONS FOR THE USER**,
     with what it would do and why the step needs it.
-- **Shell text** (27-10-2026, from the agents' feedback on S061 and S062:
-  runs lost to quoting, and one test run that ran nothing and exited 0):
-  - write multi-line text (code, tests, Markdown) with the Edit or Write
-    tool, never through a heredoc, `echo` or `python -c` with quotes in it;
-  - from the Bash tool, run a `.bat` wrapper quoted, with backslashes:
-    `cmd //c "tooling\run-tests.bat …"`;
-  - read a test run's summary line before you call it green: it must name
-    the tests that ran. A run that ran nothing is a failed run.
+- **Shell** (29-10-2026): read `docs/steps/README.md` § Shell on Windows before your first Bash
+  call; it holds the rules for scripts, `.bat` wrappers and chained commands.
 - **Design and structure** (CLAUDE-COMMON principles):
   - put each rule in its layer: business rules and calculations in the pure
     core, fetching, locking and storing in the route and DB shell, display
@@ -177,7 +171,7 @@ End your file with `## Feedback` (25-10-2026, by KLA): what in the workflow, the
 rules cost you time or got in your way during this run, so the system can be improved. Not the
 step's findings, and no praise.
 
-- At most 5 items, one line each, in the form `- <label>: <what happened> (<evidence>)`, where the
+- At most 5 items, one bullet each (a long one may wrap onto indented lines), in the form `- <label>: <what happened> (<evidence>)`, where the
   label is one of:
   - `waste` — time or tokens spent for nothing (a run repeated, a file read that did not matter,
     a long wait);

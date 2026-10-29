@@ -110,7 +110,7 @@ The step skill's rule **Agents change nothing outside the repo** applies. Also:
 
 ## Feedback (the last section of your file)
 
-End your file with `## Feedback`, as the other agents do: at most 5 one-line items, `waste`,
+End your file with `## Feedback`, as the other agents do: at most 5 items, one bullet each, `waste`,
 `hindrance`, `rule` or `idea`, each with its evidence, or `- none`. A re-plan adds its own under
 its `## Log` entry.
 

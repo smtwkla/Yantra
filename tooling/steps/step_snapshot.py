@@ -4,8 +4,9 @@ own while the next step's coder carries on in the same working tree (decided 24-
     python tooling/steps/step_snapshot.py snapshot S038 "S038: meters on models and equipment; v30;"
     python tooling/steps/step_snapshot.py list
     python tooling/steps/step_snapshot.py adopt S038
-    python tooling/steps/step_snapshot.py diff S038 [--stat]               the step's change so far
-    python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] the change since round 1
+    python tooling/steps/step_snapshot.py diff S038 [--stat] [-- <path>…]   the step's change so far
+    python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] [-- <path>…]
+                                                                the change since round 1
     python tooling/steps/step_snapshot.py rounds S038
 
 A snapshot is the whole working tree (tracked and untracked, .gitignore respected) written as a
@@ -28,7 +29,12 @@ change: ``diff S038 --from-round 1``. ``adopt`` removes the step's round refs.
 ``diff`` compares a tree of the working files (tracked and untracked, .gitignore respected, made
 like a snapshot's, nothing written to the user's index) with the step's base: the snapshot it
 builds on (or HEAD), or the round named. A plain ``git diff <ref>`` lists the step's untracked
-files as deleted; this does not."""
+files as deleted; this does not.
+
+``diff`` leaves out the step's own folder, docs/steps/<step>-*/ (29-10-2026, from the agents'
+feedback on S063 and S064): the reviewer reads the brief, the impl report and the reviews in full
+anyway, and they were a third of a step's diff. Paths after ``--`` replace that default, e.g.
+``diff S038 -- backend frontend``."""
 
 import os
 import re
@@ -48,8 +54,10 @@ class SnapshotError(Exception):
 
 
 def git(repo, *args, env=None):
+    # errors="replace": a file with a byte that is not UTF-8 (a .bat with a cp1252 dash) must not stop
+    # the diff.
     result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, encoding="utf-8",
-                            env=env)
+                            errors="replace", env=env)
     if result.returncode != 0:
         raise SnapshotError(f"git {' '.join(args)}: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -124,8 +132,9 @@ def step_base(repo, step_id):
     return others[-1] if others else head
 
 
-def diff(repo, step_id, from_round=None, stat=False):
-    """The diff from the step's base (or the round named) to the working files."""
+def diff(repo, step_id, from_round=None, stat=False, paths=()):
+    """The diff from the step's base (or the round named) to the working files: the paths named, or
+    everything but the step's own docs/steps/ folder."""
     if from_round is None:
         base = step_base(repo, step_id)
     else:
@@ -135,7 +144,23 @@ def diff(repo, step_id, from_round=None, stat=False):
                                 + (", ".join(str(n) for n in found) or "none"))
         base = found[from_round]
     tree = working_tree(repo, base)
-    return git(repo, "diff", *(["--stat"] if stat else []), base, tree)
+    pathspec = list(paths) or [".", f":(exclude)docs/steps/{step_id}-*"]
+    return git(repo, "diff", *(["--stat"] if stat else []), base, tree, "--", *pathspec)
+
+
+def parse_diff_args(rest):
+    """The arguments after ``diff S0NN``: [--stat] [--from-round n] [-- <path>…], in any order before
+    the ``--``. Returns (stat, from_round, paths), or None when an argument is wrong."""
+    paths = []
+    if "--" in rest:
+        cut = rest.index("--")
+        rest, paths = rest[:cut], rest[cut + 1:]
+    stat = "--stat" in rest
+    rest = [a for a in rest if a != "--stat"]
+    from_round = None
+    if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
+        from_round, rest = int(rest[1]), []
+    return None if rest else (stat, from_round, paths)
 
 
 def snapshot(repo, step_id, message):
@@ -207,14 +232,12 @@ def main(argv, repo=ROOT):
             print(f"adopted {argv[1]}: HEAD is now {adopt(repo, argv[1])[:7]}")
             return 0
         if argv[:1] == ["diff"] and len(argv) >= 2:
-            rest, stat, from_round = argv[2:], "--stat" in argv, None
-            rest = [a for a in rest if a != "--stat"]
-            if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
-                from_round = int(rest[1])
-            elif rest:
+            parsed = parse_diff_args(argv[2:])
+            if parsed is None:
                 print(__doc__)
                 return 2
-            print(diff(repo, argv[1], from_round, stat))
+            stat, from_round, paths = parsed
+            print(diff(repo, argv[1], from_round, stat, paths))
             return 0
         if argv[:1] == ["rounds"] and len(argv) == 2:
             found = rounds(repo, argv[1])
@@ -235,4 +258,7 @@ def main(argv, repo=ROOT):
 
 
 if __name__ == "__main__":
+    # A Windows console or a redirected file is cp1252 by default; a brief's "→" stopped the diff
+    # (S064 code reviews).
+    sys.stdout.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

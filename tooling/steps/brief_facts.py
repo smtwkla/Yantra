@@ -8,12 +8,16 @@ claims from it instead of finding each one again.
     python tooling/steps/brief_facts.py docs/steps/…/1-brief.md
 
 Reads every `backticked` reference in the brief:
-  - a file path (with an optional :line or :from-to): exists, and has that many lines;
+  - a file path (with an optional :line or :from-to): exists, and has that many lines; a path not
+    at the root is looked for as the end of a longer path (the brief named its folder in prose);
+    one row per file, the highest line cited;
   - a bare file name (`screens.spec.js`): where files of that name are;
   - a test id (file::Class::name): the file exists and names it;
   - an API route (/api/…): the test files that call it;
   - a code name (snake_case, CamelCase, CONSTANT, dotted module.name): where it is defined,
-    how many other code files use it, and which test files use it.
+    how many other code files use it, and which test files use it;
+  - screen text in double quotes inside the backticks (`"Print asset list"`): the test lines that
+    use it, so a step that hides, renames or moves a control sees the tests it breaks.
 Plain words in backticks (`down`, `critical`) are skipped: too common to grep usefully.
 It judges nothing: "not found" may be right for a name the brief says is new.
 Writes the same text to scratch/brief-facts-<step>.md.
@@ -42,11 +46,12 @@ NAME = re.compile(r"^[A-Za-z_][\w.]*$")
 # Worth grepping: has an underscore, an inner capital, or a dot (module.name); not a plain word
 DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
+UI_TEXT = re.compile(r'^"([^"\n]{2,60})"$')
 
 
 @dataclass(frozen=True)
 class Ref:
-    kind: str           # path | file (a bare file name) | test | route | name
+    kind: str           # path | file (a bare file name) | test | route | name | ui (screen text)
     value: str
     first_line: int = 0
     last_line: int = 0
@@ -59,6 +64,11 @@ class Ref:
 def classify(token):
     """One backticked text -> a Ref, or None when it is not worth checking."""
     token = token.strip()
+    # Opt-in by form (29-10-2026, S064's feedback): a scan of every quoted text in a brief found
+    # "No" and "Save" in hundreds of lines.
+    match = UI_TEXT.match(token)
+    if match:
+        return Ref("ui", match.group(1))
     match = TEST_ID.match(token)
     if match and "/" in match.group(1) or (match and "." in match.group(1)):
         return Ref("test", token)
@@ -88,14 +98,17 @@ def greppable(name):
 
 
 def extract_refs(text):
-    """Brief text -> its distinct Refs, in order of first mention."""
-    seen, refs = set(), []
+    """Brief text -> its distinct Refs, in order of first mention.  A file cited at several lines
+    is one Ref with the highest line, since only that one is checked (S057, S058 feedback)."""
+    found = {}
     for token in BACKTICKED.findall(text):
         ref = classify(token)
-        if ref and ref not in seen:
-            seen.add(ref)
-            refs.append(ref)
-    return refs
+        if not ref:
+            continue
+        key = (ref.kind, ref.value)
+        if key not in found or ref.last_line > found[key].last_line:
+            found[key] = ref
+    return list(found.values())
 
 
 def is_test_path(path):
@@ -158,21 +171,31 @@ def grep(pattern, folders=None, fixed=True, word=True):
     return [line for line in result.stdout.splitlines() if "__pycache__" not in line]
 
 
+def files_ending(path):
+    """Tracked or untracked (not ignored) files whose path is ``path`` or ends in ``/path``."""
+    result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{path}",
+                             path], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    return sorted(set(result.stdout.split()))
+
+
 def check_path(ref, folders=None):
-    path = ROOT / ref.value
-    if not path.is_file():
-        return [f"- `{ref.value}`: **no such file**"]
-    count = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+    """A path not at the root is looked for as the end of a longer one: briefs often give the
+    folder in prose ("in `frontend/src/views/`", S048, S059, S061, S064 feedback)."""
+    found = [ref.value] if (ROOT / ref.value).is_file() else files_ending(ref.value)
+    if not found:
+        return [f"- `{ref.value}`: **no such file** (new, or a library's path)"]
+    if len(found) > 1:
+        return [f"- `{ref.value}`: **{len(found)} files end so**: {listing(found)}"]
+    where = "" if found[0] == ref.value else f" (at `{found[0]}`)"
+    count = len((ROOT / found[0]).read_text(encoding="utf-8", errors="replace").splitlines())
     if ref.last_line > count:
-        return [f"- `{ref.value}`: **has {count} lines**, the brief cites line {ref.last_line}"]
-    return [f"- `{ref.value}`: exists ({count} lines)"]
+        return [f"- `{ref.value}`{where}: **has {count} lines**, the brief cites line {ref.last_line}"]
+    return [f"- `{ref.value}`{where}: exists ({count} lines)"]
 
 
 def check_file(ref, folders=None):
     """A bare file name -> where files of that name are (tracked or untracked, not ignored)."""
-    result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{ref.value}",
-                             ref.value], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
-    found = sorted(set(result.stdout.split()))
+    found = files_ending(ref.value)
     return [f"- `{ref.value}`: " + (listing(found) if found else "**no file of that name**")]
 
 
@@ -206,6 +229,13 @@ def check_route(ref, folders=None):
     return [f"- `{ref.value}`: called in {len(files)} test file(s){how}: {listing(files) or '—'}"]
 
 
+def check_ui(ref, folders=None):
+    """Screen text -> the test lines that hold it."""
+    lines = [":".join(hit.split(":", 2)[:2]) for hit in grep(ref.value, folders, word=False)
+             if is_test_path(hit.split(":", 1)[0])]
+    return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
+
+
 def check_name(ref, folders=None):
     module, _, short = ref.value.rpartition(".")
     hits = grep(short, folders)
@@ -215,8 +245,10 @@ def check_name(ref, folders=None):
     return summarise_hits(ref.value, hits, folders)
 
 
-CHECKS = {"path": check_path, "file": check_file, "test": check_test, "route": check_route, "name": check_name}
-SECTIONS = (("path", "Files"), ("file", "Files named without a folder"), ("test", "Test ids"), ("route", "Routes"), ("name", "Code names"))
+CHECKS = {"path": check_path, "file": check_file, "test": check_test, "route": check_route, "name": check_name,
+          "ui": check_ui}
+SECTIONS = (("path", "Files"), ("file", "Files named without a folder"), ("test", "Test ids"), ("route", "Routes"),
+            ("name", "Code names"), ("ui", "Screen text in the tests"))
 
 
 def brief_path(arg):
