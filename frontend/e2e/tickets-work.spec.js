@@ -35,6 +35,7 @@ test("technician: acknowledge, start, back in service; the times card shows resp
   const ticket = await raiseBreakdown(base, 120, "Work test: extruder stopped");
   await asPerson(page, "technician", `/tickets/${ticket.id}`);
   await expect(stateBadge(page)).toHaveText("Raised");
+  await expect(page.getByTestId("ticket-share")).toBeVisible(); // S066: an open ticket has it too
 
   let dialog = await openAction(page, "Acknowledge");
   await expect(dialog).toContainText("Recording as Kannan (technician)");
@@ -713,4 +714,54 @@ test("S052: the ticket page with the Meters card has no sideways scroll", { tag:
   await asPerson(page, "operator", `/tickets/${ticket.id}`);
   await expect(ticketMeter(page, "Oil temperature").getByTestId("ticket-meter-warning")).toBeVisible();
   await expectNoSidewaysScroll(page);
+});
+
+// S066: Share / Copy link in the title row
+const DESKTOP = "desktop-chromium";
+
+/** A ticket closed as not a fault, so the closed ticket page is the one under test. */
+async function closedTicket(description) {
+  const ticket = await raiseByApi("operator", { equipment_id: seed.extruder.id, intensity: "critical", description });
+  await moveByApi("engineer", ticket.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: "S066 test: nothing wrong" });
+  return ticket;
+}
+
+test("S066: on a phone with a share sheet, a closed ticket shows Share, which sends the serial, the line and the link", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === DESKTOP, "Share shows only with a coarse main pointer; the desktop project has a mouse");
+  const ticket = await closedTicket("S066 share: closed");
+  await page.addInitScript(() => {
+    navigator.share = async (data) => { window.__shared = data; };
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await expect(stateBadge(page)).toHaveText("Closed");
+  await page.getByRole("button", { name: "Share" }).click();
+  const shared = await page.evaluate(() => window.__shared);
+  expect(shared).toEqual({
+    title: ticket.serial,
+    text: `${ticket.serial} · SMTW.MCC2 · ${seed.extruder.code} — S066 share: closed`,
+    url: `${new URL(page.url()).origin}/tickets/${ticket.id}`,
+  });
+  await expect(page.getByText("Link copied")).toHaveCount(0);
+});
+
+test("S066: on a desktop, Copy link copies the ticket's link and Link copied shows", { tag: "@device" }, async ({ page, context }, testInfo) => {
+  test.skip(testInfo.project.name !== DESKTOP, "the copy path with a readable clipboard: desktop Chromium only");
+  const ticket = await closedTicket("S066 share: desktop");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await page.getByRole("button", { name: "Copy link" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Link copied" })).toBeVisible();
+  const link = `${new URL(page.url()).origin}/tickets/${ticket.id}`;
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+});
+
+test("S066: with no clipboard, Copy link shows the link in a box to copy by hand", async ({ page }) => {
+  const ticket = await closedTicket("S066 share: no clipboard");
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined });
+  });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await page.getByRole("button", { name: "Copy link" }).click();
+  await expect(page.getByLabel("Copy this link")).toHaveValue(`${new URL(page.url()).origin}/tickets/${ticket.id}`);
+  await expect(page.getByText("Link copied")).toHaveCount(0);
 });

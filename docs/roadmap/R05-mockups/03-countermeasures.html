@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R05 mock-up 03 — Countermeasures with owners and due dates</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span class="active"><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit"></i></span>
+  <span><i class="fa-solid fa-gear"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Improvement</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <h5 class="mb-0">IM-2026-10-001</h5>
+      <span class="badge text-bg-warning">Actions open</span>
+      <span class="fw-semibold">HP003 will not start: control supply lost at the main contactor</span>
+    </div>
+    <div class="small text-secondary mb-3">Root cause: dust enters the press panels, and nobody cleans the contactors before they fail.</div>
+
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Countermeasures (2 of 6 done)</span>
+        <span class="btn btn-sm btn-primary py-0"><i class="fa-solid fa-plus me-1"></i>Add countermeasure</span>
+      </div>
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Kind</th><th>What will be done</th><th>Owner</th><th>Due</th><th>State</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="badge text-bg-light border">Correction</span></td>
+            <td>Clean the contacts of the main contactor (done on the ticket)</td>
+            <td>Technician A</td><td>28-10-2026</td>
+            <td><span class="badge text-bg-success">Done</span> <span class="small text-secondary">28-10-2026</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-light border">Corrective</span></td>
+            <td>Replace the torn door gasket. Close the bottom cable entry with a gland plate.</td>
+            <td>Technician B</td><td>08-11-2026</td>
+            <td><span class="badge text-bg-secondary">Open</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-light border">Preventive</span></td>
+            <td>Monthly: blow the panel out with dry air, clean contactor contacts, check the door gasket. On every press at SSVT.
+              <div class="small text-secondary"><i class="fa-solid fa-calendar-check me-1"></i>Becomes a PM plan once PM is built (R03)</div></td>
+            <td>Engineer A</td><td>15-11-2026</td>
+            <td><span class="badge text-bg-secondary">Open</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-light border">Design-out</span></td>
+            <td>Find a sealed auxiliary contact block or a panel filter fan, so dust cannot reach the contacts.</td>
+            <td>Engineer B</td><td>30-11-2026</td>
+            <td><span class="badge text-bg-secondary">Open</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge text-bg-light border">Lesson</span></td>
+            <td>One-point lesson for operators: keep the panel door shut; report a torn gasket.
+              <div class="small"><a href="06-lesson.html">Open lesson</a></div></td>
+            <td>Engineer A</td><td>05-11-2026</td>
+            <td><span class="badge text-bg-success">Done</span> <span class="small text-secondary">30-10-2026</span></td>
+          </tr>
+          <tr class="row-notok">
+            <td><span class="badge text-bg-light border">Spread</span></td>
+            <td>Check the panels of the other 11 presses at SSVT for dust and torn gaskets. Raise a ticket for each finding.</td>
+            <td>Technician B</td><td>01-11-2026</td>
+            <td><span class="badge text-bg-danger">Overdue 2 days</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-6">
+        <div class="mk-note">
+          <strong>The six kinds.</strong> <em>Correction</em> fixes this failure. <em>Corrective</em> removes the cause here. <em>Preventive</em> adds planned work. <em>Design-out</em> removes the failure mode. <em>Lesson</em> teaches the team. <em>Spread</em> applies the fix to similar machines.
+        </div>
+      </div>
+      <div class="col-6 small text-secondary">
+        When every countermeasure is done, the improvement moves to <em>Watching</em>: Yantra watches HP003 for the same symptom for 90 days, then asks the verifier. <a href="05-verify.html">See verify</a>
+      </div>
+    </div>
+    <p class="mock-note">Mock-up for R05.3 (draft). Each owner sees their countermeasures on <em>Me › Open work</em> (mock-up 04) and gets a push when one is given to them (R05.5). Sample data.</p>
+  </main>
+</div>
+</body>
+</html>

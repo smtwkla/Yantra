@@ -120,6 +120,16 @@ export function problemText(ticket, max = 80) {
 }
 
 /**
+ * S066: the one line sent with a ticket's link, the same words as a push alert's title:
+ * "TK-2026-10-002 · SMTW.MCC2 · VBM001 — <problem>"; with no problem text it ends at the machine code.
+ */
+export function ticketShareText(ticket) {
+  const place = `${ticket.serial} · ${ticket.unit.site_code}.${ticket.unit.code} · ${ticket.machine.code}`;
+  const problem = problemText(ticket);
+  return problem ? `${place} — ${problem}` : place;
+}
+
+/**
  * The value for <input type="datetime-local"> from a Date, in the phone's local time:
  * "2026-10-20T14:05". The plant and its phones are in IST, and the server reads it as IST.
  */

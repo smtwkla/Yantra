@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R05 mock-up 04 — My countermeasure on Me › Open work</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">Me</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Technician B</span>
+</header>
+<main class="mk-content">
+  <ul class="nav nav-tabs nav-fill mb-3">
+    <li class="nav-item"><a class="nav-link active px-1">Open work (3)</a></li>
+    <li class="nav-item"><a class="nav-link px-1">Raised by me</a></li>
+    <li class="nav-item"><a class="nav-link px-1">My activity</a></li>
+  </ul>
+
+  <div class="list-group mb-3">
+    <div class="list-group-item row-notok">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-info"><i class="fa-solid fa-lightbulb me-1"></i>Countermeasure</span>
+        <span class="badge text-bg-danger">Overdue 2 days</span>
+        <span class="ms-auto small text-secondary">due 01-11-2026</span>
+      </div>
+      <div class="mt-1">Check the panels of the other 11 presses at SSVT for dust and torn gaskets.</div>
+      <div class="small text-secondary">IM-2026-10-001 · HP003 will not start</div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="badge text-bg-info"><i class="fa-solid fa-lightbulb me-1"></i>Countermeasure</span>
+        <span class="ms-auto small text-secondary">due 08-11-2026</span>
+      </div>
+      <div class="mt-1">Replace the torn door gasket of HP003. Close the bottom cable entry with a gland plate.</div>
+      <div class="small text-secondary">IM-2026-10-001 · HP003 will not start</div>
+    </div>
+    <div class="list-group-item">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="fw-semibold">TK-2026-10-019</span>
+        <span class="ms-auto small text-secondary"><i class="fa-regular fa-clock me-1"></i>2 d</span>
+      </div>
+      <div class="mt-1">HP007 — Hydraulic press 7</div>
+      <div>Oil leaking at the return line</div>
+    </div>
+  </div>
+
+  <div class="card border-primary">
+    <div class="card-header fw-semibold">Mark countermeasure done</div>
+    <div class="card-body">
+      <div class="small mb-2">Replace the torn door gasket of HP003. Close the bottom cable entry with a gland plate.</div>
+      <label class="form-label mb-1">What did you do?</label>
+      <textarea class="form-control mb-2" rows="2">New gasket fitted. Gland plate made in the workshop and fitted.</textarea>
+      <label class="form-label mb-1">Done on</label>
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <input class="form-control" value="31-10-2026 16:10" disabled>
+        <div class="form-check mb-0"><input class="form-check-input" type="checkbox" checked><label class="form-check-label">Now</label></div>
+      </div>
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="mk-photo"><i class="fa-solid fa-image"></i></span>
+        <button class="btn btn-sm btn-outline-secondary touch-target"><i class="fa-solid fa-camera me-1"></i>Add photo</button>
+      </div>
+      <button class="btn btn-success w-100 touch-target">Mark done</button>
+    </div>
+  </div>
+  <p class="mock-note">Mock-up for R05.3 (draft). Countermeasures join the tickets on <em>Open work</em>. The owner marks their own countermeasure done; the engineer leading the improvement can too. The photo uses the documents store (S006). Sample data.</p>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item active"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+</nav>
+</body>
+</html>

@@ -58,6 +58,7 @@ import NoteDialog from "./tickets/NoteDialog.vue";
 import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
 import TicketMetersCard from "./tickets/TicketMetersCard.vue";
+import TicketShare from "./tickets/TicketShare.vue";
 
 const route = useRoute();
 
@@ -221,6 +222,7 @@ watch(() => route.params.id, load, { immediate: true });
         <IntensityBadge :intensity="ticket.intensity" />
         <span class="badge state-badge" :class="ticket.overdue ? 'text-bg-danger' : 'text-bg-light border'">{{ stateLabel(ticket) }}</span>
         <span v-if="ticket.not_a_fault" class="badge text-bg-info">Not a fault</span>
+        <TicketShare :key="ticket.id" :ticket="ticket" />
       </div>
       <p v-if="planLine(ticket)" class="plan-line mb-3" :class="ticket.overdue ? 'text-danger fw-semibold' : 'text-secondary'">
         <i class="fa-regular fa-calendar me-1"></i>{{ planLine(ticket) }}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ageText, daysAgoHint, EVENT_LABELS, firstName, groupPeople, INTENSITY_BADGE_CLASS, INTENSITY_CHOICES, INTENSITY_LABELS,
-  intensityChanges, isBreakdown, isLowering, minutesText, moveConsequence, moveLabel, moveSaveLabel, problemText,
+  intensityChanges, isBreakdown, isLowering, minutesText, moveConsequence, moveLabel, moveSaveLabel, problemText, ticketShareText,
   raiseSaveLabel, restoreTimeLabel, sendBackChoices, sendBackQuestion, STATE_LABELS, toLocalDateValue, toLocalInputValue,
 } from "../src/utils/ticketLabels.js";
 import {
@@ -424,5 +424,32 @@ describe("ticket tint (S036)", () => {
     expect(ticketRowClass({ intensity: "critical", state: "raised" })).toEqual(["list-group-item-danger", "ticket-tinted"]);
     expect(ticketRowClass({ intensity: "initial", state: "raised" })).toEqual(["list-group-item-secondary", "ticket-tinted"]);
     expect(ticketRowClass({ intensity: "critical", state: "closed" })).toBeNull();
+  });
+});
+
+describe("ticketShareText (S066)", () => {
+  const base = {
+    serial: "TK-2026-10-002", unit: { site_code: "SMTW", code: "MCC2" }, machine: { code: "VBM001" },
+    failure_mode: null, description: "",
+  };
+
+  it("puts the symptom after the machine code", () => {
+    const t = { ...base, failure_mode: { label: "Does not start" } };
+    expect(ticketShareText(t)).toBe("TK-2026-10-002 · SMTW.MCC2 · VBM001 — Does not start");
+  });
+
+  it("cuts a long description at 80 characters", () => {
+    const text = ticketShareText({ ...base, description: "x".repeat(100) });
+    expect(text).toBe(`TK-2026-10-002 · SMTW.MCC2 · VBM001 — ${"x".repeat(79)}…`);
+  });
+
+  it("shows the machine code for a ticket on a component", () => {
+    const t = { ...base, component: { code: "VBM001-M1" }, failure_mode: { label: "Abnormal noise" } };
+    expect(ticketShareText(t)).toBe("TK-2026-10-002 · SMTW.MCC2 · VBM001 — Abnormal noise");
+  });
+
+  it("ends at the machine code with no problem text", () => {
+    expect(ticketShareText(base)).toBe("TK-2026-10-002 · SMTW.MCC2 · VBM001");
+    expect(ticketShareText({ ...base, description: null })).toBe("TK-2026-10-002 · SMTW.MCC2 · VBM001");
   });
 });

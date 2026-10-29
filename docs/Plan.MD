@@ -482,6 +482,7 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   and the earlier text is kept (EN 13306 fault diagnosis; ISO 9001 § 7.5.3).
 - **Notifications** (S021, § 4.7): web push per device. A new breakdown → engineers, the unit's supervisor and the maintenance manager; a new defect → engineers, quietly; a breakdown not acknowledged in time (A 10, B 30, C 60 minutes) → engineers and managers, once; a job assigned by an engineer → that person.
 - **Meters on the ticket** (S052, built 25-10-2026): the ticket page's *Meters* card shows the meters of the machine and the part as they stood **at the ticket's time** (*When it happened*), with a 7-day High / Low / Not OK warning (§ 4.5).
+- **Share a ticket's link** (S066): the ticket page's title row has one button: *Share* on a phone (the share sheet, with the serial, place and problem, and the link) or *Copy link* elsewhere, with a box to copy by hand when the clipboard is missing. Frontend only.
 - Serial: `TK-YYYY-MM-NNN` (decided 20-10-2026, S017): one series for breakdowns and defects, since a defect can become a breakdown; numbered by the month the ticket is written.
 - **Shared ticket API (later)** — the intended way for other systems (plant-3i,
   VelKilnMaster, any later one) to raise tickets: one authenticated endpoint, not

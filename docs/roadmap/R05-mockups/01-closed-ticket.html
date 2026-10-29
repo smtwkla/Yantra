@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R05 mock-up 01 — A closed ticket: Start improvement</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">Ticket</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Engineer A</span>
+</header>
+<main class="mk-content">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+    <h5 class="mb-0">TK-2026-10-002</h5>
+    <span class="badge text-bg-danger">Critical</span>
+    <span class="badge text-bg-secondary">Closed</span>
+  </div>
+  <div class="mb-2"><span class="fw-semibold text-primary">HP003</span> — Hydraulic press 3 · SSVT.SHOP · <span class="badge text-bg-light border">A</span></div>
+
+  <div class="alert alert-warning py-2 px-2 small mb-2">
+    <div class="fw-semibold"><i class="fa-solid fa-magnifying-glass me-1"></i>Find the root cause?</div>
+    A breakdown on a grade A machine. Find out why it happened, so it does not happen again.
+    <a href="02-analysis.html" class="btn btn-primary w-100 touch-target mt-2"><i class="fa-solid fa-lightbulb me-1"></i>Start improvement</a>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header">Details</div>
+    <div class="card-body small">
+      <div><span class="text-secondary">What is wrong:</span> Machine will not start.</div>
+      <div><span class="text-secondary">Symptom:</span> FTS Won't start</div>
+      <div><span class="text-secondary">Cause:</span> 3.4 Expected wear and tear</div>
+      <div><span class="text-secondary">Action:</span> 5 Refit</div>
+    </div>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header">Times</div>
+    <div class="card-body small">
+      <div><span class="text-secondary">Raised:</span> 28-10-2026 15:15</div>
+      <div><span class="text-secondary">Back in service:</span> 28-10-2026 17:40</div>
+      <div><span class="text-secondary">Down for:</span> 2 h 25 min</div>
+      <div><span class="text-secondary">Closed:</span> 29-10-2026 11:23</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Timeline</div>
+    <div class="card-body small">
+      <div class="timeline-line mb-2"><div class="text-secondary">29-10-2026 11:23 · Engineer A</div>Closed — Contactor cleaned</div>
+      <div class="timeline-line mb-2"><div class="text-secondary">28-10-2026 17:40 · Technician A</div>Back in service</div>
+      <div class="timeline-line mb-2"><div class="text-secondary">28-10-2026 17:35 · Technician A</div>Note — The main contactor's NC auxiliary contact was not passing the control supply. After cleaning the contactor contacts, the supply was restored and the machine started working normally.</div>
+      <div class="timeline-line"><div class="text-secondary">28-10-2026 15:15 · Supervisor A</div>Raised — the machine has stopped</div>
+    </div>
+  </div>
+
+  <p class="mock-note">Mock-up for R05.1 and R05.8 (draft). The ticket is closed and stays read-only; <em>Start improvement</em> makes a new record linked to it. The yellow hint comes from the when-to-analyse rule (R05.8, Q8.1); without it the button still shows to engineers. Sample data: the text of TK-2026-10-002 as given; the machine, the codes and the back-in-service time are stand-ins.</p>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="yi-icon yi-table-edit"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

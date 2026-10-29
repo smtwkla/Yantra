@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R05 mock-up 05 — Verify that the fix worked</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span class="active"><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit"></i></span>
+  <span><i class="fa-solid fa-gear"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Improvement</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Manager A</span>
+  </header>
+  <main class="mk-content">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <h5 class="mb-0">IM-2026-10-001</h5>
+      <span class="badge text-bg-info">Ready to verify</span>
+      <span class="fw-semibold">HP003 will not start: control supply lost at the main contactor</span>
+    </div>
+    <div class="small text-secondary mb-3">All 6 countermeasures done by 20-11-2026 · watched 90 days, until 18-02-2027</div>
+
+    <div class="row g-3">
+      <div class="col-7">
+        <div class="card mb-3">
+          <div class="card-header">Did it come back?</div>
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="fa-solid fa-circle-check text-success fs-4"></i>
+              <div><div class="fw-semibold">No ticket with the symptom <em>Won't start</em> on HP003 since 20-11-2026.</div>
+              <div class="small text-secondary">Checked on the machine and its parts, every intensity.</div></div>
+            </div>
+            <table class="table table-sm small mb-0">
+              <thead><tr><th>HP003</th><th>90 days before</th><th>90 days after</th></tr></thead>
+              <tbody>
+                <tr><td>Breakdowns</td><td>3</td><td>1</td></tr>
+                <tr><td>Of them: <em>Won't start</em></td><td>2</td><td>0</td></tr>
+                <tr><td>Downtime</td><td>9 h 50 min</td><td>1 h 10 min</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Verify</div>
+          <div class="card-body">
+            <label class="form-label">Remark (needed when not effective)</label>
+            <textarea class="form-control mb-3" rows="2">Panels checked on 3 presses at random: clean, gaskets whole. Monthly PM is being done.</textarea>
+            <div class="d-flex gap-2 justify-content-end">
+              <button class="btn btn-outline-danger">Not effective — analyse again</button>
+              <button class="btn btn-success">Close as effective</button>
+            </div>
+            <div class="small text-secondary mt-2"><em>Not effective</em> closes this improvement and starts a new one linked to it, with the same tickets.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-5">
+        <div class="card">
+          <div class="card-header">Timeline</div>
+          <div class="card-body small">
+            <div class="timeline-line mb-2"><div class="text-secondary">18-02-2027 06:00 · Yantra</div>Watch ended — ready to verify</div>
+            <div class="timeline-line mb-2"><div class="text-secondary">20-11-2026 15:30 · Engineer B</div>Countermeasure done — Design-out: filter fan fitted</div>
+            <div class="timeline-line mb-2"><div class="text-secondary">31-10-2026 16:10 · Technician B</div>Countermeasure done — gasket and gland plate</div>
+            <div class="timeline-line mb-2"><div class="text-secondary">30-10-2026 10:05 · Engineer A</div>Root cause set — 4.2 Management error</div>
+            <div class="timeline-line mb-2"><div class="text-secondary">29-10-2026 12:30 · Technician A</div>Note — Same dust seen on HP005's panel last month.</div>
+            <div class="timeline-line"><div class="text-secondary">29-10-2026 11:40 · Engineer A</div>Started from TK-2026-10-002</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="mock-note">Mock-up for R05.4 (draft). ISO 9001 § 10.2 asks to review whether the corrective action worked. Yantra counts the facts; the verifier decides. The watch period and who may verify are decisions Q4.1 and Q4.2. Sample data, dated in the future on purpose.</p>
+  </main>
+</div>
+</body>
+</html>

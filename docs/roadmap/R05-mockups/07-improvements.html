@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R05 mock-up 07 — Improvements: open, suggested, closed</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span class="active"><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit"></i></span>
+  <span><i class="fa-solid fa-gear"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Tickets</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item"><a class="nav-link">Tickets</a></li>
+      <li class="nav-item"><a class="nav-link active">Improvements</a></li>
+    </ul>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-primary">Open (3)</button>
+        <button class="btn btn-outline-primary">Suggested (4)</button>
+        <button class="btn btn-outline-primary">Closed</button>
+      </div>
+      <select class="form-select form-select-sm" style="width:auto"><option>All units</option><option>SSVT.SHOP</option></select>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-7">
+        <div class="list-group">
+          <a href="03-countermeasures.html" class="list-group-item list-group-item-action">
+            <div class="d-flex gap-2 align-items-center"><span class="fw-semibold">IM-2026-10-001</span><span class="badge text-bg-warning">Actions open</span><span class="badge text-bg-danger">1 overdue</span><span class="ms-auto small text-secondary">lead Engineer A</span></div>
+            <div>HP003 will not start: control supply lost at the main contactor</div>
+            <div class="small text-secondary">1 ticket · 2 of 6 countermeasures done</div>
+          </a>
+          <a class="list-group-item list-group-item-action">
+            <div class="d-flex gap-2 align-items-center"><span class="fw-semibold">IM-2026-10-002</span><span class="badge text-bg-primary">Analysing</span><span class="ms-auto small text-secondary">lead Engineer B</span></div>
+            <div>HP007: output relay contacts weld</div>
+            <div class="small text-secondary">4 tickets in 6 months · down 31 h</div>
+          </a>
+          <a class="list-group-item list-group-item-action">
+            <div class="d-flex gap-2 align-items-center"><span class="fw-semibold">IM-2026-09-003</span><span class="badge text-bg-info">Watching</span><span class="ms-auto small text-secondary">until 12-12-2026</span></div>
+            <div>CMP001: trips on high temperature</div>
+            <div class="small text-secondary">2 tickets · all 3 countermeasures done</div>
+          </a>
+        </div>
+      </div>
+      <div class="col-5">
+        <div class="card">
+          <div class="card-header">Suggested — no improvement yet</div>
+          <div class="list-group list-group-flush small">
+            <div class="list-group-item">
+              <div class="d-flex"><span class="fw-semibold">HP005 · Door not sensed</span><span class="ms-auto badge text-bg-light border">Chronic</span></div>
+              <div class="text-secondary">5 tickets in 90 days · down 6 h 40 min</div>
+            </div>
+            <div class="list-group-item">
+              <div class="d-flex"><span class="fw-semibold">TK-2026-10-024 · HP011</span><span class="ms-auto badge text-bg-light border">Repeat</span></div>
+              <div class="text-secondary">Back 2 days after TK-2026-10-017 · Not building pressure</div>
+            </div>
+            <div class="list-group-item">
+              <div class="d-flex"><span class="fw-semibold">TK-2026-10-021 · EXT001</span><span class="ms-auto badge text-bg-light border">Long breakdown</span></div>
+              <div class="text-secondary">Grade A · down 11 h 15 min</div>
+            </div>
+            <div class="list-group-item">
+              <div class="d-flex"><span class="fw-semibold">TK-2026-10-020 · FRM001</span><span class="ms-auto badge text-bg-light border">Long breakdown</span></div>
+              <div class="text-secondary">Grade A · down 5 h 30 min</div>
+            </div>
+          </div>
+          <div class="card-body small text-secondary py-2">Suggested by the rule: a repeat, a grade A breakdown down 4 h or more, or one symptom 3 times in 90 days on one machine. Change the numbers in Settings.</div>
+        </div>
+      </div>
+    </div>
+    <p class="mock-note">Mock-up for R05.1 (the list) and R05.8 (Suggested). Improvements are a tab on <em>Tickets</em>, not a new nav item (Q1.2). The rule's numbers are decision Q8.1. Sample data; machine codes are stand-ins.</p>
+  </main>
+</div>
+</body>
+</html>
