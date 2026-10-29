@@ -23,8 +23,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   CHECKs, S061) on 27-10-2026, and the migration v35 table
   `equipment_categories` with `equipment_classes.category_id` (S063) on
   27-10-2026, and the migration v36 tables `improvements` and
-  `improvement_tickets` (S067) on 30-10-2026. The schema described here is at
-  **migration v36**.
+  `improvement_tickets` (S067) on 30-10-2026, and the migration v37 table
+  `improvement_whys` with the `improvements` root-cause columns (S069) on
+  30-10-2026. The schema described here is at **migration v37**.
 
 ## Conventions
 
@@ -76,7 +77,8 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `ticket_labour` | Person, trade worked, work date and minutes per ticket (S018) |
 | `ticket_assignees` | Ticket → people assigned, who and when (S018) |
 | `ticket_parts` | Parts fitted per ticket (S020): description, part number and its kind, maker, quantity and unit, the node fitted to |
-| `improvements` | An improvement (S067, v36; TPM focused improvement): one problem analysed from one or more tickets. Serial `IM-YYYY-MM-NNN` (`uq_improvements_serial`), the unit and the machine of the first ticket (fixed; the site is the unit's), state (`analysing` only in S067; R05.4 appends its states), title (up to 120), problem (up to 2000), lead (a person who may hold `improvement:edit` at the site when picked), who started it and when, last edit. Never deleted. Indexes `ix_improvements_unit_state`, `ix_improvements_equipment`. The tickets' symptom, cause and downtime are read from the tickets, never copied |
+| `improvements` | An improvement (S067, v36; TPM focused improvement): one problem analysed from one or more tickets. Serial `IM-YYYY-MM-NNN` (`uq_improvements_serial`), the unit and the machine of the first ticket (fixed; the site is the unit's), state (`analysing` only in S067; R05.4 appends its states), title (up to 120), problem (up to 2000), lead (a person who may hold `improvement:edit` at the site when picked), who started it and when, last edit. Never deleted. Indexes `ix_improvements_unit_state`, `ix_improvements_equipment`. The tickets' symptom, cause and downtime are read from the tickets, never copied. S069 (v37) adds the root cause: `root_cause` (text, up to 500) and `root_cause_id` (→ `failure_causes`, the list the tickets use), both set or both NULL (`chk_improvements_root_cause`), set and changed but never cleared; index `ix_improvements_root_cause` (the cause's code freeze counts through it); and `contributing_causes` (free text, up to 2000, NULL when none) |
+| `improvement_whys` | The why-why chain of an improvement (S069, v37; TPM why-why): one line per *Why? / Because*, `position` 1..n with no gap (`chk_improvement_whys_position` ≥ 1; kept by the API under the improvement's lock, no unique key), question (up to 300), answer (up to 1000), evidence (up to 500, NULL when none), who wrote it and when, who changed it last and when. A removed why is deleted (no history until R05.4). Index `ix_improvement_whys_position (improvement_id, position)` |
 | `improvement_tickets` | Improvement → the tickets it analyses (S067, v36), primary key `(improvement_id, ticket_id)`, who added it and when. `open_link` is 1 while the improvement is open and NULL after (R05.4 sets it); the unique key `uq_improvement_tickets_open (ticket_id, open_link)` lets a ticket be in only one open improvement, and `chk_improvement_tickets_open_link` allows only 1 or NULL. Removing a ticket deletes its row; the ticket row is never written |
 | `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), `IM-` improvement serials per month (S067), later `PM-` |
 | `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
@@ -179,12 +181,18 @@ erDiagram
     int ticket_id PK,FK
     tinyint open_link UK "null"
   }
+  improvement_whys {
+    int id PK
+    int improvement_id FK
+    smallint position
+  }
   improvements {
     int id PK
     varchar serial UK
     int unit_id FK
     int equipment_id FK
     int lead_id FK
+    int root_cause_id FK "null"
   }
   maintenance_actions {
     int id PK
@@ -373,6 +381,8 @@ erDiagram
   people ||--o{ improvements : "lead_id"
   improvements ||--o{ improvement_tickets : "improvement_id"
   tickets ||--o{ improvement_tickets : "ticket_id"
+  improvements ||--o{ improvement_whys : "improvement_id"
+  failure_causes o|--o{ improvements : "root_cause_id"
   sites ||--o{ units : "site_id"
   units ||--o{ user_units : "unit_id"
 ```

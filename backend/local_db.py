@@ -1135,6 +1135,42 @@ _MIGRATIONS = [
             CONSTRAINT fk_improvement_tickets_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]),
+    # S069 — why-why and the root cause (docs/steps/S069-improvement-why-why/1-brief.md § 4.1,
+    # R05.2).  improvement_whys: one ordered chain of Why? / Because lines per improvement (TPM
+    # why-why; Q2.1 a).  position is 1..n with no gaps, kept by improvements.py under the
+    # improvement's lock (6b); no unique key, so a reorder needs no temporary values.  A removed
+    # why is deleted (D6).  improvements gains the root cause, a text and one cause of the
+    # failure-cause list, both or neither (the CHECK), and the contributing causes, a free text.
+    # IF NOT EXISTS on the table, each column, the key, the foreign key and the CHECK makes a
+    # half-applied v37 re-run.  No precondition: a new table, three nullable columns and a CHECK
+    # every existing row meets (all NULL).  Rollback: the previous release reads neither the table
+    # nor the columns.
+    (37, "Why-why and the root cause (S069)", [
+        """CREATE TABLE IF NOT EXISTS improvement_whys (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            improvement_id  INT NOT NULL,
+            position        SMALLINT NOT NULL,
+            question        VARCHAR(300) NOT NULL,
+            answer          VARCHAR(1000) NOT NULL,
+            evidence        VARCHAR(500) NULL,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            updated_at      DATETIME NULL,
+            updated_by      VARCHAR(100) NULL,
+            KEY ix_improvement_whys_position (improvement_id, position),
+            CONSTRAINT chk_improvement_whys_position CHECK (position >= 1),
+            CONSTRAINT fk_improvement_whys_improvement FOREIGN KEY (improvement_id) REFERENCES improvements (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE improvements
+            ADD COLUMN IF NOT EXISTS root_cause          VARCHAR(500)  NULL AFTER problem,
+            ADD COLUMN IF NOT EXISTS root_cause_id       INT           NULL AFTER root_cause,
+            ADD COLUMN IF NOT EXISTS contributing_causes VARCHAR(2000) NULL AFTER root_cause_id,
+            ADD KEY IF NOT EXISTS ix_improvements_root_cause (root_cause_id),
+            ADD CONSTRAINT fk_improvements_root_cause
+                FOREIGN KEY IF NOT EXISTS (root_cause_id) REFERENCES failure_causes (id)""",
+        """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_root_cause
+            CHECK ((root_cause IS NULL) = (root_cause_id IS NULL))""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

@@ -82,6 +82,22 @@ export function ensureFailureCauses({ refresh = false } = {}) {
   return ensure(failureCauses, "failure-causes", refresh);
 }
 
+// ISO 14224 Table B.3's five cause groups, in the order the API lists the causes
+// (failure_causes.cause_group). One list for the Masters panel and both cause pickers (the
+// close dialog and the root cause, S069 D7).
+export const CAUSE_GROUPS = [
+  { value: "design", label: "Design" },
+  { value: "fabrication", label: "Fabrication / installation" },
+  { value: "operation", label: "Operation / maintenance" },
+  { value: "management", label: "Management" },
+  { value: "misc", label: "Miscellaneous" },
+];
+
+/** A cause group's words; an unknown value is shown as it came. */
+export function causeGroupLabel(group) {
+  return CAUSE_GROUPS.find((g) => g.value === group)?.label ?? group;
+}
+
 export function ensureMaintenanceActions({ refresh = false } = {}) {
   return ensure(maintenanceActions, "maintenance-actions", refresh);
 }

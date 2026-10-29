@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  defaultProblem, defaultTitle, improvementStateLabel, lossText, PROBLEM_MAX, TITLE_MAX,
+  causeText, defaultProblem, defaultRootCause, defaultTitle, improvementStateLabel, lossText, PROBLEM_MAX, ROOT_CAUSE_MAX,
+  ticketCauses, TITLE_MAX, whyBody,
 } from "../src/utils/improvementLabels";
 
 const ticket = (extra = {}) => ({ machine: { code: "HP003" }, failure_mode: null, description: "", ...extra });
@@ -46,4 +47,51 @@ describe("defaultProblem", () => {
   });
   it("is empty with neither", () => expect(defaultProblem(ticket())).toBe(""));
   it("cuts at 2000 characters", () => expect(defaultProblem(ticket({ description: "y".repeat(2500) }))).toHaveLength(PROBLEM_MAX));
+});
+
+// S069: the why-why chain and the root cause
+const cause = (id, code, label) => ({ id, code, label });
+
+describe("causeText", () => {
+  it("reads code and label", () => expect(causeText(cause(1, "4.2", "Management error"))).toBe("4.2 Management error"));
+});
+
+describe("ticketCauses", () => {
+  it("lists each cause once, in code order", () => {
+    const tickets = [
+      { cause: cause(9, "4.2", "Management error") },
+      { cause: cause(3, "3.4", "Expected wear and tear") },
+      { cause: cause(9, "4.2", "Management error") },
+      { cause: cause(5, "3.10", "Other") },
+    ];
+    expect(ticketCauses(tickets).map((c) => c.code)).toEqual(["3.4", "3.10", "4.2"]);
+  });
+  it("skips a ticket with no cause yet", () => {
+    expect(ticketCauses([{ cause: null }, { cause: cause(3, "3.4", "Wear") }]).map((c) => c.id)).toEqual([3]);
+    expect(ticketCauses([{ cause: null }])).toEqual([]);
+  });
+});
+
+describe("defaultRootCause", () => {
+  it("is the last why's answer", () => {
+    expect(defaultRootCause([{ answer: "Dust" }, { answer: "The presses have no PM plan" }])).toBe("The presses have no PM plan");
+  });
+  it("is empty with no whys", () => expect(defaultRootCause([])).toBe(""));
+  it("cuts at 500 characters", () => expect(defaultRootCause([{ answer: "z".repeat(900) }])).toHaveLength(ROOT_CAUSE_MAX));
+});
+
+describe("whyBody", () => {
+  const form = { question: "Why?", answer: "Because", evidence: "  ", position: 3 };
+  it("sends no position when adding", () => {
+    expect(whyBody(form, false, null)).toEqual({ question: "Why?", answer: "Because", evidence: null });
+  });
+  it("sends no position on an edit when the place was not changed (CR1-01)", () => {
+    expect(whyBody(form, true, 3)).not.toHaveProperty("position");
+  });
+  it("sends the place on an edit when the user changed it", () => {
+    expect(whyBody({ ...form, position: "1" }, true, 3)).toMatchObject({ position: 1 });
+  });
+  it("keeps the evidence text when it is not blank", () => {
+    expect(whyBody({ ...form, evidence: "photo" }, true, 3).evidence).toBe("photo");
+  });
 });

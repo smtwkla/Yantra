@@ -651,7 +651,8 @@ def update_equipment_model(model_id):
 # Failure codes (S016) — ISO 14224 § 9 and Annex B: failure modes (what is seen: the
 # operator's symptom), failure causes (in ISO's five groups) and maintenance actions.
 # Read by everyone, kept by failure_codes:edit.  A failure mode's code is frozen once a ticket
-# uses it (S017 § 5.7, S016 § 5.4); S018 does the same for causes and actions.
+# uses it (S017 § 5.7, S016 § 5.4); S018 does the same for causes and actions.  A cause's code is
+# frozen also once an improvement's root cause uses it (S069 § 5.5).
 # ---------------------------------------------------------------------------
 
 def _fetch_failure_mode(cur, mode_id):
@@ -740,15 +741,21 @@ def update_failure_mode(mode_id):
         return jsonify(_fetch_failure_mode(cur, mode_id))
 
 
-def _check_code_frozen(cur, clean, locked, ticket_column):
-    """A code change on a failure code a ticket uses -> 409 (S017 § 5.7, S018 § 5.6).  Under the
-    record's lock (``locked``), and the count is a locking read: a plain snapshot taken before a
-    ticket write that held the record's FK lock had committed would miss it.  ``ticket_column``
-    is a code constant, never client input."""
-    if ("code" in clean and clean["code"] != locked["code"]
-            and count(cur, f"SELECT COUNT(*) AS n FROM tickets WHERE {ticket_column} = %s LOCK IN SHARE MODE",
-                      (locked["id"],))):
+def _check_code_frozen(cur, clean, locked, ticket_column, root_cause_column=None):
+    """A code change on a failure code a ticket uses -> 409 (S017 § 5.7, S018 § 5.6); with
+    ``root_cause_column``, also on one an improvement's root cause uses (S069 § 5.5).  Under the
+    record's lock (``locked``), and each count is a locking read: a plain snapshot taken before a
+    ticket or root-cause write that held the record's FK lock had committed would miss it.  The
+    column names are code constants, never client input."""
+    if "code" not in clean or clean["code"] == locked["code"]:
+        return
+    if count(cur, f"SELECT COUNT(*) AS n FROM tickets WHERE {ticket_column} = %s LOCK IN SHARE MODE",
+             (locked["id"],)):
         raise ApiError("This code is used by tickets and can no longer change", 409, "code")
+    if root_cause_column is not None and count(
+            cur, f"SELECT COUNT(*) AS n FROM improvements WHERE {root_cause_column} = %s LOCK IN SHARE MODE",
+            (locked["id"],)):
+        raise ApiError("This code is used by an improvement's root cause and can no longer change", 409, "code")
 
 
 def _create_plain_master(table, validator):
@@ -760,15 +767,16 @@ def _create_plain_master(table, validator):
         return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,))), 201
 
 
-def _update_plain_master(table, record_id, validator, used_by):
+def _update_plain_master(table, record_id, validator, used_by, root_cause_column=None):
     """PUT of such a master: absent fields stay as they are; an unknown id is a 404.  The code
     is frozen once a ticket uses the record: ``used_by`` is the ticket column that points at it
-    (S018 § 5.6); every other field stays editable."""
+    (S018 § 5.6); ``root_cause_column`` the improvements column, for a cause (S069 § 5.5); every
+    other field stays editable."""
     clean = clean_body(validator, creating=False)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
         locked = _lock_row(cur, table, record_id)
-        _check_code_frozen(cur, clean, locked, used_by)
+        _check_code_frozen(cur, clean, locked, used_by, root_cause_column)
         update_row(cur, table, record_id, clean, actor())
     with conn.cursor() as cur:
         return jsonify(fetch_one(cur, f"SELECT * FROM {table} WHERE id = %s", (record_id,)))
@@ -794,8 +802,9 @@ def create_failure_cause():
 @require_perm("failure_codes:edit")
 def update_failure_cause(cause_id):
     """The group may change, also once in use: a reclassification for all history, as the
-    ISO roll-up wants (S016 § 5.3).  The code is frozen once a ticket uses the cause (S018 § 5.6)."""
-    return _update_plain_master("failure_causes", cause_id, validate_failure_cause, "cause_id")
+    ISO roll-up wants (S016 § 5.3); it reclassifies the root causes too.  The code is frozen once a
+    ticket uses the cause (S018 § 5.6), or an improvement's root cause does (S069 § 5.5)."""
+    return _update_plain_master("failure_causes", cause_id, validate_failure_cause, "cause_id", "root_cause_id")
 
 
 @masters_bp.route("/maintenance-actions")

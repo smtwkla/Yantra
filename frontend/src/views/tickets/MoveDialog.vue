@@ -32,7 +32,7 @@ import { computed, ref, watch } from "vue";
 import { apiPost } from "../../api";
 import FormModal from "../../components/FormModal.vue";
 import { useFormModal } from "../../composables/useFormModal";
-import { ensureFailureCauses, ensureMaintenanceActions, failureCauses, maintenanceActions } from "../../stores/masters";
+import { CAUSE_GROUPS, ensureFailureCauses, ensureMaintenanceActions, failureCauses, maintenanceActions } from "../../stores/masters";
 import {
   MACHINE_STOPPED_CHOICES, machineStoppedQuestion, moveConsequence, moveLabel, moveSaveLabel, OTHER_REASON, PLAN_MOVES,
   restoreTimeLabel, SEND_BACK_HELP, sendBackChoices, sendBackQuestion, toLocalDateValue,
@@ -52,10 +52,6 @@ const emit = defineEmits(["saved", "reload"]);
 
 // The cause a not-a-fault close suggests: "looked, nothing wrong" (§ 1)
 const NO_CAUSE_FOUND = "5.1";
-const CAUSE_GROUPS = [
-  ["design", "Design"], ["fabrication", "Fabrication / installation"], ["operation", "Operation / maintenance"],
-  ["management", "Management"], ["misc", "Miscellaneous"],
-];
 // The fields this dialog shows a refusal beside; any other goes to the top
 const SHOWN_FIELDS = ["occurred_at", "remark", "person_id", "started_at", "machine_down", "failure_mode_id", "cause_id",
   "action_id", "planned_date", "waiting_reason", "machine_stopped"];
@@ -90,7 +86,7 @@ const activeActions = computed(() => (maintenanceActions.value ?? []).filter((a)
 const showPartsHint = computed(() => name.value === "close" && props.ticket.parts.length === 0
   && (move.value.parts_hint_actions ?? []).includes(Number(form.value.action_id)));
 const causeGroups = computed(() => CAUSE_GROUPS
-  .map(([group, label]) => ({ label, causes: activeCauses.value.filter((c) => c.cause_group === group) }))
+  .map((g) => ({ label: g.label, causes: activeCauses.value.filter((c) => c.cause_group === g.value) }))
   .filter((g) => g.causes.length));
 // A stale state (409, no field): the page behind is out of date, so ask the parent to reload it
 watch(error, (value) => {

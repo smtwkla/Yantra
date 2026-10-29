@@ -437,6 +437,8 @@ TBD — shift patterns, on-call arrangement, and who covers when the engineer is
 | Improvement | Yantra's record of one problem that tickets showed, analysed so it does not come back (`IM-YYYY-MM-NNN`, S067): the problem, the tickets behind it and their loss (breakdowns, downtime), a lead (an engineer or manager of the site). TPM *focused improvement* (*Kobetsu Kaizen*); ISO 9001 § 10.2.1 b, the "find out why" after the ticket's correction. Started from a ticket back in service or closed; a ticket is in at most one open improvement; a *not a fault* ticket is never analysed |
 | Failure mode | How a failure is seen — the operator's "symptom" (ISO 14224), per equipment class or General |
 | Failure cause | Why it failed: the circumstances in design, manufacture or use that led to it (ISO 14224) |
+| Why-why | The TPM chain of *Why? / Because* lines on an improvement: ask why again and again until the answer is something the plant can change (S069) |
+| Root cause | Where the why-why ends: what the plant can change so the problem does not come back, written as a text and picked from the same failure-cause list as the tickets (S069). A ticket's cause says why the part failed; the root cause says why the plant let it happen |
 | Cause group | ISO 14224's five groups of causes: design, fabrication / installation, operation / maintenance, management, miscellaneous |
 | Failure mechanism | The physical process of the failure: wear, corrosion, short circuit (ISO 14224) — not recorded in v1 |
 | Maintenance action | What was done: replace, repair, adjust, check, … (ISO 14224 maintenance activity) |

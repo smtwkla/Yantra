@@ -286,6 +286,24 @@ class TestCauseAndActionCodeFrozenOnceUsed:
         assert same.status_code == 200, same.get_json()
         assert engineer.put(f"{path}/{record['id']}", json={"active": False}).status_code == 200
 
+    def test_a_cause_used_only_by_a_root_cause_keeps_its_code(self, engineer, make_equipment,
+                                                              make_person, db_rows, uniq):
+        """S069 § 5.5: an improvement's root cause freezes the cause's code as a ticket does; the
+        label, group and active flag still change."""
+        cause = _created(engineer.post(CAUSES, json=_body(CAUSES, uniq)))
+        machine = make_equipment()
+        lead = make_person(name=f"Lead {uniq.username()}")
+        db_rows("INSERT INTO improvements (serial, unit_id, equipment_id, title, problem, lead_id, root_cause,"
+                " root_cause_id, created_by) VALUES (%s, %s, %s, 'Dust', 'Dust', %s, 'No PM plan', %s, 'kla')",
+                (f"IM-T-{cause['id']}", machine["unit_id"], machine["id"], lead["id"], cause["id"]))
+        res = engineer.put(f"{CAUSES}/{cause['id']}", json={"code": uniq.failure_code()})
+        _refused(res, 409, "code")
+        assert res.get_json()["error"] == "This code is used by an improvement's root cause and can no longer change"
+        same = engineer.put(f"{CAUSES}/{cause['id']}", json={"code": cause["code"], "label": uniq.failure_label(),
+                                                            "cause_group": "management"})
+        assert same.status_code == 200, same.get_json()
+        assert engineer.put(f"{CAUSES}/{cause['id']}", json={"active": False}).status_code == 200
+
     @pytest.mark.parametrize("path", [CAUSES, ACTIONS])
     def test_an_unused_codes_code_still_changes(self, engineer, uniq, path):
         record = _created(engineer.post(path, json=_body(path, uniq)))

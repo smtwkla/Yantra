@@ -9,6 +9,7 @@ const apiGet = vi.fn();
 vi.mock("../src/api", () => ({ apiGet: (...args) => apiGet(...args) }));
 
 import {
+  causeGroupLabel,
   ensureFailureCauses,
   ensureFailureModes,
   ensureMaintenanceActions,
@@ -82,5 +83,11 @@ describe("failure codes (S016)", () => {
     await ensureMaintenanceActions();
     resetMasters();
     expect([failureModes.value, failureCauses.value, maintenanceActions.value]).toEqual([null, null, null]);
+  });
+
+  it("names the five ISO cause groups and shows an unknown group as it came (S069)", () => {
+    expect(["design", "fabrication", "operation", "management", "misc", "other"].map(causeGroupLabel)).toEqual([
+      "Design", "Fabrication / installation", "Operation / maintenance", "Management", "Miscellaneous", "other",
+    ]);
   });
 });

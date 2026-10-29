@@ -10,18 +10,8 @@ import { computed, onMounted, ref } from "vue";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import { userPermissions } from "../../stores/auth";
-import { ensureFailureCauses, failureCauses } from "../../stores/masters";
+import { CAUSE_GROUPS, causeGroupLabel, ensureFailureCauses, failureCauses } from "../../stores/masters";
 import { useMasterForm } from "./useMasterForm";
-
-// ISO 14224 Table B.3's groups, in the order the API lists them (failure_causes.cause_group)
-const GROUPS = [
-  { value: "design", label: "Design" },
-  { value: "fabrication", label: "Fabrication / installation" },
-  { value: "operation", label: "Operation / maintenance" },
-  { value: "management", label: "Management" },
-  { value: "misc", label: "Miscellaneous" },
-];
-const groupLabel = (value) => GROUPS.find((g) => g.value === value)?.label ?? value;
 
 const canEdit = computed(() => userPermissions.value.includes("failure_codes:edit"));
 const showInactive = ref(false);
@@ -65,7 +55,7 @@ onMounted(reload);
       <div class="d-flex align-items-center flex-wrap gap-3">
         <select v-model="groupFilter" class="form-select form-select-sm w-auto" aria-label="Filter by cause group">
           <option value="">All groups</option>
-          <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
+          <option v-for="g in CAUSE_GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
         </select>
         <div class="form-check form-switch mb-0">
           <input id="causes-inactive" v-model="showInactive" class="form-check-input" type="checkbox" />
@@ -92,7 +82,7 @@ onMounted(reload);
                 {{ c.label }}
                 <div v-if="c.description" class="small text-secondary">{{ c.description }}</div>
               </td>
-              <td>{{ groupLabel(c.cause_group) }}</td>
+              <td>{{ causeGroupLabel(c.cause_group) }}</td>
               <td><span class="badge" :class="c.active ? 'text-bg-success' : 'text-bg-secondary'">{{ c.active ? "Active" : "Inactive" }}</span></td>
               <td v-if="canEdit" class="text-end text-nowrap">
                 <button class="btn btn-sm btn-outline-secondary" title="Edit" @click="openEdit(c)">
@@ -122,7 +112,7 @@ onMounted(reload);
       <label class="form-label" for="cause-group">Cause group</label>
       <select id="cause-group" v-model="form.cause_group" class="form-select" :class="{ 'is-invalid': fieldError('cause_group') }">
         <option value="" disabled>Select a group…</option>
-        <option v-for="g in GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
+        <option v-for="g in CAUSE_GROUPS" :key="g.value" :value="g.value">{{ g.label }}</option>
       </select>
       <div v-if="fieldError('cause_group')" class="invalid-feedback d-block">{{ fieldError("cause_group") }}</div>
       <div class="form-text">ISO 14224's five groups: reports roll the plant's own causes up into them.</div>

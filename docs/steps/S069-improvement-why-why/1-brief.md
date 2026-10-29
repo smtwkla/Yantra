@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 32eb122 + uncommitted S066, S067 (snapshot e0a89f0, in code review); S068 coded before S069
-Status: Approved 30-10-2026 by KLA (delegated: R05 gate R, "start coding unless a defining question")
+Status: In code review (approved 30-10-2026 by KLA, delegated: R05 gate R, "start coding unless a defining question")
 From: R05.2
 ```
 
@@ -701,7 +701,16 @@ operator reads.
 
 ## 10. Amendments
 
-None.
+### A1 — An edit sends the place in the chain only when it changed (30-10-2026, from CR1-01)
+
+- **Why:** BR1-08 dropped the rule "position left out when unchanged", so every edit sent
+  `position`. On a page that is out of date (another person removed or moved a why), a text-only
+  edit then moves the why to a place nobody chose.
+- **Rule:** the *Edit why* dialog sends `position` only when the user changed the
+  `"Place in the chain"` select. The server rule is unchanged: an absent `position` on a `PUT`
+  keeps the why's place.
+- **Approval:** decided by the orchestrator under KLA's delegation for R05 ("start coding unless
+  a defining question"), 30-10-2026. It changes no route and no message. Shown to KLA at gate B.
 
 ## Review log
 

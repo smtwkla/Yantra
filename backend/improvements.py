@@ -1,7 +1,8 @@
 """Improvements — the record where the team analyses one problem that tickets showed, so it does
 not happen again (TPM focused improvement; docs/steps/S067-improvement-record/1-brief.md).  This
 step: start one from a ticket, its detail, edit, add and remove tickets, the list and the lead
-choices.  The screens are S068's.
+choices.  The screens are S068's.  S069 adds the analysis: the why-why chain (improvement_whys)
+and the root cause with the contributing causes (columns of improvements).
 
 Thin shell: improvements_core holds the rules (the states, the fields, start, link and remove,
 who may lead, the loss); this module checks access, locks, reads the rows the rules need and
@@ -34,6 +35,14 @@ guards it is held.
   machine.
 - Edit: (6b) FOR UPDATE → plain reads (the lead only when it changes) → the update (a new lead
   takes a shared lock on that person).
+- Add, edit, remove a why (S069 § 5.4): (6b) FOR UPDATE → plain reads (the transaction's first:
+  the predicate 404, the key 403, the open state 409, the why 404, the whys by position) → the
+  insert, update or delete, then the position updates the core returned.  Why rows are never
+  locked on their own: every write of improvement_whys takes (6b) first, so two writers never
+  interleave and the positions stay 1..n.
+- Set root cause (S069): (6b) FOR UPDATE → plain reads (the cause's active flag only when the
+  cause changes) → the update; a new root_cause_id takes a shared lock on that failure_causes
+  row through the foreign key.  That is the one new edge: (6b) → a failure cause, shared.
 - Reads (list, detail, leads; the ticket detail in tickets.py): plain, no lock.
 One open link per ticket is race-free: two writers linking one ticket both hold its shared
 lock, may both pass the plain check, and then meet on uq_improvement_tickets_open; the second
@@ -55,7 +64,19 @@ No new deadlock cycle:
 - (6) only starts take IM: rows; a ticket raise takes its own TK: row;
 - (6b) → (7): an add takes the improvement, then the ticket.  Nothing takes a ticket and then
   an improvement row: ticket writes never touch improvements, and a start inserts its own new
-  row.
+  row;
+- (6b) → a failure cause, shared (S069): the one path that holds a cause exclusive and then
+  waits on improvements is the code change in masters.py (the cause FOR UPDATE, then its
+  improvements counted LOCK IN SHARE MODE).  It waits only on rows whose committed root_cause_id
+  is that cause.  A root-cause write waits for a cause's shared lock only when it changes its
+  root_cause_id to that cause (InnoDB checks a foreign key only when the column changes), and
+  its row's committed entry then names the old cause: the code change of cause C never waits
+  on a writer that waits for C.  A write that keeps its cause takes no cause lock.  No route
+  here locks a ticket, and no masters write locks an improvement or a why.
+The cause freeze is race-free as the tickets' (tickets.py LOCK ORDER): a root-cause write that
+holds the cause's shared lock commits before the code change gets its exclusive lock, and the
+count sees it; a later one waits behind the cause's lock and then sees the new code, which is
+allowed (the code changed before its first use).
 
 Import direction: this module imports read_ticket, improvement_links, person_at_site and
 people_at_site from tickets.py; tickets.py never imports this module (only improvements_core).
@@ -72,9 +93,10 @@ from auth_utils import permissions_at_site, require_perm, require_perm_at
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
 from equipment import IST, unit_access_condition
 from improvements_core import (
-    ALREADY_OPEN_RACE, EDIT_KEY, IMPROVEMENT_CLOSED, IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT, READ_KEY,
-    SERIAL_PREFIX, TICKET_FROM_LIST, TICKET_OTHER_SITE, is_open, link_error, loss, may_lead, removal_error,
-    start_error, validate_improvement, validate_link,
+    ALREADY_OPEN_RACE, CAUSE_ACTIVE, EDIT_KEY, IMPROVEMENT_CLOSED, IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT,
+    READ_KEY, SERIAL_PREFIX, TICKET_FROM_LIST, TICKET_OTHER_SITE, WHYS_FULL, WHYS_MAX, is_open, link_error, loss,
+    may_lead, position_error, removal_error, renumber, reorder, start_error, validate_improvement, validate_link,
+    validate_root_cause, validate_why,
 )
 from tickets import code_ref, improvement_links, people_at_site, person_at_site, read_ticket
 from tickets_core import format_serial, is_breakdown, serial_scope, ticket_times
@@ -94,16 +116,21 @@ _IMPROVEMENT_FROM = (
     " JOIN sites s ON s.id = u.site_id"
     " JOIN people l ON l.id = i.lead_id"
     " LEFT JOIN people cp ON cp.username = i.created_by"
+    " LEFT JOIN failure_causes rc ON rc.id = i.root_cause_id"
 )
+# The list builds its items field by field, so the root-cause columns add nothing to it (S069 § 6)
 _IMPROVEMENT_COLUMNS = (
     "SELECT i.id, i.serial, i.state, i.title, i.problem, i.created_at, i.created_by, i.updated_at, i.updated_by,"
     " i.unit_id, u.code AS unit_code, s.id AS site_id, s.code AS site_code,"
     " m.id AS m_id, m.code AS m_code, m.name AS m_name,"
-    " l.id AS lead_id, l.name AS lead_name, l.active AS lead_active, cp.name AS created_by_name"
+    " l.id AS lead_id, l.name AS lead_name, l.active AS lead_active, cp.name AS created_by_name,"
+    " i.root_cause, i.contributing_causes, rc.id AS rc_id, rc.code AS rc_code, rc.label AS rc_label,"
+    " rc.cause_group AS rc_group, rc.active AS rc_active"
 )
 
 # (6b): the improvement's decision columns, and the values an edit compares with
-_LOCK_IMPROVEMENT = ("SELECT id, state, unit_id, equipment_id, title, problem, lead_id FROM improvements"
+_LOCK_IMPROVEMENT = ("SELECT id, state, unit_id, equipment_id, title, problem, lead_id,"
+                     " root_cause, root_cause_id, contributing_causes FROM improvements"
                      " WHERE id = %s FOR UPDATE")
 # (7), shared: the start and add rules are decided from this row
 _SHARE_TICKET = "SELECT id, state, not_a_fault, unit_id, equipment_id FROM tickets WHERE id = %s LOCK IN SHARE MODE"
@@ -220,6 +247,36 @@ def _linked_tickets(cur, improvement_ids, now):
     return result
 
 
+def _whys(cur, improvement_id):
+    """The why-why chain by position, each with its writer's and changer's name (the person
+    whose login it is, or the login itself, as created_by_name)."""
+    cur.execute("SELECT w.id, w.position, w.question, w.answer, w.evidence, w.created_at, w.created_by,"
+                " w.updated_at, w.updated_by, cp.name AS created_by_name, up.name AS updated_by_name"
+                " FROM improvement_whys w"
+                " LEFT JOIN people cp ON cp.username = w.created_by"
+                " LEFT JOIN people up ON up.username = w.updated_by"
+                " WHERE w.improvement_id = %s ORDER BY w.position, w.id", (improvement_id,))
+    whys = []
+    for row in cur.fetchall():
+        plain = row_to_dict(row)
+        whys.append({
+            "id": plain["id"], "position": plain["position"], "question": plain["question"],
+            "answer": plain["answer"], "evidence": plain["evidence"],
+            "created_at": plain["created_at"], "created_by_name": plain["created_by_name"] or plain["created_by"],
+            "updated_at": plain["updated_at"],
+            "updated_by_name": (plain["updated_by_name"] or plain["updated_by"]) if plain["updated_by"] else None,
+        })
+    return whys
+
+
+def _root_cause(plain):
+    """The root cause as the page shows it, or None (text and cause are both set or neither)."""
+    if plain["root_cause"] is None:
+        return None
+    return {"text": plain["root_cause"],
+            "cause": {**code_ref(plain, "rc"), "cause_group": plain["rc_group"], "active": bool(plain["rc_active"])}}
+
+
 def _machine(row):
     return {"id": row["m_id"], "code": row["m_code"], "name": row["m_name"]}
 
@@ -257,6 +314,9 @@ def _detail(cur, row):
         "updated_by": plain["updated_by"],
         "tickets": tickets,
         "loss": loss(tickets),
+        "whys": _whys(cur, plain["id"]),
+        "root_cause": _root_cause(plain),
+        "contributing_causes": plain["contributing_causes"],
         "permissions": sorted(permissions_at_site(row["site_id"])),
     }
 
@@ -440,5 +500,123 @@ def remove_ticket(improvement_id, ticket_id):
             raise ApiError(message, 409)
         cur.execute("DELETE FROM improvement_tickets WHERE improvement_id = %s AND ticket_id = %s",
                     (improvement_id, ticket_id))
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+# ---------------------------------------------------------------------------
+# The why-why chain and the root cause (S069; LOCK ORDER above)
+# ---------------------------------------------------------------------------
+
+def _lock_for_analysis(cur, improvement_id):
+    """Every S069 write's start (§ 5.1): (6b), then the predicate 404, the key at the site 403
+    and the open state 409 -> the locked row."""
+    locked = _lock_improvement(cur, improvement_id)   # (6b)
+    _check_improvement(cur, improvement_id)
+    _require_open(locked)
+    return locked
+
+
+def _chain(cur, improvement_id):
+    """The improvement's whys as ``(id, position)`` by position, read under (6b)."""
+    cur.execute("SELECT id, position FROM improvement_whys WHERE improvement_id = %s ORDER BY position, id",
+                (improvement_id,))
+    return [(row["id"], row["position"]) for row in cur.fetchall()]
+
+
+def _shift(cur, pairs):
+    """Positions of lines that only shifted: no updated_* stamp (BR1-07)."""
+    for why_id, position in pairs:
+        cur.execute("UPDATE improvement_whys SET position = %s WHERE id = %s", (position, why_id))
+
+
+def _read_why(cur, improvement_id, why_id):
+    """The why of this improvement; a why of another improvement or an unknown one -> 404."""
+    cur.execute("SELECT id, position, question, answer, evidence FROM improvement_whys"
+                " WHERE id = %s AND improvement_id = %s", (why_id, improvement_id))
+    why = cur.fetchone()
+    if why is None:
+        raise ApiError("Not found", 404)
+    return why
+
+
+@improvements_bp.route("/<int:improvement_id>/whys", methods=["POST"])
+@require_perm(EDIT_KEY)
+def add_why(improvement_id):
+    """A why appended at the end of the chain, up to WHYS_MAX (§ 5.2, § 5.3)."""
+    clean = clean_body(validate_why, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_for_analysis(cur, improvement_id)
+        n = len(_chain(cur, improvement_id))
+        if n >= WHYS_MAX:
+            raise ApiError(WHYS_FULL, 409)
+        insert_row(cur, "improvement_whys", {"improvement_id": improvement_id, "position": n + 1, **clean}, actor())
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail), 201
+
+
+@improvements_bp.route("/<int:improvement_id>/whys/<int:why_id>", methods=["PUT"])
+@require_perm(EDIT_KEY)
+def edit_why(improvement_id, why_id):
+    """The text and the place in the chain (§ 5.3): a field equal to the stored one is not
+    written, and an edit that changes nothing writes nothing.  The moved why is stamped
+    updated_*; the lines that only shifted are not."""
+    clean = clean_body(validate_why, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_for_analysis(cur, improvement_id)
+        why = _read_why(cur, improvement_id, why_id)
+        changes = {field: value for field, value in clean.items() if field != "position" and value != why[field]}
+        shifted = []
+        if "position" in clean:
+            chain = _chain(cur, improvement_id)
+            message = position_error(len(chain), clean["position"])
+            if message:
+                raise ApiError(message, 400, "position")
+            for pair_id, position in reorder(chain, why_id, clean["position"]):
+                if pair_id == why_id:
+                    changes["position"] = position
+                else:
+                    shifted.append((pair_id, position))
+        update_row(cur, "improvement_whys", why_id, changes, actor())
+        _shift(cur, shifted)
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/<int:improvement_id>/whys/<int:why_id>", methods=["DELETE"])
+@require_perm(EDIT_KEY)
+def remove_why(improvement_id, why_id):
+    """The row is deleted, no history in this step (D6); the lines after it move up."""
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_for_analysis(cur, improvement_id)
+        _read_why(cur, improvement_id, why_id)
+        rest = [pair for pair in _chain(cur, improvement_id) if pair[0] != why_id]
+        cur.execute("DELETE FROM improvement_whys WHERE id = %s", (why_id,))
+        _shift(cur, renumber(rest))
+        detail = _detail_response(cur, improvement_id)
+    return jsonify(detail)
+
+
+@improvements_bp.route("/<int:improvement_id>/root-cause", methods=["PUT"])
+@require_perm(EDIT_KEY)
+def set_root_cause(improvement_id):
+    """Set or change the root cause and the contributing causes (§ 5.2; never cleared, D4).
+    The cause is checked only when it changes, so a root cause whose cause was deactivated
+    later survives an edit of the text (a plain read, as tickets' _check_active_code).  The
+    linked tickets are never written (Q2.3 a)."""
+    clean = clean_body(validate_root_cause, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked = _lock_for_analysis(cur, improvement_id)
+        changes = {field: value for field, value in clean.items() if value != locked[field]}
+        if "root_cause_id" in changes:
+            cur.execute("SELECT active FROM failure_causes WHERE id = %s", (changes["root_cause_id"],))
+            cause = cur.fetchone()
+            if cause is None or not cause["active"]:
+                raise ApiError(CAUSE_ACTIVE, 400, "root_cause_id")
+        update_row(cur, "improvements", improvement_id, changes, actor())
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)

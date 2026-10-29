@@ -1,9 +1,13 @@
-"""Improvements — pure rules (S067 § 8.2; no DB)."""
+"""Improvements — pure rules (S067 § 8.2, S069 § 8.2; no DB)."""
 
 import pytest
 
 from config_rbac import SITE_ROLES
 from improvements_core import (
+    ANSWER_NEEDED, ANSWER_NOT_TEXT, ANSWER_TOO_LONG, CAUSE_NEEDED, CONTRIBUTING_NOT_TEXT, CONTRIBUTING_TOO_LONG,
+    EVIDENCE_NOT_TEXT, EVIDENCE_TOO_LONG, QUESTION_NEEDED, QUESTION_NOT_TEXT, QUESTION_TOO_LONG, ROOT_CAUSE_NEEDED,
+    POSITION_NOT_NUMBER, ROOT_CAUSE_NOT_TEXT, ROOT_CAUSE_TOO_LONG, WHYS_FULL, WHYS_MAX, position_error, renumber, reorder,
+    validate_root_cause, validate_why,
     ALREADY_HERE, IMPROVEMENT_OPEN_STATES, LEAD_NEEDED, NOT_A_FAULT, PROBLEM_NEEDED, PROBLEM_NOT_TEXT,
     PROBLEM_TOO_LONG, START_FROM_STATES, START_STATE, TICKET_NEEDED, TITLE_NEEDED, TITLE_NOT_TEXT, TITLE_TOO_LONG,
     already_in, is_open, keeps_a_ticket, link_error, loss, may_lead, removal_error, start_error,
@@ -162,3 +166,127 @@ class TestLoss:
         tickets = [{"intensity": "critical", "downtime_minutes": 90}, {"intensity": "critical", "downtime_minutes": 30},
                    {"intensity": "degraded", "downtime_minutes": 0}, {"intensity": "critical", "downtime_minutes": None}]
         assert loss(tickets) == {"tickets": 4, "breakdowns": 3, "downtime_minutes": 120}
+
+
+# ---------------------------------------------------------------------------
+# S069: the why-why chain and the root cause (§ 5.2, § 5.3, § 8.2)
+# ---------------------------------------------------------------------------
+
+WHY = {"question": "Why did the press not start?", "answer": "The contactor did not close."}
+ROOT = {"root_cause": "The presses have no PM plan", "root_cause_id": 12}
+
+
+def _why_errors(body, creating=True):
+    return [(e["field"], e["message"]) for e in validate_why(body, creating)[1]]
+
+
+def _root_errors(body):
+    return [(e["field"], e["message"]) for e in validate_root_cause(body, True)[1]]
+
+
+class TestValidateWhy:
+
+    def test_a_good_add_has_no_evidence(self):
+        assert validate_why(WHY, True) == ({**WHY, "evidence": None}, [])
+
+    def test_trims_and_ignores_position_and_unknown_fields_on_an_add(self):
+        clean, errors = validate_why({**WHY, "question": "  Why?  ", "position": 1, "id": 4}, True)
+        assert errors == [] and clean["question"] == "Why?" and "position" not in clean and "id" not in clean
+
+    @pytest.mark.parametrize("field, message", [("question", QUESTION_NEEDED), ("answer", ANSWER_NEEDED)])
+    def test_missing_and_empty_on_an_add(self, field, message):
+        assert _why_errors({k: v for k, v in WHY.items() if k != field}) == [(field, message)]
+        assert _why_errors({**WHY, field: "   "}) == [(field, message)]
+
+    @pytest.mark.parametrize("field, maximum, too_long, not_text", [
+        ("question", 300, QUESTION_TOO_LONG, QUESTION_NOT_TEXT),
+        ("answer", 1000, ANSWER_TOO_LONG, ANSWER_NOT_TEXT),
+        ("evidence", 500, EVIDENCE_TOO_LONG, EVIDENCE_NOT_TEXT),
+    ])
+    def test_bounds_and_types(self, field, maximum, too_long, not_text):
+        assert _why_errors({**WHY, field: "x" * maximum}) == []
+        assert _why_errors({**WHY, field: "x" * (maximum + 1)}) == [(field, too_long)]
+        assert _why_errors({**WHY, field: 5}) == [(field, not_text)]
+
+    def test_messages(self):
+        assert (QUESTION_TOO_LONG, ANSWER_TOO_LONG, EVIDENCE_TOO_LONG) == (
+            "Question: up to 300 characters", "Answer: up to 1000 characters", "Evidence: up to 500 characters")
+        assert WHYS_MAX == 20 and WHYS_FULL == "An analysis holds up to 20 whys. Change a why instead."
+
+    @pytest.mark.parametrize("field, message", [("question", QUESTION_NEEDED), ("answer", ANSWER_NEEDED)])
+    def test_null_text_on_an_edit(self, field, message):
+        assert _why_errors({field: None}, creating=False) == [(field, message)]
+
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    def test_null_or_empty_evidence_is_none(self, value):
+        assert validate_why({**WHY, "evidence": value}, True)[0]["evidence"] is None
+        assert validate_why({"evidence": value}, False) == ({"evidence": None}, [])
+
+    def test_an_edit_keeps_absent_fields(self):
+        assert validate_why({}, False) == ({}, [])
+        assert validate_why({"position": 2}, False) == ({"position": 2}, [])
+
+    @pytest.mark.parametrize("value", [True, "2", 1.5, None])
+    def test_position_must_be_an_integer(self, value):
+        assert _why_errors({"position": value}, creating=False) == [("position", POSITION_NOT_NUMBER)]
+
+
+class TestPositions:
+
+    def test_position_error(self):
+        assert position_error(3, 0) == "Choose a place from 1 to 3"
+        assert position_error(3, 4) == "Choose a place from 1 to 3"
+        assert position_error(3, 1) is None and position_error(3, 3) is None
+
+    CHAIN = [(10, 1), (20, 2), (30, 3)]
+
+    def test_to_the_front(self):
+        assert reorder(self.CHAIN, 30, 1) == [(30, 1), (10, 2), (20, 3)]
+
+    def test_to_the_end(self):
+        assert reorder(self.CHAIN, 10, 3) == [(20, 1), (30, 2), (10, 3)]
+
+    def test_one_step_down(self):
+        assert reorder(self.CHAIN, 10, 2) == [(20, 1), (10, 2)]
+
+    def test_to_its_own_place(self):
+        assert reorder(self.CHAIN, 20, 2) == []
+
+    def test_renumber_after_the_first_a_middle_and_the_last(self):
+        assert renumber([(20, 2), (30, 3)]) == [(20, 1), (30, 2)]
+        assert renumber([(10, 1), (30, 3)]) == [(30, 2)]
+        assert renumber([(10, 1), (20, 2)]) == []
+
+
+class TestValidateRootCause:
+
+    def test_good(self):
+        assert validate_root_cause({**ROOT, "root_cause": "  No PM plan  "}, True) == (
+            {"root_cause": "No PM plan", "root_cause_id": 12}, [])
+
+    def test_missing_both(self):
+        assert _root_errors({}) == [("root_cause", ROOT_CAUSE_NEEDED), ("root_cause_id", CAUSE_NEEDED)]
+        assert _root_errors({"root_cause": "  ", "root_cause_id": None}) == [
+            ("root_cause", ROOT_CAUSE_NEEDED), ("root_cause_id", CAUSE_NEEDED)]
+
+    def test_bounds_and_types(self):
+        assert _root_errors({**ROOT, "root_cause": "x" * 500}) == []
+        assert _root_errors({**ROOT, "root_cause": "x" * 501}) == [("root_cause", ROOT_CAUSE_TOO_LONG)]
+        assert _root_errors({**ROOT, "root_cause": 4}) == [("root_cause", ROOT_CAUSE_NOT_TEXT)]
+        assert _root_errors({**ROOT, "contributing_causes": "x" * 2000}) == []
+        assert _root_errors({**ROOT, "contributing_causes": "x" * 2001}) == [
+            ("contributing_causes", CONTRIBUTING_TOO_LONG)]
+        assert _root_errors({**ROOT, "contributing_causes": 4}) == [("contributing_causes", CONTRIBUTING_NOT_TEXT)]
+        assert (ROOT_CAUSE_TOO_LONG, CONTRIBUTING_TOO_LONG) == (
+            "Root cause: up to 500 characters", "Other causes: up to 2000 characters")
+
+    @pytest.mark.parametrize("value", [True, 0, "12"])
+    def test_cause_must_be_an_id(self, value):
+        assert _root_errors({**ROOT, "root_cause_id": value}) == [("root_cause_id", CAUSE_NEEDED)]
+
+    @pytest.mark.parametrize("value", [None, "", "  "])
+    def test_contributing_causes_cleared(self, value):
+        assert validate_root_cause({**ROOT, "contributing_causes": value}, True)[0]["contributing_causes"] is None
+
+    def test_contributing_causes_absent_stays(self):
+        assert "contributing_causes" not in validate_root_cause(ROOT, True)[0]

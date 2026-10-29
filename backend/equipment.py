@@ -18,7 +18,8 @@ only when the write needs it:
         (S033) — on create always (its code is the prefix), on update only when newly picked
     (5a) the type row, only when a write without a model newly picks a type (S033)
     (6) the serial_counters row
-    (6b) the improvement row (improvements.py, S067)
+    (6b) the improvement row (improvements.py, S067); then, on a root-cause write, the failure
+        cause's shared foreign-key lock (S069)
     (7) the ticket row (tickets.py, S017)
 
 A write with a model never locks a type: it comes from the model, whose type never changes

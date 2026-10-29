@@ -77,7 +77,8 @@ one side back with 1213, a rare JSON 500, and a retry gives the right answer):
   its state change).  The moves include schedule and the start from scheduled (S019 § 5.6);
   change plan keeps the state, so its index entries and foreign-key checks do not change.
 A failure code's code change (masters.py) locks the code row FOR UPDATE, then counts its
-tickets with a shared-lock read: a ticket write holding the code's FK lock commits first and is
+tickets with a shared-lock read (a cause also its improvements, by root_cause_id, S069 § 5.5): a
+ticket or root-cause write holding the code's FK lock commits first and is
 counted, a later one queues behind the code's lock, so "code frozen once used" is race-free
 (modes S017, causes and actions S018 § 5.6).  A deactivation is not, and need not be: an
 inactive code stays on tickets that already use it.

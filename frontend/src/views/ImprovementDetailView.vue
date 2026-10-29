@@ -2,8 +2,9 @@
 /**
  * Improvement page (docs/steps/S068-improvement-screens/1-brief.md § 5.4; mock-up
  * docs/roadmap/R05-mockups/02-analysis.html, left half). One column on a phone: the header, the
- * card *The problem*, the card *Tickets*. On a wide screen the two cards take the left half; the
- * right half is left for R05.2's why-why.
+ * card *The problem*, the card *Tickets*, then S069's cards *Why-why* and *Root cause* with the
+ * note on the two causes. On a wide screen the problem and the tickets take the left half, the
+ * analysis the right half.
  *
  * Every control follows the detail's `permissions`, `is_open` and each ticket's `removable`, so
  * no button ends in a refusal. Each write answers with the whole detail, which replaces the page's
@@ -15,10 +16,13 @@ import { apiDelete, apiGet } from "../api";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import TicketsTabs from "../components/TicketsTabs.vue";
 import { formatDateTime } from "../utils/datetime";
-import { improvementStateLabel, lossText } from "../utils/improvementLabels";
+import { causeGroupLabel } from "../stores/masters";
+import { causeText, improvementStateLabel, lossText, ticketCauses } from "../utils/improvementLabels";
 import { minutesText } from "../utils/ticketLabels";
 import AddTicketDialog from "./improvements/AddTicketDialog.vue";
 import ImprovementDialog from "./improvements/ImprovementDialog.vue";
+import RootCauseDialog from "./improvements/RootCauseDialog.vue";
+import WhyDialog from "./improvements/WhyDialog.vue";
 
 const route = useRoute();
 
@@ -34,6 +38,10 @@ const addDialog = ref(null);
 const confirmingRemoveId = ref(null);
 const removing = ref(false);
 const removeError = ref("");
+const whyDialog = ref(null);
+const rootCauseDialog = ref(null);
+const confirmingRemoveWhyId = ref(null);
+const removeWhyError = ref("");
 
 const canEdit = computed(() => Boolean(improvement.value?.is_open) && (improvement.value?.permissions ?? []).includes("improvement:edit"));
 
@@ -67,11 +75,15 @@ function onSaved(result) {
   improvement.value = result;
   confirmingRemoveId.value = null;
   removeError.value = "";
+  confirmingRemoveWhyId.value = null;
+  removeWhyError.value = "";
 }
 
 function askRemove(t) {
   confirmingRemoveId.value = t.id;
   removeError.value = "";
+  confirmingRemoveWhyId.value = null;
+  removeWhyError.value = "";
 }
 
 async function removeTicket(t) {
@@ -85,6 +97,34 @@ async function removeTicket(t) {
     removing.value = false;
   }
 }
+
+function askRemoveWhy(why) {
+  confirmingRemoveWhyId.value = why.id;
+  removeWhyError.value = "";
+  confirmingRemoveId.value = null;
+  removeError.value = "";
+}
+
+async function removeWhy(why) {
+  removing.value = true;
+  removeWhyError.value = "";
+  try {
+    onSaved(await apiDelete(`/api/improvements/${improvement.value.id}/whys/${why.id}`));
+  } catch (err) {
+    removeWhyError.value = err.message;
+  } finally {
+    removing.value = false;
+  }
+}
+
+// "Priya (engineer), 29-10-2026 11:52", and who changed it when that is someone else
+function whyByline(why) {
+  const line = `${why.created_by_name}, ${formatDateTime(why.created_at)}`;
+  return why.updated_by_name && why.updated_by_name !== why.created_by_name ? `${line} · changed by ${why.updated_by_name}` : line;
+}
+
+// The linked tickets' own causes beside the root cause (Q2.3 a); the tickets are never written
+const ticketCauseText = computed(() => ticketCauses(improvement.value?.tickets ?? []).map(causeText).join(", "));
 
 // A ticket row's second line: the machine's code when it is not the improvement's machine (so the
 // user sees why that machine's last ticket cannot be removed), the symptom, the cause, the downtime
@@ -191,16 +231,93 @@ watch(() => route.params.id, load, { immediate: true });
             </ul>
           </div>
         </div>
+
+        <div class="col-lg-6">
+          <div class="card mb-3" data-testid="why-why">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span>Why-why</span>
+              <button v-if="canEdit" type="button" class="btn btn-outline-primary" @click="whyDialog.openAdd()">
+                <i class="fa-solid fa-plus me-1"></i>Add why
+              </button>
+            </div>
+            <div class="card-body pb-2">
+              <p class="small text-secondary mb-0">Ask why until the answer is something the plant can change.</p>
+            </div>
+            <ul v-if="improvement.whys.length" class="list-group list-group-flush">
+              <li v-for="w in improvement.whys" :key="w.id" class="list-group-item" :data-why="w.position">
+                <div class="d-flex align-items-start gap-2">
+                  <div class="flex-grow-1 text-break">
+                    <div class="fw-semibold">{{ w.position }}. {{ w.question }}</div>
+                    <div class="analysis-text">{{ w.answer }}</div>
+                    <div v-if="w.evidence" class="text-secondary analysis-text">Evidence: {{ w.evidence }}</div>
+                    <div class="small text-secondary">{{ whyByline(w) }}</div>
+                  </div>
+                  <template v-if="canEdit && confirmingRemoveWhyId !== w.id">
+                    <button type="button" class="btn btn-outline-primary" :aria-label="`Edit why ${w.position}`" @click="whyDialog.openChange(w)">
+                      <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" :aria-label="`Remove why ${w.position}`" @click="askRemoveWhy(w)">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </template>
+                </div>
+                <template v-if="confirmingRemoveWhyId === w.id">
+                  <div class="d-flex flex-wrap align-items-center justify-content-end gap-3 mt-2">
+                    <span>Remove why {{ w.position }}? You cannot undo this.</span>
+                    <button type="button" class="btn btn-danger" :disabled="removing" @click="removeWhy(w)">Remove why</button>
+                    <button type="button" class="btn btn-outline-secondary" @click="confirmingRemoveWhyId = null">Cancel</button>
+                  </div>
+                  <div v-if="removeWhyError" class="alert alert-danger py-2 mt-2 mb-0">{{ removeWhyError }}</div>
+                </template>
+              </li>
+            </ul>
+            <div v-else class="card-body pt-0">
+              <p class="mb-0">No whys yet.</p>
+              <p v-if="canEdit" class="mb-0 text-secondary">Start with why the problem happened.</p>
+            </div>
+          </div>
+
+          <div class="card" data-testid="root-cause">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="fa-solid fa-crosshairs me-1"></i>Root cause</span>
+              <button v-if="canEdit" type="button" class="btn btn-outline-primary" @click="rootCauseDialog.open()">
+                {{ improvement.root_cause ? "Edit root cause" : "Set root cause" }}
+              </button>
+            </div>
+            <div class="card-body">
+              <template v-if="improvement.root_cause">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                  <span class="badge text-bg-primary text-wrap">
+                    {{ causeText(improvement.root_cause.cause) }}<template v-if="!improvement.root_cause.cause.active"> (inactive)</template>
+                  </span>
+                  <span class="small text-secondary">Group: {{ causeGroupLabel(improvement.root_cause.cause.cause_group) }}</span>
+                </div>
+                <p class="mb-0 analysis-text">{{ improvement.root_cause.text }}</p>
+                <p v-if="improvement.contributing_causes" class="mt-2 mb-0 analysis-text">
+                  Other causes: {{ improvement.contributing_causes }}
+                </p>
+              </template>
+              <p v-else class="mb-0 text-secondary">No root cause yet. Find it with the why-why first.</p>
+            </div>
+          </div>
+          <div v-if="ticketCauseText" class="small mt-2" data-testid="ticket-causes">
+            <div>Cause on the tickets: {{ ticketCauseText }}</div>
+            <div class="text-secondary">The ticket's cause says why the part failed. The root cause says why the plant let it happen.</div>
+          </div>
+        </div>
       </div>
 
       <ImprovementDialog ref="editDialog" @saved="onSaved" />
       <AddTicketDialog ref="addDialog" :improvement="improvement" @saved="onSaved" />
+      <WhyDialog ref="whyDialog" :improvement="improvement" @saved="onSaved" />
+      <RootCauseDialog ref="rootCauseDialog" :improvement="improvement" @saved="onSaved" />
     </template>
   </div>
 </template>
 
 <style scoped>
-.problem-text {
+.problem-text,
+.analysis-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
