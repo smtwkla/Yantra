@@ -37,20 +37,25 @@
  * the raise's *What is wrong?* (the description) shows on the Raised line in the same style, as
  * the first note, so there is no Description card. ticket:edit_notes holders get a pencil on each
  * note; a corrected note shows "Edited by …" and *Show earlier text*.
+ *
+ * S068: *Start improvement* in the action bar when the detail says `can_start_improvement`; a line
+ * "Analysed in IM-… · Analysing" per entry of `improvements`, in the repeats box.
  */
 import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { apiDelete, apiGet } from "../api";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import { useShowMore } from "../composables/useShowMore";
 import { userPersonId } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
+import { improvementStateLabel } from "../utils/improvementLabels";
 import {
   ageText, EVENT_LABELS, intensityChanges, minutesText, moveLabel, PLAN_MOVES, planChanges, planLine, SIGNIFICANT_MOVES,
   stateLabel, ticketTint, waitingSplit,
 } from "../utils/ticketLabels";
 import AssignDialog from "./tickets/AssignDialog.vue";
+import ImprovementDialog from "./improvements/ImprovementDialog.vue";
 import EditTicketDialog from "./tickets/EditTicketDialog.vue";
 import LabourPanel from "./tickets/LabourPanel.vue";
 import MoveDialog from "./tickets/MoveDialog.vue";
@@ -61,6 +66,7 @@ import TicketMetersCard from "./tickets/TicketMetersCard.vue";
 import TicketShare from "./tickets/TicketShare.vue";
 
 const route = useRoute();
+const router = useRouter();
 
 const ticket = ref(null);
 const loading = ref(true);
@@ -77,6 +83,7 @@ const regradeDialog = ref(null);
 const assignDialog = ref(null);
 const editDialog = ref(null);
 const noteDialog = ref(null);
+const improvementDialog = ref(null);
 const shownEarlier = ref(new Set()); // the notes whose earlier texts are open
 const labourPanel = ref(null);
 const confirmingUnassignId = ref(null);
@@ -257,6 +264,17 @@ watch(() => route.params.id, load, { immediate: true });
         >
           <i class="fa-regular fa-calendar me-2"></i>{{ moveLabel(m.name, ticket.intensity) }}
         </button>
+        <!-- S068: the server decides (can_start_improvement); hidden, not disabled, otherwise -->
+        <button
+          v-if="ticket.can_start_improvement"
+          type="button"
+          class="btn btn-outline-primary btn-lg"
+          :disabled="improvementDialog?.loadingLeads"
+          @click="improvementDialog.openStart(ticket)"
+        >
+          <span v-if="improvementDialog?.loadingLeads" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+          <i v-else class="fa-solid fa-magnifying-glass me-2"></i>Start improvement
+        </button>
         <router-link v-if="ticket.can_raise_repeat" :to="repeatLink" class="btn btn-outline-primary btn-lg">
           Not fixed — raise again
         </router-link>
@@ -286,7 +304,7 @@ watch(() => route.params.id, load, { immediate: true });
       <div v-if="pickersError" class="alert alert-warning py-2">{{ pickersError }}</div>
 
       <!-- 2. Repeats; details, times and assignees; parts used; the timeline (labour comes after the documents) -->
-      <div v-if="ticket.repeat_of || ticket.repeats.length" class="alert alert-light border">
+      <div v-if="ticket.repeat_of || ticket.repeats.length || ticket.improvements.length" class="alert alert-light border">
         <div v-if="ticket.repeat_of">
           Repeat of <router-link :to="`/tickets/${ticket.repeat_of.id}`">{{ ticket.repeat_of.serial }}</router-link>
         </div>
@@ -295,6 +313,10 @@ watch(() => route.params.id, load, { immediate: true });
           <template v-for="(r, i) in ticket.repeats" :key="r.id">
             <span v-if="i">, </span><router-link :to="`/tickets/${r.id}`">{{ r.serial }}</router-link>
           </template>
+        </div>
+        <!-- S068: its own div per improvement, so "Repeat of" and "Came back as" stay one element each -->
+        <div v-for="im in ticket.improvements" :key="im.id">
+          Analysed in <router-link :to="`/tickets/improvements/${im.id}`">{{ im.serial }}</router-link> · {{ improvementStateLabel(im.state) }}
         </div>
       </div>
 
@@ -502,6 +524,7 @@ watch(() => route.params.id, load, { immediate: true });
       <AssignDialog ref="assignDialog" :ticket="ticket" :people="people" :own-person-id="userPersonId" @saved="onSaved" />
       <EditTicketDialog ref="editDialog" :ticket="ticket" :modes="modes" @saved="onSaved" />
       <NoteDialog ref="noteDialog" :ticket="ticket" @saved="onSaved" @reload="load" />
+      <ImprovementDialog ref="improvementDialog" @saved="router.push(`/tickets/improvements/${$event.id}`)" />
     </template>
   </div>
 </template>

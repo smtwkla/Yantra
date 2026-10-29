@@ -3,6 +3,7 @@
 // is not blank.  The test that would have caught S017's blank raise screen and S018 CR1-01's
 // dialogs.
 import { test, expect } from "./support/test.js";
+import { raiseFixed, startImprovementByApi } from "./support/improvements.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
 
 const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager", "storekeeper", "it_admin"];
@@ -14,6 +15,7 @@ const MASTERS_ROLES = ["engineer", "manager", "it_admin"];
 
 let seed;
 let ticket;
+let improvement; // S068: started from a second ticket, which is back in service (the first is not)
 
 test.beforeAll(async () => {
   seed = await seedIds();
@@ -24,6 +26,7 @@ test.beforeAll(async () => {
   expect(res.status()).toBe(201);
   ticket = await res.json();
   await operator.dispose();
+  improvement = await startImprovementByApi(await raiseFixed(seed.extruder.id, "Screens test: contactor chatters"));
 });
 
 /** The visible top bar's title (route meta.title): the screen's heading on every page. */
@@ -57,6 +60,12 @@ const screens = () => [
         ? page.getByLabel("Site", { exact: true })
         : page.getByTestId("sheet-heading").filter({ hasText: "SMTW — " });
     },
+  },
+  // S068: the Improvements tab of Tickets and the record's page; neither is a nav item
+  { path: "/tickets/improvements", title: "Tickets", shows: (page) => page.getByRole("combobox", { name: "State" }), who: TICKET_ROLES },
+  {
+    path: `/tickets/improvements/${improvement.id}`, title: "Improvement",
+    shows: (page) => page.getByRole("heading", { name: improvement.serial }), who: TICKET_ROLES,
   },
   { path: "/me", title: "Me", shows: (page) => page.getByRole("button", { name: "My activity", exact: true }), who: TICKET_ROLES },
   { path: "/tickets/new", title: "Raise ticket", shows: (page) => page.getByRole("heading", { name: "Raise ticket" }), who: TICKET_ROLES },

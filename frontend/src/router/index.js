@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from "vue-router";
 import EquipmentByCodeView from "../views/EquipmentByCodeView.vue";
 import EquipmentDetailView from "../views/EquipmentDetailView.vue";
 import EquipmentView from "../views/EquipmentView.vue";
+import ImprovementDetailView from "../views/ImprovementDetailView.vue";
+import ImprovementsView from "../views/ImprovementsView.vue";
 import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import MastersView from "../views/MastersView.vue";
@@ -58,6 +60,20 @@ const routes = [
     name: "ticket-detail",
     component: TicketDetailView,
     meta: { title: "Ticket" },
+  },
+  // Improvements (S068): a tab of Tickets and its record page. Both paths start with /tickets/, so
+  // the Tickets nav item stays lit; neither is a nav item, so the API's 403 / 404 is the gate
+  {
+    path: "/tickets/improvements",
+    name: "improvements",
+    component: ImprovementsView,
+    meta: { title: "Tickets" },
+  },
+  {
+    path: "/tickets/improvements/:id(\\d+)",
+    name: "improvement-detail",
+    component: ImprovementDetailView,
+    meta: { title: "Improvement" },
   },
   // Readings (S040, S050): the end-of-day sheet for reading:log holders, the register for every equipment:read holder
   {

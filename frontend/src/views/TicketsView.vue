@@ -21,6 +21,7 @@ import { useRoute, useRouter } from "vue-router";
 import { apiGet } from "../api";
 import PagerBar from "../components/PagerBar.vue";
 import TicketRow from "../components/TicketRow.vue";
+import TicketsTabs from "../components/TicketsTabs.vue";
 import { useDebounced } from "../composables/useDebounced";
 import { userPermissions, userPersonId } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits, noUnits } from "../stores/equipment";
@@ -133,6 +134,7 @@ watch(() => route.fullPath, load);
 
 <template>
   <div class="py-3">
+    <TicketsTabs />
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
       <select v-model="stateModel" class="form-select w-auto" aria-label="State">
         <option v-for="[value, text] in STATE_FILTERS" :key="value" :value="value">{{ text }}</option>

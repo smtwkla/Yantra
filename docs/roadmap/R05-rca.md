@@ -150,8 +150,8 @@ Who uses improvements and what each can do (in the app's words):
 |---|---|---|---|---|---|
 | R05.1 | Improvement record: start from tickets, the problem, linked tickets, the list; the ticket shows the link | L | full | — | → S067 (backend) + S068 (screens), 30-10-2026 |
 | R05.2 | Why-why and the root cause | M | full | R05.1 | → S069, 30-10-2026 |
-| R05.3 | Countermeasures: kind, owner, due date, done; on *Me › Open work* | L | full | R05.1 | → S070, 30-10-2026 |
-| R05.4 | States, timeline and notes; the watch period; verified close | L | full | R05.2, R05.3 | open |
+| R05.3 | Countermeasures: kind, owner, due date, done; on *Me › Open work* | L | full | R05.1 | → S070 (backend) + S071 (screens), 30-10-2026 |
+| R05.4 | States, timeline and notes; the watch period; verified close | L | full | R05.2, R05.3 | → S072, 30-10-2026 |
 | R05.5 | Alerts: countermeasure given to you, overdue, watch ended | M | full | R05.3, R05.4 | open |
 | R05.6 | One-point lessons: the first kind of the Procedures master | L | full | R05.3 | open |
 | R05.7 | Who was shown a lesson (completion records) | M | full | R05.6 | deferred |
