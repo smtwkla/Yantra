@@ -1,5 +1,15 @@
 # What changed in Yantra
 
+## 0.1.13 — 30-10-2026
+- Improvement register: view improvements per site and period, with started, open by state and age, overdue countermeasures, and closed as it worked or did not work. Print it
+- Improvements: start one from tickets, add tickets to it, and see it on its own page and on the ticket page
+- Why-why: record the why chain with evidence and pick the root cause from the cause list
+- Countermeasures: assign one of six kinds with an owner and due date. Mark done with photos, see overdue ones and your own on Me › Open work
+- Verified close: improvements have a watch period with before and after figures. Verify, watch, drop, add notes, and close as it worked or did not work. A timeline shows the history
+- Alerts: get a push alert when a countermeasure is assigned to you, is overdue, or is ready to verify
+- One-point lessons: write a lesson with photos, tick it for a machine class, and print it. Lessons show on each machine's page. Write a lesson from a countermeasure
+- Tickets: share or copy a ticket's link
+
 ## 0.1.12 — 28-10-2026
 - Equipment categories: group equipment classes under a category and filter the equipment list and the printed asset list by Category
 - Equipment and asset list: filter by property, with several conditions matched by All or Any
