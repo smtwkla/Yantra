@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mockup-viewport" content="phone">
+  <title>Mock-up 06 — Masters › Vendors, and the Vendor field in Team (R02.9)</title>
+  <link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+  <link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+  <style>
+    .topbar { height: var(--topbar-height); background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-border); display: flex; align-items: center; justify-content: space-between; padding: 0 0.75rem; font-size: 0.8rem; }
+    .topbar-center { font-weight: 600; font-size: 0.85rem; }
+    .app-content { padding: 0.5rem 0.75rem 72px; }
+    .app-bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 56px; background: var(--sidebar-bg); align-items: center; justify-content: space-around; z-index: 1040; }
+    .bottom-nav-item { display: flex; flex-direction: column; align-items: center; flex: 1; color: var(--sidebar-icon-color); font-size: 0.65rem; gap: 2px; }
+    .bottom-nav-item i { font-size: 1.25rem; }
+    .bottom-nav-item.active { color: var(--sidebar-icon-active-color); }
+    /* As ModuleToolbar.vue: the level-2 sections of Masters, wrapping on a phone */
+    .module-toolbar { display: flex; gap: 4px; flex-wrap: wrap; padding-bottom: 12px; }
+    .module-toolbar-btn { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 6px; color: var(--text-secondary); font-size: 0.8rem; }
+    .module-toolbar-btn.active { background: var(--sidebar-icon-active-bg); color: var(--sidebar-icon-active-color); }
+    .vendor-note { font-size: 0.75rem; color: var(--text-secondary); }
+    .dialog-frame { border: 1px solid var(--bs-border-color); border-radius: 0.5rem; background: #fff; box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.12); }
+    .section-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 1.25rem 0 0.5rem; }
+    .mock-note { font-size: 0.7rem; color: var(--text-muted); border-top: 1px dashed var(--bs-border-color); margin-top: 1rem; padding-top: 0.5rem; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <strong>Yantra</strong><span class="topbar-center">Masters</span>
+  <span class="d-flex align-items-center text-secondary"><i class="fa-solid fa-bell me-2"></i>Engineer A</span>
+</header>
+<main class="app-content py-3">
+  <nav class="module-toolbar">
+    <span class="module-toolbar-btn"><i class="fa-solid fa-location-dot"></i>Sites</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-warehouse"></i>Units</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-layer-group"></i>Categories</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-shapes"></i>Classes</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-sitemap"></i>Types</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-industry"></i>Manufacturers</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-tag"></i>Models</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-list-ul"></i>Properties</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-gauge"></i>Meter types</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-triangle-exclamation"></i>Failure codes</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-screwdriver-wrench"></i>Trades</span>
+    <span class="module-toolbar-btn active"><i class="fa-solid fa-handshake"></i>Vendors</span>
+    <span class="module-toolbar-btn"><i class="fa-solid fa-people-group"></i>Team</span>
+  </nav>
+
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span><i class="fa-solid fa-handshake me-2"></i>Vendors</span>
+      <div class="d-flex align-items-center gap-3">
+        <div class="form-check form-switch mb-0">
+          <input id="vendors-inactive" class="form-check-input" type="checkbox">
+          <label class="form-check-label small" for="vendors-inactive">Show inactive</label>
+        </div>
+        <span class="btn btn-sm btn-primary"><i class="fa-solid fa-plus me-1"></i>Add vendor</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr><th>Name</th><th class="text-end">People</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="fw-semibold">Atlas Copco</div><div class="vendor-note">Screw compressors, MCC2</div></td>
+              <td class="text-end"><a href="#team-dialog">2</a></td>
+              <td><span class="badge text-bg-success">Active</span></td>
+              <td class="text-end"><span class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></span></td>
+            </tr>
+            <tr>
+              <td><div class="fw-semibold">Fuji Electric</div><div class="vendor-note">UPS and harmonic filter</div></td>
+              <td class="text-end"><span class="text-primary">1</span></td>
+              <td><span class="badge text-bg-success">Active</span></td>
+              <td class="text-end"><span class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></span></td>
+            </tr>
+            <tr>
+              <td><div class="fw-semibold">Sartorius</div><div class="vendor-note">Moisture analyser, on call</div></td>
+              <td class="text-end"><span class="text-secondary">None</span></td>
+              <td><span class="badge text-bg-success">Active</span></td>
+              <td class="text-end"><span class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></span></td>
+            </tr>
+            <tr>
+              <td><div class="fw-semibold">Toyota Material Handling</div><div class="vendor-note">Pallet trucks and stackers</div></td>
+              <td class="text-end"><span class="text-primary">1</span></td>
+              <td><span class="badge text-bg-success">Active</span></td>
+              <td class="text-end"><span class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></span></td>
+            </tr>
+            <tr>
+              <td><div class="fw-semibold">VP Power Systems</div><div class="vendor-note">Servo stabiliser and UPS</div></td>
+              <td class="text-end"><span class="text-primary">1</span></td>
+              <td><span class="badge text-bg-success">Active</span></td>
+              <td class="text-end"><span class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fa-solid fa-pen"></i></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="small text-secondary mt-2">People: the active Team records linked to the vendor. A vendor with none cannot be assigned to tickets. Link one in Team.</div>
+    </div>
+  </div>
+
+  <div class="section-label" id="team-dialog">Masters › Team › Edit person</div>
+  <div class="dialog-frame">
+    <div class="modal-header px-3 py-2 border-bottom">
+      <h6 class="modal-title mb-0">Edit person</h6>
+      <span class="btn-close" aria-label="Close"></span>
+    </div>
+    <div class="p-3">
+      <div class="mb-3">
+        <label class="form-label" for="person-name">Name</label>
+        <input id="person-name" class="form-control" value="Atlas Copco service">
+        <div class="form-text">A person, or a contractor firm.</div>
+      </div>
+      <div class="mb-3">
+        <div class="form-label">Employment</div>
+        <div class="form-check form-check-inline">
+          <input id="emp-direct" class="form-check-input" type="radio" name="emp">
+          <label class="form-check-label" for="emp-direct">Direct employee</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input id="emp-contractor" class="form-check-input" type="radio" name="emp" checked>
+          <label class="form-check-label" for="emp-contractor">Contractor</label>
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="person-vendor">Vendor (optional)</label>
+        <select id="person-vendor" class="form-select">
+          <option>No vendor</option>
+          <option selected>Atlas Copco</option>
+          <option>Fuji Electric</option>
+          <option>Sartorius</option>
+          <option>Toyota Material Handling</option>
+          <option>VP Power Systems</option>
+        </select>
+        <div class="form-text">The firm this contractor works for. Their tickets then count as the vendor's breakdown calls on its contracts.</div>
+      </div>
+      <div class="mb-3">
+        <div class="form-label">Trades</div>
+        <div class="form-check"><input id="t-mech" class="form-check-input" type="checkbox" checked><label class="form-check-label" for="t-mech">Mechanical</label></div>
+        <div class="form-check"><input id="t-elec" class="form-check-input" type="checkbox"><label class="form-check-label" for="t-elec">Electrical</label></div>
+      </div>
+      <div class="mb-0">
+        <div class="form-label">Sites and roles</div>
+        <div class="small">SMTW · Technician · all units</div>
+      </div>
+    </div>
+    <div class="modal-footer px-3 py-2 border-top d-flex justify-content-between">
+      <span class="btn btn-sm btn-outline-danger">Deactivate</span>
+      <span class="d-flex gap-2"><span class="btn btn-sm btn-secondary">Cancel</span><span class="btn btn-sm btn-primary">Save person</span></span>
+    </div>
+  </div>
+
+  <p class="mock-note">Mock-up for R02.9 (draft, 30-10-2026). The Vendor field shows only when Employment is Contractor; choosing Direct employee clears it. Engineers, managers and IT admin add and edit vendors (Q9.4); every role reads them. Sample data; vendor names from Plant-Facts § 4 and the contracts read on 27-10-2026. A vendor keeps an optional office phone, shown to engineers, managers and IT admin; no address (Q9.2, S079).</p>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item active"><i class="yi-icon yi-table-edit"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

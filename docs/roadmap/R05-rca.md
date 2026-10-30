@@ -3,7 +3,7 @@ Roadmap: R05 — Improvement and root-cause analysis (RCA)
 Doc: roadmap
 Author: Roadmapper (Opus)
 Date: 29-10-2026
-Status: Approved (gate R, 30-10-2026, KLA): R05.7, R05.8, R05.9 deferred; every other answer (a)
+Status: Closed (30-10-2026, KLA): every item taken up is coded and committed; R05.7, R05.8, R05.9 stay deferred. Approved at gate R 30-10-2026; every other answer (a)
 ```
 
 # R05 — Improvement and root-cause analysis (RCA)
@@ -614,6 +614,11 @@ a new ticket (Plan § 9 Q4); the ISO 14224 cause list with five groups (S016); t
       register (a).
 
 ## Log
+
+- 30-10-2026 — Closed by KLA. R05.1, R05.2, R05.4 are done; R05.3 (S071), R05.5 (S074), R05.6 (S077)
+  and R05.10 (S076) are committed with device checks still open (their rows in
+  `docs/steps/device-checks.md`). R05.7, R05.8 and R05.9 stay deferred; taking one up later
+  reopens R05 by a re-plan (`/step roadmap R05`).
 
 - 30-10-2026 — Gate R: approved by KLA; R05.7, R05.8, R05.9 deferred; every other answer (a); the rest of R05 built now, before R03's milestone 1.
 

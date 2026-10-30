@@ -184,7 +184,7 @@ def _fresh_access_caches():
 
 # Tables emptied once per session so tests start from a known state, child tables first
 _TABLES = ("procedures", "improvement_events", "improvement_actions", "improvement_whys", "improvement_tickets", "improvements",
-           "meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
+           "meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "vendors", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",
            "manufacturers",
@@ -344,6 +344,9 @@ class Uniq:
     def manufacturer_name(self):
         return f"Maker {self._next():04d}"
 
+    def vendor_name(self):
+        return f"Vendor {self._next():04d}"
+
     def designation(self):
         return f"M-{self._next():04d}"
 
@@ -439,6 +442,17 @@ def make_category(admin, uniq):
     def make(**overrides):
         body = {"name": uniq.category_name(), **overrides}
         res = admin.post(f"{MASTERS}/equipment-categories", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+    return make
+
+
+@pytest.fixture
+def make_vendor(admin, uniq):
+    """make_vendor(**fields) -> a vendor (S079), made by IT admin; a unique name unless given."""
+    def make(**overrides):
+        body = {"name": uniq.vendor_name(), **overrides}
+        res = admin.post(f"{MASTERS}/vendors", json=body)
         assert res.status_code == 201, res.get_json()
         return res.get_json()
     return make

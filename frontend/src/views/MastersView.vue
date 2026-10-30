@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Masters — sites, units, equipment classes and types, manufacturers and models, equipment
- * properties (S043), meter types (S037), failure codes, trades, Team with each person's roles per
+ * properties (S043), meter types (S037), failure codes, trades, vendors (S079), Team with each person's roles per
  * site (docs/steps/S001-basic-masters, S004, S010, S011, S012, S016; S011 A1 moved unit access
  * into Team).
  * The level-2 toolbar switches sections as local state, not routes.
@@ -22,6 +22,7 @@ import PeoplePanel from "./masters/PeoplePanel.vue";
 import PropertiesPanel from "./masters/PropertiesPanel.vue";
 import TradesPanel from "./masters/TradesPanel.vue";
 import UnitsPanel from "./masters/UnitsPanel.vue";
+import VendorsPanel from "./masters/VendorsPanel.vue";
 
 // The section names spelled out (S064 UX-25): one term for one thing across the screens
 const sections = [
@@ -36,6 +37,7 @@ const sections = [
   { key: "meter_types", icon: "fa-solid fa-gauge", label: "Meter types", perm: "masters:read" },
   { key: "failure_codes", icon: "fa-solid fa-triangle-exclamation", label: "Failure codes", perm: "masters:read" },
   { key: "trades", icon: "fa-solid fa-screwdriver-wrench", label: "Trades", perm: "masters:read" },
+  { key: "vendors", icon: "fa-solid fa-handshake", label: "Vendors", perm: "masters:read" },
   { key: "people", icon: "fa-solid fa-people-group", label: "Team", perm: "masters:read" },
 ];
 const panels = {
@@ -50,6 +52,7 @@ const panels = {
   meter_types: MeterTypesPanel,
   failure_codes: FailureCodesPanel,
   trades: TradesPanel,
+  vendors: VendorsPanel,
   people: PeoplePanel,
 };
 

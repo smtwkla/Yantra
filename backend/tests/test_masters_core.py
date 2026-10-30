@@ -8,6 +8,7 @@ from masters_core import (
     validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_equipment_type, validate_manufacturer, validate_meter_type,
     validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
     optional_text_parser, validate_unit_ids, validate_username,
+    DIRECT_WITH_VENDOR, PHONE_RULE, phone_parser, validate_vendor, vendor_link_error,
 )
 
 
@@ -730,3 +731,95 @@ class TestMaintenanceAction:
         clean, errors = validate_maintenance_action(
             {"code": "1", "label": "Replace", "class_id": 3, "cause_group": "misc"}, creating=True)
         assert errors == [] and clean == {"code": "1", "label": "Replace"}
+
+
+class TestVendor:
+    """S079 § 5.1.  Phone values are obviously fake, never a real number."""
+
+    def test_name_trimmed_and_collapsed(self):
+        clean, errors = validate_vendor({"name": "  Atlas   Copco "}, creating=True)
+        assert errors == [] and clean == {"name": "Atlas Copco"}
+
+    @pytest.mark.parametrize("raw, message", [
+        ("", "Name is required"), ("   ", "Name is required"), (5, "Name is required"),
+        ("x" * 101, "Name must be at most 100 characters"),
+    ])
+    def test_name_refused(self, raw, message):
+        _, errors = validate_vendor({"name": raw}, creating=True)
+        assert errors == [{"field": "name", "message": message}]
+
+    def test_name_at_the_bound(self):
+        assert validate_vendor({"name": "x" * 100}, creating=True)[1] == []
+
+    def test_required_on_create_only(self):
+        assert validate_vendor({}, creating=True)[1] == [{"field": "name", "message": "Name is required"}]
+        assert validate_vendor({}, creating=False) == ({}, [])
+
+    @pytest.mark.parametrize("raw, stored", [
+        ("+91 00000 00000", "+91 00000 00000"), ("000-000-0000", "000-000-0000"),
+        ("(000) 0000 0000", "(000) 0000 0000"), ("000.0000.0000", "000.0000.0000"), ("-000000", "-000000"),
+        ("  +91   00000  00000 ", "+91 00000 00000"),
+    ])
+    def test_phone_accepted(self, raw, stored):
+        clean, errors = validate_vendor({"phone": raw}, creating=False)
+        assert errors == [] and clean == {"phone": stored}
+
+    @pytest.mark.parametrize("raw", [None, "", "   "])
+    def test_phone_cleared(self, raw):
+        assert validate_vendor({"phone": raw}, creating=False) == ({"phone": None}, [])
+
+    @pytest.mark.parametrize("raw, message", [
+        ("00000", PHONE_RULE), ("0000000000000000", PHONE_RULE), ("00 00+", PHONE_RULE),
+        ("0000 0000 ext", PHONE_RULE), ("call 000000", PHONE_RULE),
+        ("0" * 21, "Phone must be at most 20 characters"),
+        (5, "Phone must be text"), ([], "Phone must be text"), (True, "Phone must be text"),
+    ])
+    def test_phone_refused(self, raw, message):
+        assert validate_vendor({"phone": raw}, creating=False)[1] == [{"field": "phone", "message": message}]
+
+    def test_phone_rule_text(self):
+        assert PHONE_RULE == "Enter 6 to 15 digits. Spaces, hyphens, dots and brackets are allowed."
+
+    def test_phone_parser_names_its_field(self):
+        parse = phone_parser("Call-out number")
+        with pytest.raises(ValueError, match="^Call-out number must be text$"):
+            parse(5)
+        with pytest.raises(ValueError, match="^Call-out number must be at most 20 characters$"):
+            parse("0" * 21)
+        assert parse(" 000 000 ") == "000 000"
+
+    def test_note(self):
+        assert validate_vendor({"note": " Screw compressors "}, creating=False) == ({"note": "Screw compressors"}, [])
+        assert validate_vendor({"note": ""}, creating=False) == ({"note": None}, [])
+        assert validate_vendor({"note": "x" * 255}, creating=False)[1] == []
+        assert validate_vendor({"note": "x" * 256}, creating=False)[1] == [
+            {"field": "note", "message": "Note must be at most 255 characters"}]
+        assert validate_vendor({"note": []}, creating=False)[1] == [{"field": "note", "message": "Note must be text"}]
+
+    def test_extra_fields_ignored(self):
+        assert validate_vendor({"name": "A", "people_count": 3, "id": 9, "email": "x"}, creating=True) == (
+            {"name": "A"}, [])
+
+
+class TestVendorLink:
+    """vendor_link_error (S079 § 5.2 rule 1)."""
+
+    @pytest.mark.parametrize("employment, vendor_id, sent, expected", [
+        ("contractor", None, False, None), ("contractor", 5, False, None), ("contractor", 5, True, None),
+        ("direct", None, False, None), ("direct", None, True, None),
+        ("direct", 5, True, ("vendor_id", DIRECT_WITH_VENDOR)),
+        ("direct", 5, False, ("employment", DIRECT_WITH_VENDOR)),
+    ])
+    def test_rule(self, employment, vendor_id, sent, expected):
+        assert vendor_link_error(employment, vendor_id, sent) == expected
+
+    def test_message(self):
+        assert DIRECT_WITH_VENDOR == "A direct employee works for no vendor. Clear the vendor, then save."
+
+    @pytest.mark.parametrize("raw", [True, "3", 0, -1, 1.5])
+    def test_vendor_id_must_be_a_record_id(self, raw):
+        assert validate_person({"vendor_id": raw}, creating=False)[1] == [
+            {"field": "vendor_id", "message": "Vendor must be a record id"}]
+
+    def test_vendor_id_null_is_no_vendor(self):
+        assert validate_person({"vendor_id": None}, creating=False) == ({"vendor_id": None}, [])

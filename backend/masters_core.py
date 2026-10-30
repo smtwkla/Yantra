@@ -293,10 +293,64 @@ _TRADE_FIELDS = {
 _PERSON_FIELDS = {
     "name": (parse_name, True),
     "employment": (_parse_employment, True),
+    # The contractor's firm (S079 § 5.2); null is no vendor.  The shell checks the link rules.
+    "vendor_id": (_parse_optional_id("Vendor"), False),
     "trade_ids": (_parse_trade_ids, False),
     "username": (_parse_login, False),
     "active": (_parse_active, False),
 }
+
+
+# ---------------------------------------------------------------------------
+# Vendors (S079 § 5.1): an outside firm the plant buys maintenance from
+# ---------------------------------------------------------------------------
+
+# A phone number as people write it: 6 to 15 digits (15 is the E.164 maximum), with spaces,
+# hyphens, dots and brackets between them and a + only first.  No grouping rule (S079 BR1-01).
+# The contract's call-out number (S080) uses the same parser.
+PHONE_MAX = 20
+PHONE_DIGITS_MIN = 6
+PHONE_DIGITS_MAX = 15
+PHONE_RE = re.compile(r"^\+?[0-9 ().-]*$")
+PHONE_RULE = "Enter 6 to 15 digits. Spaces, hyphens, dots and brackets are allowed."
+VENDOR_NOTE_MAX = 255
+DIRECT_WITH_VENDOR = "A direct employee works for no vendor. Clear the vendor, then save."
+
+
+def phone_parser(label):
+    """The parser of an optional phone field named ``label`` in its messages: None or ""
+    (after trimming) clears it; else trimmed, inner runs of spaces as one."""
+    def parse(raw):
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise ValueError(f"{label} must be text")
+        phone = _collapsed(raw)
+        if not phone:
+            return None
+        if len(phone) > PHONE_MAX:
+            raise ValueError(f"{label} must be at most {PHONE_MAX} characters")
+        digits = sum(ch.isdigit() for ch in phone)
+        if not PHONE_RE.match(phone) or not PHONE_DIGITS_MIN <= digits <= PHONE_DIGITS_MAX:
+            raise ValueError(PHONE_RULE)
+        return phone
+    return parse
+
+
+_parse_phone = phone_parser("Phone")
+
+
+_VENDOR_FIELDS = {
+    # The same rule as a manufacturer's name: trimmed, inner spaces collapsed, 1-100 characters
+    "name": (_parse_manufacturer_name, True),
+    "phone": (_parse_phone, False),
+    "note": (optional_text_parser("Note", VENDOR_NOTE_MAX), False),
+    "active": (_parse_active, False),
+}
+
+
+def validate_vendor(data, creating):
+    return _validate(data, _VENDOR_FIELDS, creating)
 
 
 def _missing_text(field):
@@ -529,6 +583,15 @@ def no_login_role_error(roles):
     found a fault can be named on the ticket): their site roles describe them for pick-lists;
     everyone else logs in.  The message, or None."""
     return NO_LOGIN_ROLE_MESSAGE if any(role not in NO_LOGIN_ROLES for role in roles) else None
+
+
+def vendor_link_error(employment, vendor_id, vendor_sent):
+    """Only a contractor has a vendor (S079 § 5.2 rule 1), on the effective values of a save:
+    what is sent, else what is stored.  -> ``(field, message)`` or None; the field is vendor_id
+    when the body sent a non-null vendor_id (``vendor_sent``), else employment."""
+    if employment == "direct" and vendor_id is not None:
+        return ("vendor_id" if vendor_sent else "employment"), DIRECT_WITH_VENDOR
+    return None
 
 
 def technician_only(stored_role, new_role):

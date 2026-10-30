@@ -1,7 +1,7 @@
 /**
  * Masters cache — sites, units, equipment categories (S063), classes and types, manufacturers and equipment
  * models (S012), trades, meter types (S037), failure modes, causes and maintenance actions (S016),
- * equipment properties (S043), fetched once and shared.
+ * equipment properties (S043), vendors (S079), fetched once and shared.
  *
  * Lists include inactive records (consumers filter on `active`). Pickers (the equipment
  * form, the move dialog) take the cached copy: a list a few minutes old is harmless there.
@@ -27,6 +27,7 @@ export const failureModes = ref(null);
 export const failureCauses = ref(null);
 export const maintenanceActions = ref(null);
 export const properties = ref(null);
+export const vendors = ref(null);
 
 async function fetchItems(path) {
   return (await apiGet(`/api/masters/${path}?include_inactive=1`)).items;
@@ -106,6 +107,10 @@ export function ensureProperties({ refresh = false } = {}) {
   return ensure(properties, "properties", refresh);
 }
 
+export function ensureVendors({ refresh = false } = {}) {
+  return ensure(vendors, "vendors", refresh);
+}
+
 /** Id of the active default site, or null when none is set. Used to preselect pick-one site fields. */
 export function defaultSiteId() {
   return (sites.value ?? []).find((s) => s.is_default && s.active)?.id ?? null;
@@ -125,4 +130,5 @@ export function resetMasters() {
   failureCauses.value = null;
   maintenanceActions.value = null;
   properties.value = null;
+  vendors.value = null;
 }

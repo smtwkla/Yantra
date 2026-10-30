@@ -32,6 +32,9 @@ category it moves into or is reactivated in; a class create locks only that cate
 category deactivate locks its row, then makes a plain count of its active classes (a concurrent
 class write that would put an active class in it waits on the category lock).  No category
 write takes a class lock, so no cycle.
+Vendors (S079 § 5.3): a vendor update locks its row alone and counts nothing.  A person write
+that newly links a vendor locks the person, then reads the vendor LOCK IN SHARE MODE (person →
+vendor → trades); no vendor write takes a person, so no cycle.
 """
 
 import logging
@@ -51,7 +54,7 @@ from masters_core import (
     CLASS_CATEGORY_INACTIVE, category_in_use, model_label, no_login_role_error, normalise_username, technician_only,
     validate_equipment_category, validate_equipment_class, validate_equipment_model, validate_equipment_type,
     validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
-    validate_meter_type, validate_site_rows, validate_trade, validate_unit,
+    validate_meter_type, validate_site_rows, validate_trade, validate_unit, validate_vendor, vendor_link_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +81,8 @@ UNIQUE_KEY_ERRORS.update({
     "uq_people_username": ("username", "Another person already has this login (it may be an inactive one)"),
     # Migration v9 (S012)
     "uq_manufacturers_name": ("name", "A manufacturer with this name exists"),
+    # Migration v42 (S079)
+    "uq_vendors_name": ("name", "A vendor with this name exists. Use that one, or enter a different name."),
     "uq_equipment_models_maker_designation": ("designation",
                                               "This manufacturer already has a model with this designation"),
     # Migration v11 (S016)
@@ -124,6 +129,18 @@ _MODEL_SELECT = (
 # class_code is NULL for a General mode (every class)
 _FAILURE_MODE_SELECT = (
     "SELECT f.*, c.code AS class_code FROM failure_modes f LEFT JOIN equipment_classes c ON c.id = f.class_id"
+)
+
+# people_count: the active Team records linked to the vendor (S079 § 5.5)
+_VENDOR_SELECT = (
+    "SELECT v.*, (SELECT COUNT(*) FROM people p WHERE p.vendor_id = v.id AND p.active = 1) AS people_count"
+    " FROM vendors v"
+)
+
+# A person with their vendor's name and active flag (S079 § 5.2 rule 7); both NULL with no vendor
+_PERSON_SELECT = (
+    "SELECT p.*, v.name AS vendor_name, v.active AS vendor_active FROM people p"
+    " LEFT JOIN vendors v ON v.id = p.vendor_id"
 )
 
 _PERSON_UNITS_SELECT = (
@@ -648,6 +665,56 @@ def update_equipment_model(model_id):
 
 
 # ---------------------------------------------------------------------------
+# Vendors (S079) — the outside firms the plant buys maintenance from (ISO 9001 § 8.4, ISO 55001
+# § 8.3): one row per firm, shared by all sites like manufacturers.  Read by everyone, kept by
+# equipment:edit; the phone goes to equipment:edit holders only (D3).  Never deleted; a vendor
+# may be deactivated while people are linked to it, and the links stay (S079 D5: they are the
+# history the breakdown calls and the vendor report read).  An update locks the row alone.
+# ---------------------------------------------------------------------------
+
+def _vendor_out(row):
+    """The office phone only for those who deal with the vendor (S079 § 5.4, ISO 27001 A.5.15)."""
+    if not has_perm("equipment:edit"):
+        del row["phone"]
+    return row
+
+
+def _fetch_vendor(cur, vendor_id):
+    return _vendor_out(fetch_one(cur, f"{_VENDOR_SELECT} WHERE v.id = %s", (vendor_id,)))
+
+
+@masters_bp.route("/vendors")
+@require_perm("masters:read")
+def list_vendors():
+    where = "" if _include_inactive() else "WHERE v.active = 1 "
+    with get_db().cursor() as cur:
+        return _list_response(cur, f"{_VENDOR_SELECT} {where}ORDER BY v.name", convert=_vendor_out)
+
+
+@masters_bp.route("/vendors", methods=["POST"])
+@require_perm("equipment:edit")
+def create_vendor():
+    clean = clean_body(validate_vendor, creating=True)
+    with get_db().cursor() as cur:
+        vendor_id = insert_row(cur, "vendors", clean, actor())
+        return jsonify(_fetch_vendor(cur, vendor_id)), 201
+
+
+@masters_bp.route("/vendors/<int:vendor_id>", methods=["PUT"])
+@require_perm("equipment:edit")
+def update_vendor(vendor_id):
+    """Rename (links are by id: Team shows the new name at once), deactivate or reactivate;
+    always allowed (S079 § 5.1)."""
+    clean = clean_body(validate_vendor, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_row(cur, "vendors", vendor_id)
+        update_row(cur, "vendors", vendor_id, clean, actor())
+    with conn.cursor() as cur:
+        return jsonify(_fetch_vendor(cur, vendor_id))
+
+
+# ---------------------------------------------------------------------------
 # Failure codes (S016) — ISO 14224 § 9 and Annex B: failure modes (what is seen: the
 # operator's symptom), failure causes (in ISO's five groups) and maintenance actions.
 # Read by everyone, kept by failure_codes:edit.  A failure mode's code is frozen once a ticket
@@ -1084,7 +1151,9 @@ def update_model_meter(model_meter_id):
 # optional Yantra login.  people:edit maintains the register; the login, and the active
 # flag of a person who has one, are IT admin's (masters:edit): a login turns the
 # person's site roles into access (ISO 27001 A.5.3, A.8.2).
-# Lock order person -> trades -> site rows -> units; only the trade PUT locks a trade row alone.
+# A contractor's record may name its vendor (S079); the link uses people:edit like the rest.
+# Lock order person -> vendor (share, a new link only) -> trades -> site rows -> units; only the
+# trade PUT locks a trade row alone.
 # ---------------------------------------------------------------------------
 
 def _attach_trades(cur, items):
@@ -1191,6 +1260,9 @@ def _people_out(cur, rows):
     copied from it (S032 § 1.6), go only to those who maintain it, IT admin (A.5.15, A.5.34).
     Site rows: _SiteViewer.  -> (items, the viewer)."""
     items = _attach_trades(cur, rows_to_list(rows))
+    for item in items:
+        # A boolean, or None with no vendor (S079 § 5.2 rule 7)
+        item["vendor_active"] = None if item["vendor_active"] is None else bool(item["vendor_active"])
     viewer = _SiteViewer(cur)
     site_rows = _site_rows(cur, [item["id"] for item in items]) if viewer.editor else {}
     for item in items:
@@ -1208,9 +1280,35 @@ def _people_out(cur, rows):
 
 
 def _fetch_person(cur, person_id):
-    cur.execute("SELECT * FROM people WHERE id = %s", (person_id,))
+    cur.execute(f"{_PERSON_SELECT} WHERE p.id = %s", (person_id,))
     items, _viewer = _people_out(cur, [cur.fetchone()])
     return items[0]
+
+
+def _check_vendor_link(cur, employment, stored_vendor_id, clean):
+    """S079 § 5.2 rules 1 and 2, after the person row is locked (``stored_vendor_id`` from it;
+    None on a create): only a contractor has a vendor, and a new link needs an existing, active
+    vendor, read LOCK IN SHARE MODE (person → vendor → trades, § 5.3).  Re-sending the stored
+    vendor reads nothing, so a person whose firm was deactivated later can still be saved."""
+    sent = clean.get("vendor_id")
+    link = vendor_link_error(employment, clean.get("vendor_id", stored_vendor_id), sent is not None)
+    if link:
+        raise ApiError(link[1], 400, link[0])
+    if sent is not None and sent != stored_vendor_id:
+        _check_new_vendor(cur, sent)
+
+
+def _check_new_vendor(cur, vendor_id):
+    """A newly linked vendor must exist and be active (S079 § 5.2 rule 2, the texts of a trade's
+    refusals).  Share mode: two person saves for one vendor do not wait for each other, and a
+    deactivation (FOR UPDATE) waits for both (D9)."""
+    cur.execute("SELECT name, active FROM vendors WHERE id = %s LOCK IN SHARE MODE", (vendor_id,))
+    vendor = cur.fetchone()
+    if vendor is None:
+        raise ApiError("That vendor no longer exists. Reload and try again.", 400, "vendor_id")
+    if not vendor["active"]:
+        raise ApiError(f"Vendor {vendor['name']} is inactive. Choose another vendor or reactivate it.",
+                       400, "vendor_id")
 
 
 def _check_login_change(clean):
@@ -1246,9 +1344,9 @@ def _login_save_sites(clean, login_changes):
 @masters_bp.route("/people")
 @require_perm("masters:read")
 def list_people():
-    where = "" if _include_inactive() else "WHERE active = 1 "
+    where = "" if _include_inactive() else "WHERE p.active = 1 "
     with get_db().cursor() as cur:
-        cur.execute(f"SELECT * FROM people {where}ORDER BY name, id")
+        cur.execute(f"{_PERSON_SELECT} {where}ORDER BY p.name, p.id")
         items, viewer = _people_out(cur, cur.fetchall())
         body = {"items": items, "total": len(items)}
         # The sites the Add dialog offers (S064 UX-14): only editors get site data, as each item
@@ -1271,6 +1369,7 @@ def create_person():
     trade_ids = clean.pop("trade_ids", [])
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
+        _check_vendor_link(cur, clean["employment"], None, clean)
         _check_grantable(cur, "trades", trade_ids, set(), "trade_ids", "trade")
         person_id = insert_row(cur, "people", clean, actor())
         for trade_id in trade_ids:
@@ -1307,6 +1406,8 @@ def update_person(person_id):
         # reactivating restores it, so it is IT admin's like the login itself (A1 rule 1)
         if "active" in clean and person["username"] is not None and not has_perm("masters:edit"):
             raise ApiError("Only IT admin can activate or deactivate a person with a login", 403, "active")
+        # The vendor is a grant like a trade: checked after the 403s, before the trades (S079 BR1-03)
+        _check_vendor_link(cur, clean.get("employment", person["employment"]), person["vendor_id"], clean)
         trades_changed = False
         if trade_ids is not None:
             held = _held_trade_ids(cur, person_id)

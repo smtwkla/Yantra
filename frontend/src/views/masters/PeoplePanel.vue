@@ -22,13 +22,20 @@
  * person, still dirty, with the error on that row.  More than two rows fold to their one-line
  * text.  Removing a row or changing its role shows what the save will take away (UX-15).
  * The list has a search (name or login) and a site filter (UX-18).
+ *
+ * S079: a contractor may name its vendor (the firm it works for). The select shows only while
+ * Contractor is chosen; Direct employee clears it, so a save never sends a direct employee with a
+ * vendor. Changing a stored link warns that the person's earlier tickets go with the new link
+ * (the current link counts, Q9.5 a).
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { apiDelete, apiGet, apiPost, apiPut } from "../../api";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
 import { userLogin, userPermissions } from "../../stores/auth";
-import { ensureSites, ensureTrades, ensureUnits, sites, trades, units } from "../../stores/masters";
+import {
+  ensureSites, ensureTrades, ensureUnits, ensureVendors, sites, trades, units, vendors,
+} from "../../stores/masters";
 import { describeSiteRow, roleLabel, siteRoleChoices, TECHNICIAN } from "../../utils/siteRoles";
 import { useMasterForm } from "./useMasterForm";
 
@@ -59,6 +66,10 @@ const rows = computed(() => {
 
 const EMPLOYMENT_BADGE = { direct: "Direct", contractor: "Contractor" };
 
+// " · Atlas Copco" beside a linked contractor's badge, " (inactive)" for a deactivated vendor (S079 § 5.5)
+const vendorSuffix = (p) =>
+  p.vendor_id == null ? "" : ` · ${p.vendor_name}${p.vendor_active === false ? " (inactive)" : ""}`;
+
 // Active trades, plus inactive ones this person already holds, so saving never drops them.
 // Fixed when the dialog opens: unticking one by mistake does not make it vanish.
 const heldInactiveIds = ref(new Set());
@@ -73,10 +84,11 @@ const canChangeActive = computed(() => canEditLogin.value || !editing.value?.has
 async function reload() {
   loadError.value = "";
   try {
-    // The pickers (trades, sites, units) are refreshed too: another user may have just added one
+    // The pickers (trades, sites, units, vendors) are refreshed too: another user may have just added one
     const refresh = { refresh: true };
     const [list] = await Promise.all([
       apiGet(`${PATH}?include_inactive=1`), ensureTrades(refresh), ensureSites(refresh), ensureUnits(refresh),
+      ensureVendors(refresh),
     ]);
     people.value = list.items;
     assignableForAdd.value = list.assignable_site_ids ?? [];
@@ -86,6 +98,36 @@ async function reload() {
 }
 
 const byId = (a, b) => a - b; // a fixed order, so the dialog's change check compares by value
+
+// --- Vendor (S079) ----------------------------------------------------------
+
+// The active vendors by name (the API's order), then the person's stored vendor when it is
+// inactive, so a save can keep it
+const vendorChoices = computed(() => {
+  const choices = (vendors.value ?? []).filter((v) => v.active);
+  const stored = editing.value?.vendor_id;
+  if (stored != null && !choices.some((v) => v.id === stored)) {
+    choices.push({ id: stored, name: `${editing.value.vendor_name} (inactive)` });
+  }
+  return choices;
+});
+
+// What the save sends: the vendor while Contractor and a vendor are chosen, else null
+const vendorToSend = (f) => (f.employment === "contractor" && f.vendor_id !== "" ? Number(f.vendor_id) : null);
+
+// The warning before a stored link changes (Q9.5 a): the link counts as it is now, so the
+// person's earlier tickets go with it
+const vendorChangeLine = computed(() => {
+  const stored = editing.value?.vendor_id;
+  if (stored == null) return "";
+  const next = vendorToSend(form.value);
+  if (next === stored) return "";
+  const hint = " If the person changed firm or employer, add a new Team record for them instead.";
+  const oldName = editing.value.vendor_name;
+  if (next === null) return `Their earlier tickets will no longer count for ${oldName}.${hint}`;
+  const newName = (vendors.value ?? []).find((v) => v.id === next)?.name ?? "";
+  return `Their earlier tickets will count for ${newName} instead of ${oldName}.${hint}`;
+});
 
 // --- Site rows ------------------------------------------------------------
 
@@ -203,6 +245,7 @@ const loginChanging = computed(() => {
 // A login change carries the whole set of site rows (S011 A1 rule 1).
 function toBody(f) {
   const { sites: siteRows, ...body } = f;
+  body.vendor_id = vendorToSend(f);
   const login = f.username.trim();
   if (!canEditLogin.value || (editing.value && login === (editing.value.username ?? ""))) {
     delete body.username;
@@ -221,10 +264,11 @@ const {
 } =
   useMasterForm({
     path: PATH,
-    blank: () => ({ name: "", employment: "direct", username: "", trade_ids: [], sites: [] }),
+    blank: () => ({ name: "", employment: "direct", vendor_id: "", username: "", trade_ids: [], sites: [] }),
     fromRecord: (p) => ({
       name: p.name,
       employment: p.employment,
+      vendor_id: p.vendor_id ?? "",
       username: p.username ?? "",
       trade_ids: p.trades.map((x) => x.id).sort(byId),
       sites: (p.sites ?? []).map(rowForm),
@@ -233,6 +277,11 @@ const {
     label: (p) => p.name,
     reload,
   });
+
+// Direct employee clears the vendor in view; Contractor again does not bring the old one back
+watch(() => form.value.employment, (employment) => {
+  if (employment === "direct") form.value.vendor_id = "";
+});
 
 // The refusal of one site row: {siteId, message}, shown on that row
 const rowError = ref(null);
@@ -365,7 +414,7 @@ onMounted(reload);
             <tr v-for="p in rows" :key="p.id" :class="{ 'text-secondary': !p.active }">
               <td class="fw-semibold">{{ p.name }}</td>
               <td>
-                <span class="badge" :class="p.employment === 'contractor' ? 'text-bg-warning' : 'text-bg-primary'">{{ EMPLOYMENT_BADGE[p.employment] }}</span>
+                <span class="badge" :class="p.employment === 'contractor' ? 'text-bg-warning' : 'text-bg-primary'">{{ EMPLOYMENT_BADGE[p.employment] }}</span><span v-if="vendorSuffix(p)" class="person-vendor">{{ vendorSuffix(p) }}</span>
               </td>
               <td>
                 <span
@@ -432,6 +481,19 @@ onMounted(reload);
       </div>
       <div v-if="fieldError('employment')" class="invalid-feedback d-block">{{ fieldError("employment") }}</div>
     </div>
+    <div v-if="form.employment === 'contractor'" class="mb-3">
+      <label class="form-label" for="person-vendor">Vendor (optional)</label>
+      <select id="person-vendor" v-model="form.vendor_id" class="form-select" :class="{ 'is-invalid': fieldError('vendor_id') }">
+        <option value="">No vendor</option>
+        <option v-for="v in vendorChoices" :key="v.id" :value="v.id">{{ v.name }}</option>
+      </select>
+      <div v-if="fieldError('vendor_id')" class="invalid-feedback d-block">{{ fieldError("vendor_id") }}</div>
+      <div v-if="vendors !== null && !vendors.some((v) => v.active)" class="form-text">No active vendors; add one under Vendors.</div>
+      <div v-else class="form-text">
+        The firm this contractor works for. Their tickets then count as the vendor's breakdown calls on its contracts.
+      </div>
+    </div>
+    <div v-if="vendorChangeLine" class="alert alert-warning py-2 small" data-test="vendor-change">{{ vendorChangeLine }}</div>
     <div class="mb-3">
       <div class="form-label">Trades</div>
       <div v-if="fieldError('trade_ids')" class="alert alert-danger py-2">{{ fieldError("trade_ids") }}</div>

@@ -1384,6 +1384,39 @@ _MIGRATIONS = [
             CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
                    + (action_id IS NOT NULL) + (procedure_id IS NOT NULL) = 1)""",
     ]),
+    # S079 — the vendor master (docs/steps/S079-vendor-master/1-brief.md § 4.1, R02.9): one row per
+    # outside firm the plant buys maintenance from, shared by all sites like manufacturers.  The name
+    # is unique in the table's case-insensitive collation; the API collapses inner spaces first
+    # (ISO 8000: one spelling per firm).  people.vendor_id links a contractor's Team record to its
+    # firm; chk_people_vendor keeps it to contractors.  No seed rows and no links: the engineer adds
+    # the vendors and links people by hand (no guess from a name).  No precondition: a new table, a
+    # nullable column (NULL on every production row, and a NULL foreign key is not checked) and a
+    # CHECK every existing row meets; nothing is converted or dropped.  IF NOT EXISTS on the table,
+    # the column, the key, the foreign key and the CHECK make a half-applied v42 re-run.  Rollback:
+    # a release before v42 reads people with SELECT * and returns vendor_id unused; it never reads
+    # vendors.  On it, a PUT {employment: "direct"} of a linked person breaks the CHECK (a 500), so
+    # unlink such people before a rollback.
+    (42, "Vendor master and a contractor's vendor (S079)", [
+        """CREATE TABLE IF NOT EXISTS vendors (
+            id          INT AUTO_INCREMENT PRIMARY KEY,
+            name        VARCHAR(100) NOT NULL,
+            phone       VARCHAR(20) NULL,
+            note        VARCHAR(255) NULL,
+            active      TINYINT(1) NOT NULL DEFAULT 1,
+            created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by  VARCHAR(100) NOT NULL,
+            updated_at  DATETIME NULL,
+            updated_by  VARCHAR(100) NULL,
+            CONSTRAINT uq_vendors_name UNIQUE (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE people
+            ADD COLUMN IF NOT EXISTS vendor_id INT NULL AFTER employment,
+            ADD KEY IF NOT EXISTS ix_people_vendor (vendor_id),
+            ADD CONSTRAINT fk_people_vendor
+                FOREIGN KEY IF NOT EXISTS (vendor_id) REFERENCES vendors (id)""",
+        """ALTER TABLE people ADD CONSTRAINT IF NOT EXISTS chk_people_vendor
+            CHECK (vendor_id IS NULL OR employment = 'contractor')""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

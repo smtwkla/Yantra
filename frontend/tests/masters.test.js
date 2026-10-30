@@ -15,11 +15,13 @@ import {
   ensureMaintenanceActions,
   ensureSites,
   ensureUnits,
+  ensureVendors,
   failureCauses,
   failureModes,
   maintenanceActions,
   resetMasters,
   sites,
+  vendors,
 } from "../src/stores/masters";
 
 beforeEach(() => {
@@ -68,10 +70,12 @@ describe("failure codes (S016)", () => {
     await ensureFailureModes();
     await ensureFailureCauses();
     await ensureMaintenanceActions();
+    await ensureVendors();
     expect(apiGet.mock.calls.map((c) => c[0])).toEqual([
       "/api/masters/failure-modes?include_inactive=1",
       "/api/masters/failure-causes?include_inactive=1",
       "/api/masters/maintenance-actions?include_inactive=1",
+      "/api/masters/vendors?include_inactive=1",
     ]);
   });
 
@@ -81,8 +85,11 @@ describe("failure codes (S016)", () => {
     expect(apiGet).toHaveBeenCalledTimes(1);
     await ensureFailureCauses();
     await ensureMaintenanceActions();
+    await ensureVendors();
+    expect(vendors.value).not.toBeNull();
     resetMasters();
-    expect([failureModes.value, failureCauses.value, maintenanceActions.value]).toEqual([null, null, null]);
+    expect([failureModes.value, failureCauses.value, maintenanceActions.value, vendors.value]).toEqual(
+      [null, null, null, null]);
   });
 
   it("names the five ISO cause groups and shows an unknown group as it came (S069)", () => {

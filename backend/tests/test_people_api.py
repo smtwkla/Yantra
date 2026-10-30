@@ -344,3 +344,106 @@ class TestEmailFromLogin:
                                                  "email": "new@example.test"})
         assert res.status_code == 201, res.get_json()
         assert db_rows("SELECT email FROM people WHERE id = %s", (res.get_json()["id"],))[0]["email"] is None
+
+
+class TestVendorLink:
+    """A contractor's vendor (S079 § 5.2): only a contractor has one, a new link needs an existing,
+    active vendor, and the answer carries vendor_id, vendor_name and vendor_active."""
+
+    DIRECT_WITH_VENDOR = "A direct employee works for no vendor. Clear the vendor, then save."
+    V = "<vendor>"   # stands for the test's vendor id in the parametrized bodies
+
+    def test_a_contractor_linked_on_create_shows_the_vendor(self, engineer, make_vendor):
+        vendor = make_vendor()
+        res = engineer.post(f"{BASE}/people", json={"name": "Atlas Copco service", "employment": "contractor",
+                                                    "vendor_id": vendor["id"]})
+        assert res.status_code == 201, res.get_json()
+        person = res.get_json()
+        expected = {"vendor_id": vendor["id"], "vendor_name": vendor["name"], "vendor_active": True}
+        assert {k: person[k] for k in expected} == expected
+        assert {k: _row(engineer, person["id"])[k] for k in expected} == expected
+        unlinked = _row(engineer, engineer.post(f"{BASE}/people", json={
+            "name": "Ravi", "employment": "direct"}).get_json()["id"])
+        assert (unlinked["vendor_id"], unlinked["vendor_name"], unlinked["vendor_active"]) == (None, None, None)
+
+    def test_direct_with_a_vendor_is_400_on_create(self, engineer, make_vendor):
+        res = engineer.post(f"{BASE}/people", json={"name": "Ravi", "employment": "direct",
+                                                    "vendor_id": make_vendor()["id"]})
+        assert (res.status_code, res.get_json()) == (400, {"error": self.DIRECT_WITH_VENDOR, "field": "vendor_id"})
+
+    @pytest.mark.parametrize("linked, body, status, field, after", [
+        (True, {"employment": "direct"}, 400, "employment", ("contractor", V)),
+        (True, {"employment": "direct", "vendor_id": None}, 200, None, ("direct", None)),
+        (True, {"vendor_id": None}, 200, None, ("contractor", None)),
+        (False, {"vendor_id": V}, 400, "vendor_id", ("direct", None)),
+        (False, {"employment": "contractor", "vendor_id": V}, 200, None, ("contractor", V)),
+        (True, {"active": 0}, 200, None, ("contractor", V)),
+        (True, {"name": "Renamed"}, 200, None, ("contractor", V)),
+        (True, {"trade_ids": []}, 200, None, ("contractor", V)),
+    ])
+    def test_each_put_shape(self, engineer, db_rows, make_vendor, make_person, linked, body, status, field, after):
+        vendor = make_vendor()
+        person = (make_person(employment="contractor", vendor_id=vendor["id"]) if linked else make_person())
+        body = {k: vendor["id"] if v == self.V else v for k, v in body.items()}
+        res = engineer.put(f"{BASE}/people/{person['id']}", json=body)
+        assert res.status_code == status, res.get_json()
+        if field:
+            assert res.get_json() == {"error": self.DIRECT_WITH_VENDOR, "field": field}
+        stored = db_rows("SELECT employment, vendor_id FROM people WHERE id = %s", (person["id"],))[0]
+        assert (stored["employment"], stored["vendor_id"]) == tuple(vendor["id"] if v == self.V else v for v in after)
+
+    @pytest.mark.parametrize("raw", [True, "3", 0])
+    def test_bad_vendor_id_is_400(self, engineer, make_person, raw):
+        person = make_person(employment="contractor")
+        res = engineer.put(f"{BASE}/people/{person['id']}", json={"vendor_id": raw})
+        assert (res.status_code, res.get_json()) == (400, {"error": "Vendor must be a record id", "field": "vendor_id"})
+
+    def test_unknown_vendor_is_400(self, engineer, make_person):
+        person = make_person(employment="contractor")
+        res = engineer.put(f"{BASE}/people/{person['id']}", json={"vendor_id": 999999})
+        assert (res.status_code, res.get_json()) == (
+            400, {"error": "That vendor no longer exists. Reload and try again.", "field": "vendor_id"})
+
+    def test_inactive_vendor_refused_for_a_new_link_kept_for_an_existing_one(self, engineer, make_vendor,
+                                                                              make_person):
+        vendor = make_vendor()
+        linked = make_person(employment="contractor", vendor_id=vendor["id"])
+        assert engineer.put(f"{BASE}/vendors/{vendor['id']}", json={"active": False}).status_code == 200
+        other = make_person(employment="contractor")
+        res = engineer.put(f"{BASE}/people/{other['id']}", json={"vendor_id": vendor["id"]})
+        assert (res.status_code, res.get_json()) == (400, {
+            "error": f"Vendor {vendor['name']} is inactive. Choose another vendor or reactivate it.",
+            "field": "vendor_id"})
+        res = engineer.post(f"{BASE}/people", json={"name": "New", "employment": "contractor",
+                                                    "vendor_id": vendor["id"]})
+        assert (res.status_code, res.get_json()["field"]) == (400, "vendor_id")
+        resent = engineer.put(f"{BASE}/people/{linked['id']}", json={"name": "Kept", "vendor_id": vendor["id"]})
+        assert resent.status_code == 200, resent.get_json()
+        assert engineer.put(f"{BASE}/people/{linked['id']}", json={"name": "Kept again"}).status_code == 200
+        row = _row(engineer, linked["id"])
+        assert (row["vendor_id"], row["vendor_active"]) == (vendor["id"], False)
+
+    def test_reactivating_a_person_linked_to_an_inactive_vendor_is_allowed(self, engineer, make_vendor,
+                                                                            make_person):
+        vendor = make_vendor()
+        person = make_person(employment="contractor", vendor_id=vendor["id"], active=0)
+        engineer.put(f"{BASE}/vendors/{vendor['id']}", json={"active": False})
+        res = engineer.put(f"{BASE}/people/{person['id']}", json={"active": 1})
+        assert res.status_code == 200, res.get_json()
+        assert (res.get_json()["active"], res.get_json()["vendor_id"]) == (1, vendor["id"])
+
+    def test_a_refused_link_writes_nothing_else(self, engineer, db_rows, make_vendor, make_person, make_trade):
+        vendor, trade = make_vendor(), make_trade()
+        engineer.put(f"{BASE}/vendors/{vendor['id']}", json={"active": False})
+        person = make_person(employment="contractor")
+        res = engineer.put(f"{BASE}/people/{person['id']}", json={"name": "Changed", "trade_ids": [trade["id"]],
+                                                                  "vendor_id": vendor["id"]})
+        assert res.status_code == 400
+        assert db_rows("SELECT name, vendor_id FROM people WHERE id = %s", (person["id"],)) == [
+            {"name": "Test person", "vendor_id": None}]
+        assert db_rows("SELECT COUNT(*) AS n FROM person_trades WHERE person_id = %s", (person["id"],)) == [{"n": 0}]
+
+    def test_a_technician_cannot_link(self, role_client, make_vendor, make_person):
+        vendor, person = make_vendor(), make_person(employment="contractor")
+        res = role_client("maint_technician").put(f"{BASE}/people/{person['id']}", json={"vendor_id": vendor["id"]})
+        assert res.status_code == 403

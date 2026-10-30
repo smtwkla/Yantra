@@ -128,6 +128,10 @@ for (const section of [
   { button: "Types", add: "Add type", api: "/api/masters/equipment-types", person: "engineer" },
   { button: "Trades", add: "Add trade", api: "/api/masters/trades", person: "engineer", message: "Name is required" },
   { button: "Meter types", add: "Add meter type", api: "/api/masters/meter-types", person: "engineer", message: "Name is required" },
+  {
+    button: "Vendors", add: "Add vendor", api: "/api/masters/vendors", person: "engineer",
+    message: "Name is required", before: (testInfo) => vendorByApi(`E2E vendor ${propertyTag(testInfo)}`),
+  },
 ]) {
   test(`${section.person}: the ${section.button} section opens, and an empty ${section.add.toLowerCase()} is refused beside its field`, async ({ page, consoleWatch }, testInfo) => {
     consoleWatch.allowFailedRequest(section.api, 400);
@@ -724,4 +728,139 @@ test("S064: Add person as an engineer offers only the engineer's site; a row ref
   } finally {
     await api.dispose();
   }
+});
+
+// ---------------------------------------------------------------------------
+// S079: the vendor master (Masters › Vendors) and a contractor's vendor in Team.  The seed has no
+// vendors: each test makes its own, named with its tag, and looks for its own rows only.
+
+/** POST `path` as admin with `data` -> the record. */
+async function postAsAdmin(path, data) {
+  const api = await apiAs("admin");
+  try {
+    const res = await api.post(path, { data });
+    expect(res.ok(), await res.text()).toBe(true);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+const vendorByApi = (name, fields = {}) => postAsAdmin("/api/masters/vendors", { name, ...fields });
+const contractorByApi = (name, vendorId = null) =>
+  postAsAdmin("/api/masters/people", { name, employment: "contractor", vendor_id: vendorId });
+
+/** Masters › Vendors as the engineer. */
+async function openVendors(page) {
+  await asPerson(page, "engineer", "/masters");
+  await page.getByRole("button", { name: "Vendors", exact: true }).click();
+}
+
+/** The People cell of the vendor `name` on the Vendors tab. */
+const peopleCell = (page, name) => rows(page).filter({ hasText: name }).locator("td").nth(1);
+
+/** The Employment cell of the Team row `name`. */
+const employmentCell = (page, name) => rows(page).filter({ hasText: name }).locator("td").nth(1);
+
+test("S079: engineer adds a vendor with a phone and a note; the list shows them and People None; the same name in another case is refused beside Name", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/api/masters/vendors", 409);
+  const name = `E2E Vendor ${propertyTag(testInfo)}`;
+  await openVendors(page);
+  await page.getByRole("button", { name: "Add vendor" }).click();
+  await expectDialogFits(page);
+  let dialog = await openDialog(page);
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByLabel("Phone (optional)").fill("+91 00000 00000");
+  await dialog.getByLabel("Note (optional)").fill("Screw compressors, MCC2");
+  await saveDialog(page, "Save");
+  const row = rows(page).filter({ hasText: name });
+  await expect(row.locator("td").first()).toContainText("+91 00000 00000 · Screw compressors, MCC2");
+  await expect(peopleCell(page, name)).toHaveText("None");
+  await expect(row).toContainText("Active");
+
+  await page.getByRole("button", { name: "Add vendor" }).click();
+  dialog = await openDialog(page);
+  await dialog.getByLabel("Name").fill(name.toLowerCase());
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expectFieldMessage(dialog, "A vendor with this name exists. Use that one, or enter a different name.");
+  await expect(dialog).toBeVisible();
+});
+
+test("S079: engineer links a contractor to a vendor in Team; the list shows Contractor · the vendor, and Vendors counts 1 person", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const person = await contractorByApi(`E2E contractor ${tag}`);
+  await openTeam(page, "engineer");
+  await rows(page).filter({ hasText: person.name }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Vendor (optional)").selectOption({ label: vendor.name });
+  await expect(dialog.locator('[data-test="vendor-change"]')).toHaveCount(0); // no stored link: no warning
+  await saveDialog(page, "Save");
+  await expect(employmentCell(page, person.name)).toHaveText(`Contractor · ${vendor.name}`);
+
+  await page.getByRole("button", { name: "Vendors", exact: true }).click();
+  await expect(peopleCell(page, vendor.name)).toHaveText("1");
+});
+
+test("S079: changing a linked person's vendor warns; Direct employee hides and clears the vendor and the save unlinks", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const first = await vendorByApi(`E2E Vendor A ${tag}`);
+  const second = await vendorByApi(`E2E Vendor B ${tag}`);
+  const person = await contractorByApi(`E2E linked ${tag}`, first.id);
+  const hint = " If the person changed firm or employer, add a new Team record for them instead.";
+  await openTeam(page, "engineer");
+  await rows(page).filter({ hasText: person.name }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  const warning = dialog.locator('[data-test="vendor-change"]');
+  await expect(warning).toHaveCount(0);
+  await dialog.getByLabel("Vendor (optional)").selectOption({ label: second.name });
+  await expect(warning).toHaveText(`Their earlier tickets will count for ${second.name} instead of ${first.name}.${hint}`);
+  await dialog.getByLabel("Direct employee").check();
+  await expect(dialog.getByLabel("Vendor (optional)")).toHaveCount(0);
+  await expect(warning).toHaveText(`Their earlier tickets will no longer count for ${first.name}.${hint}`);
+  await expectDialogFits(page);
+  await saveDialog(page, "Save");
+  await expect(employmentCell(page, person.name)).toHaveText("Direct");
+
+  await page.getByRole("button", { name: "Vendors", exact: true }).click();
+  await expect(peopleCell(page, first.name)).toHaveText("None");
+});
+
+test("S079: a deactivated vendor is not offered for a new link; a person linked to it keeps it as (inactive)", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const gone = await vendorByApi(`E2E Vendor gone ${tag}`);
+  const kept = await vendorByApi(`E2E Vendor kept ${tag}`);
+  const person = await contractorByApi(`E2E linked ${tag}`, gone.id);
+
+  await openVendors(page);
+  await rows(page).filter({ hasText: gone.name }).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  let dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Deactivate" }).click();
+  const yes = dialog.getByRole("button", { name: "Yes", exact: true });
+  await expect(yes).toBeVisible();
+  await yes.click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+  await expect(rows(page).filter({ hasText: gone.name })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Team", exact: true }).click();
+  await page.getByRole("button", { name: "Add person" }).click();
+  dialog = await openDialog(page);
+  await dialog.getByLabel("Contractor").check();
+  const select = dialog.getByLabel("Vendor (optional)");
+  await expect(select.locator("option", { hasText: kept.name })).toHaveCount(1);
+  await expect(select.locator("option", { hasText: gone.name })).toHaveCount(0);
+  await expectDialogFits(page);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await dialog.getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
+
+  await expect(employmentCell(page, person.name)).toHaveText(`Contractor · ${gone.name} (inactive)`);
+  await rows(page).filter({ hasText: person.name }).getByTitle("Edit").click();
+  dialog = await openDialog(page);
+  await expect(dialog.getByLabel("Vendor (optional)").locator("option:checked")).toHaveText(`${gone.name} (inactive)`);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator(".modal.show")).toHaveCount(0);
 });
