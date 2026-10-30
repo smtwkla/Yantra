@@ -120,14 +120,20 @@ def no_real_push(monkeypatch):
 
     import push_sender
 
+    refused = []
+
     def refuse(**kwargs):
         host = urlparse(kwargs["subscription_info"]["endpoint"]).hostname
         if host != "127.0.0.1":
+            # recorded too: push_send's `except Exception` swallows this AssertionError in a worker task
+            refused.append(host)
             raise AssertionError(f"a test posted a push to {host}: fake push_sender.send or webpush")
         return real_webpush(**kwargs)
 
     real_webpush = push_sender.webpush
     monkeypatch.setattr(push_sender, "webpush", refuse)
+    yield
+    assert refused == [], f"a test posted a push to {refused}: fake push_sender.send or webpush"
 
 
 @pytest.fixture
@@ -177,7 +183,7 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("improvement_events", "improvement_actions", "improvement_whys", "improvement_tickets", "improvements",
+_TABLES = ("procedures", "improvement_events", "improvement_actions", "improvement_whys", "improvement_tickets", "improvements",
            "meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",

@@ -23,6 +23,8 @@ only when the write needs it:
         takes several improvements in id order, each (6b) then its (6c) rows
     (6c) the countermeasure row (improvement_actions, improvements.py, S070), always after its
         improvement (6b)
+    (6d) the one-point lesson row (procedures, procedures.py, S075): one at a time, first in its
+        transaction, never with (6) or (6b)
     (7) the ticket row (tickets.py, S017)
 
 A write with a model never locks a type: it comes from the model, whose type never changes
@@ -51,11 +53,18 @@ A write with a model never locks a type: it comes from the model, whose type nev
 - Every write checks its key at the record's site (S011 § 5.4) inside the three choke
   points below (load_node_for_user, _load_target_node, _lock_target_unit), after their
   own refusals, so no write route can skip it.
-- documents.py (S006, S008, S012, S017, S070) takes exactly one owner lock per write, briefly:
-  the node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4), a ticket row
-  (7, below) or a countermeasure's, which takes its improvement (6b) then the countermeasure
-  (6c), in that order; never two owners'.  Then it touches only equipment_documents rows,
-  which nothing else locks.  So it adds no lock cycle.
+- documents.py (S006, S008, S012, S017, S070, S075) takes exactly one owner lock per write,
+  briefly: the node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4), a ticket
+  row (7, below), a countermeasure's, which takes its improvement (6b) then the countermeasure
+  (6c), in that order, or a lesson's procedures row (6d); never two owners'.  Then it touches
+  only equipment_documents rows, which nothing else locks.  So it adds no lock cycle.
+- procedures.py (S075) takes per write either (6) the serial counter (scope OPL, taken only by
+  lesson creates) or (6d) one procedures row FOR UPDATE, never both, then only shared locks: a
+  countermeasure (6c) LOCK IN SHARE MODE when linking a lesson, and the foreign-key shared locks
+  of its insert or update on the machine (1), the class (5) and the countermeasure.  It never
+  takes (6b), never locks an equipment or class row FOR UPDATE, and no other module locks a
+  procedures row (improvements.py reads them plainly), so it adds no lock cycle.  Its own note
+  gives the check, path by path.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

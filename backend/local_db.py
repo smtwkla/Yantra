@@ -1339,6 +1339,51 @@ _MIGRATIONS = [
         """ALTER TABLE improvements
             ADD COLUMN IF NOT EXISTS ready_alert_for DATETIME NULL AFTER watch_from""",
     ]),
+    # S075 — one-point lessons (docs/steps/S075-one-point-lessons/1-brief.md § 4.1, R05.6): the first
+    # kind of the Procedures master (Plan § 4.3a).  A lesson names the machine it was written on;
+    # class_id, when set, shows it on every machine of that class too (TPM yokoten).  action_id: the
+    # countermeasure of kind Lesson it was written for, one lesson per countermeasure
+    # (uq_procedures_action; NULLs repeat).  Never deleted: a retired lesson keeps its row (ISO 9001
+    # § 7.5.3).  The documents store gains its fifth owner, procedure_id; the owner CHECK is dropped
+    # and added again with its name, as v38 did; every existing row has one of the four owners and
+    # procedure_id NULL, so it meets the new CHECK.  IF NOT EXISTS on the table, the column, the
+    # key, the foreign key and the CHECK, and DROP ... IF EXISTS, make a half-applied v41 re-run.
+    # No precondition: a new table, a nullable column and a CHECK every existing row meets; nothing
+    # is converted or dropped.  Rollback: a release before v41 never reads procedures, and its
+    # documents queries name their columns and join their own owner.
+    (41, "One-point lessons and their photos (S075)", [
+        """CREATE TABLE IF NOT EXISTS procedures (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            serial        VARCHAR(16) NOT NULL,
+            kind          ENUM('one_point_lesson') NOT NULL DEFAULT 'one_point_lesson',
+            equipment_id  INT NOT NULL,
+            class_id      INT NULL,
+            title         VARCHAR(80) NOT NULL,
+            body          VARCHAR(1000) NOT NULL,
+            action_id     INT NULL,
+            active        TINYINT(1) NOT NULL DEFAULT 1,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by    VARCHAR(100) NOT NULL,
+            updated_at    DATETIME NULL,
+            updated_by    VARCHAR(100) NULL,
+            CONSTRAINT uq_procedures_serial UNIQUE (serial),
+            CONSTRAINT uq_procedures_action UNIQUE (action_id),
+            KEY ix_procedures_equipment (equipment_id, active),
+            KEY ix_procedures_class (class_id, active),
+            CONSTRAINT fk_procedures_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_procedures_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id),
+            CONSTRAINT fk_procedures_action FOREIGN KEY (action_id) REFERENCES improvement_actions (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_documents
+            ADD COLUMN IF NOT EXISTS procedure_id INT NULL AFTER action_id,
+            ADD KEY IF NOT EXISTS ix_equipment_documents_procedure (procedure_id, removed_at),
+            ADD CONSTRAINT fk_equipment_documents_procedure
+                FOREIGN KEY IF NOT EXISTS (procedure_id) REFERENCES procedures (id)""",
+        "ALTER TABLE equipment_documents DROP CONSTRAINT IF EXISTS chk_equipment_documents_owner",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+            CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
+                   + (action_id IS NOT NULL) + (procedure_id IS NOT NULL) = 1)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

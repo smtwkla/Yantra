@@ -8,6 +8,7 @@ filters by q=<class code>; the titles and file names searched for carry the clas
 import errno
 import logging
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -146,7 +147,8 @@ class TestList:
         nobody = user_with_units("maint_engineer", [])
         # No units leaves out the node branch, not the whole list: model rows stay (S012 § 5.6)
         assert listing(nobody, q=cls["code"]) == {"items": [], "total": 0, "page": 1, "per_page": 50}
-        assert all(item["owner"] == "model" for item in listing(nobody)["items"])
+        # No units leaves model rows and class lessons' rows (S075 § 5.8)
+        assert all(item["owner"] in ("model", "procedure") for item in listing(nobody)["items"])
 
 
 class TestModelRows:
@@ -419,3 +421,57 @@ class TestTicketRows:
         for role in ("maint_engineer", "maint_operator"):
             assert role_client(role).post(f"{url}/{doc['id']}/restore").status_code == 403
             assert role_client(role).post(f"{url}/{doc['id']}/purge").status_code == 403
+
+
+class TestLessonRows:
+    """S075 § 5.8: a lesson's removed photos in the same list; a machine lesson's in its machine's
+    units, a class lesson's at every site (as a model's)."""
+
+    @pytest.fixture
+    def case(self, user_at_sites, make_site, make_equipment, unit, cls):
+        site = {"id": unit["site_id"]}
+        engineer, _ = user_at_sites([(site, "maint_engineer", "all")])
+        machine = make_equipment(unit=unit, cls=cls)
+
+        def removed_photo(**extra):
+            res = engineer.post("/api/procedures", json={"equipment_id": machine["id"], "title": "Keep it shut",
+                                                         "body": "Dust trips the contactor.", **extra})
+            assert res.status_code == 201, res.get_json()
+            lesson = res.get_json()
+            url = f"/api/procedures/{lesson['id']}/documents"
+            doc = uploaded_to(engineer, url, kind="photo", title="Dusty contactor", data=JPEG, filename="IMG_3.jpg")
+            assert engineer.delete(f"{url}/{doc['id']}").status_code == 204
+            return lesson, url, doc
+
+        here, _ = user_at_sites([(site, "maint_manager", "all")])
+        elsewhere, _ = user_at_sites([(make_site(), "maint_manager", "all")])
+        return SimpleNamespace(machine=machine, removed_photo=removed_photo, here=here, elsewhere=elsewhere)
+
+    def test_listed_with_the_serial_the_machine_and_its_unit(self, case, unit):
+        lesson, url, doc = case.removed_photo()
+        by_serial = listing(case.here, q=lesson["serial"])
+        assert ids(by_serial) == [doc["id"]]
+        item = by_serial["items"][0]
+        assert (item["owner"], item["name"], item["code"], item["equipment_id"], item["path"]) == (
+            "procedure", lesson["serial"], case.machine["code"], case.machine["id"], url)
+        assert (item["unit"], item["full_path"], item["state"], item["action_kind"]) == (
+            unit["full_code"], None, None, None)
+        assert doc["id"] in ids(listing(case.here, q=case.machine["code"]))
+
+    def test_a_machine_lessons_row_only_in_its_units_a_class_lessons_everywhere(self, case):
+        machine_lesson, machine_url, machine_doc = case.removed_photo()
+        class_lesson, class_url, class_doc = case.removed_photo(for_class=True)
+        assert ids(listing(case.elsewhere, q=machine_lesson["serial"])) == []
+        assert ids(listing(case.elsewhere, q=class_lesson["serial"])) == [class_doc["id"]]
+        assert case.elsewhere.post(f"{machine_url}/{machine_doc['id']}/restore").status_code == 404
+        assert case.elsewhere.post(f"{class_url}/{class_doc['id']}/restore").status_code == 200
+
+    def test_restore_and_purge_by_the_manager(self, case, role_client):
+        lesson, url, doc = case.removed_photo()
+        assert role_client("maint_engineer").post(f"{url}/{doc['id']}/restore").status_code == 403
+        res = case.here.post(f"{url}/{doc['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, doc["id"])
+        assert role_client("it_admin").post(f"{url}/{doc['id']}/purge").status_code == 409   # not removed
+        other_lesson, other_url, other_doc = case.removed_photo()
+        assert case.here.post(f"{other_url}/{other_doc['id']}/purge").status_code == 204
+        assert owner_files("procedure", other_lesson["id"]) == []

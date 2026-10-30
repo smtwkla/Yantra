@@ -298,3 +298,12 @@ Docs updated: none, because no behaviour, schema or setting changed.
 
 Feedback (round 1):
 - none
+
+### Round 2 (in S075's fix round)
+
+- **CR2-01 (nit) - Fixed.** The `no_real_push` fixture in `backend/tests/conftest.py` now records each refused host in a list, and asserts the list is empty after the test (teardown). A refused push inside a worker task, caught by `push_send`'s `except Exception`, still fails the test.
+  - Red run: not done. A red run needs a test that posts to a real host inside a worker task, which would be a test written only to fail. The change is a recorded list and one `assert`; the whole backend suite (`YANTRA_TEST_RUN=s075f1`) is green: 3983 passed, so no existing test posts to a refused host.
+
+Docs updated: none, because only a test fixture changed.
+
+Feedback (round 2): none

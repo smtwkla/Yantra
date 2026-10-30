@@ -165,6 +165,12 @@ def _text(body, field, maximum, needed, too_long, not_text, clean, errors):
         clean[field] = value
 
 
+# Public names for procedures_core (S075 D10): one copy of the id and text rules, and no import of
+# a private name.  The private names stay, so this module's own code is unchanged.
+is_id = _is_id
+text_field = _text
+
+
 def validate_improvement(body, creating):
     """The start (``creating``) or edit body -> ``(clean, errors)`` for clean_body (§ 5.2).  On a
     start every field is required; on an edit an absent field stays as it is (not in ``clean``),

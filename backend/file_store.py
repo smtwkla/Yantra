@@ -3,7 +3,8 @@
 Layout: one folder per owner (S012, the design of S009) — ``DATA_DIR/equipment/<node_id>/``
 or ``DATA_DIR/equipment-models/<model_id>/`` or, for ticket photos (S017) and documents (S018),
 ``DATA_DIR/tickets/<ticket_id>/`` or, for a countermeasure's photos and documents (S070),
-``DATA_DIR/improvement-actions/<action_id>/`` — holding ``<stored_name>`` (and ``<stored_name>.thumb.jpg``).  Names come from documents_core.stored_name; nothing from the
+``DATA_DIR/improvement-actions/<action_id>/`` or, for a one-point lesson's (S075),
+``DATA_DIR/procedures/<procedure_id>/`` — holding ``<stored_name>`` (and ``<stored_name>.thumb.jpg``).  Names come from documents_core.stored_name; nothing from the
 client reaches a path.
 
 config.DATA_DIR is read at call time, so tests can point it elsewhere.  A file is never
@@ -26,6 +27,7 @@ _OWNER_FOLDERS = {
     "model": "equipment-models",
     "ticket": "tickets",
     "action": "improvement-actions",
+    "procedure": "procedures",
 }
 
 

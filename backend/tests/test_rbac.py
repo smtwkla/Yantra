@@ -104,6 +104,13 @@ class TestRoleSources:
         assert editors == {"maint_engineer", "maint_manager"}
         assert {"improvement:read", "improvement:edit"} <= SITE_SCOPED
 
+    def test_procedure_keys(self):
+        """S075 § 5.7, Q6.3 a: one-point lessons are written by the engineer (so the manager); not IT
+        admin, not the supervisor or the floor roles.  Site-scoped, checked per record."""
+        editors = {role for role in ROLES if "procedure:edit" in compute_permissions([role])}
+        assert editors == {"maint_engineer", "maint_manager"}
+        assert "procedure:edit" in SITE_SCOPED
+
     def test_improvement_verify_and_note(self):
         """S072 § 5.8: verify by the engineer (so the manager), as edit today; a note by every reader
         at the site but IT admin (D6), never the storekeeper.  Both site-scoped."""
@@ -201,6 +208,7 @@ class TestComputePermissions:
         # S039: reading:log to the operator, so to the supervisor and the maintenance ladder; not IT admin
         # S067: improvement:read to the operator and IT admin; improvement:edit to the engineer only
         # S072: improvement:note to the operator (not IT admin); improvement:verify to the engineer
+        # S075: procedure:edit to the engineer (so the manager); not IT admin, not the supervisor
         ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
                                "reading:log", "improvement:read", "improvement:note"}),
         ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
@@ -211,14 +219,14 @@ class TestComputePermissions:
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
                                "ticket:edit_notes", "reading:log", "improvement:read", "improvement:edit",
-                               "improvement:note", "improvement:verify"}),
+                               "improvement:note", "improvement:verify", "procedure:edit"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
                                "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
                                "ticket:close", "ticket:edit_notes", "reading:log", "improvement:read",
-                               "improvement:edit", "improvement:note", "improvement:verify"}),
+                               "improvement:edit", "improvement:note", "improvement:verify", "procedure:edit"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",

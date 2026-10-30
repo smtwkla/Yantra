@@ -140,6 +140,13 @@ PERMISSIONS = {
     # reads only, so this key, not improvement:read.
     "improvement:note": ("maint_operator",),
 
+    # One-point lessons (S075, Q6.3 a, D4): the first kind of the Procedures master (Plan § 4.3a).
+    # Written by the engineer (so the manager), who knows the point; not IT admin, not the
+    # supervisor.  Site-scoped and checked per record: a machine lesson at its machine's site, a
+    # lesson for a whole class at any site (a site-less master, as model documents), ticking or
+    # unticking the class at the machine's site.  Lessons are read with equipment:read (D5).
+    "procedure:edit": ("maint_engineer",),
+
     # Meter readings (S039): the operator logs the readings of the machines at the unit (TPM
     # autonomous maintenance), so the supervisor and the maintenance ladder inherit it, as
     # ticket:raise.  Not IT admin (U2): logging is plant work.  Removing a reading is a
@@ -199,4 +206,6 @@ SITE_SCOPED = frozenset({
     # S072: checked at the improvement's site
     "improvement:verify",
     "improvement:note",
+    # S075: at the lesson's machine's site; held at any site for a class lesson (procedures.py)
+    "procedure:edit",
 })

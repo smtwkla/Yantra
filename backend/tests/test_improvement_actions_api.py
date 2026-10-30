@@ -514,3 +514,51 @@ class TestOwners:
         assert refusal(client.get(OWNERS)) == (400, "improvement_id", "improvement_id is required")
         assert stranger.get(OWNERS, query_string={"improvement_id": made["id"]}).status_code == 404
         assert operator_here.get(OWNERS, query_string={"improvement_id": made["id"]}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# The countermeasure's lesson (S075 § 6.4, § 5.7)
+# ---------------------------------------------------------------------------
+
+class TestLesson:
+
+    @staticmethod
+    def write_lesson(client, machine, action):
+        res = client.post("/api/procedures", json={"equipment_id": machine["id"], "title": "Keep the panel door shut",
+                                                   "body": "Dust trips the contactor.", "action_id": action["id"]})
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+
+    def test_the_lesson_after_a_create(self, eng, made, machine):
+        client, person = eng
+        action = added(client, made, person, kind="lesson")
+        assert (action["lesson"], action["can_write_lesson"]) == (None, True)
+        lesson = self.write_lesson(client, machine, action)
+        shown = the_action(get(client, made), action)
+        assert shown["lesson"] == {"id": lesson["id"], "serial": lesson["serial"],
+                                   "title": "Keep the panel door shut", "active": True}
+        assert shown["can_write_lesson"] is False
+        # The owner still marks it done (D8)
+        assert shown["state"] == "open" and shown["can_mark_done"] is True
+
+    def test_cancelled_another_kind_and_the_technician_owner(self, eng, made, technician):
+        client, _ = eng
+        tech_client, owner = technician
+        lesson_kind = added(client, made, owner, kind="lesson")
+        corrective = added(client, made, owner, kind="corrective")
+        cancelled = added(client, made, owner, kind="lesson")
+        assert cancel(client, made, cancelled).status_code == 200
+        detail = get(client, made)
+        assert [the_action(detail, a)["can_write_lesson"] for a in (lesson_kind, corrective, cancelled)] == [
+            True, False, False]
+        assert the_action(detail, corrective)["lesson"] is None
+        assert the_action(get(tech_client, made), lesson_kind)["can_write_lesson"] is False
+
+    def test_false_after_the_machine_moved_to_a_site_where_the_engineer_holds_no_key(
+            self, admin, eng, made, machine, make_unit, other_site):
+        """BR1-03: the improvement stays visible through its own unit, but the create would be 404."""
+        client, person = eng
+        action = added(client, made, person, kind="lesson")
+        res = admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": make_unit(site=other_site)["id"]})
+        assert res.status_code == 200, res.get_json()
+        assert the_action(get(client, made), action)["can_write_lesson"] is False

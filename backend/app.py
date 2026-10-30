@@ -191,6 +191,10 @@ from improvements import improvements_bp
 # The improvement record (S067): its own blueprint, beside the tickets it is started from
 app.register_blueprint(improvements_bp, url_prefix="/api/improvements")
 
+from procedures import procedures_bp
+# One-point lessons (S075): their own blueprint; their photos are documents_bp's fifth owner
+app.register_blueprint(procedures_bp, url_prefix="/api/procedures")
+
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")
 

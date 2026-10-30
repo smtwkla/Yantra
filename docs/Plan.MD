@@ -132,6 +132,7 @@ with each module. First cut of the main keys:
 | `improvement:edit` | | | | ✓ | ✓ | |
 | `improvement:verify` | | | | ✓ | ✓ | |
 | `improvement:note` | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| `procedure:edit` | | | | ✓ | ✓ | |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
@@ -207,6 +208,14 @@ today; the two can drift. `improvement:note` adds a note to the improvement's ti
 reader at the site, operator and up, but not IT admin, who reads only (a key of its own,
 because IT admin also holds `improvement:read`; a departure from R05's key list). *Drop* is
 `improvement:edit`'s.
+
+`procedure:edit` (S075, R05.6, 30-10-2026; site-scoped, checked per record) writes one-point
+lessons: engineer and manager, not IT admin and not the supervisor. Lessons need no read key of
+their own: whoever may open the machine reads its lessons with `equipment:read`, the operator
+after a QR scan included. A lesson on a machine is written and changed at the machine's site; a
+lesson ticked for the machine's whole class is site-less and may be changed (and its photos
+restored or purged with `equipment:purge_documents`) by a holder of the key at any site, as model
+documents. Ticking or unticking the class always needs the key at the machine's site.
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer
@@ -757,6 +766,17 @@ its class), on the PM template it explains, and on the ticket it is attached to.
   rewrites history.
 - Rejected: a separate wiki (knowledge split from the equipment); per-equipment notes (not
   reusable across a class).
+- ***Built in part*** (S075, S077; R05.6, 30-10-2026): the **one-point-lesson** kind, as table
+  `procedures` (v41). A lesson is serial `OPL-NNN` (one plant series), one title (80 characters),
+  one plain-text body (1000 characters, line breaks kept, Tamil or English) and its photos (the
+  documents store's fifth owner). It always names the machine it was written on (any node); a
+  tick shows it on every machine of that machine's class too (TPM yokoten). It may be written for
+  a countermeasure of kind *Lesson* (`action_id`, one lesson per countermeasure); the
+  countermeasure's owner still marks it done. Retired, never deleted. Departures from the design
+  above, for this kind: **plain text, not a Markdown body** (no renderer, no HTML from a user's
+  text); a lesson **always names a machine** (no lesson for a class alone); **no steps**, no
+  history of earlier texts and **no approval step** (the writer holds `procedure:edit`). The
+  other kinds, steps, completion records (R05.7) and a plant-wide list are still *Proposed*.
 
 ### 4.4 CIL (clean / inspect / lubricate)
 

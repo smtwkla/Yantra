@@ -101,6 +101,11 @@ guards it is held.
   takes no lock on a row the scan holds), so no cycle.  A deadlock all the same (1213) rolls the
   scan back and the queue retries it.
 - Reads (list, detail, leads, mine, owners; the ticket detail in tickets.py): plain, no lock.
+  S075: the detail reads each countermeasure's lesson (procedures) and its machine's current unit
+  plainly; lesson_source is one plain read.  No route here locks or writes a procedures row.
+  procedures.py links a lesson by taking a countermeasure (6c) LOCK IN SHARE MODE after its own
+  (6) or (6d), never (6b) and never exclusive; every writer here takes (6b) then (6c) exclusive
+  and never waits on a procedures row or the OPL counter, so no cycle (procedures.py LOCK ORDER).
 One open link per ticket is race-free: two writers linking one ticket both hold its shared
 lock, may both pass the plain check, and then meet on uq_improvement_tickets_open; the second
 insert waits for the first transaction and fails with a duplicate key (UNIQUE_KEY_ERRORS: 409).
@@ -153,7 +158,10 @@ allowed (the code changed before its first use).
 
 Import direction: this module imports read_ticket, improvement_links, person_at_site and
 people_at_site from tickets.py; tickets.py never imports this module (only improvements_core).
-It imports alerts (S074), as tickets.py does; alerts never imports this module.
+It imports alerts (S074), as tickets.py does; alerts never imports this module.  procedures.py
+(S075) imports lesson_source from this module; this module never imports procedures.py: it reads
+the procedures table by SQL only (each countermeasure's lesson, plain) and the rule of *Write
+lesson* from procedures_core.
 """
 
 from datetime import datetime, timedelta
@@ -167,7 +175,7 @@ from api_common import (
 )
 from auth_utils import current_person_id, has_perm_at, permissions_at_site, require_perm, require_perm_at
 from db_helpers import count, marks, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
-from equipment import IST, unit_access_condition
+from equipment import IST, NODE_JOINS, accessible_unit_ids, unit_access_condition
 from improvements_core import (
     ACTION_ADDED, ACTION_CANCELLED, ACTION_CANCELLED_EVENT, ACTION_CHANGED, ACTION_DONE, ACTION_DONE_EVENT,
     ACTION_EDIT_LABELS, ACTION_KIND_LABELS, ACTION_OPEN, ACTIONS_FULL, ACTIONS_MAX, ALREADY_OPEN_RACE, CAUSE_ACTIVE,
@@ -182,6 +190,7 @@ from improvements_core import (
     validate_root_cause, validate_why, watch_days_text, watch_figures, watch_start, watch_until, why_line,
     with_watch_ended, working_state,
 )
+from procedures_core import EDIT_KEY as LESSON_EDIT_KEY, may_write_lesson
 from tickets import code_ref, improvement_links, people_at_site, person_at_site, read_ticket
 from tickets_core import edit_lines, format_serial, is_breakdown, serial_scope, ticket_times
 
@@ -316,6 +325,23 @@ def _read_improvement(cur, improvement_id):
         if row is not None:
             return row
     raise ApiError("Not found", 404)
+
+
+def lesson_source(cur, action_id):
+    """For procedures.py (S075 § 5.9): the countermeasure's improvement as ``{id, serial, title,
+    equipment_id, machine_code, site_id}`` when the user may open it (this module's predicate),
+    else None — a countermeasure that does not exist too.  One plain read; never raises, so a
+    lesson's page shows no source line to a reader without improvement:read there, and a create
+    turns None into its own 400."""
+    visible = _visible_condition(cur)
+    if visible is None:
+        return None
+    condition, params = visible
+    cur.execute("SELECT i.id, i.serial, i.title, i.equipment_id, m.code AS machine_code, u.site_id"
+                " FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id"
+                " JOIN equipment m ON m.id = i.equipment_id JOIN units u ON u.id = i.unit_id"
+                f" WHERE a.id = %s AND {condition}", [action_id, *params])
+    return cur.fetchone()
 
 
 def _check_improvement(cur, improvement_id):
@@ -460,16 +486,46 @@ def _action_documents(cur, action_ids):
     return result
 
 
-def _actions(cur, improvement_id, site_id, improvement_open):
+def _action_lessons(cur, action_ids):
+    """The lesson written for each of these countermeasures (S075 § 6.4; at most one each,
+    uq_procedures_action), in one query -> ``{action_id: {id, serial, title, active}}``."""
+    if not action_ids:
+        return {}
+    cur.execute(f"SELECT id, serial, title, active, action_id FROM procedures WHERE action_id IN ({marks(action_ids)})",
+                list(action_ids))
+    return {row["action_id"]: {"id": row["id"], "serial": row["serial"], "title": row["title"],
+                               "active": bool(row["active"])} for row in cur.fetchall()}
+
+
+def _may_create_lesson(cur, machine_id):
+    """The lesson create's own checks (S075 § 5.5, § 5.7) on the improvement's machine as it is
+    now: its current unit among the user's units, and procedure:edit at that unit's site.  The
+    improvement's site is fixed at its first ticket's unit, but the machine may have moved since
+    (BR1-03).  One plain read through NODE_JOINS."""
+    cur.execute(f"SELECT u.id AS unit_id, s.id AS site_id FROM equipment e{NODE_JOINS} WHERE e.id = %s",
+                (machine_id,))
+    machine = cur.fetchone()
+    if machine is None:
+        return False
+    unit_ids = accessible_unit_ids(cur)
+    return (unit_ids is None or machine["unit_id"] in unit_ids) and has_perm_at(LESSON_EDIT_KEY, machine["site_id"])
+
+
+def _actions(cur, improvement_id, site_id, improvement_open, machine_id):
     """The countermeasures in the order they were added (§ 6), each with its owner's standing
-    today, its overdue days and what the user may do on it (action_flags).  Three queries for
-    any number (the rows, the owners' memberships, the documents)."""
+    today, its overdue days and what the user may do on it (action_flags), and since S075 its
+    lesson and can_write_lesson.  Four queries for any number (the rows, the owners'
+    memberships, the documents, the lessons), and one more for the machine's current unit when
+    a Lesson countermeasure could take a lesson."""
     cur.execute(f"{_ACTION_COLUMNS} WHERE a.improvement_id = %s ORDER BY a.id", (improvement_id,))
     rows = cur.fetchall()
     if not rows:
         return []
     members = _site_members(cur, sorted({row["owner_id"] for row in rows}), site_id)
     documents = _action_documents(cur, [row["id"] for row in rows])
+    lessons = _action_lessons(cur, [row["id"] for row in rows])
+    may_create = any(may_write_lesson(row["kind"], row["state"], row["id"] in lessons, True) for row in rows) and (
+        _may_create_lesson(cur, machine_id))
     today = _today()
     may_edit = has_perm_at(EDIT_KEY, site_id)
     person_id = current_person_id(cur)
@@ -490,6 +546,8 @@ def _actions(cur, improvement_id, site_id, improvement_open):
             **action_flags(improvement_open, row["state"], may_edit,
                            person_id is not None and person_id == row["owner_id"]),
             "documents": documents[row["id"]],
+            "lesson": lessons.get(row["id"]),
+            "can_write_lesson": may_write_lesson(row["kind"], row["state"], row["id"] in lessons, may_create),
         })
     return actions
 
@@ -618,7 +676,7 @@ def _detail(cur, row):
     for ticket, link in zip(tickets, links):
         ticket["removable"] = open_now and removal_error(link, links, machine) is None
     lead_now = person_at_site(cur, row["lead_id"], row["site_id"])
-    actions = _actions(cur, row["id"], row["site_id"], open_now)
+    actions = _actions(cur, row["id"], row["site_id"], open_now, row["m_id"])
     plain = row_to_dict(row)
     return {
         "id": plain["id"],

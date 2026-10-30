@@ -30,8 +30,10 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
   30-10-2026, and the migration v39 table `improvement_events` with the
   `improvements` states, watch, close and follow-up columns (S072) on
   30-10-2026, and the migration v40 columns `improvement_actions.overdue_alert_for`
-  and `improvements.ready_alert_for` (S074) on 30-10-2026. The schema
-  described here is at **migration v40**.
+  and `improvements.ready_alert_for` (S074) on 30-10-2026, and the migration
+  v41 table `procedures` with `equipment_documents.procedure_id` and the
+  five-owner CHECK (S075) on 30-10-2026. The schema described here is at
+  **migration v41**.
 
 ## Conventions
 
@@ -66,7 +68,7 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `model_property_values` | A model's value of a property (S043, v31), one row per model and property (primary key): exactly one of `value_number` (`DECIMAL(16,4)`), `value_text` (up to 100), `value_bool`, `option_id` and, since v34, `value_lat` is filled (`chk_model_property_one_value`); which one follows the property's data type (checked in the code). A Location (`geo`, v34) is `value_lat` `DECIMAL(8,6)` and `value_lng` `DECIMAL(9,6)`: both or neither (`chk_model_property_geo_pair`), latitude −90 to 90 and longitude −180 to 180 (`chk_model_property_geo_range`). The option's foreign key is `(option_id, property_id)`, so it must be this property's. No row = no value. Shown on the equipment page's *Properties* card, where an item's own value (`equipment_property_values`) wins |
 | `equipment_property_values` | An equipment item's own value of a property of its class (S044, v33), where its nameplate differs from its model's; it wins over the model's on that item only. One row per item and property (primary key `(equipment_id, property_id)`); the same value columns, CHECKs (`chk_equipment_property_one_value`, and since v34 `chk_equipment_property_geo_pair` and `chk_equipment_property_geo_range`) and option foreign key `(option_id, property_id)` as `model_property_values`. No row = the model's value applies. A model or class change leaves the rows alone: a value of a property the new class lacks is hidden, not deleted. Each set, change and clear writes a `property` event |
 | `equipment_events` | Equipment history: one row per move or change of lifecycle, criticality or class — old → new, who, when (S002); since v30 also `meter_added`, `meter_removed` and `meter_limits` (the limits in force on both sides, S038); since v33 `property` (an item's own property value set, changed or cleared: "<property>: <value>" on each side, the model's value in force marked "(model)", S044) |
-| `equipment_documents` | Files attached to equipment, an equipment model (S012), a ticket (photos, S017) or a countermeasure (`action_id`, S070, v38: a photo of the work) — exactly one owner (`chk_equipment_documents_owner` counts the four columns; index `ix_equipment_documents_action (action_id, removed_at)`): kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
+| `equipment_documents` | Files attached to equipment, an equipment model (S012), a ticket (photos, S017), a countermeasure (`action_id`, S070, v38: a photo of the work) or a one-point lesson (`procedure_id`, S075, v41) — exactly one owner (`chk_equipment_documents_owner` counts the five columns; indexes `ix_equipment_documents_action (action_id, removed_at)`, `ix_equipment_documents_procedure (procedure_id, removed_at)`): kind (document / photo), title (editable), original name, system-generated stored name, type, size, thumbnail flag; created / updated / removed who and when — removal hides, the file stays (S006); a removed document is restored or deleted for good (row and file, logged) by the manager or IT admin from Settings (S008) |
 | `people` | The Team register: one record per person, or per contractor firm (the user's choice): name, employment (direct / contractor), optional Yantra login set by IT admin, active (S010 A1); email, copied from the Keycloak login token at each login, never typed, shown only to IT admin and its owner (S032, v27) |
 | `trades` | Trades (electrician, fitter, tool maker, …), kept in the UI (S010) |
 | `person_trades` | Person → trades, none or more (S010 A1) |
@@ -87,8 +89,9 @@ they link. Moved here from `Plan.MD` § 5 on 23-10-2026.
 | `improvement_events` | The timeline of an improvement (S072, v39; as `ticket_events`; ISO 9001 § 7.5.3): one line per change, written by every write of the API in the same transaction. `event` (`started`, `edited`, `ticket_linked`, `ticket_removed`, `why_added`, `why_changed`, `why_removed`, `root_cause_set`, `root_cause_changed`, `action_added`, `action_changed`, `action_done`, `action_cancelled`, `state_changed`, `note`, `closed_effective`, `closed_not_effective`, `dropped`), `occurred_at` (an `action_done` line: its done time), `from_state`/`to_state` (state lines), `ticket_id` (→ `tickets`) and `action_id` (→ `improvement_actions`) for the line's ticket or countermeasure, `remark` (the new text) and `earlier` (the replaced text), who and when. No why id: a removed why's row is deleted, so its line carries its text. Only inserted, never changed. Migration v39 backfilled the lines the earlier rows show (started, ticket linked, why added, root cause set, countermeasure added, done, cancelled). Index `ix_improvement_events_improvement (improvement_id, occurred_at, id)` |
 | `improvement_whys` | The why-why chain of an improvement (S069, v37; TPM why-why): one line per *Why? / Because*, `position` 1..n with no gap (`chk_improvement_whys_position` ≥ 1; kept by the API under the improvement's lock, no unique key), question (up to 300), answer (up to 1000), evidence (up to 500, NULL when none), who wrote it and when, who changed it last and when. A removed why is deleted (since S072 its text stays on the timeline, `improvement_events`). Index `ix_improvement_whys_position (improvement_id, position)` |
 | `improvement_actions` | The countermeasures of an improvement (S070, v38; ISO 9001 § 10.2.1 c): kind (`correction`, `corrective`, `preventive`, `design_out`, `lesson`, `spread`), what will be done (up to 500), owner (→ `people`: any active member of the site, with or without a login), due date, state (`open`, `done`, `cancelled`; done and cancelled are final). Done: what was done (up to 1000), when, who recorded it — all three set exactly when done (`chk_improvement_actions_done`). Cancelled: reason (up to 500), when, who — all three set exactly when cancelled (`chk_improvement_actions_cancelled`). Who added it and when; the last change of the plan (kind, text, owner, due date). Never deleted (ISO 9001 § 7.5.3); at most 30 per improvement (the API). Overdue is computed, never stored. S074 (v40) adds `overdue_alert_for` (DATE NULL, after `due_date`): the due date the daily scan queued *Countermeasure overdue* for, so it is sent once per due date; NULL = never; a due date that moves alerts again. Written without `updated_*`. Indexes `ix_improvement_actions_improvement (improvement_id, id)`, `ix_improvement_actions_owner_state (owner_id, state, due_date)` (*my open countermeasures*) |
+| `procedures` | The Procedures master (Plan § 4.3a); today only its first kind, the one-point lesson (S075, v41; TPM one-point lesson). Serial `OPL-NNN`, one plant-wide series (`uq_procedures_serial`; past 999 the number grows), `kind` (`one_point_lesson`; later kinds append their value), the machine it was written on (`equipment_id` → `equipment`, any node, never changed), `class_id` (→ `equipment_classes`, NULL unless the lesson is shown on every machine of that class: the machine's class when ticked, TPM yokoten), title (up to 80, one line), body (plain text, up to 1000, line breaks kept), `action_id` (→ `improvement_actions`, the countermeasure of kind Lesson it was written for; NULL when none; one lesson per countermeasure, `uq_procedures_action`), `active` (the retire flag: a retired lesson leaves the machine's card but keeps its row, photos and serial), who wrote it and when, who changed it last and when. Never deleted (ISO 9001 § 7.5.3); an edit keeps no earlier text. Indexes `ix_procedures_equipment (equipment_id, active)`, `ix_procedures_class (class_id, active)` |
 | `improvement_tickets` | Improvement → the tickets it analyses (S067, v36), primary key `(improvement_id, ticket_id)`, who added it and when. `open_link` is 1 while the improvement is open and NULL after (the closes and the drop set it, S072); the unique key `uq_improvement_tickets_open (ticket_id, open_link)` lets a ticket be in only one open improvement, and `chk_improvement_tickets_open_link` allows only 1 or NULL. Removing a ticket deletes its row; the ticket row is never written |
-| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), `IM-` improvement serials per month (S067), later `PM-` |
+| `serial_counters` | Per-scope counters (locked `FOR UPDATE`): equipment codes per class prefix (S002), `TK-` ticket serials per month (S017), `IM-` improvement serials per month (S067), `OPL-` one-point lesson serials in one plant-wide series (scope `OPL`, S075), later `PM-` |
 | `access_log` | One row per sighting of a login session from an address, or a refusal (S013); kept 365 days |
 | `task_queue` | Base pattern: alerts and emails (S021, S032), the daily access-log purge (S013); later PM generation and sync |
 | `app_settings` | Escalation times, upload limits, internal networks, label settings, etc. |
@@ -111,7 +114,7 @@ step is briefed.
 | `pm_job_results` | One row per plan item: done / OK-NotOK-NA / value by type, remark, photo link |
 | `pm_job_events` | State changes, like `ticket_events` |
 | `pm_routes`, `pm_route_plans` | *Proposed* (§ 4.3): a named walk — performer, the plans it covers in order; jobs stay one per equipment |
-| `procedures`, `procedure_items` | *Proposed* (§ 4.3a): title, kind, optional class, Markdown body, attachments; steps in the shared item shape (§ 4.3) |
+| `procedure_items` | *Proposed* (§ 4.3a): a procedure's steps in the shared item shape (§ 4.3). `procedures` itself is built (S075, v41, the one-point-lesson kind); the other kinds add their columns when briefed |
 | `procedure_completions` | *Proposed* (§ 4.3a): person, procedure, equipment or class, date, recorded by — onboarding done |
 | `breakdown_procedure_items`, `breakdown_procedure_results` | *Proposed* (§ 4.3a): a procedure's steps copied onto a ticket and their results, same shape as `pm_job_results` |
 | `verification_rounds`, `verification_items` | *Proposed* (§ 4.1): a walk per unit; per equipment confirmed / not found, who, when |
@@ -159,6 +162,7 @@ erDiagram
     int model_id FK "null"
     int ticket_id FK "null"
     int action_id FK "null"
+    int procedure_id FK "null"
     varchar stored_name UK
   }
   equipment_events {
@@ -269,6 +273,13 @@ erDiagram
   person_units {
     int person_id PK,FK
     int unit_id PK,FK
+  }
+  procedures {
+    int id PK
+    varchar serial UK
+    int equipment_id FK
+    int class_id FK "null"
+    int action_id FK,UK "null"
   }
   property_definitions {
     int id PK
@@ -412,6 +423,10 @@ erDiagram
   tickets o|--o{ improvement_events : "ticket_id"
   improvement_actions o|--o{ improvement_events : "action_id"
   improvements o|--o| improvements : "follow_up_of_id"
+  equipment ||--o{ procedures : "equipment_id"
+  equipment_classes o|--o{ procedures : "class_id"
+  improvement_actions o|--o| procedures : "action_id"
+  procedures o|--o{ equipment_documents : "procedure_id"
   sites ||--o{ units : "site_id"
   units ||--o{ user_units : "unit_id"
 ```

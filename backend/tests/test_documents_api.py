@@ -518,6 +518,26 @@ class TestOwnerCheckConstraint:
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]
 
+    def test_a_countermeasure_and_a_lesson_together_are_refused(self, make_equipment, make_ticket, db_rows, uniq):
+        """S075 § 8.3: the fifth owner counts in the same CHECK."""
+        node = make_equipment()
+        ticket = make_ticket(node)
+        db_rows("INSERT INTO improvements (serial, unit_id, equipment_id, title, problem, lead_id, created_by)"
+                " SELECT %s, t.unit_id, t.equipment_id, 'x', 'x', (SELECT MIN(id) FROM people), 'test'"
+                " FROM tickets t WHERE t.id = %s", (f"IM-CHK5-{ticket['id']}", ticket["id"]))
+        db_rows("INSERT INTO improvement_actions (improvement_id, kind, text, owner_id, due_date, created_by)"
+                " SELECT MAX(id), 'lesson', 'x', (SELECT MIN(id) FROM people), CURDATE(), 'test' FROM improvements")
+        action_id = db_rows("SELECT MAX(id) AS id FROM improvement_actions")[0]["id"]
+        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by) VALUES (%s, %s, 'x', 'x', 'test')",
+                (f"OPL-CHK-{node['id']}", node["id"]))
+        lesson_id = db_rows("SELECT MAX(id) AS id FROM procedures")[0]["id"]
+        with pytest.raises(pymysql.err.OperationalError) as caught:
+            db_rows("INSERT INTO equipment_documents (action_id, procedure_id, kind, title, original_name, stored_name,"
+                    " content_type, size_bytes, created_by) VALUES (%s, %s, 'photo', 'x', 'x.jpg', %s,"
+                    " 'image/jpeg', 1, 'test')", (action_id, lesson_id, f"chk-{uniq.username()}.jpg"))
+        assert caught.value.args[0] == 4025
+        assert "chk_equipment_documents_owner" in caught.value.args[1]
+
 
 # ---------------------------------------------------------------------------
 # Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise; documents too since S018
@@ -831,3 +851,114 @@ class TestActionDocuments:
         other_manager, _ = user_at_sites([(make_site(), "maint_manager", "all")])
         assert other_manager.get("/api/equipment/removed-documents", query_string={"q": serial}).get_json()[
             "items"] == []
+
+
+# ---------------------------------------------------------------------------
+# A one-point lesson's photos (S075 § 5.8): the fifth owner, read with equipment:read through the
+# lesson's access (a machine lesson in its machine's units, a class lesson at every site), written by
+# procedure:edit at the machine's site, or held at any site for a class lesson
+# ---------------------------------------------------------------------------
+
+def lesson_docs_url(lesson):
+    return f"/api/procedures/{lesson['id']}/documents"
+
+
+def lesson_photo(client, lesson, **kwargs):
+    return uploaded_to(client, lesson_docs_url(lesson), kind="photo", title="Dusty contactor", data=JPEG,
+                       filename="IMG_9.jpg", **kwargs)
+
+
+@pytest.fixture
+def lessons(user_at_sites, make_site, make_unit, make_equipment, unit):
+    """A machine of the unit with a machine lesson and a class lesson written by an engineer of its
+    site -> a namespace: site, other_site, engineer (client), machine, machine_lesson, class_lesson."""
+    site = {"id": unit["site_id"]}
+    engineer, _ = user_at_sites([(site, "maint_engineer", "all")])
+    machine = make_equipment(unit=unit)
+
+    def write(**extra):
+        res = engineer.post("/api/procedures", json={"equipment_id": machine["id"], "title": "Keep the panel door shut",
+                                                     "body": "Dust trips the contactor.", **extra})
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+
+    return SimpleNamespace(site=site, other_site=make_site(), engineer=engineer, machine=machine,
+                           machine_lesson=write(), class_lesson=write(for_class=True))
+
+
+class TestLessonDocuments:
+
+    def test_the_engineer_uploads_and_the_operator_reads(self, lessons, user_at_sites, db_rows):
+        url = lesson_docs_url(lessons.machine_lesson)
+        photo = lesson_photo(lessons.engineer, lessons.machine_lesson)
+        stored = db_rows("SELECT stored_name, procedure_id, equipment_id FROM equipment_documents WHERE id = %s",
+                         (photo["id"],))[0]
+        assert (stored["procedure_id"], stored["equipment_id"]) == (lessons.machine_lesson["id"], None)
+        assert owner_files("procedure", lessons.machine_lesson["id"]) == sorted(
+            [stored["stored_name"], f"{stored['stored_name']}.thumb.jpg"])
+        assert file_store.owner_folder("procedure", lessons.machine_lesson["id"]).endswith(
+            os.path.join("procedures", str(lessons.machine_lesson["id"])))
+        operator, _ = user_at_sites([(lessons.site, "maint_operator", "all")])
+        page = listed_at(operator, url)
+        assert [d["id"] for d in page["items"]] == [photo["id"]] and "inherited" not in page
+        res = operator.get(f"{url}/{photo['id']}/file")
+        assert (res.status_code, res.data) == (200, JPEG)
+        assert res.headers["X-Content-Type-Options"] == "nosniff"
+        assert "private" in res.headers["Cache-Control"] and "public" not in res.headers["Cache-Control"]
+        assert operator.get(f"{url}/{photo['id']}/thumb").status_code == 200
+
+    def test_a_technician_and_an_operator_may_not_write(self, lessons, user_at_sites):
+        url = lesson_docs_url(lessons.machine_lesson)
+        for role in ("maint_technician", "maint_operator"):
+            client, _ = user_at_sites([(lessons.site, role, "all")])
+            assert upload_to(client, url, kind="photo", data=JPEG, filename="a.jpg").status_code == 403
+        assert owner_files("procedure", lessons.machine_lesson["id"]) == []
+
+    def test_a_reader_of_another_site(self, lessons, user_at_sites):
+        machine_photo = lesson_photo(lessons.engineer, lessons.machine_lesson)
+        class_photo = lesson_photo(lessons.engineer, lessons.class_lesson)
+        elsewhere, _ = user_at_sites([(lessons.other_site, "maint_operator", "all")])
+        machine_url, class_url = lesson_docs_url(lessons.machine_lesson), lesson_docs_url(lessons.class_lesson)
+        assert elsewhere.get(machine_url).status_code == 404
+        assert elsewhere.get(f"{machine_url}/{machine_photo['id']}/file").status_code == 404
+        assert [d["id"] for d in listed_at(elsewhere, class_url)["items"]] == [class_photo["id"]]
+        assert elsewhere.get(f"{class_url}/{class_photo['id']}/file").status_code == 200
+
+    def test_an_engineer_here_who_is_an_operator_at_the_lesson_site_is_refused(self, lessons, user_at_sites):
+        # sees the machine lesson (operator at its site) but holds procedure:edit only elsewhere
+        client, _ = user_at_sites([(lessons.other_site, "maint_engineer", "all"),
+                                   (lessons.site, "maint_operator", "all")])
+        url = lesson_docs_url(lessons.machine_lesson)
+        assert client.get(url).status_code == 200
+        res = upload_to(client, url, kind="photo", data=JPEG, filename="a.jpg")
+        assert res.status_code == 403, res.get_json()
+        assert owner_files("procedure", lessons.machine_lesson["id"]) == []
+
+    def test_an_engineer_of_another_site_writes_to_a_class_lesson_only(self, lessons, user_at_sites):
+        there, _ = user_at_sites([(lessons.other_site, "maint_engineer", "all")])
+        photo = lesson_photo(there, lessons.class_lesson)
+        assert photo["kind"] == "photo"
+        url = lesson_docs_url(lessons.class_lesson)
+        assert there.put(f"{url}/{photo['id']}", json={"title": "Contactor"}).status_code == 200
+        assert there.delete(f"{url}/{photo['id']}").status_code == 204
+        assert upload_to(there, lesson_docs_url(lessons.machine_lesson), kind="photo", data=JPEG,
+                         filename="a.jpg").status_code == 404
+        assert owner_files("procedure", lessons.machine_lesson["id"]) == []
+
+    def test_retitle_remove_and_a_retired_lesson_takes_a_photo(self, lessons):
+        url = lesson_docs_url(lessons.machine_lesson)
+        photo = lesson_photo(lessons.engineer, lessons.machine_lesson)
+        res = lessons.engineer.put(f"{url}/{photo['id']}", json={"title": "Contactor after cleaning"})
+        assert (res.status_code, res.get_json()["title"]) == (200, "Contactor after cleaning")
+        assert lessons.engineer.delete(f"{url}/{photo['id']}").status_code == 204
+        assert listed_at(lessons.engineer, url)["items"] == []
+        res = lessons.engineer.put(f"/api/procedures/{lessons.machine_lesson['id']}", json={"active": False})
+        assert res.status_code == 200, res.get_json()
+        assert lesson_photo(lessons.engineer, lessons.machine_lesson)["kind"] == "photo"
+
+    def test_a_document_of_another_lesson_and_an_unknown_lesson_are_404(self, lessons):
+        photo = lesson_photo(lessons.engineer, lessons.machine_lesson)
+        url = lesson_docs_url(lessons.class_lesson)
+        assert lessons.engineer.get(f"{url}/{photo['id']}/file").status_code == 404
+        assert lessons.engineer.delete(f"{url}/{photo['id']}").status_code == 404
+        assert lessons.engineer.get(lesson_docs_url({"id": 999999999})).status_code == 404
