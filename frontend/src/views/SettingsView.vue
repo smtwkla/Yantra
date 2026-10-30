@@ -205,7 +205,10 @@ const networksChanged = computed(() => network.value !== null && networksInput.v
 // Background tasks — the worker's scheduled tasks
 // ---------------------------------------------------------------------------
 
-const TASK_LABELS = { purge_access_log: "Delete access-log entries older than 365 days" };
+const TASK_LABELS = {
+  purge_access_log: "Delete access-log entries older than 365 days",
+  improvement_alert_scan: "Send the morning alerts: overdue countermeasures and improvements ready to verify",
+};
 // The task's last status in words (S064 UX-27); an unknown value shows as it is
 const TASK_STATUS_WORDS = { done: "Done", failed: "Failed", pending: "Waiting", running: "Running" };
 const TASK_STATUS_BADGES = {

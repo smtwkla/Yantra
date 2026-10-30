@@ -79,7 +79,9 @@ class TestLock:
         first.close()
         assert second.holds_lock()
 
-    def test_retaken_after_a_dropped_connection(self, make_worker, empty_queue):
+    def test_retaken_after_a_dropped_connection(self, make_worker, empty_queue, monkeypatch):
+        # The test is about the reconnect: no daily task may become due and run (CR1-01)
+        monkeypatch.setattr(worker_module, "SCHEDULE", [])
         w = make_worker()
         w.connect()
         assert w.holds_lock()

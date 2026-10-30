@@ -21,16 +21,23 @@ task_queue.last_error and the log only.
 """
 
 import logging
+from datetime import datetime
 
 import requests
 
 import alerts
 import mail_sender
 import push_sender
-from alerts_core import ASSIGNED, CHANNELS, EMAIL, ESCALATION, KINDS, PUSH, message, should_escalate, should_send
+from alerts_core import (
+    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, CHANNELS, EMAIL, ESCALATION, IMPROVEMENT_KINDS, PAYLOAD_DATE, PAYLOAD_TIME,
+    PUSH, TICKET_KINDS, VERIFY_READY, improvement_message, message, overdue_alert_due, ready_alert_due,
+    should_escalate, should_send, should_send_improvement,
+)
 from company_settings import ACCESS_LOG_RETENTION_DAYS, DONE_TASK_RETENTION_DAYS, PURGE_BATCH_ROWS
+from improvements_core import watch_until
 from push_core import (
-    ALERT_TTL_SECONDS, GONE, REFUSED, RETRY_LATER, SENT, push_data, refused_host, send_outcome, send_task_payload,
+    ALERT_TTL_SECONDS, GONE, IMPROVEMENT_TTL_SECONDS, REFUSED, RETRY_LATER, SENT, push_data, refused_host,
+    send_outcome, send_task_payload,
 )
 from email_core import closed_email, smtp_outcome
 from task_queue import enqueue
@@ -112,7 +119,7 @@ def ticket_alert(conn, payload, should_stop):
     still worth it (should_send); a channel not set up on the server is skipped."""
     ticket_id, event_id = _ids("ticket_alert", payload, "ticket_id", "event_id")
     kind = payload.get("kind")
-    if kind not in KINDS:
+    if kind not in TICKET_KINDS:
         raise BadTask(f"ticket_alert: unknown kind {kind!r}")
     exclude = payload.get("exclude_person_ids") or []
     with conn.cursor() as cur:
@@ -139,12 +146,18 @@ def _push_fan_out(cur, kind, ticket, facts, payload, exclude):
         people = alerts.assignee(cur, ticket_id, person_id, exclude)
     else:
         people = alerts.recipients(cur, ticket, kind, exclude)
-    text = message(kind, facts, payload.get("minutes"))
+    devices = _push_to_people(cur, people, message(kind, facts, payload.get("minutes")), ALERT_TTL_SECONDS)
+    logger.info("ticket_alert %s for ticket %s: %d people, %d devices", kind, ticket_id, len(people), devices)
+
+
+def _push_to_people(cur, people, text, ttl):
+    """The push fan-out every alert task shares (S074 D1): one push_send per device of these
+    people, in the caller's transaction -> the number of devices."""
     devices = alerts.subscription_ids(cur, people)
     for subscription_id in devices:
-        enqueue(cur, alerts.PUSH_SEND, send_task_payload(subscription_id, text, ALERT_TTL_SECONDS),
+        enqueue(cur, alerts.PUSH_SEND, send_task_payload(subscription_id, text, ttl),
                 max_attempts=alerts.PUSH_SEND_ATTEMPTS)
-    logger.info("ticket_alert %s for ticket %s: %d people, %d devices", kind, ticket_id, len(people), len(devices))
+    return len(devices)
 
 
 def _email_fan_out(cur, kind, ticket, event_id, exclude):
@@ -179,6 +192,97 @@ def ticket_escalate(conn, payload, should_stop):
             return
         alerts.enqueue_ticket_alert(cur, ticket_id, ESCALATION, trigger_event_id, [], minutes=minutes)
     logger.info("ticket_escalate: ticket %s not acknowledged after %d min; escalated", ticket_id, minutes)
+
+
+# ---------------------------------------------------------------------------
+# Improvement alerts (S074, R05.5): improvement_alert sends one alert, improvement_alert_scan
+# finds the overdue countermeasures and the ended watches once a day
+# ---------------------------------------------------------------------------
+
+def _payload_time(payload, key, fmt):
+    """A payload date or time, written by alerts.enqueue_improvement_alert; else a BadTask."""
+    try:
+        return datetime.strptime(payload.get(key), fmt)
+    except (TypeError, ValueError):
+        raise BadTask(f"improvement_alert needs {key} as {fmt}, got {payload!r}") from None
+
+
+def _improvement_payload(payload):
+    """The validated payload -> ``(kind, improvement_id, action_id, expected, given_by)``;
+    ``expected`` holds what should_send_improvement compares, parsed."""
+    (improvement_id,) = _ids("improvement_alert", payload, "improvement_id")
+    kind = payload.get("kind")
+    if kind not in IMPROVEMENT_KINDS:
+        raise BadTask(f"improvement_alert: unknown kind {kind!r}")
+    if kind == VERIFY_READY:
+        return kind, improvement_id, None, {"watch_until": _payload_time(payload, "watch_until", PAYLOAD_TIME)}, None
+    (action_id,) = _ids("improvement_alert", payload, "action_id")
+    if kind == ACTION_OVERDUE:
+        return kind, improvement_id, action_id, {"due_date": _payload_time(payload, "due_date", PAYLOAD_DATE).date()}, None
+    (person_id,) = _ids("improvement_alert", payload, "person_id")
+    given_by = payload.get("given_by")
+    if not isinstance(given_by, str):
+        raise BadTask(f"improvement_alert needs given_by as text, got {payload!r}")
+    return kind, improvement_id, action_id, {"person_id": person_id}, given_by
+
+
+def improvement_alert(conn, payload, should_stop):
+    """One alert about an improvement -> one push_send per device of each recipient (§ 5.3), in
+    this transaction (all or nothing, so a retry never doubles them).  Sent only while still true
+    (should_send_improvement, from the rows as they are now); push only (CHANNELS, D9)."""
+    kind, improvement_id, action_id, expected, given_by = _improvement_payload(payload)
+    with conn.cursor() as cur:
+        found = alerts.read_alert_improvement(cur, improvement_id, action_id, given_by)
+        if found is None:
+            raise BadTask(f"improvement_alert: no improvement {improvement_id} with countermeasure {action_id}")
+        row, action, facts = found
+        watch_end = watch_until(row["watch_from"], row["watch_days"]) if row["watch_from"] else None
+        if not should_send_improvement(kind, row["state"], watch_end, action, expected):
+            logger.info("improvement_alert %s for %s: not sent, no longer true (improvement %s, countermeasure %s,"
+                        " owner %s, due %s, watch end %s; payload expected %s)", kind, row["serial"], row["state"],
+                        action["state"] if action else None, action["owner_id"] if action else None,
+                        action["due_date"] if action else None, watch_end, expected)
+            return
+        if not push_sender.enabled():
+            logger.info("improvement_alert %s for %s: push is not set up, no channel", kind, row["serial"])
+            return
+        people = alerts.improvement_recipients(cur, kind, row, action)
+        devices = _push_to_people(cur, people, improvement_message(kind, facts), IMPROVEMENT_TTL_SECONDS)
+    logger.info("improvement_alert %s for %s: %d people, %d devices", kind, row["serial"], len(people), devices)
+
+
+def improvement_alert_scan(conn, payload, should_stop):
+    """Daily (scheduled_tasks.SCHEDULE): queue *Countermeasure overdue* once per due date and
+    *Ready to verify* once per watch end (§ 5.2), each with its marker (v40), all in the worker's
+    one transaction: a fault rolls back the markers and the tasks together, and the retry finds
+    the same candidates.  The markers are written even when push is off (D8).  Locks: alerts.py's
+    docstring."""
+    _expect_no_payload(alerts.IMPROVEMENT_SCAN, payload)
+    overdue = ready = 0
+    with conn.cursor() as cur:
+        # The session clock (IST), as the queue's timestamps; SELECT NOW() reads no table, so the
+        # candidates' read below still opens the transaction's snapshot
+        cur.execute("SELECT NOW() AS now")
+        now = cur.fetchone()["now"]
+        today = now.date()
+        for improvement_id, action_ids in alerts.scan_candidates(cur, today, now).items():
+            improvement, actions = alerts.lock_for_scan(cur, improvement_id, action_ids)
+            if improvement is None:
+                continue
+            if ready_alert_due(improvement["state"], improvement["watch_from"], improvement["watch_days"],
+                               improvement["ready_alert_for"], now):
+                end = watch_until(improvement["watch_from"], improvement["watch_days"])
+                alerts.mark_ready_alerted(cur, improvement_id, end)
+                alerts.enqueue_improvement_alert(cur, VERIFY_READY, improvement_id, watch_until=end)
+                ready += 1
+            for action in actions:
+                if overdue_alert_due(action["state"], action["due_date"], action["overdue_alert_for"],
+                                     improvement["state"], today):
+                    alerts.mark_overdue_alerted(cur, action["id"], action["due_date"])
+                    alerts.enqueue_improvement_alert(cur, ACTION_OVERDUE, improvement_id, action_id=action["id"],
+                                                     due_date=action["due_date"])
+                    overdue += 1
+    logger.info("improvement_alert_scan: %d overdue, %d ready to verify", overdue, ready)
 
 
 # push_subscriptions.last_error
@@ -290,6 +394,8 @@ HANDLERS = {
     "purge_access_log": purge_access_log,
     alerts.TICKET_ALERT: ticket_alert,
     alerts.TICKET_ESCALATE: ticket_escalate,
+    alerts.IMPROVEMENT_ALERT: improvement_alert,
+    alerts.IMPROVEMENT_SCAN: improvement_alert_scan,
     alerts.PUSH_SEND: push_send,
     alerts.EMAIL_SEND: email_send,
 }

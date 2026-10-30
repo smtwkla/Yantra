@@ -121,3 +121,8 @@ def row_to_dict(row):
 def rows_to_list(rows):
     """Convert a list of DB row dicts to JSON-safe dicts."""
     return [row_to_dict(r) for r in rows]
+
+
+def marks(values):
+    """``%s, %s, ...`` for an IN list: one placeholder per value."""
+    return ", ".join(["%s"] * len(values))

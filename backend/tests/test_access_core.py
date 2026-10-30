@@ -5,7 +5,7 @@ import pytest
 import config_rbac
 from access_core import (
     Membership, compute_permissions, display_role, every_unit_by_token, global_permissions, has_key_at,
-    permissions_at, unit_ids_for,
+    permissions_at, roles_holding, unit_ids_for,
 )
 
 A, B, C = 1, 2, 3
@@ -141,3 +141,20 @@ class TestDisplayRole:
 
     def test_login_only_is_none(self):
         assert display_role(["maintenance_team"], []) is None
+
+
+class TestRolesHolding:
+    """S074 § 5.6: who an improvement alert may reach, by the key, in SITE_ROLES order."""
+
+    def test_improvement_read(self):
+        assert roles_holding("improvement:read") == (
+            "maint_manager", "maint_engineer", "maint_supervisor", "maint_technician", "maint_operator")
+
+    def test_improvement_verify(self):
+        assert roles_holding("improvement:verify") == ("maint_manager", "maint_engineer")
+
+    def test_a_wildcard_key_gives_every_site_role(self):
+        assert roles_holding("equipment:read") == config_rbac.SITE_ROLES
+
+    def test_an_unknown_key_gives_none(self):
+        assert roles_holding("improvement:nonsense") == ()

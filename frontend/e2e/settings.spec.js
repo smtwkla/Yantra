@@ -77,6 +77,14 @@ test("S064: a manager's Settings has no Database or Background tasks card and st
   await expect(page.locator("main .card").first()).toContainText("Database");
 });
 
+test("S074: Background tasks lists the improvement alerts at 08:00", async ({ page }) => {
+  await asPerson(page, "it_admin", "/settings");
+  const tasks = card(page, "Background tasks");
+  await expect(tasks.getByText("Delete access-log entries older than 365 days — daily at 02:30")).toBeVisible();
+  await expect(tasks.getByText(
+    "Send the morning alerts: overdue countermeasures and improvements ready to verify — daily at 08:00")).toBeVisible();
+});
+
 // The e2e backend writes no access log (its test identity skips the hook), so the list is the
 // server's answer in the shape of /api/settings/access-log, and the test judges how it is shown
 const LOG_ROW = { client_ip: "10.24.1.5", is_internal: true, method: "GET", user_agent: null, ts: "2026-10-28T09:00:00" };

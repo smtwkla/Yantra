@@ -112,6 +112,24 @@ def smtp_test_values():
         yield _SMTP_TEST_VALUES
 
 
+@pytest.fixture(autouse=True)
+def no_real_push(monkeypatch):
+    """No test reaches a push service (S074 CR1-01): pywebpush's call raises unless the endpoint is
+    on this machine or the test fakes ``push_sender.webpush`` / ``push_sender.send`` itself."""
+    from urllib.parse import urlparse
+
+    import push_sender
+
+    def refuse(**kwargs):
+        host = urlparse(kwargs["subscription_info"]["endpoint"]).hostname
+        if host != "127.0.0.1":
+            raise AssertionError(f"a test posted a push to {host}: fake push_sender.send or webpush")
+        return real_webpush(**kwargs)
+
+    real_webpush = push_sender.webpush
+    monkeypatch.setattr(push_sender, "webpush", refuse)
+
+
 @pytest.fixture
 def email_off(monkeypatch):
     monkeypatch.setattr(config, "SMTP_HOST", "")

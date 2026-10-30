@@ -19,7 +19,8 @@ only when the write needs it:
     (5a) the type row, only when a write without a model newly picks a type (S033)
     (6) the serial_counters row
     (6b) the improvement row (improvements.py, S067); then, on a root-cause write, the failure
-        cause's shared foreign-key lock (S069)
+        cause's shared foreign-key lock (S069).  The daily alert scan (S074, alerts.lock_for_scan)
+        takes several improvements in id order, each (6b) then its (6c) rows
     (6c) the countermeasure row (improvement_actions, improvements.py, S070), always after its
         improvement (6b)
     (7) the ticket row (tickets.py, S017)

@@ -38,6 +38,9 @@ UNKNOWN_DEVICE = "Unknown device"
 # How long the push service keeps an undelivered message: a breakdown alert that reaches a
 # phone switched on the next morning helps nobody (§ 5.1)
 ALERT_TTL_SECONDS = 3600
+# S074 D7: an improvement alert is about planned work, sent quietly (Urgency low, which the push
+# service may hold until the phone charges or joins Wi-Fi), so it waits a day, not an hour
+IMPROVEMENT_TTL_SECONDS = 86400
 TEST_TTL_SECONDS = 300
 
 BROWSER_CANNOT = ("This browser cannot get notifications. Use Chrome on Android, or open Yantra from the "

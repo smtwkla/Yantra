@@ -366,6 +366,8 @@ class TestFanOut:
     def test_a_malformed_task_is_a_bad_task(self):
         with pytest.raises(task_handlers.BadTask):
             run(ticket_alert, {"ticket_id": 1, "kind": "nonsense", "event_id": 1})
+        with pytest.raises(task_handlers.BadTask):   # S074: an improvement kind is not a ticket's
+            run(ticket_alert, {"ticket_id": 1, "kind": "action_given", "event_id": 1})
         with pytest.raises(task_handlers.BadTask):
             run(ticket_alert, {"ticket_id": 999_999_999, "kind": "breakdown", "event_id": 1})
 

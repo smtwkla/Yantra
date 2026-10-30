@@ -848,6 +848,9 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | Breakdown not acknowledged in time | engineers and managers, once (S021) | maintenance group | |
 | Job assigned to you | the person assigned by an engineer, not on taking a ticket oneself (S021 A1) | | |
 | Ticket closed (close or not a fault) | | | the site's managers covering the unit, not the closer; not for a close dated over 7 days back (S032) |
+| Countermeasure for you (added with you as owner, or the owner changed to you) | the owner, quietly, not when they gave it to themselves (S074) | | |
+| Countermeasure overdue (the morning after its due date, still open) | the owner and the improvement's lead, quietly, once per due date (S074; daily at 08:00) | | |
+| Ready to verify (the morning after the watch ends) | the site's holders of `improvement:verify` (engineers, managers) covering the unit, quietly, once per watch end (S074; daily at 08:00) | | |
 | PM job due / overdue | assigned technician | maintenance group (overdue only) | |
 | Reading out of limits | engineers | | |
 | Daily summary (open tickets, overdue PMs, yesterday's downtime and work done) | | | engineers, manager |
@@ -856,6 +859,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 - **Telegram:** the base pattern — group-routed, sent from the job queue. **Parked 21-10-2026** (user: "for now, its PWA alone"): web push is the only channel until push has run on the real phones; the design is kept in `docs/steps/S023-alerts-telegram/1-brief.md`.
 - **Email** (S032, 23-10-2026): Mailgun over SMTP (`smtplib`, STARTTLS), from the job queue, plain text, one email per recipient. Addresses come from the Keycloak login token, copied onto the Team record at each login; nobody types one in Yantra. Office 365 (Microsoft Graph) was rejected: it refuses basic SMTP login.
 - All sends go through the DB-backed job queue, so a slow channel never blocks a request.
+- **Improvement alerts** (S074, 30-10-2026; R05.5): push only (gate R Q5.1 a). An alert goes only to people who may open the improvement (`improvement:read`, or `improvement:verify`, at its site, covering its unit); a person without a login or a device gets nothing, and the lead still gets the overdue alert of such an owner's work. They are quiet (no sound, Urgency low, kept 24 hours by the push service), as a defect: no machine is down. A daily task (`improvement_alert_scan`, 08:00 IST, Settings › Background tasks) finds the overdue countermeasures and the ended watches; two columns (v40) remember the due date and the watch end alerted, so each alert is sent once, and a moved date alerts again. The ticket and improvement alerts share the channels, the push fan-out and the recipient query, so PM (R03.7) adds its kinds on the same pieces.
 
 ## 5. Data model
 

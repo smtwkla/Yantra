@@ -90,6 +90,16 @@ guards it is held.
 - Drop (S072): (6b) FOR UPDATE → plain reads (404, improvement:edit 403, open 409) → the open
   countermeasures (6c) FOR UPDATE in one statement by id order, each cancelled with its line →
   the row dropped, its links' open_link NULL, the line.
+- The alerts (S074): the countermeasure add and change of owner queue *Countermeasure for you*
+  under their locks above (a task_queue insert: no foreign key, no new lock).  The daily scan
+  (task_handlers.improvement_alert_scan, alerts.lock_for_scan) runs in the worker: one plain read
+  of the candidates, then per improvement in id order (6b) FOR UPDATE and its candidate
+  countermeasures (6c) FOR UPDATE in id order, deciding from the locked rows; it updates only
+  rows it holds (the markers overdue_alert_for and ready_alert_for, no updated_*) and inserts
+  only into task_queue.  It holds several (6b) rows at once, always in id order; every route
+  here holds at most one (6b) while it waits (Not effective inserts a new improvement row, which
+  takes no lock on a row the scan holds), so no cycle.  A deadlock all the same (1213) rolls the
+  scan back and the queue retries it.
 - Reads (list, detail, leads, mine, owners; the ticket detail in tickets.py): plain, no lock.
 One open link per ticket is race-free: two writers linking one ticket both hold its shared
 lock, may both pass the plain check, and then meet on uq_improvement_tickets_open; the second
@@ -143,17 +153,20 @@ allowed (the code changed before its first use).
 
 Import direction: this module imports read_ticket, improvement_links, person_at_site and
 people_at_site from tickets.py; tickets.py never imports this module (only improvements_core).
+It imports alerts (S074), as tickets.py does; alerts never imports this module.
 """
 
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify
 
+from alerts import enqueue_improvement_alert
+from alerts_core import ACTION_GIVEN, given_alert
 from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
 )
 from auth_utils import current_person_id, has_perm_at, permissions_at_site, require_perm, require_perm_at
-from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
+from db_helpers import count, marks, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
 from equipment import IST, unit_access_condition
 from improvements_core import (
     ACTION_ADDED, ACTION_CANCELLED, ACTION_CANCELLED_EVENT, ACTION_CHANGED, ACTION_DONE, ACTION_DONE_EVENT,
@@ -235,10 +248,6 @@ def _today():
     return _now().date()
 
 
-def _in(values):
-    return ", ".join(["%s"] * len(values))
-
-
 def _stamp():
     """Now to the second: a timeline line's time and the close's (DATETIME has no fraction)."""
     return _now().replace(microsecond=0)
@@ -263,7 +272,7 @@ def _names(cur, person_ids):
     ids = sorted({person_id for person_id in person_ids if person_id is not None})
     if not ids:
         return {}
-    cur.execute(f"SELECT id, name FROM people WHERE id IN ({_in(ids)})", ids)
+    cur.execute(f"SELECT id, name FROM people WHERE id IN ({marks(ids)})", ids)
     return {row["id"]: row["name"] for row in cur.fetchall()}
 
 
@@ -344,7 +353,7 @@ def _events_by_ticket(cur, ticket_ids):
     events = {ticket_id: [] for ticket_id in ticket_ids}
     if ticket_ids:
         cur.execute("SELECT ticket_id, event, occurred_at, intensity, waiting_reason, machine_stopped"
-                    f" FROM ticket_events WHERE ticket_id IN ({_in(ticket_ids)}) ORDER BY occurred_at, id",
+                    f" FROM ticket_events WHERE ticket_id IN ({marks(ticket_ids)}) ORDER BY occurred_at, id",
                     list(ticket_ids))
         for row in cur.fetchall():
             events[row["ticket_id"]].append(row)
@@ -358,7 +367,7 @@ def _linked_tickets(cur, improvement_ids, now):
     result = {improvement_id: [] for improvement_id in improvement_ids}
     if not improvement_ids:
         return result
-    cur.execute(f"{_LINKED_TICKETS} WHERE it.improvement_id IN ({_in(improvement_ids)})"
+    cur.execute(f"{_LINKED_TICKETS} WHERE it.improvement_id IN ({marks(improvement_ids)})"
                 " ORDER BY t.occurred_at DESC, t.id DESC", list(improvement_ids))
     rows = cur.fetchall()
     events = _events_by_ticket(cur, sorted({row["id"] for row in rows}))
@@ -433,7 +442,7 @@ def _site_members(cur, person_ids, site_id):
     if not person_ids:
         return set()
     cur.execute("SELECT DISTINCT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id"
-                f" WHERE p.active = 1 AND ms.site_id = %s AND p.id IN ({_in(person_ids)})", [site_id, *person_ids])
+                f" WHERE p.active = 1 AND ms.site_id = %s AND p.id IN ({marks(person_ids)})", [site_id, *person_ids])
     return {row["id"] for row in cur.fetchall()}
 
 
@@ -443,7 +452,7 @@ def _action_documents(cur, action_ids):
     result = {action_id: [] for action_id in action_ids}
     if action_ids:
         cur.execute("SELECT id, action_id, kind, title, has_thumb FROM equipment_documents"
-                    f" WHERE action_id IN ({_in(action_ids)}) AND removed_at IS NULL"
+                    f" WHERE action_id IN ({marks(action_ids)}) AND removed_at IS NULL"
                     " ORDER BY created_at DESC, id DESC", list(action_ids))
         for row in cur.fetchall():
             result[row["action_id"]].append({"id": row["id"], "kind": row["kind"], "title": row["title"],
@@ -524,7 +533,7 @@ def _figures(cur, row, tickets, end):
     machine_ids = [machine_id for machine_id, _ in machines]
     rows = []
     if machine_ids:
-        cur.execute(f"{_WATCH_TICKETS} WHERE t.equipment_id IN ({_in(machine_ids)}) AND t.not_a_fault = 0"
+        cur.execute(f"{_WATCH_TICKETS} WHERE t.equipment_id IN ({marks(machine_ids)}) AND t.not_a_fault = 0"
                     " AND t.occurred_at >= %s AND t.occurred_at < %s ORDER BY t.occurred_at, t.id",
                     [*machine_ids, watch_from - timedelta(days=days), end])
         rows = cur.fetchall()
@@ -671,7 +680,7 @@ def list_improvements():
             return jsonify({"items": [], "total": 0, "page": page, "per_page": per_page})
         conditions, params = [visible[0]], list(visible[1])
         negate = "" if state == "open" else "NOT "
-        conditions.append(f"i.state {negate}IN ({_in(IMPROVEMENT_OPEN_STATES)})")
+        conditions.append(f"i.state {negate}IN ({marks(IMPROVEMENT_OPEN_STATES)})")
         params.extend(IMPROVEMENT_OPEN_STATES)
         if unit_id is not None:
             conditions.append("i.unit_id = %s")
@@ -1092,8 +1101,18 @@ def add_action(improvement_id):
                    remark=action_line(clean["kind"], clean["text"], owner["name"], owner["role"], clean["due_date"]))
         # An open countermeasure of a WATCH_KINDS kind ends Watching (D3)
         _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
+        _queue_given(cur, improvement_id, action_id, clean["owner_id"])
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail), 201
+
+
+def _queue_given(cur, improvement_id, action_id, owner_id, old_owner_id=None):
+    """*Countermeasure for you* (S074 § 5.5, D5), in this transaction, so a refused write queues
+    nothing: on an add, and on a change of owner, unless the owner gave it to themselves.  The
+    task insert touches only task_queue: no new lock."""
+    if given_alert(owner_id, current_person_id(cur), old_owner_id):
+        enqueue_improvement_alert(cur, ACTION_GIVEN, improvement_id, action_id=action_id, person_id=owner_id,
+                                  given_by=actor())
 
 
 def _action_edit_line(cur, action, changes):
@@ -1140,6 +1159,8 @@ def edit_action(improvement_id, action_id):
                        remark=_action_edit_line(cur, action, changes))
         # A kind changed into or out of WATCH_KINDS can end or keep the watch
         _settle_state(cur, improvement_id, locked, root_cause_set=locked["root_cause_id"] is not None)
+        if "owner_id" in changes:
+            _queue_given(cur, improvement_id, action_id, changes["owner_id"], action["owner_id"])
         detail = _detail_response(cur, improvement_id)
     return jsonify(detail)
 
@@ -1207,7 +1228,7 @@ def my_actions():
         visible = _visible_condition(cur)
         if person_id is None or visible is None:
             return jsonify({"items": [], "total": 0})
-        where = (f"a.owner_id = %s AND a.state = %s AND i.state IN ({_in(IMPROVEMENT_OPEN_STATES)})"
+        where = (f"a.owner_id = %s AND a.state = %s AND i.state IN ({marks(IMPROVEMENT_OPEN_STATES)})"
                  f" AND {visible[0]}")
         params = [person_id, ACTION_OPEN, *IMPROVEMENT_OPEN_STATES, *visible[1]]
         from_ = (" FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id"

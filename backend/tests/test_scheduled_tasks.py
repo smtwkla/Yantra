@@ -17,6 +17,11 @@ def test_the_schedule_has_the_purge():
     assert ("purge_access_log", "02:30") in SCHEDULE
 
 
+def test_the_improvement_alerts_at_eight_after_the_purge():
+    """S074 § 5.2: the morning scan; the purge stays first (the tasks card's tasks[0])."""
+    assert SCHEDULE == [("purge_access_log", "02:30"), ("improvement_alert_scan", "08:00")]
+
+
 class TestDueTasks:
 
     def test_before_the_time(self):

@@ -134,7 +134,8 @@ test("S021: the bell shows on every screen and opens My notifications", async ({
 });
 
 test("S021: the dot shows to people who would get alerts on a device that is off — not to IT admin or a storekeeper", async ({ page }) => {
-  for (const key of ["engineer", "technician", "manager", "supervisor"]) {
+  // S074: the operator now gets countermeasure alerts (an operator can own one), so the dot shows
+  for (const key of ["engineer", "technician", "manager", "supervisor", "operator"]) {
     await test.step(`${key}: dot`, async () => {
       await asPerson(page, key, "/equipment");
       await expect(dot(page)).toBeVisible();
@@ -199,8 +200,10 @@ test("S021 A1: What you will get — the engineer's breakdowns and defects, the 
   const lines = page.locator(".card").filter({ hasText: "What you will get" });
   await expect(lines).toContainText("Breakdowns and defects at SMTW, escalations");
   await expect(lines).toContainText("Jobs assigned to you");
+  await expect(lines).toContainText("Improvements ready to verify at SMTW");   // S074
   await asPerson(page, "technician", "/notifications");
-  await expect(lines.getByRole("listitem")).toHaveText(["Jobs assigned to you"]);
+  await expect(lines.getByRole("listitem")).toHaveText([
+    "Jobs assigned to you", "Countermeasures given to you, and when they are overdue"]);
   await asPerson(page, "storekeeper", "/notifications");
   await expect(lines).toContainText("Nothing yet. Ask your engineer.");
 });

@@ -45,7 +45,7 @@ from flask import Blueprint, jsonify, request
 
 from api_common import MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, int_arg
 from auth_utils import has_perm_at, require_perm
-from db_helpers import count, get_db, insert_row, row_to_dict, rows_to_list, transaction, update_row
+from db_helpers import count, get_db, insert_row, marks, row_to_dict, rows_to_list, transaction, update_row
 from equipment import IST, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, node_path, write_events
 from equipment_core import SCRAPPED
 from masters import checked_limits, lock_meter_type, read_model_meters, read_models_meters
@@ -88,7 +88,7 @@ def _nodes_rows(cur, node_ids):
     out = {node_id: [] for node_id in node_ids}
     if not out:
         return out
-    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id IN ({_marks(out)})", list(out))
+    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id IN ({marks(out)})", list(out))
     for row in cur.fetchall():
         out[row["equipment_id"]].append({
             "id": row["id"], "own": row["own"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
@@ -291,7 +291,7 @@ def _last_readings(cur, node_ids, until=None):
     cur.execute(
         "SELECT r.equipment_id, r.meter_type_id, r.value, r.taken_at, r.is_reset, r.limit_state"
         " FROM meter_readings r"
-        f" WHERE r.equipment_id IN ({_marks(node_ids)}) AND r.removed_at IS NULL{outer_bound} AND NOT EXISTS ("
+        f" WHERE r.equipment_id IN ({marks(node_ids)}) AND r.removed_at IS NULL{outer_bound} AND NOT EXISTS ("
         "  SELECT 1 FROM meter_readings n WHERE n.equipment_id = r.equipment_id"
         f"  AND n.meter_type_id = r.meter_type_id AND n.removed_at IS NULL{neighbour_bound}"
         "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", params)
@@ -306,7 +306,7 @@ def _mark_counts(cur, node_ids, since, until):
         return {}
     cur.execute(
         "SELECT equipment_id, meter_type_id, COUNT(*) AS n FROM meter_readings"
-        f" WHERE equipment_id IN ({_marks(node_ids)}) AND removed_at IS NULL AND limit_state IS NOT NULL"
+        f" WHERE equipment_id IN ({marks(node_ids)}) AND removed_at IS NULL AND limit_state IS NOT NULL"
         " AND taken_at > %s AND taken_at <= %s GROUP BY equipment_id, meter_type_id", [*node_ids, since, until])
     return {(row["equipment_id"], row["meter_type_id"]): row["n"] for row in cur.fetchall()}
 
@@ -465,10 +465,6 @@ def _sheet_units(cur, site_id):
     return site, units
 
 
-def _marks(ids):
-    return ", ".join(["%s"] * len(ids))
-
-
 def _sheet_nodes(cur, unit_ids):
     """The machines of the units and their parts (two levels), scrapped ones left out, by code ->
     ([machine rows], {parent_id: [part rows]}); a scrapped part's own parts go with it."""
@@ -476,7 +472,7 @@ def _sheet_nodes(cur, unit_ids):
         if not ids:
             return []
         cur.execute("SELECT id, code, name, level, parent_id, unit_id, model_id, lifecycle FROM equipment"
-                    f" WHERE {column} IN ({_marks(ids)}) AND lifecycle <> %s ORDER BY code", (*ids, SCRAPPED))
+                    f" WHERE {column} IN ({marks(ids)}) AND lifecycle <> %s ORDER BY code", (*ids, SCRAPPED))
         return cur.fetchall()
 
     machines = rows("unit_id", unit_ids)
@@ -557,7 +553,7 @@ def readings_register(node_id):
         shown = shown_meter_ids(columns, wanted)
         total, readings = 0, []
         if shown:
-            where = f"equipment_id = %s AND removed_at IS NULL AND meter_type_id IN ({_marks(shown)})"
+            where = f"equipment_id = %s AND removed_at IS NULL AND meter_type_id IN ({marks(shown)})"
             params = (node_id, *shown)
             total = count(cur, f"SELECT COUNT(DISTINCT taken_at) AS n FROM meter_readings WHERE {where}", params)
             cur.execute(f"SELECT DISTINCT taken_at FROM meter_readings WHERE {where}"
@@ -565,7 +561,7 @@ def readings_register(node_id):
             minutes = [row["taken_at"] for row in cur.fetchall()]
             if minutes:
                 cur.execute("SELECT id, meter_type_id, value, taken_at, is_reset, limit_state FROM meter_readings"
-                            f" WHERE {where} AND taken_at IN ({_marks(minutes)})", (*params, *minutes))
+                            f" WHERE {where} AND taken_at IN ({marks(minutes)})", (*params, *minutes))
                 readings = cur.fetchall()
     return jsonify({
         "node": {"id": node["id"], "code": node["code"], "name": node["name"], "level": node["level"],

@@ -1,15 +1,20 @@
 """alerts_core — audiences, channels, what each ticket change enqueues, escalation, the texts and
 *What you will get* (S021 § 5.1–5.3, § 8 Pure, § 10 A1; S032 *ticket closed*)."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
 from alerts_core import (
-    ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, DEFECT, ESCALATION, Alert, alert_text,
-    close_alert, display_name, escalation_minutes, excluded_people, message, raise_alert, regrade_alert,
-    send_back_alert, should_escalate, should_send, message_for_test, ticket_facts, you_get,
+    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, DEFECT, ESCALATION,
+    IMPROVEMENT_KINDS, KINDS, TICKET_KINDS, VERIFY_READY, Alert, alert_text, close_alert, display_name,
+    escalation_minutes, excluded_people, given_alert, improvement_facts, improvement_message, improvement_text,
+    message, overdue_alert_due, raise_alert, ready_alert_due, regrade_alert, send_back_alert, should_escalate,
+    should_send, should_send_improvement, message_for_test, ticket_facts, you_get,
 )
+
+OWNER_LINE = "Countermeasures given to you, and when they are overdue"
+LEAD_LINE = "Overdue countermeasures of improvements you lead"
 
 MINUTES = {"A": 10, "B": 30, "C": 60}
 TIME = datetime(2026, 10, 21, 14, 5)
@@ -53,6 +58,12 @@ class TestChannels:
     def test_closed_by_email_the_others_by_push(self):
         assert CHANNELS[CLOSED] == ("email",)
         for kind in (BREAKDOWN, DEFECT, ESCALATION, ASSIGNED):
+            assert CHANNELS[kind] == ("push",)
+
+    def test_every_kind_has_channels_and_the_improvement_kinds_are_push_only(self):
+        assert KINDS == TICKET_KINDS + IMPROVEMENT_KINDS
+        assert set(CHANNELS) == set(KINDS)
+        for kind in IMPROVEMENT_KINDS:
             assert CHANNELS[kind] == ("push",)
 
 
@@ -205,34 +216,225 @@ class TestYouGet:
 
     def test_engineer_all_units(self):
         assert you_get([_membership("SMTW", "maint_engineer")]) == [
-            "Breakdowns and defects at SMTW, escalations", "Jobs assigned to you"]
+            "Breakdowns and defects at SMTW, escalations", "Improvements ready to verify at SMTW",
+            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_supervisor_at_two_units(self):
         assert you_get([_membership("SMTW", "maint_supervisor", ["MCC2", "MCC1"])]) == [
-            "Breakdowns at SMTW.MCC1, SMTW.MCC2"]
+            "Breakdowns at SMTW.MCC1, SMTW.MCC2", OWNER_LINE]
 
     def test_manager_at_two_sites(self):
-        """S032: each manager membership adds its closed-ticket email line."""
+        """S032: each manager membership adds its closed-ticket email line; S074: and its verify line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
-            "Breakdowns at BRICKS, escalations", "Closed tickets at BRICKS, by email",
-            "Breakdowns at SMTW, escalations", "Closed tickets at SMTW, by email", "Jobs assigned to you"]
+            "Breakdowns at BRICKS, escalations", "Improvements ready to verify at BRICKS",
+            "Closed tickets at BRICKS, by email",
+            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Closed tickets at SMTW, by email",
+            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_manager_at_one_unit(self):
         assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
-            "Breakdowns at SMTW.MCC2, escalations", "Closed tickets at SMTW.MCC2, by email", "Jobs assigned to you"]
+            "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to verify at SMTW.MCC2",
+            "Closed tickets at SMTW.MCC2, by email", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_engineer_gets_no_email_line(self):
         assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
 
     def test_technician_gets_assigned_jobs(self):
-        assert you_get([_membership("SMTW", "maint_technician")]) == ["Jobs assigned to you"]
+        assert you_get([_membership("SMTW", "maint_technician")]) == ["Jobs assigned to you", OWNER_LINE]
 
-    @pytest.mark.parametrize("role", ["maint_operator", "maint_storekeeper"])
-    def test_nothing_for_other_roles(self, role):
-        assert you_get([_membership("SMTW", role)]) == []
+    def test_operator_gets_the_countermeasure_line(self):
+        """S074: an operator can own a countermeasure (S070 D3), so the dot now shows for them."""
+        assert you_get([_membership("SMTW", "maint_operator")]) == [OWNER_LINE]
+
+    def test_nothing_for_other_roles(self):
+        assert you_get([_membership("SMTW", "maint_storekeeper")]) == []
 
     def test_no_memberships_it_admin(self):
         assert you_get([]) == []
 
     def test_a_membership_without_units(self):
         assert you_get([_membership("SMTW", "maint_supervisor", [])]) == []
+
+
+# ---------------------------------------------------------------------------
+# Improvements (S074 § 5, § 8.1)
+# ---------------------------------------------------------------------------
+
+TODAY = date(2026, 11, 9)
+DUE = date(2026, 11, 8)
+WATCH_FROM = datetime(2026, 11, 20, 15, 30)
+WATCH_END = datetime(2027, 2, 18, 15, 30)    # 90 days later
+MINUTE = timedelta(minutes=1)
+
+
+class TestGivenAlert:
+
+    def test_to_another_person(self):
+        assert given_alert(7, 3) is True
+
+    def test_given_to_themselves(self):
+        assert given_alert(7, 7) is False
+
+    def test_an_actor_without_a_team_record(self):
+        assert given_alert(7, None) is True
+
+    def test_a_change_to_the_same_owner(self):
+        assert given_alert(7, 3, old_owner_id=7) is False
+
+    def test_a_change_to_another_owner(self):
+        assert given_alert(8, 3, old_owner_id=7) is True
+
+
+class TestOverdueAlertDue:
+
+    def test_due_yesterday_open_never_alerted(self):
+        assert overdue_alert_due("open", DUE, None, "actions_open", TODAY) is True
+
+    def test_due_today(self):
+        assert overdue_alert_due("open", TODAY, None, "actions_open", TODAY) is False
+
+    @pytest.mark.parametrize("state", ["done", "cancelled"])
+    def test_done_or_cancelled(self, state):
+        assert overdue_alert_due(state, DUE, None, "actions_open", TODAY) is False
+
+    @pytest.mark.parametrize("state", ["closed_effective", "closed_not_effective", "dropped"])
+    def test_the_improvement_closed_or_dropped(self, state):
+        assert overdue_alert_due("open", DUE, None, state, TODAY) is False
+
+    @pytest.mark.parametrize("state", ["analysing", "actions_open", "watching"])
+    def test_every_open_state(self, state):
+        assert overdue_alert_due("open", DUE, None, state, TODAY) is True
+
+    def test_alerted_for_this_due_date(self):
+        assert overdue_alert_due("open", DUE, DUE, "actions_open", TODAY) is False
+
+    def test_moved_later_and_passed_again(self):
+        assert overdue_alert_due("open", DUE, DUE - timedelta(days=5), "actions_open", TODAY) is True
+
+    def test_moved_earlier_still_past(self):
+        """BR1-01: once per due date, either way."""
+        assert overdue_alert_due("open", DUE - timedelta(days=3), DUE, "actions_open", TODAY) is True
+
+
+class TestReadyAlertDue:
+
+    def test_a_minute_before_the_end(self):
+        assert ready_alert_due("watching", WATCH_FROM, 90, None, WATCH_END - MINUTE) is False
+
+    def test_at_the_end(self):
+        assert ready_alert_due("watching", WATCH_FROM, 90, None, WATCH_END) is True
+
+    def test_alerted_for_this_end(self):
+        assert ready_alert_due("watching", WATCH_FROM, 90, WATCH_END, WATCH_END + MINUTE) is False
+
+    def test_extended_and_passed(self):
+        assert ready_alert_due("watching", WATCH_FROM, 120, WATCH_END,
+                               WATCH_FROM + timedelta(days=120)) is True
+
+    def test_cut_and_passed(self):
+        """BR1-01: a watch end moved earlier alerts again at its new end."""
+        assert ready_alert_due("watching", WATCH_FROM, 60, WATCH_END, WATCH_END) is True
+
+    def test_actions_open_with_an_old_watch_from(self):
+        assert ready_alert_due("actions_open", WATCH_FROM, 90, None, WATCH_END) is False
+
+    @pytest.mark.parametrize("state", ["closed_effective", "closed_not_effective", "dropped"])
+    def test_a_closed_state(self, state):
+        assert ready_alert_due(state, WATCH_FROM, 90, None, WATCH_END) is False
+
+    def test_no_watch_yet(self):
+        assert ready_alert_due("watching", None, 90, None, WATCH_END) is False
+
+
+def _action(**overrides):
+    return {"id": 5, "state": "open", "owner_id": 7, "due_date": DUE, "text": "Clean the panel contactors",
+            "owner_name": "Kannan Selvam", **overrides}
+
+
+class TestShouldSendImprovement:
+    """§ 5.3's change table: the record as it is when the task runs decides."""
+
+    def test_given_still_true(self):
+        assert should_send_improvement(ACTION_GIVEN, "actions_open", None, _action(), {"person_id": 7}) is True
+
+    def test_given_owner_changed_again(self):
+        assert should_send_improvement(ACTION_GIVEN, "actions_open", None, _action(owner_id=8), {"person_id": 7}) is False
+
+    @pytest.mark.parametrize("kind", [ACTION_GIVEN, ACTION_OVERDUE])
+    @pytest.mark.parametrize("state", ["done", "cancelled"])
+    def test_countermeasure_done_or_cancelled(self, kind, state):
+        expected = {"person_id": 7, "due_date": DUE}
+        assert should_send_improvement(kind, "actions_open", None, _action(state=state), expected) is False
+
+    @pytest.mark.parametrize("kind", [ACTION_GIVEN, ACTION_OVERDUE])
+    @pytest.mark.parametrize("state", ["closed_effective", "dropped"])
+    def test_improvement_closed_or_dropped(self, kind, state):
+        expected = {"person_id": 7, "due_date": DUE}
+        assert should_send_improvement(kind, state, None, _action(), expected) is False
+
+    def test_overdue_still_true(self):
+        assert should_send_improvement(ACTION_OVERDUE, "watching", None, _action(), {"due_date": DUE}) is True
+
+    def test_overdue_due_date_moved(self):
+        assert should_send_improvement(ACTION_OVERDUE, "actions_open", None, _action(due_date=TODAY),
+                                       {"due_date": DUE}) is False
+
+    def test_ready_still_true(self):
+        assert should_send_improvement(VERIFY_READY, "watching", WATCH_END, None, {"watch_until": WATCH_END}) is True
+
+    def test_ready_watch_extended_or_restarted(self):
+        assert should_send_improvement(VERIFY_READY, "watching", WATCH_END + timedelta(days=10), None,
+                                       {"watch_until": WATCH_END}) is False
+
+    @pytest.mark.parametrize("state", ["actions_open", "closed_effective", "dropped"])
+    def test_ready_no_longer_watching(self, state):
+        assert should_send_improvement(VERIFY_READY, state, WATCH_END, None, {"watch_until": WATCH_END}) is False
+
+
+def _improvement(**overrides):
+    return {"id": 12, "serial": "IM-2026-10-001", "title": "Press does not start", "site_code": "SMTW",
+            "unit_code": "MCC2", "machine_code": "HP003", "watch_from": WATCH_FROM, "watch_days": 90, **overrides}
+
+
+def _improvement_facts(action=None, giver="Ravi", **overrides):
+    return improvement_facts(_improvement(**overrides), action, giver, "https://vel-yantra.mspv.app")
+
+
+class TestImprovementTexts:
+
+    def test_given(self):
+        assert improvement_text(ACTION_GIVEN, _improvement_facts(_action())) == (
+            "Countermeasure for you · SMTW.MCC2 · HP003",
+            "IM-2026-10-001 · Clean the panel contactors — due 08-11-2026, from Ravi")
+
+    def test_given_without_a_giver_name(self):
+        assert improvement_text(ACTION_GIVEN, _improvement_facts(_action(), giver=None))[1] == (
+            "IM-2026-10-001 · Clean the panel contactors — due 08-11-2026")
+
+    def test_overdue_names_the_owner(self):
+        assert improvement_text(ACTION_OVERDUE, _improvement_facts(_action())) == (
+            "Countermeasure overdue · SMTW.MCC2 · HP003",
+            "IM-2026-10-001 · Clean the panel contactors — was due 08-11-2026, owner Kannan")
+
+    def test_ready(self):
+        assert improvement_text(VERIFY_READY, _improvement_facts()) == (
+            "Ready to verify · SMTW.MCC2 · HP003",
+            "IM-2026-10-001 · Press does not start — the watch ended on 18-02-2027. Check if the fix worked.")
+
+    def test_the_action_text_and_the_title_cut_at_80(self):
+        facts = _improvement_facts(_action(text="x" * 120), title="y" * 120)
+        assert facts["action_text"] == "x" * 80 and facts["title"] == "y" * 80
+
+    def test_path_and_url(self):
+        facts = _improvement_facts()
+        assert facts["path"] == "/tickets/improvements/12"
+        assert facts["url"] == "https://vel-yantra.mspv.app/tickets/improvements/12"
+
+    def test_message_path_tags_and_quiet(self):
+        given = improvement_message(ACTION_GIVEN, _improvement_facts(_action()))
+        overdue = improvement_message(ACTION_OVERDUE, _improvement_facts(_action()))
+        ready = improvement_message(VERIFY_READY, _improvement_facts())
+        assert given["path"] == overdue["path"] == ready["path"] == "/tickets/improvements/12"
+        assert given["tag"] == overdue["tag"] == "improvement-action-5"
+        assert ready["tag"] == "improvement-12"
+        assert given["quiet"] is overdue["quiet"] is ready["quiet"] is True

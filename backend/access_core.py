@@ -62,6 +62,13 @@ def compute_permissions(roles):
     return sorted(perms)
 
 
+def roles_holding(perm_key):
+    """The site roles that hold ``perm_key`` (through ROLE_INCLUDES), in SITE_ROLES order: who an
+    alert about that key may reach (S074 § 5.6).  A wildcard key gives every site role; an
+    unknown key none (fail-closed)."""
+    return tuple(role for role in SITE_ROLES if perm_key in compute_permissions([role]))
+
+
 def valid_memberships(memberships):
     return [m for m in memberships if m.role in SITE_ROLES]
 

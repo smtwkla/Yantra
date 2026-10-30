@@ -1326,6 +1326,19 @@ _MIGRATIONS = [
         """ALTER TABLE improvements ADD CONSTRAINT IF NOT EXISTS chk_improvements_close_remark
             CHECK (state NOT IN ('closed_not_effective','dropped') OR close_remark IS NOT NULL)""",
     ]),
+    # S074 — the improvement alerts (docs/steps/S074-improvement-alerts/1-brief.md § 4.1, R05.5):
+    # which due date and which watch end the daily scan (improvement_alert_scan) alerted, so it
+    # sends each once.  NULL = never alerted; another due date or another watch end alerts again
+    # (the rule is !=, BR1-01), so no route has to clear them.  No index: the scan reads tens of
+    # rows once a day.  No precondition: production holds no improvement row (v36-v40 ship in one
+    # release, S072 § 9), and two nullable columns convert nothing.  IF NOT EXISTS makes a re-run
+    # safe.  Rollback: a release before v40 never reads them and has no scan.
+    (40, "Improvement alerts sent once (S074)", [
+        """ALTER TABLE improvement_actions
+            ADD COLUMN IF NOT EXISTS overdue_alert_for DATE NULL AFTER due_date""",
+        """ALTER TABLE improvements
+            ADD COLUMN IF NOT EXISTS ready_alert_for DATETIME NULL AFTER watch_from""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

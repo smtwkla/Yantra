@@ -54,7 +54,10 @@ class TestConfig:
         body = client.get(f"{PUSH}/config").get_json()
         assert body["enabled"] is True
         assert len(body["public_key"]) == 87
-        assert body["you_get"] == [f"Breakdowns and defects at {site['code']}, escalations", "Jobs assigned to you"]
+        assert body["you_get"] == [
+            f"Breakdowns and defects at {site['code']}, escalations", f"Improvements ready to verify at {site['code']}",
+            "Jobs assigned to you", "Countermeasures given to you, and when they are overdue",
+            "Overdue countermeasures of improvements you lead"]
 
     def test_push_off_without_keys(self, engineer_in_team, push_off):
         client, _person = engineer_in_team
