@@ -20,6 +20,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { apiDelete, apiGet, apiGetBlob } from "../../api";
 import { formatDateTime } from "../../utils/datetime";
+import { downloadBlobUrl } from "../../utils/download";
 import { formatBytes } from "../../utils/format";
 import DocumentTitleModal from "./DocumentTitleModal.vue";
 import DocumentUploadModal from "./DocumentUploadModal.vue";
@@ -170,13 +171,7 @@ async function pdfUrl(doc) {
 async function downloadPdf(doc) {
   actionError.value = "";
   try {
-    const link = document.createElement("a");
-    link.href = await pdfUrl(doc);
-    // A blob URL has no name of its own; without this Android saves a nameless file
-    link.download = `${doc.title}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    downloadBlobUrl(await pdfUrl(doc), `${doc.title}.pdf`);
   } catch (err) {
     actionError.value = err.message;
   }

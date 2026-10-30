@@ -10,6 +10,7 @@
  * 03-countermeasures.html) runs across the full width under both columns. S073 adds the state line
  * under the header, the card *Did it come back?* (once the watch has started), the card *Timeline*,
  * the five dialogs and *Drop improvement* at the foot; every button follows the detail's `can_*`.
+ * S077: *Write lesson* on a *Lesson* countermeasure opens the lesson dialog seeded from the row.
  *
  * Every control follows the detail's `permissions`, `is_open` and each ticket's `removable`, so
  * no button ends in a refusal. Each write answers with the whole detail, which replaces the page's
@@ -28,6 +29,7 @@ import {
   ACTION_KINDS, actionCountsText, causeText, closedLine, improvementStateBadgeClass, improvementStateLabel, lossText, ticketCauses, watchLine,
 } from "../utils/improvementLabels";
 import { minutesText } from "../utils/ticketLabels";
+import LessonDialog from "./equipment/LessonDialog.vue";
 import ActionDialog from "./improvements/ActionDialog.vue";
 import AddTicketDialog from "./improvements/AddTicketDialog.vue";
 import DropDialog from "./improvements/DropDialog.vue";
@@ -60,6 +62,7 @@ const confirmingRemoveWhyId = ref(null);
 const removeWhyError = ref("");
 const actionDialog = ref(null);
 const markDoneDialog = ref(null);
+const lessonDialog = ref(null); // S077: Write lesson on a Lesson countermeasure
 const cancellingId = ref(null); // the countermeasure that asks for a reason: one at a time
 const cancelBusy = ref(false);
 const cancelError = ref(null); // {field, message} of the last refused cancel
@@ -419,6 +422,7 @@ watch(() => route.params.id, load, { immediate: true });
             @keep="cancellingId = null"
             @cancel="(reason) => cancelAction(a, reason)"
             @mark-done="markDoneDialog.open({ improvementId: improvement.id, action: a })"
+            @write-lesson="lessonDialog.openCreate({ machine: improvement.machine, body: a.text, action_id: a.id })"
             @photos="togglePhotos(a)"
           >
             <DocumentsCards
@@ -458,6 +462,8 @@ watch(() => route.params.id, load, { immediate: true });
       <RootCauseDialog ref="rootCauseDialog" :improvement="improvement" @saved="onSaved" />
       <ActionDialog ref="actionDialog" :improvement="improvement" @saved="onSaved" />
       <MarkDoneDialog ref="markDoneDialog" @saved="onSaved" @reload="load" />
+      <!-- The page stays: the engineer is working the improvement, and the row's new line links the lesson (S077 BR1-04) -->
+      <LessonDialog ref="lessonDialog" @saved="load" />
       <VerifyDialog ref="verifyDialog" :improvement="improvement" @saved="onSaved" @reload="load" />
       <WatchDialog ref="watchDialog" :improvement="improvement" @saved="onSaved" />
       <DropDialog ref="dropDialog" :improvement="improvement" @saved="onSaved" @reload="load" />

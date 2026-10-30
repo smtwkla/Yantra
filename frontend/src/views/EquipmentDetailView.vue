@@ -31,6 +31,10 @@
  * machine" mark, and the model line and Edit model values show only when the card has another
  * row. A Location row with a value links Open in Maps (Google Maps, the backend's map_url); the
  * hint for a machine that moves (moving_hint) shows under it.
+ *
+ * Lessons (S077): the Lessons card (one-point lessons of the machine and its class) comes first,
+ * before Open tickets, on every width: an operator who scans the QR label wants what to do, and a
+ * busy press has open tickets. After an add the page opens the lesson, as the operator will read it.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -50,6 +54,7 @@ import EquipmentFormModal from "./equipment/EquipmentFormModal.vue";
 import EquipmentHistory from "./equipment/EquipmentHistory.vue";
 import EquipmentMoveModal from "./equipment/EquipmentMoveModal.vue";
 import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
+import LessonsCard from "./equipment/LessonsCard.vue";
 import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
 import ItemPropertiesModal from "./equipment/ItemPropertiesModal.vue";
@@ -230,8 +235,9 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <!-- On a phone Documents and Photos come right after Open tickets, above the long cards (S064
-           UX-07): one flex column, ordered below md; from md up every order is reset to the page order -->
+      <!-- On a phone the order is Lessons (S077), Open tickets, then Documents and Photos, above the long
+           cards (S064 UX-07): one flex column, ordered below md; from md up every order is reset to the
+           page order -->
       <div class="d-flex flex-column">
       <router-link
         v-if="canRaiseTicket"
@@ -256,6 +262,8 @@ function onSaved({ result, created }) {
           <i class="fa-solid fa-toggle-on me-1"></i>Change lifecycle
         </button>
       </div>
+
+      <LessonsCard :node="node" @saved="(lesson) => router.push(`/equipment/lessons/${lesson.id}`)" />
 
       <div v-if="canReadTickets" class="card mb-3 order-0">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">

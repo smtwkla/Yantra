@@ -35,7 +35,9 @@ const props = defineProps({
   // Nothing to save (S043: a class with no properties yet): the footer shows only Close
   closeOnly: { type: Boolean, default: false },
 });
-const emit = defineEmits(["save"]);
+// `closed`: the dialog is fully hidden (after its fade), by any route; S077's LessonDialog hands
+// its saved lesson to the page from here, once, whether the photos went up or the close-only Close was tapped
+const emit = defineEmits(["save", "closed"]);
 
 // Read-only for the footer's controls: ActiveToggle blocks Deactivate / Reactivate while the
 // form has unsaved changes, since both close the dialog and would drop them (S064 UX-16)
@@ -120,6 +122,7 @@ onMounted(() => {
   el.value.addEventListener("shown.bs.modal", focusAutofocusField);
   el.value.addEventListener("hidden.bs.modal", () => {
     visible = false;
+    emit("closed");
   });
 });
 // A page that navigates away right after close() unmounts this component while the dialog is

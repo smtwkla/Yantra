@@ -4,6 +4,8 @@
 // dialogs.
 import { test, expect } from "./support/test.js";
 import { raiseFixed, startImprovementByApi } from "./support/improvements.js";
+import { writeLessonByApi } from "./support/lessons.js";
+import { meterMachine } from "./support/meters.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
 
 const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager", "storekeeper", "it_admin"];
@@ -16,8 +18,9 @@ const MASTERS_ROLES = ["engineer", "manager", "it_admin"];
 let seed;
 let ticket;
 let improvement; // S068: started from a second ticket, which is back in service (the first is not)
+let lesson; // S077: on a machine this file makes, so the extruder pages of other specs gain no Lessons card
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
   seed = await seedIds();
   const operator = await apiAs("operator");
   const res = await operator.post("/api/tickets", {
@@ -27,6 +30,7 @@ test.beforeAll(async () => {
   ticket = await res.json();
   await operator.dispose();
   improvement = await startImprovementByApi(await raiseFixed(seed.extruder.id, "Screens test: contactor chatters"));
+  lesson = await writeLessonByApi(await meterMachine(testInfo, "screens", { unit: "SMTW.MCC2" }), { title: "Screens test: keep the door shut" });
 });
 
 /** The visible top bar's title (route meta.title): the screen's heading on every page. */
@@ -66,6 +70,11 @@ const screens = () => [
   {
     path: `/tickets/improvements/${improvement.id}`, title: "Improvement",
     shows: (page) => page.getByRole("heading", { name: improvement.serial }), who: TICKET_ROLES,
+  },
+  // S077: a one-point lesson's page; every reader of the machine opens it (equipment:read)
+  {
+    path: `/equipment/lessons/${lesson.id}`, title: "Lesson",
+    shows: (page) => page.getByRole("heading", { name: "Screens test: keep the door shut" }), who: EVERYONE,
   },
   // S076: the register's print page (report:read: the engineer and the manager)
   {

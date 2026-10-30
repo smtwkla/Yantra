@@ -12,7 +12,10 @@
  * taps), `cancel(reason)`, `mark-done` and `photos`; the page makes the calls and holds which
  * row asks and which row shows its photos (`cancelling`, `photosOpen`), so only one of each is
  * open at a time. Every button follows the server's flags (`can_change`, `can_mark_done`,
- * `can_add_photo`), so none ends in a refusal.
+ * `can_add_photo`, `can_write_lesson`), so none ends in a refusal.
+ *
+ * A *Lesson* countermeasure shows its lesson (S077 § 5.4; `lesson` is in the detail shape only) as a link to
+ * its page, or "Write lesson", which emits `write-lesson`; the page opens the lesson dialog.
  */
 import { computed, nextTick, ref, watch } from "vue";
 import { formatDateTime } from "../utils/datetime";
@@ -30,7 +33,7 @@ const props = defineProps({
   cancelError: { type: Object, default: null },
   photosOpen: { type: Boolean, default: false },
 });
-const emit = defineEmits(["change", "ask-cancel", "keep", "cancel", "mark-done", "photos"]);
+const emit = defineEmits(["change", "ask-cancel", "keep", "cancel", "mark-done", "photos", "write-lesson"]);
 
 const state = computed(() => props.action.state ?? "open");
 const overdue = computed(() => state.value === "open" && props.action.overdue_days > 0);
@@ -93,6 +96,12 @@ const rowError = computed(() => (props.cancelError && props.cancelError.field !=
         <div v-if="state === 'cancelled'" class="small cm-text">
           Cancelled {{ formatDateTime(action.cancelled_at) }} by {{ action.cancelled_by_name }}: {{ action.cancel_reason }}
         </div>
+        <div v-if="action.lesson" class="small mt-1">
+          <router-link :to="`/equipment/lessons/${action.lesson.id}`">
+            Lesson {{ action.lesson.serial }} · {{ action.lesson.title }}
+          </router-link>
+          <template v-if="!action.lesson.active"> (retired)</template>
+        </div>
         <div v-if="showImprovement && action.improvement" class="small mt-1">
           <router-link :to="`/tickets/improvements/${action.improvement.id}`">
             {{ action.improvement.serial }} · {{ action.improvement.title }}
@@ -101,6 +110,9 @@ const rowError = computed(() => (props.cancelError && props.cancelError.field !=
       </div>
       <div v-if="!cancelling" class="cm-buttons d-flex flex-wrap align-items-center gap-2">
         <button v-if="action.can_mark_done" type="button" class="btn btn-success cm-done" @click="emit('mark-done')">Mark done</button>
+        <button v-if="action.can_write_lesson" type="button" class="btn btn-outline-primary tap-target" @click="emit('write-lesson')">
+          Write lesson
+        </button>
         <button v-if="photosLabel" type="button" class="btn btn-outline-secondary" :aria-expanded="photosOpen" @click="emit('photos')">
           <i class="fa-solid fa-camera me-1"></i>{{ photosLabel }}
         </button>

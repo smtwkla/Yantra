@@ -4,6 +4,7 @@
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { addActionByApi, addTicketByApi, markDoneByApi, raiseFixed, startImprovementByApi, TEST_PHOTO, uploadActionPhotoByApi } from "./support/improvements.js";
+import { lessonMachines } from "./support/lessons.js";
 import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
 import { actionId, causeId, istDay, istLocal, moveByApi, raiseByApi, saveDialog, shownDay } from "./support/tickets.js";
 
@@ -715,4 +716,35 @@ test("S073: the lead drops an improvement with an open countermeasure; the count
   await expect(page.getByTestId("state-line")).toContainText(/^Dropped \d{2}-\d{2}-\d{4} by Priya \(engineer\), the lead$/);
   await expect(measureRow(page, action.id)).toContainText("Cancelled");
   await expect(page.getByRole("button", { name: "Drop improvement", exact: true })).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// S077: Write lesson on a Lesson countermeasure
+// ---------------------------------------------------------------------------------------------
+
+test("S077: Write lesson on a Lesson countermeasure opens the dialog seeded, and the countermeasure then links its lesson", async ({ page }, testInfo) => {
+  // A machine of its own, so no seed machine gains a lesson
+  const { a, className } = await lessonMachines(testInfo, "write");
+  const improvement = await startImprovementByApi(await raiseFixed(a.id, "S077 write: contactor chatters"));
+  const { action } = await addActionByApi(improvement, { kind: "lesson", text: "S077 write: keep the panel door shut" });
+  await asPerson(page, "engineer", `/tickets/improvements/${improvement.id}`);
+  const row = measureRow(page, action.id);
+  await row.getByRole("button", { name: "Write lesson", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  // Seeded with the countermeasure's text; the improvement's machine has no class, so the dialog read it
+  await expect(dialog.getByLabel("Lesson text")).toHaveValue("S077 write: keep the panel door shut");
+  await expect(dialog.getByLabel(`Show on every machine of class ${className}`)).not.toBeChecked();
+  await dialog.getByLabel("Title").fill("Keep the panel door shut");
+  await saveDialog(page, "Save lesson");
+
+  // The page stays on the improvement; the row links the lesson
+  await expect(page).toHaveURL(new RegExp(`/tickets/improvements/${improvement.id}$`));
+  const link = row.getByRole("link", { name: /^Lesson OPL-\d+ · Keep the panel door shut$/ });
+  await expect(link).toBeVisible();
+  await expect(row.getByRole("button", { name: "Write lesson", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Mark done", exact: true })).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(/\/equipment\/lessons\/\d+$/);
+  await expect(page.getByText(`From improvement ${improvement.serial}`)).toBeVisible();
 });

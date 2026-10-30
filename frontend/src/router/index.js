@@ -7,6 +7,7 @@ import ImprovementRegisterView from "../views/ImprovementRegisterView.vue";
 import ImprovementsView from "../views/ImprovementsView.vue";
 import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
+import LessonView from "../views/LessonView.vue";
 import MastersView from "../views/MastersView.vue";
 import MeView from "../views/MeView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
@@ -34,6 +35,14 @@ const routes = [
     name: "equipment-detail",
     component: EquipmentDetailView,
     meta: { title: "Equipment" },
+  },
+  // A one-point lesson (S077): opened from the Lessons card, a countermeasure or a printed sheet. The path
+  // starts with /equipment/, so the Equipment nav item stays lit; not a nav item, so the API's 404 is the gate
+  {
+    path: "/equipment/lessons/:id(\\d+)",
+    name: "lesson",
+    component: LessonView,
+    meta: { title: "Lesson" },
   },
   // The link on a QR label (S014): the code, never the internal id
   {

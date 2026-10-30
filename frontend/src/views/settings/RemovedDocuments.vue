@@ -13,6 +13,8 @@
  * Since S071 a row can be a countermeasure's photo: "Countermeasure IM-… · Corrective" and its
  * unit; Restore is disabled on a cancelled countermeasure (S070 § 5.8), and since S072 A1 also
  * when its improvement is closed or dropped, as on a closed ticket.
+ * Since S077 a row can be a one-point lesson's photo: "Lesson OPL-007", its machine's code and its unit;
+ * a lesson has no state rule, so Restore is never disabled for one.
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -136,7 +138,7 @@ onMounted(load);
           v-model="searchText"
           type="search"
           class="form-control form-control-sm removed-search"
-          placeholder="Search equipment code, model, ticket, improvement, title or file name…"
+          placeholder="Search equipment code, model, ticket, improvement, lesson number, title or file name…"
           aria-label="Search removed documents"
         />
         <select v-model="kind" class="form-select form-select-sm removed-kind" aria-label="Kind">
@@ -199,6 +201,10 @@ onMounted(load);
                   Countermeasure {{ item.name }} · {{ actionKindLabel(item.action_kind) }}
                   <div v-if="item.state === 'cancelled'" class="small">cancelled</div>
                   <div class="small text-secondary">{{ item.unit }}</div>
+                </td>
+                <td v-else-if="item.owner === 'procedure'">
+                  Lesson {{ item.name }}
+                  <div class="small text-secondary">{{ item.code }} · {{ item.unit }}</div>
                 </td>
                 <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>

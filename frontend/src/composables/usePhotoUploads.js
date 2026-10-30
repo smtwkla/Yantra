@@ -13,7 +13,8 @@
  *                   kind `photo` titled with the file name; a `failed` file is not sent again unless
  *                   it is chosen again; -> the number uploaded by this call;
  *   uploading       true while a file is on its way;
- *   revokeAll()     frees every preview (at the dialog's next open, and on unmount: FormModal emits no close event, and freeing during its fade would show broken images).
+ *   revokeAll()     frees every preview (at the dialog's next open and on unmount, not when the dialog closes: freeing during
+ *                   its fade would show broken images).
  */
 import { computed, onBeforeUnmount, ref, toValue } from "vue";
 import { apiUpload } from "../api";
