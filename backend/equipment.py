@@ -65,6 +65,10 @@ A write with a model never locks a type: it comes from the model, whose type nev
   takes (6b), never locks an equipment or class row FOR UPDATE, and no other module locks a
   procedures row (improvements.py reads them plainly), so it adds no lock cycle.  Its own note
   gives the check, path by path.
+- contracts.py (S080) locks at most one contracts row FOR UPDATE (PUT), first in its transaction, then the
+  vendor row LOCK IN SHARE MODE when the vendor changes; a create takes the site and the vendor LOCK IN
+  SHARE MODE.  It locks no equipment, unit, ticket, improvement or procedures row, and no other module
+  locks a contracts row, so it adds no lock cycle.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

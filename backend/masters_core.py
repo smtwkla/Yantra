@@ -374,6 +374,14 @@ def _validate(data, fields, creating):
     return clean, errors
 
 
+# Public names for the rules another core reuses (S080 D9: contracts_core), so no core imports a
+# private helper of this one and a rename here cannot break it silently.  One copy of each rule.
+collapsed = _collapsed
+flag_parser = _flag_parser
+validate_fields = _validate
+id_parser = _parse_id
+
+
 def validate_site(data, creating):
     return _validate(data, _SITE_FIELDS, creating)
 

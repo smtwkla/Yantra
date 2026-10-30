@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079–S082 coded before S083
-Status: In review
+Baseline: d216f48 + uncommitted R02 docs; S079–S082 coded before S083 (staleness check before coding)
+Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor accepted)
 From: R02.3
 ```
 
@@ -30,12 +30,12 @@ price.
    `equipment:purge_documents` but not `contract:read_senior`, sees no contract document anywhere.
 3. **The cards on the contract page** (§ 5.7): S081's `ContractView.vue` shows the existing
    `DocumentsCards.vue` (*Documents* and *Photos*) after *Machines covered*, for `can_read_documents`
-   holders; others see one line saying the managers keep the paper.
+   holders; others see nothing of them (as for the price).
 4. **Settings › Removed documents** lists a removed contract document as "Contract <title>" with its
    site, for the users who may restore or erase it (§ 5.5).
 5. **A PDF with blank lines before its header is accepted** (§ 5.6, Q1): the Fuji quote
    `AMC14082369550_12606 (1).pdf` starts with six line feeds, and today's type check refuses it
-   (fact, checked below). The check accepts only spaces, tabs and line breaks before `%PDF-`, within
+   (fact, checked below). The check accepts only spaces, tabs and line breaks (`\r`, `\n`) before `%PDF-`, within
    the first 1024 bytes; the stored file keeps its bytes. This applies to every owner.
 
 **Migration v45** (§ 4.1): the column `equipment_documents.contract_id` and the owner CHECK widened to
@@ -58,12 +58,11 @@ correction of the roadmap's "After it", § 9).
 
 ## 2. Standards and practice
 
-- **ISO/IEC 27001:2022 A.5.15, access control**, and **A.8.3, information access restriction** (A.8.3
-  *to verify*). In plain words: each person reaches only the information the work needs, and the
+- **ISO/IEC 27001:2022 A.5.15, access control**, and **A.8.3, information access restriction**. In plain words: each person reaches only the information the work needs, and the
   system, not the screen, enforces it. The files are served only by the documents routes, after the
   read check at the contract's site; the list, the file, the thumbnail and the removed list all
   follow `contract:read_senior` (§ 5.2). An editor who may not read documents may not write them.
-- **ISO/IEC 27001:2022 A.8.10, information deletion** (number *to verify*). In plain words: delete
+- **ISO/IEC 27001:2022 A.8.10, information deletion**. In plain words: delete
   information when it is no longer needed, in a controlled way, and keep a record. Erasing stays
   S008's two steps (remove, then erase from Settings), logged with who uploaded, who removed and
   who erased.
@@ -105,7 +104,8 @@ exist at the baseline; they are as those briefs state them:
   `get_document_file`, `get_document_thumb`, `update_document_title`, `remove_document`,
   `restore_document`, `purge_document`); `_REMOVED_CONTRACT_BRANCH` in `_removed_branches`, its case
   in `_removed_item` (§ 5.5); `_read_upload` passes `data[:HEADER_WINDOW]` to `detect_file_type`
-  (§ 5.6); the module docstring (owners, locks). It imports the three functions from contracts.py and
+  (§ 5.6), and the now unused `SIGNATURE_BYTES` leaves its import list (it stays in documents_core
+  for the WebP rule); the module docstring (owners, locks). It imports the three functions from contracts.py and
   `sites_holding` from `backend/auth_utils.py`.
 - `backend/documents_core.py`: `HEADER_WINDOW = 1024`, the leading-whitespace rule in
   `detect_file_type` (§ 5.6).
@@ -211,14 +211,15 @@ ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_docum
 
 - `_CONTRACT_DOCS = "/contracts/<int:owner_id>/documents"`, `_FOR_CONTRACT = {"defaults": {"owner":
   "contract"}}`. They live in `documents_bp` (prefix `/api`). `contracts_bp`'s routes are `/`,
-  `/<int:contract_id>` and S081's `/<int:contract_id>/equipment[/<int:equipment_id>]`; none ends in
+  `/<int:contract_id>`, S081's `/<int:contract_id>/equipment[/<int:equipment_id>]` and S082's
+  `/for-equipment/<int:node_id>`; none ends in
   `/documents`, so the two blueprints never claim one URL (as tickets and lessons).
 - **The functions** (contracts.py, each with a docstring naming documents.py's slot):
   - `_contract_access(cur, row, key)` (private): plain. `contract:read_basic` not held at
     `row["site_id"]` → 404 "Not found"; `contract:read_senior` not held there →
     `require_perm_at` 403 "You can't do this at SMTW"; `key` not `None` and not held there →
     `require_perm_at(key, site_id)` 403.
-  - `read_contract(cur, contract_id, _key=None)`: `SELECT id, site_id, active FROM contracts WHERE
+  - `read_contract(cur, contract_id, _key=None)`: `SELECT id, site_id FROM contracts WHERE
     id = %s` (plain) → 404 when missing; `_contract_access(cur, row, None)`; returns the row.
   - `read_contract_for_change(cur, contract_id, key)`: the same read; `_contract_access(cur, row,
     key)`. A refused upload reads and writes no file (S006 § 5.6).
@@ -230,7 +231,7 @@ ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_docum
 - **The site never changes** (S080 § 5.1), so a plain read of `site_id` and the locked one agree; the
   decisions still come from the locked row in the write transaction.
 - **Every kind** (`photo`, `document`), as every owner (S018): a phone photo of a signed page is the
-  floor's way to file paper.
+  manager's way to file paper.
 
 ### 5.2 Permissions
 
@@ -301,7 +302,10 @@ the files after the commit (unchanged).
 docstring, and S080's and S081's `contracts.py` notes):
 - *(C) the contract row* is taken exclusive by contracts.py's own writes (S080's `PUT`, S081's line
   writes), always first in their transaction, and now by the documents path, also first. Neither
-  holds another lock before it.
+  holds another lock before it. S084 (drafted in parallel) locks several contract rows `FOR UPDATE`
+  in its daily scan, in id order (`alerts.lock_contract_for_scan`, S084 § 5.4); the documents path
+  holds one contract row and waits on no other contract row after it, so no cycle forms. The
+  staleness check re-reads S084's note.
 - *After (C)*, contracts.py's writes take the vendor, the node (1) or a `contract_equipment` row; the
   documents path takes only `equipment_documents` rows. No other path locks a document row, and no
   path that holds a vendor, node or line lock waits on (C). So a document write waiting on (C) waits
@@ -334,8 +338,9 @@ _REMOVED_CONTRACT_BRANCH = (
   `contract:read_senior`: `{s["id"] for s in sites_holding(cur, "equipment:purge_documents")} &
   {s["id"] for s in sites_holding(cur, "contract:read_senior")}`. None → the branch is left out
   (not the whole list), as the node branch. Else `c.site_id IN (…)`. Admin: every site.
-- **Search** `q`: `c.title`, `c.contract_number`, `d.title`, `d.original_name` (`LIKE`, the shared
-  `like_pattern`).
+- **Built with `_scoped_branch`** (one copy of the search and scope SQL): `search_column`
+  `CONCAT_WS(' ', c.title, c.contract_number)` (NULL-safe), `unit_column` `c.site_id`, and the site
+  ids above as its id list. So `q` matches the title, the number, `d.title` and `d.original_name`.
 - **`_removed_item`**, a case of its own: `name` the contract's title, `code` its number (or
   `null`), `unit` the site's code (a contract has no unit; the screen shows it where a unit shows),
   `full_path` `None`, `state` `None`; `path` `/api/contracts/<id>/documents` from `OWNERS`.
@@ -355,13 +360,15 @@ with `%PDF-`.
 **The rule (Q1, recommended a):**
 - `documents_core.HEADER_WINDOW = 1024`; `_read_upload` calls `detect_file_type(data[:HEADER_WINDOW])`.
 - In `detect_file_type`: a PDF when `data.startswith(b"%PDF-")`, or when
-  `data.lstrip(b" \t\r\n\f").startswith(b"%PDF-")` (the whole `%PDF-` inside the window). Any other
+  `data.lstrip(b" \t\r\n").startswith(b"%PDF-")` (the whole `%PDF-` inside the window). Any other
   byte before the header (`<html>`, a NUL, text) → `None` (refused). JPEG, PNG and WebP keep their
   exact first-byte rule; leading whitespace before them is refused.
 - The stored file keeps its bytes (a signed copy is not altered); it is served with
   `application/pdf` and `nosniff`, as every PDF.
 - **Why 1024:** PDF readers look for the header within the first 1024 bytes (Adobe's implementation
-  note; *to verify* for Chrome's PDFium and Safari, so § 8.5 opens the Fuji file on a phone).
+  note, PDF Reference 1.7 Appendix H note 13; Chrome's PDFium scans the same 1024 bytes,
+  `GetHeaderOffset`; Safari *to verify*, so § 8.5 opens the Fuji file on an Android phone and an
+  iPhone).
   Only whitespace is allowed, so no polyglot (HTML or script before the header) passes.
 - **Security (self-check 12):** the check runs on the same bytes that are stored and served; the
   served type comes from the check, never from the client.
@@ -375,8 +382,8 @@ with `%PDF-`.
   The cards bring their own *Add document* (PDF), *Add photo*, empty states ("No documents yet.",
   "No photos yet."), *Edit title* and *Remove* with its question in the row (`DocumentsCards.vue`,
   unchanged).
-- **Without it** (engineers, IT admin, the floor): one line in a small card body, "The signed
-  contract and quotes are kept here by the managers of SMTW." No empty card, no button.
+- **Without it** (engineers, IT admin, the floor): nothing, as for the price (S081 § 5.4): no card,
+  no line, no button. The engineer has the *Covered* / *Not covered* terms.
 - **The one-tap path:** *Add document* → choose the PDF → the title is prefilled from the file name
   (`DocumentUploadModal.vue`, unchanged) → *Upload*. On a phone, *Add photo* offers the camera.
 - **Destructive:** *Remove* asks in the row ("Remove this document?" Yes / No, unchanged); the
@@ -463,7 +470,7 @@ helpers; a contract row inserted by SQL (a vendor, then a contract at the one si
 ### 8.2 Backend
 
 **`test_documents_core.py`**, `TestDetectFileType`: `test_blank_lines_before_a_pdf_header_are_accepted`
-(`b"\n" * 6 + PDF_HEAD`, `b" \r\n\t\f" + PDF_HEAD`, `b"\n" * 1019 + b"%PDF-"`) and
+(`b"\n" * 6 + PDF_HEAD`, `b" \r\n\t" + PDF_HEAD`, refused `b"\f" + PDF_HEAD`, `b"\n" * 1019 + b"%PDF-"`) and
 `test_other_bytes_before_a_header_are_refused` (`b"<html>" + PDF_HEAD`, `b"\x00" + PDF_HEAD`,
 `b"\n" * 1020 + b"%PDF-1.7"` cut at 1024, `b"\n" + JPEG_HEAD`, `b" " + PNG_HEAD`).
 
@@ -527,9 +534,8 @@ contract, so no count depends on another test.
 - `S083: a manager removes a contract document and restores it from Settings` (untagged): upload by
   API, *Remove* → Yes; Settings › Removed documents, search the contract's title: the row "Contract
   <title>" with "SMTW"; *Restore*; the contract page shows the document again.
-- `S083: an engineer sees the managers' line and no Documents card` (untagged): as the engineer, the
-  text "The signed contract and quotes are kept here by the managers of SMTW." and no
-  `"Add document"` button, no *Documents* card header.
+- `S083: an engineer sees no Documents card on the contract page` (untagged): as the engineer, no
+  `"Add document"` button and no *Documents* card header.
 
 Targeted runs: `tooling/run-e2e-tests.bat e2e/contracts.spec.js e2e/settings.spec.js
 e2e/equipment.spec.js e2e/screens.spec.js` (equipment for the shared upload path); the whole suite
@@ -538,14 +544,14 @@ changes (settings: *Shared code*).
 
 ### 8.5 On a real device
 
-One row for `docs/steps/device-checks.md`, **important**: "On an **Android phone**, as a manager
-(dev server), open a contract, tap **Add document**, choose the Fuji quote PDF (KLA puts a copy of
-`AMC14082369550_12606 (1).pdf` in the phone's Downloads) from **Files**, *Upload*. Tap its title: the
-PDF opens in the phone's viewer and its pages show (the file starts with blank lines, § 5.6). Then
-**Add photo**: the phone offers the camera; photograph a printed page; the thumbnail shows." Account:
-a manager's login at SMTW (dev server: none). Network: company Wi-Fi or home network. Where: dev
-server (the quote holds a real price; not on production). A browser engine cannot judge the phone's
-file picker or its PDF viewer.
+One row for `docs/steps/device-checks.md`, **important**: "On an **Android phone** and on an
+**iPhone**, as a manager (dev server), open a contract, tap **Add document**, choose the Fuji quote
+PDF from **Files** (KLA puts a copy of `AMC14082369550_12606 (1).pdf` on each phone), *Upload*. Tap
+its title: the PDF opens in the phone's viewer and its pages show (the file starts with blank
+lines, § 5.6)." Account: a manager's login at SMTW (dev server: none). Network: company Wi-Fi or
+home network. Where: dev server (the quote holds a real price; not on production). A browser
+engine cannot judge the phone's file picker or its PDF viewer; the camera path of `DocumentsCards`
+is already checked on real phones (rows 5, 46, 51, 56).
 
 ### 8.6 Acceptance
 
@@ -560,6 +566,8 @@ file picker or its PDF viewer.
 - **Q1. Accept a PDF with whitespace before its header?** (§ 5.6, E5)
   - **(a) Yes, only spaces, tabs and line breaks, within 1024 bytes, for every owner — recommended.**
     The real Fuji quote uploads; nothing but whitespace may precede the header.
+    Taken as recommended by the orchestrator under the delegation of 30-10-2026; KLA may override
+    at gate B.
   - (b) No: the manager re-saves the file on a computer (print to PDF) before upload. No change to
     the type check; the phone path fails for this file.
 - **Roadmap corrections** (for the orchestrator): R02.3's "After it: the engineer finds the contract
@@ -573,8 +581,13 @@ file picker or its PDF viewer.
   every answer from there (S080 § 5.4).
 - **Assumption:** S081's page has no documents placeholder (S081 B8), so S083 adds the cards, not
   replaces one.
-- **Departure stated:** E2 (IT admin does not restore or erase contract documents).
-- **Staleness check due before coding:** the migration number (v45; S084 may take v46), the LOCK
+- **E1 (write needs `contract:edit` and `contract:read_senior`):** taken as recommended by the
+  orchestrator under the delegation of 30-10-2026; KLA may override at gate B.
+- **E2 (IT admin does not restore or erase contract documents):** a departure from S008's rule
+  that IT admin restores and erases every owner's removed documents (`.claude/CLAUDE.md` § Files).
+  Taken as recommended by the orchestrator under the delegation of 30-10-2026; KLA may override at
+  gate B.
+- **Staleness check due before coding:** S084's contract lock note (`alerts.lock_contract_for_scan`), the migration number (v45; S084 may take v46), the LOCK
   ORDER bullets of S080 and S081, `_contract_out`, `sites_holding`, `ContractView.vue`.
 - **No defining question.** Q1 is a judgement on the upload check; both answers are safe.
 
@@ -583,3 +596,12 @@ file picker or its PDF viewer.
 None.
 
 ## Review log
+
+### Round 1 — `2-brief-review-r1.md` (Fable), answered 30-10-2026
+
+| Finding | Answer |
+|---|---|
+| BR1-01 (minor) Q1 and E2 not marked as taken under the delegation | Accepted: § 9 marks Q1 (a), E1 and E2 "Taken as recommended by the orchestrator under the delegation of 30-10-2026; KLA may override at gate B"; E2 names its departure from S008's IT-admin rule. |
+| BR1-02 (minor) the line for users who may not read the documents | Accepted (a): a non-holder sees nothing (§ 5.7); the third e2e test asserts only no *Documents* card and no `"Add document"`. |
+| BR1-03 (minor) the device row: no iPhone, a camera check already done | Accepted (a): one row, Android and iPhone both open the Fuji PDF on the dev server; the camera half dropped (§ 8.5). |
+| BR1-04 … BR1-10 (nits) | Accepted as recommended: one whitespace set (`\f` dropped, now refused); `SIGNATURE_BYTES` leaves documents.py's imports; `read_contract` selects `id, site_id`; "the manager's way"; the contract branch through `_scoped_branch`; S084's scan lock in § 5.4 and the staleness list; S082's `/for-equipment/<int:node_id>` named. The ISO 27001 numbers A.5.15, A.8.3, A.8.10 confirmed; their "to verify" dropped. |

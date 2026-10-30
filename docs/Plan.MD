@@ -133,6 +133,10 @@ with each module. First cut of the main keys:
 | `improvement:verify` | | | | ✓ | ✓ | |
 | `improvement:note` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `procedure:edit` | | | | ✓ | ✓ | |
+| `contract:read_basic` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `contract:read` | | | | ✓ | ✓ | |
+| `contract:read_senior` | | | | | ✓ | |
+| `contract:edit` | | | | ✓ | ✓ | ✓ |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
@@ -222,6 +226,15 @@ after a QR scan included. A lesson on a machine is written and changed at the ma
 lesson ticked for the machine's whole class is site-less and may be changed (and its photos
 restored or purged with `equipment:purge_documents`) by a holder of the key at any site, as model
 documents. Ticking or unticking the class always needs the key at the machine's site.
+
+The vendor contract keys (S080, R02.1, 30-10-2026; all four site-scoped, checked at the contract's
+site, never by unit) follow the base's three read levels (ISO 27001 A.5.15). `contract:read_basic`,
+every role (the storekeeper too): the terms, every field but two. `contract:read`, engineer and
+manager: adds the vendor's call-out number. `contract:read_senior`, manager only: adds the cost
+note (later the prices and documents, R02.2, R02.3). `contract:edit`, engineer, manager and IT
+admin: add and change. IT admin reads neither gated field, so its dialog has neither and its save
+leaves them as they were. The API leaves a field out of its answer for a reader without its key,
+and ignores it in a write by an editor without it.
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer

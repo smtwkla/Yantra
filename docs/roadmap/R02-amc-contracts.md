@@ -170,9 +170,9 @@ from Vendors."), and `03-contract-page.html:59` shows "Atlas Copco (India) · co
 | R02.1 | Contract register: the contract record (vendor from Vendors), the list in Masters › Contracts, the dialog, three keys, the cost note for managers | M | full | R02.9 | → S080, 30-10-2026 |
 | R02.2 | Equipment covered: the contract page, its machines and their prices, the *Under contract* card on the equipment page, a list filter | M | full | R02.1 | → S081 + S082 (split at the card), 30-10-2026 |
 | R02.3 | Contract documents: the signed contract and its annexures on the contract | S | full | R02.1 | → S083, 30-10-2026 |
-| R02.4 | Renewal: *Renew* makes the next contract with the same terms and machines; the chain is kept | S | full | R02.2 | open |
+| R02.4 | Renewal: *Renew* makes the next contract with the same terms and machines; the chain is kept | S | full | R02.2 | → S085, 30-10-2026 |
 | R02.5 | Reminders before a contract ends: push and email | S–M | full | R02.1 | → S084, 30-10-2026 |
-| R02.6 | Breakdown calls on the contract, derived from tickets through the vendor's linked Team records; the contract line on the ticket page | M | full | R02.2 (and R02.9's link) | open |
+| R02.6 | Breakdown calls on the contract, derived from tickets through the vendor's linked Team records; the contract line on the ticket page | M | full | R02.2 (and R02.9's link) | → S086, 30-10-2026 |
 | R02.7 | PM visits against the contract: PM plans point at their contract; agreed against done | M | full | R02.2 and the PM engine (phase 4) | open — **waits for PM** |
 | R02.8 | Vendor performance report, per contract and per vendor: visits compliance, breakdown calls, waiting on the vendor, MTTR, cost per machine-year | M | full | R02.6, R02.7, reports (phase 5) | open — **waits for PM** |
 

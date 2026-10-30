@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079–S083 coded before S084
-Status: Draft
+Baseline: d216f48 + uncommitted R02 docs; S079–S083 coded before S084 (staleness check before coding)
+Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 5 minor; BR1-02 and BR1-03 flagged for KLA at gate B)
 From: R02.5
 ```
 
@@ -24,23 +24,17 @@ it a page. Nothing tells anyone when a contract is about to end: the manager mus
 Each is sent **once per To date** (§ 5.1). Neither is sent for an inactive contract, nor once the
 contract is renewed (§ 5.2).
 
-How they travel:
-
-- **Push** to the holders of `contract:read` (from S080) at the contract's site, that is its
-  engineers and managers (D10). Quiet, kept 24 hours by the push service (D6). A tap opens the
-  contract page `/contracts/<id>` (from S081).
-- **Email** to the holders of `contract:read_senior` (from S080) at the site, that is its managers,
-  with an address (S032 channel). One plain-text email per manager.
-- **Neither text carries the price, the cost note or the call-out number** (§ 5.4). Every recipient
-  can open the contract page: `contract:read_basic` (`("*",)`, from S080) is held by every
-  engineer and manager.
-- A daily task **`contract_reminder_scan`** at **08:00 IST** (`scheduled_tasks.SCHEDULE`) finds the
-  contracts due a reminder and queues one **`contract_alert`** task each.
-- Two columns on `contracts` remember the To date each reminder was sent for: migration **v46**
-  (§ 4). A changed To date re-arms both reminders without any route clearing them.
-- ***What you will get*** (`alerts_core.you_get`) gains a push line for engineers and managers and an
-  email line for managers, so the page and the fan-out agree (S021 BR2-06).
-- **Settings › Background tasks** lists the new daily task with a plain label.
+- **Push** to the holders of `contract:read` (from S080) at the contract's site: its engineers and
+  managers (R02 D10). Quiet, kept 24 hours (D6). A tap opens `/contracts/<id>` (from S081).
+- **Email** to the holders of `contract:read_senior` (from S080) at the site with an address: its
+  managers (S032 channel).
+- **No text carries the price, the cost note or the call-out number** (§ 5.4). Every recipient may
+  open the contract (`contract:read_basic` is `("*",)`, from S080).
+- A daily task **`contract_reminder_scan`** at **08:00 IST** queues one **`contract_alert`** per
+  reminder due. Two columns on `contracts` (migration **v46**) remember the To date each reminder
+  was sent for, so a changed To date re-arms them.
+- ***What you will get*** (`alerts_core.you_get`) gains a push line and an email line (S021 BR2-06);
+  **Settings › Background tasks** lists the new task.
 
 **After S084:** on 30-01-2027 the SMTW engineers and managers get *Contract ends in 60 days · SMTW*
 for "Atlas Copco AMC 2026–27", and each SMTW manager gets the email "Contract ends on 31-03-2027:
@@ -49,15 +43,12 @@ entered by then.
 
 ### Out of scope
 
-- *Renew* (R02.4). Until R02.4 lands, nothing sets `renewal_of_id`, so every active contract gets
-  both reminders. S084's rule already reads `renewal_of_id` (§ 5.2).
-- A setting for the lead days or the scan's time (§ 7 D2, § 9 Q1).
-- A reminder after the end ("ended yesterday"), or a repeat while nobody acts.
-- Reminders about PM visits due under the contract (R02.7) or a vendor report (R02.8).
-- A dashboard tile (phase 5).
-- Any change to the contract page, the list, the card or the service worker. The service worker
-  caches nothing and never will (§ Yantra Specifics, *Notifications*).
-- Telegram (parked, Plan.MD § 4.7).
+- *Renew* (R02.4): until it lands nothing sets `renewal_of_id`, so every active contract gets both
+  reminders; S084's rule already reads it (§ 5.2).
+- A setting for the lead days or the scan's time (D2, § 9 Q1); a reminder after the end, or a
+  repeat while nobody acts; PM-visit reminders (R02.7); a dashboard tile (phase 5); Telegram.
+- Any change to the contract page, the list, the card or the service worker (which caches nothing
+  and never will, § Yantra Specifics, *Notifications*).
 
 ## 2. Standards and practice
 
@@ -78,60 +69,46 @@ entered by then.
 
 ## 3. Where
 
-S080–S083 are coded before S084 and change `backend/local_db.py`, `backend/equipment.py`,
-`backend/config_rbac.py` and add `backend/contracts.py` and `backend/contracts_core.py`. In those
-files this brief anchors by name (README § Anchors by name). Names marked **(from S080)** or
-**(from S081)** do not exist at the baseline: the table `contracts` and its columns
-(`renewal_of_id`, `to_date`, `from_date`, `active`, `site_id`, `vendor_id`, `title`,
-`contract_number`, `contract_type`), the keys `contract:read_basic`, `contract:read`,
-`contract:read_senior`, `contract:edit`, `contracts_core.ENDING_SOON_DAYS`,
-`contracts_core.contract_status`, `contracts_core.CONTRACT_TYPES`, the LOCK ORDER note of
-`contracts.py`, and the page route `/contracts/:id(\\d+)` (from S081). The alert files below no
-open step touches; they are cited by line.
+S080–S083 are coded before S084; in the files they change (`backend/local_db.py`,
+`backend/equipment.py`, `backend/config_rbac.py`, the new `backend/contracts.py` and
+`backend/contracts_core.py`) this brief anchors by name. **From S080** (not at the baseline): the
+table `contracts` and its columns (`renewal_of_id`, `to_date`, `from_date`, `active`, `site_id`,
+`title`, `contract_number`, `contract_type`), `ix_contracts_renewal_of`, the four `contract:*` keys,
+`contracts_core.ENDING_SOON_DAYS`, `contracts_core.contract_status`, `contracts_core.CONTRACT_TYPES`,
+`contracts.py`'s LOCK ORDER note. **From S081:** the route `/contracts/:id(\\d+)`. The alert files
+no open step touches; they are cited by line.
 
 ### Backend
 
-- `backend/alerts_core.py` — the pure rules (§ 5):
-  - `CONTRACT_ENDING = "contract_ending"`, `CONTRACT_KINDS = (CONTRACT_ENDING,)`; `KINDS`
-    (`backend/alerts_core.py:38`) becomes `TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS`;
-  - `CHANNELS` (`:58`) gains `CONTRACT_ENDING: (PUSH, EMAIL)`;
-  - `CONTRACT_AUDIENCE_KEY = {PUSH: "contract:read", EMAIL: "contract:read_senior"}`;
-  - `FIRST_REMINDER_DAYS = ENDING_SOON_DAYS` (60, from S080), `SECOND_REMINDER_DAYS = 15`,
-    `FIRST = "first"`, `SECOND = "second"`;
-  - `CONTRACT_PATH = "/contracts/{id}"` beside `IMPROVEMENT_PATH` (`:92`);
-  - `contract_reminder_due`, `should_send_contract`, `contract_facts`, `contract_text`,
-    `contract_message`;
-  - `you_get` (`:368`) gains the lines of § 5.7; the module docstring names the third record.
-- `backend/alerts.py` — the shell:
-  - `CONTRACT_ALERT = "contract_alert"`, `CONTRACT_SCAN = "contract_reminder_scan"`;
-  - `enqueue_contract_alert(cur, contract_id, to_date)`;
-  - `people_at_site(cur, site_id, roles, with_email=False)`; `people_at_unit` (`:155`) and it
-    share one private query builder (§ 5.6), so `people_at_unit` keeps its result;
-  - `contract_scan_candidates`, `lock_contract_for_scan`, `contract_renewed`,
-    `mark_contract_reminded`, `read_alert_contract`, `contract_recipients` (§ 5.2, § 5.3);
-  - the module docstring: the contract path and the scan's locks.
-- `backend/task_handlers.py` — `contract_alert` and `contract_reminder_scan`; `HANDLERS` (`:393`)
-  gains both. The email branch of `contract_alert` uses `alerts.enqueue_email` (`backend/alerts.py:114`)
-  as `_email_fan_out` (`backend/task_handlers.py:163`) does; `_push_to_people` (`:153`) is used as
-  it is.
-- `backend/scheduled_tasks.py` — `SCHEDULE` (`backend/scheduled_tasks.py:12`) gains
-  `("contract_reminder_scan", "08:00")`, after `improvement_alert_scan`.
-- `backend/push_core.py` — `CONTRACT_TTL_SECONDS = IMPROVEMENT_TTL_SECONDS` beside it
-  (`backend/push_core.py:43`), with the reason (D6).
-- `backend/email_core.py` — `contract_ending_email(facts)` → `(subject, body)` (§ 5.4), after
-  `closed_email` (`backend/email_core.py:131`), with its `_field` helper (`:71`) and `one_line`
-  (`:45`).
-- `backend/contracts_core.py` (from S080) — `CONTRACT_TYPE_WORDS = {"warranty": "Warranty", "amc":
-  "AMC", "cmc": "CMC", "on_call": "On call"}` beside `CONTRACT_TYPES`, for the email (the frontend
-  keeps its own longer labels in `contractLabels.js`, from S080).
-- `backend/local_db.py` — migration **v46** (§ 4.1). No `_PRECONDITIONS` entry.
-- `backend/contracts.py` (from S080) — docstring only: its LOCK ORDER note says the daily scan
-  locks contract rows too (§ 5.5).
-- `backend/equipment.py` — docstring only: the global LOCK ORDER's `contracts.py` bullet (from S080,
-  rewritten in S081) loses "Only contracts.py locks contracts … rows" and gains the scan (§ 5.5).
+- `backend/alerts_core.py` (pure, § 5): `CONTRACT_ENDING = "contract_ending"`, `CONTRACT_KINDS`;
+  `KINDS` (`backend/alerts_core.py:38`) becomes `TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS`;
+  `CHANNELS` (`:58`) gains `CONTRACT_ENDING: (PUSH, EMAIL)`; `CONTRACT_AUDIENCE_KEY = {PUSH:
+  "contract:read", EMAIL: "contract:read_senior"}`; `FIRST_REMINDER_DAYS = ENDING_SOON_DAYS`,
+  `SECOND_REMINDER_DAYS = 15`, `FIRST`, `SECOND`; `CONTRACT_PATH = "/contracts/{id}"` beside
+  `IMPROVEMENT_PATH` (`:92`); `contract_reminder_due`, `should_send_contract`, `contract_facts`,
+  `contract_text`, `contract_message`; `you_get` (`:368`) gains § 5.7's lines; the docstring names
+  the third record.
+- `backend/alerts.py` (shell): `CONTRACT_ALERT = "contract_alert"`, `CONTRACT_SCAN =
+  "contract_reminder_scan"`; `enqueue_contract_alert`; `people_with_role_at_site`, sharing a private query
+  builder with `people_at_unit` (`:155`), which keeps its result (§ 5.6); `contract_scan_candidates`,
+  `lock_contract_for_scan`, `contract_renewed`, `mark_contract_reminded`, `read_alert_contract`,
+  `contract_recipients`; the docstring: the contract path and the scan's locks. The name
+  `people_with_role_at_site` is new on purpose: `tickets.people_at_site` (`backend/tickets.py:748`)
+  is the people picker, a different answer (BR1-05).
+- `backend/task_handlers.py` also: `_payload_time` (`:202`) takes the task name as an argument, so a
+  bad `contract_alert` payload is not logged as an improvement alert (BR1-06).
+- `backend/task_handlers.py`: `contract_alert`, `contract_reminder_scan`; `HANDLERS` (`:393`) gains
+  both. `_push_to_people` (`:153`) and `alerts.enqueue_email` (`backend/alerts.py:114`) as they are.
+- `backend/scheduled_tasks.py`: `SCHEDULE` (`:12`) gains `("contract_reminder_scan", "08:00")`.
+- `backend/push_core.py`: `CONTRACT_TTL_SECONDS = IMPROVEMENT_TTL_SECONDS` (`:43`), with D6's reason.
+- `backend/email_core.py`: `contract_ending_email(facts)` after `closed_email` (`:131`), with
+  `_field` (`:71`) and `one_line` (`:45`).
+- `backend/local_db.py`: migration **v46** (§ 4.1); no `_PRECONDITIONS` entry.
+- `backend/contracts.py` (from S080) and `backend/equipment.py`: docstrings only, the LOCK ORDER
+  notes (§ 5.5).
 
 **Import direction:** `alerts_core` imports `contracts_core` (pure → pure: `ENDING_SOON_DAYS`,
-`contract_status`, `CONTRACT_TYPE_WORDS`); `alerts.py` imports `alerts_core` and
+`contract_status`, and S081's `TYPE_SHORT` for the email's *Type* line, BR1-04); `alerts.py` imports `alerts_core` and
 `access_core.roles_holding`, never `contracts.py`; `email_core` takes its facts as a dict and
 imports nothing new. No cycle: `contracts_core` imports only `masters_core` (S080 § 3).
 
@@ -163,7 +140,7 @@ imports nothing new. No cycle: `contracts_core` imports only `masters_core` (S08
   its markers; § SMTW-Review: the point of § 9.
 - `docs/steps/device-checks.md`: two rows (§ 8.5).
 
-**File count:** 20 code and test files (11 code: 10 backend, 1 frontend; 9 tests), 4 docs. One
+**File count:** 19 code and test files (10 code: 9 backend, 1 frontend; 9 tests), 4 docs. One
 concern. No split.
 
 ## 4. Data model
@@ -178,22 +155,17 @@ ALTER TABLE contracts
     ADD COLUMN IF NOT EXISTS second_reminder_for DATE NULL AFTER first_reminder_for;
 ```
 
-- **The number.** S083 (drafted in parallel) is planned to take v45; S084 takes **v46**. If S083
-  ships without a migration, the coder takes the next free number and renames the test file; the
-  staleness check before coding confirms it.
-- **The value is the To date reminded for**, not a flag (as S074's v40, D3 there). A To date edited
-  later (longer or shorter) differs from both markers, so the reminders due for the new date are
-  sent again. No route of S080 or R02.4 has to clear them.
-- **Why columns, not a table** (D3).
-- **No index.** The scan reads `contracts` once a day; a plant holds tens of contracts. The
-  candidate read can use `ix_contracts_site` (from S080) only with a site; a full read is cheaper
-  than a key to keep.
-- **No `_PRECONDITIONS` entry.** Two nullable columns; no existing row changes value. Production
-  holds no contract: `contracts` is new in v43 (S080), and v42–v46 ship in one release (§ 9,
-  assumption A1). On rows the change is safe anyway.
-- **Re-run safety:** `ADD COLUMN IF NOT EXISTS` on both, in one statement.
-- **Rollback:** a release before v46 never reads the columns and has no scan, so nothing doubles.
-- **A departure from the roadmap** (R02.5: "Migrations: none (settings in `app_settings`)"): D2, D3.
+- **The number.** S083 takes v45 (its brief § 4.1, "S084 … takes v46"), so S084 takes **v46**; the
+  staleness check confirms it before coding.
+- **The value is the To date reminded for**, not a flag (as v40, S074 D3). A To date edited later
+  differs from both markers, so the reminders due for the new date are sent again; no route clears
+  them. Columns, not a table: D3.
+- **No index:** tens of contracts, read once a day.
+- **No `_PRECONDITIONS` entry:** two nullable columns, no existing value changes; production holds
+  no contract (`contracts` is new in v43; § 9 A1).
+- **Re-run safety:** `ADD COLUMN IF NOT EXISTS`. **Rollback:** a release before v46 never reads
+  the columns and has no scan.
+- **A departure from the roadmap** (R02.5: "Migrations: none"): D3.
 
 ### 4.2 What is computed, never stored
 
@@ -216,11 +188,10 @@ today)` → `FIRST`, `SECOND` or `None`. In order, the first that holds:
 | `days ≤ FIRST_REMINDER_DAYS` (60) | `FIRST` when `first_for != to_date`, else `None` |
 | otherwise | `None` |
 
-- **At most one per run.** A contract that enters the window late (added with 40 days left, or the
-  worker down over day 60) gets the first reminder with the true days left ("ends in 40 days"). One
-  added or found with 15 days or fewer gets only the second: two reminders at once would be noise.
-- **Day 0 counts:** a contract ending today (`days` 0) that has had no second reminder gets one
-  ("Contract ends today"). This happens only when the scan was late or the date was edited.
+- **At most one per run.** A contract entering the window late (added with 40 days left, or the
+  worker down over day 60) gets the first reminder with the true days ("ends in 40 days"); one found
+  with 15 days or fewer gets only the second. **Day 0 counts** ("Contract ends today"): only after a
+  late scan or an edited date.
 - **Once per reminder per To date** (`!=`, as S074 BR1-01). Edited To date:
 
 | Edit after a reminder was sent | Result |
@@ -240,34 +211,35 @@ today)` → `FIRST`, `SECOND` or `None`. In order, the first that holds:
 
 ### 5.2 Renewed
 
-- **The rule:** a contract counts as **renewed** when another contract with `active = 1` has
-  `renewal_of_id` = its id. One query, `alerts.contract_renewed(cur, contract_id)`:
-  `SELECT 1 FROM contracts WHERE renewal_of_id = %s AND active = 1 LIMIT 1` (served by
-  `ix_contracts_renewal_of`, from S080).
-- **Why active only:** a renewal entered by mistake is set inactive (S080: never deleted); it must
-  not silence the old contract's reminders.
-- **R02.4 sets `renewal_of_id`** (S080 § 1 item 7). Until then the rule finds nothing and every
-  active contract is reminded. S084's tests insert the renewal row directly (§ 8.2). R02.4's brief
-  must keep this meaning, or change `contract_renewed` with it.
-- **A renewal entered after the first reminder** stops the second. A renewal whose own To date comes
-  near gets its own reminders: it is a contract like any other.
+- **The rule:** a contract is **renewed** when another contract with `active = 1` has
+  `renewal_of_id` = its id: `alerts.contract_renewed(cur, contract_id)`, `SELECT 1 FROM contracts
+  WHERE renewal_of_id = %s AND active = 1 LIMIT 1` (`ix_contracts_renewal_of`, from S080). Active
+  only: a renewal entered by mistake is set inactive (never deleted) and must not silence the old
+  contract.
+- **R02.4 sets `renewal_of_id`** (S080 § 1 item 7); until then every active contract is reminded,
+  and S084's tests insert the renewal row directly (§ 8.2). R02.4's brief keeps this meaning or
+  changes `contract_renewed` with it. A renewal entered after the first reminder stops the second;
+  the renewal gets its own reminders at its own end.
 
 ### 5.3 The daily scan (`contract_reminder_scan`)
 
-- **When:** daily at **08:00 IST** (`SCHEDULE`), after `improvement_alert_scan` at the same time.
-  The worker's `enqueue_scheduled` (`backend/worker.py:114`) enqueues it once a day, and once on
-  return after a worker that was down over the time (`scheduled_tasks.due_tasks`). Why 08:00: the
-  engineers and managers start the day with the phone, and the morning alerts already come then
-  (S074 § 9 Q1); one hour for every daily alert is easier to learn (§ 9 Q2).
+- **When:** daily at **08:00 IST**, after `improvement_alert_scan` at the same time; the worker's
+  `enqueue_scheduled` (`backend/worker.py:114`) enqueues it once a day, and once on return after a
+  worker down over the time (`scheduled_tasks.due_tasks`). Why 08:00: the morning alerts already
+  come then (S074 § 9 Q1), and one hour for every daily alert is easier to learn (§ 9 Q2).
 - **No payload** (`_expect_no_payload`, `backend/task_handlers.py:66`): BadTask otherwise.
-- **Steps, all in the worker's one transaction** (the handler commits nothing; the worker commits
-  its writes with `mark_done`, `backend/task_handlers.py:3-7`):
-  1. `SELECT NOW()` once (the session clock, IST, as `improvement_alert_scan` does); `today =
-     now.date()`.
+- **Steps, all in the worker's one transaction** (the claim was committed before it, in its own
+  transaction, `claim_next`; this one ends with `mark_done`, `backend/task_handlers.py:3-7`;
+  `contract_alert` runs the same way):
+  1. `SELECT NOW()` (the session clock, IST, as `improvement_alert_scan`); `today = now.date()`.
   2. **Candidates, one plain read** (`alerts.contract_scan_candidates(cur, today, until)`, `until
      = today + FIRST_REMINDER_DAYS`): `SELECT id FROM contracts WHERE active = 1 AND from_date <=
      %s AND to_date BETWEEN %s AND %s AND (second_reminder_for IS NULL OR second_reminder_for <>
-     to_date) ORDER BY id`. It only narrows the work; nothing is decided from it.
+     to_date) AND (first_reminder_for IS NULL OR first_reminder_for <> to_date OR to_date <= %s)
+     ORDER BY id`, the parameters `today`, `today`, `until`, `today + SECOND_REMINDER_DAYS` (BR1-12:
+     a contract whose first reminder is sent for this To date and has 16–60 days left is no
+     candidate, so it is not locked every morning for nothing). It only narrows the work; nothing is
+     decided from it: every row it leaves out is one `contract_reminder_due` answers `None` for.
   3. **Per candidate, in id order:** `alerts.lock_contract_for_scan(cur, contract_id)`: `SELECT
      id, active, from_date, to_date, first_reminder_for, second_reminder_for FROM contracts WHERE
      id = %s FOR UPDATE`, one row per statement. A row gone (never: nothing is deleted) is skipped.
@@ -284,15 +256,13 @@ today)` → `FIRST`, `SECOND` or `None`. In order, the first that holds:
   transaction, reads the renewal and sends nothing (§ 5.4 step 4). A locking read of the renewal
   was rejected: its gap lock on `ix_contracts_renewal_of` could block R02.4's insert while the scan
   waits on that renewal's old contract, a deadlock cycle.
-- **What a run stores:**
-  - success: the markers and the `contract_alert` tasks, with `mark_done`, in one commit;
-  - any exception (a lost connection, a deadlock 1213): everything rolls back, markers included;
-    the queue retries after the back-off (internal and idempotent, `DEFAULT_MAX_ATTEMPTS` 3,
-    `backend/task_queue.py:18`); a retry finds the same candidates;
-  - three failures: the task is `failed`, counted on Settings › Background tasks; `due_tasks` sees
-    it enqueued today and waits for tomorrow, whose run finds the same unmarked contracts with one
-    day less. At worst a day late, with the true days left.
-- **Push off, email off, or nobody to tell:** the markers are written all the same (D7).
+- **What a run stores:** on success, the markers and the `contract_alert` tasks with `mark_done`, in
+  one commit. On any exception (a lost connection, a deadlock 1213) everything rolls back, markers
+  included, and the queue retries after the back-off (`DEFAULT_MAX_ATTEMPTS` 3,
+  `backend/task_queue.py:18`). After three failures the task is `failed` (counted on Settings ›
+  Background tasks); `due_tasks` waits for tomorrow, whose run finds the same unmarked contracts:
+  at worst a day late, with the true days left. Push off, email off, or nobody to tell: the markers
+  are written all the same (D7).
 
 ### 5.4 The alert task (`contract_alert`) and its texts
 
@@ -305,13 +275,16 @@ address, no price.
 `backend/task_handlers.py:229`):
 
 1. Validate: `contract_id` by `_ids` (`:105`), `kind` in `CONTRACT_KINDS`, `to_date` parsed with
-   `_payload_time` (`:202`); else BadTask (failed at once).
+   `_payload_time` (`:202`, given the task name `contract_alert`, BR1-06); else BadTask (failed at
+   once).
 2. `SELECT NOW()`; `today = now.date()` (the text says the days left at send time).
 3. `alerts.read_alert_contract(cur, contract_id)` → the row: `id`, `title`, `contract_number`,
    `contract_type`, `from_date`, `to_date`, `active`, `site_id`, `site_code`, `vendor_name`, and
    `renewed` (the § 5.2 rule as an `EXISTS` sub-query). None when missing → BadTask.
-4. `should_send_contract(row["active"], row["renewed"], row["to_date"], expected_to_date, today)`
-   (pure): active, not renewed, `to_date` still the payload's, and `to_date >= today`. False → log
+4. `should_send_contract(row["active"], row["renewed"], row["from_date"], row["to_date"],
+   expected_to_date, today)` (pure): active, not renewed, started (`from_date <= today`, BR1-08: a
+   From date moved into the future gives no "Contract starts on …" title), `to_date` still the
+   payload's, and `to_date >= today`. False → log
    "contract_alert for contract <id>: not sent, <reason>" and return (done).
 5. `facts = contract_facts(row, today, label_base_url(cur))`.
 6. **Push** (`PUSH in CHANNELS[kind]`): `push_sender.enabled()` false → log "push is not set up",
@@ -323,13 +296,13 @@ address, no price.
    per person.
 8. Log "contract_alert for contract <id>: n people and m devices by push, k emails".
 
-**What it stores:** success: the `push_send` and `email_send` rows and `done`, one commit (all or
-nothing, so a retry never doubles them). An exception: rollback, retried with the back-off; failed
-after 3. `push_send` and `email_send` are unchanged (S021, S032): each reads its device or the
-person's address when it runs, and records its own failure.
+**What it stores:** on success the `push_send` and `email_send` rows and `done`, one commit (so a
+retry never doubles them); on an exception a rollback and a retry, failed after 3. `push_send` and
+`email_send` are unchanged: each reads the device or the address when it runs (S021, S032).
 
 **The facts** (`contract_facts(contract, today, base_url)`): `contract_id`, `title` (cut to 80,
-`DESCRIPTION_CUT`), `contract_number`, `type_word` (`CONTRACT_TYPE_WORDS`), `vendor_name`,
+`DESCRIPTION_CUT`), `contract_number`, `type_word` (`TYPE_SHORT[contract_type]`, from S081),
+`vendor_name`,
 `site_code`, `from_date`, `to_date`, `status_label` (`contract_status(from_date, to_date,
 today)["label"]`, from S080: "Ends today", "Ends in 1 day", "Ends in 15 days"), `path`
 (`CONTRACT_PATH`), `url` (`base_url + path`). **No `callout_number`, no `cost_note`, no price**:
@@ -341,6 +314,9 @@ today)["label"]`, from S080: "Ends today", "Ends in 1 day", "Ends in 15 days"), 
 |---|---|
 | Title | `Contract ends in 60 days · SMTW` (`"Contract " + status_label` with its first letter lower case, then `" · "` and the site code); day 0: `Contract ends today · SMTW` |
 | Body | `Atlas Copco AMC 2026–27 · Atlas Copco — ends on 31-03-2027. Renew it, or let it end.` |
+
+The body names the vendor even when the title already does, as here (BR1-10): the title is free
+text and need not name the firm, and one fixed form is simpler than a check for the name.
 
 `contract_message(facts)` → `{title, body, path: "/contracts/12", tag: "contract-12", quiet: True}`.
 The tag makes the second reminder replace the first on the phone. `sw.js` opens any same-origin
@@ -364,23 +340,15 @@ Decide before the end date: renew it with the vendor, or let it end.
 Open the contract: https://vel-yantra.mspv.app/contracts/12
 ```
 
-- The subject goes through `one_line` (a title holds no line break, but the rule is the email's).
-- *Contract number* is left out when empty (as `closed_email`'s `add`). Day 0: "ends today, on
-  31-03-2027".
-- **Never in the email:** the price, the cost note, the call-out number, the documents (behind
-  `contract:read_senior` and `contract:read`); the email may be forwarded, so it holds only
-  `contract:read_basic` fields.
-- The sample contract number above is made up; tests use `TEST/AMC/0001`.
+- The subject goes through `one_line`. *Contract number* is left out when empty (as `closed_email`'s
+  `add`). Day 0: "ends today, on 31-03-2027". The sample number is made up; tests use
+  `TEST/AMC/0001`.
+- **Never in the email:** the price, the cost note, the call-out number, the documents; an email may
+  be forwarded, so it holds only `contract:read_basic` fields (D8).
 
-**When the contract changes before the task runs** (step 4 decides, from the rows as they are then):
-
-| Change after the queueing | Result |
-|---|---|
-| Set inactive | not sent |
-| A renewal entered (an active contract with `renewal_of_id` = it) | not sent |
-| To date edited | not sent; the next scan decides on the new date |
-| The task runs after the To date (worker down for days) | not sent |
-| A recipient loses the key or becomes inactive | that person is left out (§ 5.6) |
+**When the contract changes before the task runs** (step 4 decides from the rows as they are then):
+set inactive, renewed, To date edited (the next scan decides on the new date), or the To date passed
+→ not sent. A recipient who lost the key or became inactive is left out (§ 5.6).
 
 ### 5.5 Locks
 
@@ -388,8 +356,8 @@ The database runs REPEATABLE READ. The contract row is not numbered in the globa
 (`backend/equipment.py` LOCK ORDER); S080's and S081's `contracts.py` bullet places it: every
 contracts.py write locks **one** contract row `FOR UPDATE`, **first** in its transaction, then a
 `contract_equipment` line row, the vendor or the node shared (from S080, S081). S083's document
-writes lock the contract row as their one owner lock (*to verify* against S083's brief when it is
-approved).
+writes take "one owner lock, the contract row, first in its transaction, then only
+`equipment_documents` rows" (S083 § 5.4, Draft).
 
 **The scan** (§ 5.3), one transaction: (1) plain read of the candidates; (2) per candidate in id
 order, the contract row `FOR UPDATE`, one row per statement; (3) plain read of the renewal; (4) the
@@ -409,16 +377,15 @@ unchanged.
   on that held row. The scan's renewal read is plain, so it holds no gap lock R02.4 could wait on.
 - A deadlock all the same (1213) rolls the scan back and retries it (§ 5.3).
 
-The coder writes: in `contracts.py`'s LOCK ORDER note and in `equipment.py`'s `contracts.py` bullet,
-"The daily `contract_reminder_scan` (S084, `alerts.lock_contract_for_scan`) locks several
-contract rows FOR UPDATE in id order, then writes only their reminder columns and `task_queue`
-rows; every route holds at most one contract row, taken first, so no cycle"; the same in
-`alerts.py`'s docstring. The phrase "Only contracts.py locks contracts … rows" (S081 § 5.5) is
-reworded to "Only contracts.py and the reminder scan lock contracts rows".
+The coder writes into `contracts.py`'s LOCK ORDER note, `equipment.py`'s `contracts.py` bullet and
+`alerts.py`'s docstring: "The daily `contract_reminder_scan` (S084, `alerts.lock_contract_for_scan`)
+locks several contract rows FOR UPDATE in id order, then writes only their reminder columns and
+`task_queue` rows; every route holds at most one contract row, taken first, so no cycle." S081's
+"Only contracts.py locks contracts … rows" becomes "Only contracts.py and the reminder scan …".
 
 ### 5.6 Recipients
 
-`alerts.people_at_site(cur, site_id, roles, with_email=False)` → the ids of active people with a
+`alerts.people_with_role_at_site(cur, site_id, roles, with_email=False)` → the ids of active people with a
 membership at `site_id` whose role is in `roles`, in id order; with `with_email`, only those with
 `people.email` set. **No unit condition:** a contract belongs to a site, and S080's keys are checked
 at the site, whatever units the member works in (S080 § 5.5; `access_core.has_key_at`,
@@ -427,10 +394,10 @@ at the site, whatever units the member works in (S080 § 5.5; `access_core.has_k
 **DRY:** today's `people_at_unit` SQL (`backend/alerts.py:163-176`) moves into a private
 `_people_with_role(cur, site_id, roles, unit_ids, only_ids, exclude_ids, with_email)`, where
 `unit_ids=None` leaves out the unit condition. `people_at_unit` calls it with its list (an empty
-list still returns `[]`, as today); `people_at_site` with `None`. The public functions stay
+list still returns `[]`, as today); `people_with_role_at_site` with `None`. The public functions stay
 explicit; the `None` lives only inside the private one.
 
-`alerts.contract_recipients(cur, contract, channel)` = `people_at_site(cur, contract["site_id"],
+`alerts.contract_recipients(cur, contract, channel)` = `people_with_role_at_site(cur, contract["site_id"],
 roles_holding(CONTRACT_AUDIENCE_KEY[channel]), with_email=(channel == EMAIL))`.
 
 | Channel | Key (from S080) | `roles_holding` today | Who |
@@ -438,20 +405,16 @@ roles_holding(CONTRACT_AUDIENCE_KEY[channel]), with_email=(channel == EMAIL))`.
 | Push | `contract:read` (`("maint_engineer",)`) | manager, engineer | the site's engineers and managers |
 | Email | `contract:read_senior` (`("maint_manager",)`) | manager | the site's managers with an address |
 
-- **By key, not by exact role** (as S074 D6): the roadmap's "engineers and managers" is exactly the
-  holders of `contract:read` (D10), and "managers" the holders of `contract:read_senior` (D5). If
-  KLA changes who holds a key in `config_rbac.py`, the reminders follow.
-- **Why `contract:read` for push, not `contract:read_basic`:** `read_basic` is `("*",)`, every role
-  (S080 § 5.5); a technician or operator does not renew contracts (Q5.1 a).
-- **Why `contract:read_senior` for email:** the renewal is a buying decision, made by who reads the
-  price. A manager gets both the push and the email.
-- **Every recipient may open the contract:** `contract:read_basic` is held by every site role, so
-  the tap never ends in S081's 404.
-- **Nobody is left out as the actor:** the scan has none.
-- **Admin and IT admin** have no membership: never recipients. IT admin holds `contract:edit` by
-  its token but not `contract:read` (S080 § 5.5).
-- **No login, no device, no address:** nothing for that person. An email address comes from the
-  login token (S032); `email_send` reads it when it sends.
+- **By key, not by exact role** (as S074 D6): "engineers and managers" is exactly the holders of
+  `contract:read` (R02 D10), "managers" those of `contract:read_senior` (R02 D5); if KLA changes a
+  key's holders in `config_rbac.py`, the reminders follow. Not `contract:read_basic` for push: it
+  is `("*",)`, and a technician does not renew contracts. Email by `read_senior`: renewing is a
+  buying decision, made by who reads the price. A manager gets both.
+- **Every recipient may open the contract** (`contract:read_basic` is held by every site role), so
+  the tap never ends in S081's 404. **Nobody is left out as the actor:** the scan has none.
+- **Admin and IT admin** have no membership: never recipients (IT admin holds `contract:edit` by its
+  token, not `contract:read`). **No login, device or address:** nothing for that person;
+  `email_send` reads the address (from the login token, S032) when it sends.
 
 ### 5.7 What you will get
 
@@ -465,18 +428,15 @@ roles_holding(CONTRACT_AUDIENCE_KEY[channel]), with_email=(channel == EMAIL))`.
 
 The place is the **site code**, also for a membership with chosen units, and **also for a
 membership without units**, whose other lines are skipped today (`if not place: continue`,
-`:386`): the contract lines are computed before that `continue`, because `people_at_site` reaches
-that person.
+`:386`): the contract lines are computed before that `continue`, because `people_with_role_at_site`
+reaches that person. Only `compute_permissions` moves before it; `keys_with_place.update(keys)`
+(`:389`) stays after it, so a membership without units adds no countermeasure lines (BR1-07).
 
-Examples: an engineer at all of SMTW: "Breakdowns and defects at SMTW, escalations", "Improvements
-ready to verify at SMTW", "Contracts ending at SMTW", "Jobs assigned to you", the two countermeasure
-lines. A manager at SMTW.MCC2: "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to
+Example, a manager at SMTW.MCC2: "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to
 verify at SMTW.MCC2", "Contracts ending at SMTW", "Closed tickets at SMTW.MCC2, by email",
 "Contracts ending at SMTW, by email", "Jobs assigned to you", the two countermeasure lines. A
-technician, operator, supervisor or storekeeper: no contract line.
-
-The email line shows whether or not the person has an address, as the *Closed tickets* line does
-today. **The dot** (`showDot`) does not change for anyone: engineers and managers already had lines.
+technician, operator, supervisor or storekeeper: no contract line. The email line shows with or
+without an address, as the *Closed tickets* line does. **The dot** (`showDot`) changes for nobody.
 
 ### 5.8 The database down
 
@@ -498,49 +458,39 @@ No new route and no changed answer, except:
 ## 7. Design decisions
 
 - **D1. One kind, two channels, the audience per channel.** `CONTRACT_ENDING` has `CHANNELS` =
-  `(PUSH, EMAIL)` and `CONTRACT_AUDIENCE_KEY` names the key per channel, because the push and email
-  audiences differ (the ticket kinds have one audience for both). Its own task `contract_alert` (as
-  S074 D1: each record its own alert task), sharing `_push_to_people`, `enqueue_email` and the
-  recipient query. Rejected: two kinds `contract_ending_push` and `contract_ending_email` (a kind
-  is an event, not a channel; `CHANNELS` would lie); `ticket_alert`'s email branch (its text is
-  `closed_email`, ticket-shaped).
-- **D2. The lead days are constants, a departure from the roadmap** (R02.5: "The lead days are
-  settings (Settings › Notifications)"). Q5.1 (a) and Plan.MD name 60 and 15; Fuji's contract asks
-  for renewal two months before expiry (R02 § Log). A setting adds a card, its bounds, and a rule
-  for what a change does to reminders already sent; nobody has asked to change the days. Adding it
-  later is one setting read in the scan. Rejected: settings now (CLAUDE-COMMON *Nothing beyond the
-  agreed scope*). § 9 Q1 asks KLA.
+  `(PUSH, EMAIL)`; `CONTRACT_AUDIENCE_KEY` names the key per channel, because the push and email
+  audiences differ. Its own task `contract_alert` (S074 D1: each record its own alert task),
+  sharing `_push_to_people`, `enqueue_email` and the recipient query. Rejected: one kind per channel
+  (a kind is an event, not a channel); `ticket_alert`'s email branch (ticket-shaped).
+- **D2. The lead days are constants**, a departure from R02.5 ("settings (Settings ›
+  Notifications)"). Q5.1 (a) and Plan.MD name 60 and 15; Fuji's contract asks for renewal two
+  months before expiry (R02 § Log). A setting adds a card, its bounds and a rule for reminders
+  already sent; nobody has asked to change the days; later it is one setting read in the scan.
+  Constants stand for coding; the departure from R02.5's text is **flagged for KLA at gate B**
+  (§ 9 Q1, BR1-03).
 - **D3. "Once" by two marker columns holding the To date reminded for (v46)**, a departure from
-  the roadmap's "Migrations: none". It is explicit, survives the queue's 90-day purge
-  (`DONE_TASK_RETENTION_DAYS`), and a changed To date re-arms both reminders with no route clearing
-  anything (S074 D3's reasoning). Two columns, each naming one reminder, read more plainly than one
-  column plus a stage number. Rejected: a table `contract_reminders(contract_id, which, to_date,
-  sent_at)` (a new table and a join for two facts per contract; its only gain, a history of
-  reminders, nobody asked for); the task queue as the memory (a JSON search in a table purged
-  after 90 days); a window "exactly 60 days left" (misses the days the worker was down and a
-  contract added late).
-- **D4. The scan locks contract rows in id order and decides from them.** The markers are written
-  on contract rows, so it takes them `FOR UPDATE` as the routes do (repo rule: decide from the
-  locking read). Rejected: a conditional `UPDATE … WHERE second_reminder_for <> to_date` without a
-  read (the decision needs `days`, the renewal and both markers; split between SQL and the core it
-  drifts).
+  R02.5's "Migrations: none". Explicit, kept past the queue's 90-day purge
+  (`DONE_TASK_RETENTION_DAYS`), and a changed To date re-arms the reminders with no route clearing
+  anything (S074 D3). One column per reminder reads more plainly than a date plus a stage number.
+  Rejected: a table `contract_reminders` (a table and a join for two facts; its gain, a reminder
+  history, nobody asked for); the task queue as the memory (purged after 90 days); a window
+  "exactly 60 days left" (misses a down worker and a contract added late). v46 stands for coding;
+  the departure from R02.5's "Migrations: none" is **flagged for KLA at gate B** (BR1-03).
+- **D4. The scan locks contract rows in id order and decides from them** (repo rule: decide from
+  the locking read). Rejected: a conditional `UPDATE` without a read (the decision needs `days`, the
+  renewal and both markers; split between SQL and the core, it drifts).
 - **D5. Renewed = an active contract points at it** (§ 5.2), stated now so R02.4 builds on it.
-  Rejected: "a contract of the same vendor at the same site starting after it" (guesses; a second
-  contract with the vendor is not always a renewal, D7 of R02).
-- **D6. Quiet push, kept 24 hours.** No machine is down: a contract ending in 60 days must not
-  sound like a breakdown (S074 D7's rule for every quiet alert: no sound, Urgency `low`). The
-  tickets' one-hour TTL would drop a reminder sent once to a phone off for an hour.
-  `CONTRACT_TTL_SECONDS` equals `IMPROVEMENT_TTL_SECONDS` and says why, so neither changes by
-  accident with the other. Rejected: loud (§ 9 Q3).
+  Rejected: "a later contract of the same vendor and site" (a guess; R02 D7 makes two contracts of
+  one vendor normal).
+- **D6. Quiet push, kept 24 hours.** No machine is down; S074 D7's rule for quiet alerts (no sound,
+  Urgency `low`). The tickets' one-hour TTL would drop a once-only reminder to a phone off for an
+  hour. `CONTRACT_TTL_SECONDS` is its own name, so it does not change by accident with the
+  improvements'. Rejected: loud (§ 9 Q3).
 - **D7. The markers are written even when no channel is set up or nobody would get it.** "Once" is
-  about the event, not the delivery: switching email on later must not send a month of old
-  reminders. The task logs who it found (S074 D8).
-- **D8. The texts carry only `contract:read_basic` fields** (title, vendor, type, number, site,
-  period). The people who get them hold more keys, but an email is forwarded and a push shows on a
-  locked phone. Rejected: the call-out number in the push (useful only at a breakdown, which the
-  machine card serves, S082).
-- **D9. No reminder at create; the scan decides.** One path for every reminder. Rejected: a reminder
-  from S080's create route (a second path, a route change in a step that touches no route).
+  about the event: switching email on later must not send old reminders (S074 D8).
+- **D8. The texts carry only `contract:read_basic` fields.** An email is forwarded and a push shows
+  on a locked phone. Rejected: the call-out number in the push (the machine card serves it, S082).
+- **D9. No reminder at create; the scan decides.** One path for every reminder, and no route change.
 
 ## 8. Tests and acceptance
 
@@ -554,17 +504,18 @@ No new route and no changed answer, except:
   `None`; 0 days (ends today), second not sent → `SECOND`; ended yesterday → `None`; not started
   (`from_date` tomorrow, 30 days left) → `None`; inactive → `None`; renewed → `None`; second sent
   for this date at 10 days → `None`; second sent for an older date at 10 days → `SECOND`.
-- `should_send_contract`: as queued → True; inactive, renewed, another `to_date`, `to_date` before
-  today → False each; `to_date` today → True.
+- `should_send_contract`: as queued → True; inactive, renewed, `from_date` tomorrow, another
+  `to_date`, `to_date` before today → False each; `to_date` today → True.
+- `contract_scan_candidates` (in § 8.2, by the database): first sent for this To date at 30 days
+  left → not a candidate; at 15 days → a candidate.
 - `contract_text` / `contract_message`: the two texts of § 5.4 exactly; day 0 "Contract ends
   today · SMTW"; 1 day "Contract ends in 1 day · SMTW"; a title of 100 characters cut at 80; path
   `/contracts/12`, tag `contract-12`, quiet True; the facts hold no key `callout_number` or
   `cost_note`.
-- `TestChannels`: `test_every_kind_has_channels_and_the_improvement_kinds_are_push_only`
-  (`KINDS == TICKET_KINDS + IMPROVEMENT_KINDS`) becomes `KINDS == TICKET_KINDS + IMPROVEMENT_KINDS +
-  CONTRACT_KINDS`; a new test: `CHANNELS[CONTRACT_ENDING] == ("push", "email")`, and
-  `CONTRACT_AUDIENCE_KEY` names `contract:read` and `contract:read_senior`.
-- `FIRST_REMINDER_DAYS == ENDING_SOON_DAYS == 60`, `SECOND_REMINDER_DAYS == 15`.
+- `TestChannels`: `test_every_kind_has_channels_and_the_improvement_kinds_are_push_only` asserts
+  `KINDS == TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS`; new: `CHANNELS[CONTRACT_ENDING] ==
+  ("push", "email")`, `CONTRACT_AUDIENCE_KEY` as § 3, `FIRST_REMINDER_DAYS == ENDING_SOON_DAYS ==
+  60`, `SECOND_REMINDER_DAYS == 15`.
 
 `backend/tests/test_email_core.py`: `contract_ending_email` gives § 5.4's subject and body exactly
 (contract number `TEST/AMC/0001`, vendor "Test Vendor"); no *Contract number* line when it is
@@ -588,36 +539,30 @@ are inserted into `push_subscriptions` as `test_alerts.py` does (`add_device`). 
 site, so the kept worker database gives the starting state. The handler is called with the worker's
 pattern (`improvement_alert_scan(conn, None, …)` in `test_improvement_alerts.py`).
 
-- **Scan, first:** 60 days left → one `contract_alert` task, payload `{kind, contract_id, to_date}`,
-  `first_reminder_for` = the To date, `updated_at` unchanged; a second run → no new task.
-- **Scan, second:** 15 days left after a first → one task, `second_reminder_for` set; 10 days left,
-  nothing sent → one task (second only), `first_reminder_for` stays NULL.
-- **Scan, nothing:** 61 days; ended yesterday; `from_date` tomorrow; inactive → no task, no marker.
-- **Renewed** (D5): a second contract inserted with `renewal_of_id` = the first through `db_rows`
-  (`active = 1`) → no task; the same with `active = 0` → a task.
-- **Re-arm** (§ 5.1): first sent, then `to_date` moved 30 days later and set back to 60 days left
-  → a new task; `to_date` moved to 10 days left → a second-reminder task.
+- **Scan:** 60 days left → one `contract_alert`, payload `{kind, contract_id, to_date}`,
+  `first_reminder_for` = the To date, `updated_at` unchanged; a second run → none. 15 days after a
+  first → one, `second_reminder_for` set. 10 days, nothing sent → one (second only),
+  `first_reminder_for` stays NULL. 61 days, ended yesterday, `from_date` tomorrow, inactive → none.
+- **Renewed** (D5): a second contract inserted through `db_rows` with `renewal_of_id` = the first
+  and `active = 1` → no task; with `active = 0` → a task.
+- **Re-arm** (§ 5.1): first sent, `to_date` moved 30 days later, then back to 60 days left → a new
+  task; moved to 10 days left → a second-reminder task.
 - **All or nothing:** `enqueue_contract_alert` monkeypatched to raise on the second contract → the
-  run raises, no marker and no task stay.
-- **Handler, push:** the engineer's and the manager's devices get one `push_send` each with § 5.4's
-  title, Urgency `low`, `ttl` 86400, path `/contracts/<id>`; the technician's device and the other
-  site's manager get none.
-- **Handler, email:** one `email_send` for the manager with an address, none for the one without,
-  none for the engineer; payload `person_id`, the subject of § 5.4; the payload holds no `@`.
-- **Handler, a manager with no units** (membership with `all_units = 0` and no `person_units`) →
-  gets the push and the email.
-- **Handler, no longer true:** set inactive, renewal inserted, `to_date` edited after queueing,
-  `to_date` before today → done, no send rows.
-- **Handler, push off** (`push_off`): email rows only; **email off** (`email_off`): push rows only;
-  both off → done, no rows; the scan still writes the markers.
+  run raises; no marker and no task stay.
+- **Handler, push:** the engineer's and the manager's devices get one `push_send` each (§ 5.4's
+  title, Urgency `low`, `ttl` 86400, path `/contracts/<id>`); the technician and the other site's
+  manager get none. **Email:** one `email_send` for the manager with an address (payload
+  `person_id`, § 5.4's subject, no `@` in it), none for the one without or for the engineer. **A
+  manager with no units** (`all_units = 0`, no `person_units`) gets both.
+- **Handler, no longer true:** inactive, renewed, `to_date` edited, `to_date` before today → done,
+  no send rows. **Push off** (`push_off`): email rows only; **email off** (`email_off`): push rows
+  only; both off → no rows, and the scan still writes the markers.
 - **Through the worker:** `Worker.run_once` with `SCHEDULE` patched to `[("contract_reminder_scan",
   "00:00")]` (as `backend/tests/test_worker.py:131`), `push_sender.send` and `mail_sender.send`
-  faked (as `fake_send` in `test_alerts.py` and `test_closed_email.py`): the scan `done`, the
-  `contract_alert` `done`, the `push_send` and `email_send` rows `done`, the fakes called with the
-  texts. No test reaches a real push service or mail server (`no_real_push`,
-  `smtp_test_values`).
-- **Bad tasks:** the scan with a payload; `contract_alert` with an unknown kind, a missing
-  `contract_id`, `to_date` not a date, a contract that does not exist → BadTask.
+  faked (as `fake_send` in `test_alerts.py` and `test_closed_email.py`): every row `done`, the fakes
+  called with the texts. No test reaches a real service (`no_real_push`, `smtp_test_values`).
+- **Bad tasks:** the scan with a payload; `contract_alert` with an unknown kind, no `contract_id`,
+  a bad `to_date`, a missing contract → BadTask.
 
 ### 8.3 Existing tests that break or run again
 
@@ -637,12 +582,10 @@ pattern (`improvement_alert_scan(conn, None, …)` in `test_improvement_alerts.p
 - `backend/tests/test_alerts.py`, `backend/tests/test_closed_email.py`,
   `backend/tests/test_improvement_alerts.py`: run whole, as they pin the recipients that
   `people_at_unit` serves through the moved query (§ 5.6).
-- `backend/tests/test_rbac.py` `test_role_matrix`: unchanged (no new key).
-- `backend/tests/conftest.py` `_TABLES`: unchanged (no new table).
-- S080's `test_migration_v43.py`, S081's `test_migration_v44.py` and S083's migration test, if any:
-  unchanged (each slices its own range). S080's `test_contracts_api.py`: unchanged (no route
-  changes; the new columns are not in `_contract_out`'s answer, which the coder checks: if
-  `_contract_out` sends the whole row, it must leave the two columns out, § 6).
+- Unchanged: `backend/tests/test_rbac.py` `test_role_matrix` (no new key); `backend/tests/conftest.py`
+  `_TABLES` (no new table); S080's `test_migration_v43.py`, S081's `test_migration_v44.py`, S083's
+  migration test (each slices its own range); S080's `test_contracts_api.py` (no route change; § 9
+  A4).
 
 ### 8.4 Automated (e2e)
 
@@ -661,16 +604,19 @@ pattern (`improvement_alert_scan(conn, None, …)` in `test_improvement_alerts.p
 Push needs HTTPS and the VAPID keys, and email the production mail relay, so both rows run on
 **production, the TEST machine's site SMTW**, after the deploy. *Network*: "Company Wi-Fi, or
 mobile data with the phone charging" (the push is quiet, Urgency low, D6). Both rows use one test
-contract: the **IT Admin** login adds it in Masters › Contracts at SMTW, title "TEST reminder check —
-not a real contract", any active vendor, From today, **To 30 days from today**; afterwards she sets
-it inactive. Every SMTW engineer and manager gets these reminders: KLA tells them first.
+contract: the **IT Admin** login (*Account*: IT admin; *Network*: the company network, as S013
+refuses IT admin on mobile data, BR1-09) adds it in Masters › Contracts at SMTW, title "TEST
+reminder check — not a real contract", any active vendor, From today, **To 30 days from today**.
+KLA tells the SMTW engineers and managers the day before: every one of them gets these reminders.
+IT Admin sets the contract inactive the day the second reminder arrives. *Where*: production, per
+row. Where the rows finally run is KLA's choice at gate B (§ 9 Q4, BR1-02).
 
-1. **Important.** The engineer test login's phone has notifications on (set up as rows 1 and 4 of
-   § *Phone set-up for notifications (S021)*). After **08:00 the next day** it shows **Contract ends
-   in 29 days · SMTW**, without sound; a tap opens the contract page. Then IT Admin changes the To
-   date to **10 days from today**; after 08:00 the next day the phone shows **Contract ends in 9
-   days · SMTW**, and it **replaces** the first reminder. Done by IT Admin.
-2. **Important. KLA only** (a manager at SMTW with an address). The mornings of row 1, the email
+1. **Important.** The engineer test login's phone has notifications on (steps 1 and 4 of *Phone
+   set-up for notifications (S021)*). After **08:00 the next day** it shows **Contract ends in 29
+   days · SMTW**, without sound; a tap opens the contract page. That day IT Admin changes the To
+   date to **10 days from today**; after 08:00 the following day the phone shows **Contract ends in
+   9 days · SMTW**, and it **replaces** the first reminder. Done by IT Admin.
+2. **Important. KLA only** (a manager at SMTW with an address). On both mornings of row 1, the email
    "Contract ends on <date>: TEST reminder check — not a real contract (SMTW)" is in KLA's Outlook,
    **not in junk**; it shows the vendor, type, site and period, **no price and no call-out
    number**, and its link opens the contract after the login.
@@ -684,30 +630,35 @@ it inactive. Every SMTW engineer and manager gets these reminders: KLA tells the
 
 ## 9. Open questions and assumptions
 
-- **Q1. Lead days fixed or settings?** The roadmap said settings; this brief proposes constants
-  (D2).
+- **Q1. Lead days fixed or settings? Flagged for KLA at gate B** (BR1-03). Coding goes ahead with
+  (a) and v46: Plan.MD § 2 item 9 and Q5.1 (a) already say 60 and 15 days; only R02.5's text says
+  settings and "Migrations: none" (D2, D3).
   - **(a) Constants 60 and 15 — recommended.** No new card; the badge and the first reminder share
-    `ENDING_SOON_DAYS`. A later step adds a setting if the plant asks.
-  - (b) Two settings in Settings › Notifications. One more card and its rules; a change re-times
-    reminders not yet sent, never re-sends one sent.
-- **Q2. The scan's time.** **08:00 IST — recommended**, with the improvement scan, so the daily
-  alerts come at one hour. Another time is one string in `SCHEDULE`. Plant-Facts § 5 leaves the
-  shift pattern TBD.
-- **Q3. Quiet or loud push.** **Quiet — recommended** (D6). Loud would sound like a breakdown for a
-  date two months away.
-- **A1. Assumption:** v42–v46 ship in one release, so no contract exists in production before v46
-  (no `_PRECONDITIONS` entry; the columns are nullable either way).
-- **A2. Assumption:** a contract at a site set inactive is reminded like any other; the site's
-  memberships decide who hears. Nothing in S080 stops a contract when its site is set inactive.
-- **A3. Assumption:** S083 takes v45 and locks the contract row as its one document owner lock
-  (§ 5.5); the staleness check before coding confirms both.
-- **A4. Assumption:** S080's `_contract_out` builds the answer from named fields or drops unknown
-  ones, so the two new columns do not appear in the API (§ 8.3). If it sends the whole row, the
-  coder leaves them out there.
-- **A staleness check is due before coding:** S080–S083 are coded after this brief. Check
-  `contracts_core.ENDING_SOON_DAYS`, `contract_status`'s labels, `CONTRACT_TYPES`, the key names
-  and holders in `config_rbac.py`, `renewal_of_id` and `ix_contracts_renewal_of`, the
-  `contracts.py` LOCK ORDER note, S081's route `/contracts/:id(\\d+)`, and the migration number.
+    `ENDING_SOON_DAYS`. A setting can follow if the plant asks.
+  - (b) Two settings in Settings › Notifications: one more card and its rules.
+- **Q4. Where the device checks run, and who gets the test reminder. For KLA at gate B** (BR1-02;
+  the checks run after the commit, so coding does not wait).
+  - **(a) Production at SMTW, everyone warned the day before — recommended** (§ 8.5 as written).
+    The only end-to-end test of push; the reminders are quiet and the title says "TEST … not a real
+    contract".
+  - (b) A test site in production holding only the test logins. The repo names none:
+    `docs/steps/device-checks.md` uses a TEST machine at SMTW.MCC2, never a TEST site. It would need
+    a site row and a unit (visible in every site filter on production) and memberships for the
+    engineer test login and KLA (manager) there; then nobody else is reached.
+  - (c) The email row on the dev server, as S032 row 30 did (`DEV_STUB_EMAIL` and the local
+    `SMTP_*` values, the scan enqueued by hand); the push row stays on production as (a), because
+    push cannot run on the dev server (plain HTTP).
+- **Q2. The scan's time: 08:00 IST — recommended**, with the improvement scan, so the daily alerts
+  come at one hour (Plant-Facts § 5 leaves the shift pattern TBD). Another time is one string.
+- **Q3. Quiet or loud push: quiet — recommended** (D6).
+- **A1.** v42–v46 ship in one release, so production holds no contract before v46.
+- **A2.** A contract at a site set inactive is reminded like any other; the memberships decide.
+- **A3.** S083 keeps v45 and its one contract-row lock (S083 § 4.1, § 5.4, still Draft).
+- **A4.** S080's `_contract_out` sends named fields only, so the new columns stay out of the API;
+  otherwise the coder leaves them out there (§ 8.3).
+- **A staleness check is due before coding** (S080–S083 coded after this brief): `ENDING_SOON_DAYS`,
+  `contract_status`'s labels, `CONTRACT_TYPES`, the keys and holders, `renewal_of_id` and
+  `ix_contracts_renewal_of`, the `contracts.py` LOCK ORDER note, S081's route, the migration number.
 - **Proposed point for § SMTW-Review** (`.claude/CLAUDE.md`): "Contract reminders (S084): the daily
   `contract_reminder_scan` sends each reminder once per To date through `first_reminder_for` and
   `second_reminder_for`, never for an inactive or renewed contract (an active contract with
@@ -718,7 +669,9 @@ it inactive. Every SMTW engineer and manager gets these reminders: KLA tells the
 - **Roadmap corrections** (for the orchestrator to note in R02's log): R02.5's "Migrations: none"
   and "lead days are settings" (D2, D3); § Order's "R02.3 ∥ R02.5 … with no migration": both now
   add a migration, so they conflict in `local_db.py` and run one after the other; R02.5 also
-  changes `alerts.py`, `email_core.py` and `push_core.py`, which § Order does not list.
+  changes `alerts.py`, `email_core.py` and `push_core.py`, which § Order does not list; R02.5's
+  scope-B push text ("Contract ends in 15 days: Atlas Copco AMC 2026–27 (SMTW). Renew it or let it
+  end.") becomes the app's title · place / body form of § 5.4 (BR1-11).
 - **No defining question.** Gate R answered Q5.1 (a); the choices above are inside it.
 
 ## 10. Amendments
@@ -726,3 +679,16 @@ it inactive. Every SMTW engineer and manager gets these reminders: KLA tells the
 None.
 
 ## Review log
+
+### Round 1 — `2-brief-review-r1.md` (Fable), answered 30-10-2026
+
+Sections changed: header, § 3, § 5.3, § 5.4, § 5.7, § 7 D2 and D3, § 8.1, § 8.5, § 9.
+
+| Finding | Answer |
+|---|---|
+| BR1-01 minor | Accepted (a): § 8.5 row 1 says "10 days from today", so the second reminder is due ("Contract ends in 9 days") and replaces the first. |
+| BR1-02 minor | KLA's decision, pending: § 8.5's rows stay as written, with the warning the day before and the contract set inactive the day the second reminder arrives; § 9 Q4 gives the options (a) production at SMTW (recommended), (b) a test site (none exists; what it needs), (c) the email row on the dev server. The checks run after the commit, so coding does not wait. |
+| BR1-03 minor | KLA's decision, pending: constants 60 and 15 and migration v46 stand for coding (Plan.MD § 2 item 9 and Q5.1 a say 60 and 15 days); the departure from R02.5's "settings" and "Migrations: none" is flagged for KLA at gate B (D2, D3, § 9 Q1). |
+| BR1-04 minor | Accepted (a): `alerts_core` imports S081's `contracts_core.TYPE_SHORT` for `type_word`; `CONTRACT_TYPE_WORDS` and `contracts_core.py` leave § 3 (19 code and test files). |
+| BR1-05 minor | Accepted (a): the function is `alerts.people_with_role_at_site` everywhere; § 3 says why (`tickets.people_at_site` is the people picker). |
+| BR1-06 – BR1-12 nits | Accepted, as recommended: `_payload_time` takes the task name (§ 3, § 5.4); `keys_with_place.update` stays after the `continue` (§ 5.7); `should_send_contract` also checks `from_date <= today` (§ 5.4, § 8.1); IT Admin's account and network in § 8.5; the vendor stays in the push body, stated (§ 5.4); the push text restyle in § 9's roadmap corrections; the candidate query also leaves out a contract whose first reminder is sent for its To date with more than 15 days left, the rule stated exactly (§ 5.3, § 8.1). |

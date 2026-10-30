@@ -1,7 +1,7 @@
 <script setup>
 /**
  * Masters — sites, units, equipment classes and types, manufacturers and models, equipment
- * properties (S043), meter types (S037), failure codes, trades, vendors (S079), Team with each person's roles per
+ * properties (S043), meter types (S037), failure codes, trades, vendors (S079), vendor contracts (S080), Team with each person's roles per
  * site (docs/steps/S001-basic-masters, S004, S010, S011, S012, S016; S011 A1 moved unit access
  * into Team).
  * The level-2 toolbar switches sections as local state, not routes.
@@ -10,6 +10,7 @@ import { computed, ref } from "vue";
 import ModuleToolbar from "../components/layout/ModuleToolbar.vue";
 import { userPermissions } from "../stores/auth";
 import { canSeeNavItem } from "../stores/navigation";
+import ContractsPanel from "./masters/ContractsPanel.vue";
 import EquipmentCategoriesPanel from "./masters/EquipmentCategoriesPanel.vue";
 import EquipmentClassesPanel from "./masters/EquipmentClassesPanel.vue";
 import EquipmentTypesPanel from "./masters/EquipmentTypesPanel.vue";
@@ -39,6 +40,7 @@ const sections = [
   { key: "trades", icon: "fa-solid fa-screwdriver-wrench", label: "Trades", perm: "masters:read" },
   { key: "vendors", icon: "fa-solid fa-handshake", label: "Vendors", perm: "masters:read" },
   { key: "people", icon: "fa-solid fa-people-group", label: "Team", perm: "masters:read" },
+  { key: "contracts", icon: "fa-solid fa-file-signature", label: "Contracts", perm: "contract:read_basic" },
 ];
 const panels = {
   sites: SitesPanel,
@@ -54,6 +56,7 @@ const panels = {
   trades: TradesPanel,
   vendors: VendorsPanel,
   people: PeoplePanel,
+  contracts: ContractsPanel,
 };
 
 const chosen = ref("sites");

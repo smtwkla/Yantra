@@ -1295,13 +1295,14 @@ def _check_vendor_link(cur, employment, stored_vendor_id, clean):
     if link:
         raise ApiError(link[1], 400, link[0])
     if sent is not None and sent != stored_vendor_id:
-        _check_new_vendor(cur, sent)
+        check_active_vendor(cur, sent)
 
 
-def _check_new_vendor(cur, vendor_id):
+def check_active_vendor(cur, vendor_id):
     """A newly linked vendor must exist and be active (S079 § 5.2 rule 2, the texts of a trade's
     refusals).  Share mode: two person saves for one vendor do not wait for each other, and a
-    deactivation (FOR UPDATE) waits for both (D9)."""
+    deactivation (FOR UPDATE) waits for both (D9).  Public: a contract's new vendor takes the same
+    check (contracts.py, S080 BS1-01)."""
     cur.execute("SELECT name, active FROM vendors WHERE id = %s LOCK IN SHARE MODE", (vendor_id,))
     vendor = cur.fetchone()
     if vendor is None:

@@ -195,6 +195,10 @@ from procedures import procedures_bp
 # One-point lessons (S075): their own blueprint; their photos are documents_bp's fifth owner
 app.register_blueprint(procedures_bp, url_prefix="/api/procedures")
 
+from contracts import contracts_bp
+# Vendor contracts (S080, R02.1): a site record with three read levels, not a site-less master
+app.register_blueprint(contracts_bp, url_prefix="/api/contracts")
+
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")
 

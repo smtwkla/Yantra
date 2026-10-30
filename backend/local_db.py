@@ -1417,6 +1417,54 @@ _MIGRATIONS = [
         """ALTER TABLE people ADD CONSTRAINT IF NOT EXISTS chk_people_vendor
             CHECK (vendor_id IS NULL OR employment = 'contractor')""",
     ]),
+    # Vendor contracts (S080, R02.1): one row per contract, at one site (Q1.5 a), with a vendor
+    # from the vendors master (S079, v42).  Status is computed from the dates, never stored.  Never
+    # deleted: one entered by mistake is set inactive (ISO 9001 § 7.5).  The price is per machine and
+    # lands with R02.2 (D8); this table holds only the cost note.  renewal_of_id is filled by R02.4.
+    # One statement, so v43 is never half-applied; a new table, so no precondition.  Rollback: a
+    # release before v43 never reads contracts.
+    (43, "Vendor contracts (S080)", [
+        """CREATE TABLE IF NOT EXISTS contracts (
+            id                        INT AUTO_INCREMENT PRIMARY KEY,
+            site_id                   INT NOT NULL,
+            vendor_id                 INT NOT NULL,
+            contract_type             ENUM('warranty', 'amc', 'cmc', 'on_call') NOT NULL,
+            title                     VARCHAR(100) NOT NULL,
+            contract_number           VARCHAR(60) NULL,
+            from_date                 DATE NOT NULL,
+            to_date                   DATE NOT NULL,
+            covers_labour             TINYINT(1) NOT NULL DEFAULT 0,
+            covers_parts              TINYINT(1) NOT NULL DEFAULT 0,
+            covers_consumables        TINYINT(1) NOT NULL DEFAULT 0,
+            covers_breakdown_calls    TINYINT(1) NOT NULL DEFAULT 0,
+            breakdown_calls_per_year  SMALLINT NULL,
+            covered_text              VARCHAR(1000) NULL,
+            not_covered_text          VARCHAR(1000) NULL,
+            pm_visits_per_year        TINYINT NULL,
+            response_hours            SMALLINT NULL,
+            only_vendor_repairs       TINYINT(1) NOT NULL DEFAULT 0,
+            callout_number            VARCHAR(20) NULL,
+            cost_note                 VARCHAR(255) NULL,
+            notes                     VARCHAR(1000) NULL,
+            renewal_of_id             INT NULL,
+            active                    TINYINT(1) NOT NULL DEFAULT 1,
+            created_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by                VARCHAR(100) NOT NULL,
+            updated_at                DATETIME NULL,
+            updated_by                VARCHAR(100) NULL,
+            KEY ix_contracts_site (site_id, active, to_date),
+            KEY ix_contracts_vendor (vendor_id),
+            KEY ix_contracts_renewal_of (renewal_of_id),
+            CONSTRAINT fk_contracts_site FOREIGN KEY (site_id) REFERENCES sites (id),
+            CONSTRAINT fk_contracts_vendor FOREIGN KEY (vendor_id) REFERENCES vendors (id),
+            CONSTRAINT fk_contracts_renewal_of FOREIGN KEY (renewal_of_id) REFERENCES contracts (id),
+            CONSTRAINT chk_contracts_period CHECK (to_date >= from_date),
+            CONSTRAINT chk_contracts_pm_visits CHECK (pm_visits_per_year IS NULL OR pm_visits_per_year BETWEEN 0 AND 52),
+            CONSTRAINT chk_contracts_response CHECK (response_hours IS NULL OR response_hours BETWEEN 1 AND 720),
+            CONSTRAINT chk_contracts_breakdown_calls CHECK (breakdown_calls_per_year IS NULL
+                OR (covers_breakdown_calls = 1 AND breakdown_calls_per_year BETWEEN 1 AND 365))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

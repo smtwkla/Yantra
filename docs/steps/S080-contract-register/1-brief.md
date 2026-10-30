@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + S079 (staleness check before coding)
-Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 5 minor accepted)
+Baseline: 73f0bc5 (refs/steps/S079; d216f48 + S079), checked by staleness review s1
+Status: Gate B 30-10-2026 (code review r1: 1 minor, 2 nits, fixed by the orchestrator)
 From: R02.1
 ```
 
@@ -813,3 +813,12 @@ Sections changed: header (Status, Baseline), § 3 (backend, tests, file count), 
 | BR1-04 minor | Accepted (a): S079 provides `phone_parser(label)`; S080 calls `phone_parser("Call-out number")` and renames nothing; the phone rule follows S079's revised § 5.1 (digits, spaces, `-`, `.`, brackets, `+` first, 6–15 digits, 20 characters); `test_masters_core.py` leaves the file list (17 files). § 3, § 5.1, D11, § 8.2, § 9 A5. |
 | BR1-05 minor | Accepted (a): on a phone the small line under the title shows type, vendor and site code for every user; the `@device` test asserts the site code. § 5.7, § 8.4. |
 | BR1-06…BR1-12 nits | Accepted: BR1-06 the test patches `contracts.MAX_PER_PAGE` (§ 8.2); BR1-07 the Team viewer's method `grantable_site_ids` (§ 5.5); BR1-08 "is void" (§ 5.7); BR1-09 "the maker's guarantee" (§ 5.7); BR1-10 the test title (§ 8.4); BR1-11 the `all` order stated and accepted (§ 5.3); BR1-12 is the orchestrator's (the INDEX row). § 9 Q1 and Q2 taken as recommended under the delegation of 30-10-2026. |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 30-10-2026
+
+These answers override the brief text above where they differ; the coder follows them.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor | Accepted (a): `masters._check_new_vendor` becomes public as `masters.check_active_vendor(cur, vendor_id)` (S079's callers renamed with it); `contracts.py` imports it for create and vendor change, so the `LOCK IN SHARE MODE` read and S079's two texts ("That vendor no longer exists. Reload and try again." / "Vendor <name> is inactive. Choose another vendor or reactivate it.") are used; the `vendor_id` parser is `id_parser("Vendor")`. The § 5.2 / § 5.6 / § 8.2 text "Choose a vendor. The list holds the active vendors…" stays only for a missing `vendor_id`. Lock order unchanged. |
+| BS1-02…BS1-06 nits | Accepted as recommended: the phone rule also collapses inner spaces (name it `PHONE_RULE` where the brief cites it); the migration-test pattern file is `test_migration_v42.py`; `grantable_site_ids` is at `masters.py:1212`; § 4 says why `contracts` sits in notes.json area *Equipment* (it is about machines and their upkeep) while `vendors` sits in *Team and access*; the small-line pattern is `VendorsPanel.vue`'s `details(v)`. |
