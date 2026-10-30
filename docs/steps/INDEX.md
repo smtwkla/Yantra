@@ -84,6 +84,7 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S075 | [One-point lessons: backend](S075-one-point-lessons/1-brief.md) — R05.6, first half (split at the API): migration v41 (`procedures` with kind one-point lesson, a fifth documents owner), serial `OPL-NNN`, the class tick, key `procedure:edit`, the link from a *Lesson* countermeasure (full track) | R05.6 | Done (committed 71c85bf, adopted 30-10-2026) | 30-10-2026 |
 | S076 | [Improvement register](S076-improvement-register/1-brief.md) — R05.10: per site and period, improvements started, open by state and age, overdue countermeasures, closed it worked / did not work; printable (full track) | R05.10 | Committed cf8ba68; row 55 pending | 30-10-2026 |
 | S077 | [One-point lessons: screens](S077-one-point-lesson-screens/1-brief.md) — R05.6, second half: the *Lessons* card on the equipment page, the lesson page with print, the lesson dialog with photos, *Write lesson* on a countermeasure (full track) | R05.6 | Committed fe27950; rows 56 and 57 pending | 30-10-2026 |
+| S078 | [Schema docs from the migrations](S078-schema-docs-generated/1-brief.md) — `tooling\schema-docs.bat write\|check`: a fresh database from `_MIGRATIONS` writes `docs/schema/schema.json` and `schema-data.js`; `notes.json` the only hand-edited file (areas, what each table holds, planned tables); `schema.html` draws from the data, with a Tables view; the check at the docs pass, gate B and pre-flight (full track) | — | Gate A | 30-10-2026 |
 
 ## Queued (not yet briefed)
 
