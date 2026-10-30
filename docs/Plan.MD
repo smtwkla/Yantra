@@ -898,9 +898,10 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 
 ## 5. Data model
 
-Moved to [`schema.md`](schema.md) (23-10-2026): what each table holds, the
-built and the planned tables, and the relationship diagram (also
-[`schema.html`](schema.html), to open in a browser).
+The tables, keys and indexes are in `docs/schema/schema.json`, generated from
+the migrations; what each table holds and the planned tables in
+`docs/schema/notes.json`; the diagram in `docs/schema.html` (open it in a
+browser); the conventions in `docs/schema.md` (S078, 30-10-2026).
 
 ## 6. Screens
 

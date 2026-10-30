@@ -65,16 +65,16 @@ Checked against the code at HEAD `c9142b4` (27-10-2026).
 
 | What | State today | Evidence |
 |---|---|---|
-| Vendor as a Team record | **Built.** A Team record is a person or a contractor firm, with employment `direct` or `contractor`. | `masters_core.py:24-25` `EMPLOYMENT`; `docs/schema.md` `people` ("one record per person, or per contractor firm (the user's choice)"). |
+| Vendor as a Team record | **Built.** A Team record is a person or a contractor firm, with employment `direct` or `contractor`. | `masters_core.py:24-25` `EMPLOYMENT`; `docs/schema/notes.json` `people` ("one record per person, or per contractor firm (the user's choice)"). |
 | Vendor on a ticket | **Built.** Assignees and labour rows name Team records. An assignee must hold a Technician, Engineer or Manager row at the ticket's site; a labour row may name anyone with a membership there. | `tickets.py:19-20`, `:125` `ASSIGNEE_AT_SITE`; `config_rbac.py:64` `ASSIGNABLE_ROLES`. |
 | Waiting on a vendor | **Built (S019).** A ticket in *scheduled* with the waiting reason *vendor* counts as EN 13306 logistic delay. | `tickets_core.py:309-311` `WAITING_REASONS["vendor"]`. |
 | Documents | **Built (S006, S012, S017).** One owner per file: equipment, model or ticket; the owners are data in `documents.py` (`OWNERS`). | `documents.py:150-181`; `local_db.py:480-481` `chk_equipment_documents_owner`. A fourth owner, the contract, needs a column and a new CHECK (R02.3). |
-| Equipment history | **Built (S002, S038, S044).** `equipment_events` takes new event kinds without a new table. | `docs/schema.md` `equipment_events`. |
+| Equipment history | **Built (S002, S038, S044).** `equipment_events` takes new event kinds without a new table. | `docs/schema/notes.json` `equipment_events`. |
 | Site-scoped keys | **Built (S011).** A key in `SITE_SCOPED` is checked at the record's site. | `config_rbac.py:166-179`. |
 | Daily tasks, push and email | **Built (S013, S021, S032).** `scheduled_tasks.SCHEDULE` (one entry today), alert kinds and channels in `alerts_core.py`. | `scheduled_tasks.py:12-13`; `alerts_core.py:26` `KINDS`, `:46` `CHANNELS`. |
 | Masters tabs | **Built.** Eleven tabs, each with its own key. | `frontend/src/views/MastersView.vue:26-36`. |
 | Contract terms in notes | **Plan.MD § 2:** "In v1 the terms go in the equipment's notes." | No code; any such notes are moved by hand once R02.2 is live (§ Out of the roadmap). |
-| PM plans and jobs | **Not built.** No PM tables; `docs/schema.md` lists `pm_plans` and `pm_jobs` as planned. | `docs/schema.md` § Planned tables. |
+| PM plans and jobs | **Not built.** No PM tables; `docs/schema/notes.json` lists `pm_plans` and `pm_jobs` as planned. | `docs/schema/notes.json` `planned`. |
 | Migrations | Latest **v34** (S061). | `local_db.py:1049`. |
 
 **What no item rebuilds:** the Team register (the vendor is a Team record), ticket assignees,

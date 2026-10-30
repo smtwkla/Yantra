@@ -348,6 +348,26 @@ def test_notes_missing_or_not_an_object():
     assert "must hold one object" in core.parse_notes("[]")[1]
 
 
+@pytest.mark.parametrize("text, phrase", [
+    ('{"tables": []}', '"tables" must be an object'),
+    ('{"areas": {}}', '"areas" must be a list'),
+    ('{"areas": ["x"]}', 'every entry under "areas" must be an object'),
+    ('{"planned": "x"}', '"planned" must be a list'),
+    ('{"planned": [1]}', 'every entry under "planned" must be an object'),
+    ('{"planned": [{"tables": "x"}]}', '"tables" in a "planned" entry must be a list'),
+])
+def test_notes_wrong_type_under_a_key_is_a_notes_problem(text, phrase):
+    parsed, problem = core.parse_notes(text)
+    assert parsed is None
+    assert problem.startswith("docs/schema/notes.json is not valid JSON: ") and phrase in problem
+    assert problem.endswith("Fix the file, then run the command again.")
+
+
+def test_notes_with_right_types_still_parse():
+    parsed, problem = core.parse_notes('{"areas": [{"name": "a"}], "tables": {}, "planned": [{"tables": ["t"]}]}')
+    assert problem is None and parsed["areas"][0]["name"] == "a"
+
+
 def test_guard():
     assert core.check_target("127.0.0.1", "vel_yantra_test_dev_schemadocs") is None
     assert core.check_target("localhost", "vel_yantra_test_s078c1_schemadocs") is None

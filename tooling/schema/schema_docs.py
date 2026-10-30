@@ -38,6 +38,7 @@ LOCK_BASE = "yantra_schema_docs"
 LOCK_WAIT_S = 60
 CONNECT_TIMEOUT_S = 5
 ACCESS_DENIED_TO_DATABASE = 1044   # MariaDB ER_DBACCESS_DENIED_ERROR
+CONNECTION_ERRORS = (2003, 2006, 2013)   # cannot connect, server gone away, connection lost
 
 CATALOGUE_QUERIES = {
     "tables": """SELECT TABLE_NAME FROM information_schema.TABLES
@@ -98,6 +99,7 @@ def build_and_read(db_config):
             cur.execute("SELECT GET_LOCK(%s, %s) AS got", (lock, LOCK_WAIT_S))
             if cur.fetchone()["got"] != 1:
                 raise NotCompleted(core.LOCK_TIMEOUT_MESSAGE)
+            cleanup_error = None
             try:
                 _recreate_database(cur, name)
                 try:
@@ -108,10 +110,25 @@ def build_and_read(db_config):
                 cur.execute(f"SELECT MAX(version) AS version FROM `{name}`.db_version")
                 migration = cur.fetchone()["version"]
             finally:
-                cur.execute(f"DROP DATABASE IF EXISTS `{name}`")
-                cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
+                # A failed drop is kept, not raised here, so it cannot hide the error being raised
+                try:
+                    cur.execute(f"DROP DATABASE IF EXISTS `{name}`")
+                except pymysql.MySQLError as exc:
+                    cleanup_error = exc
+                # A lock that cannot be released ends with the session (conn.close below), so it is
+                # only logged; it must not read as a failed drop (S078 CR2-01)
+                try:
+                    cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
+                except pymysql.MySQLError as exc:
+                    logging.warning("The schema docs lock was not released: %s", local_db.describe_error(exc))
+            if cleanup_error is not None:
+                raise NotCompleted(core.cleanup_failed_message(
+                    name, local_db.describe_error(cleanup_error))) from cleanup_error
     except pymysql.MySQLError as exc:
-        raise NotCompleted(core.unreachable_message(local_db.describe_error(exc))) from exc
+        # Only a lost connection means "cannot be reached"; any other server error shows its own text
+        if exc.args and exc.args[0] in CONNECTION_ERRORS:
+            raise NotCompleted(core.unreachable_message(local_db.describe_error(exc))) from exc
+        raise NotCompleted(core.database_error_message(local_db.describe_error(exc))) from exc
     finally:
         conn.close()
     if migration != local_db.LATEST_VERSION:

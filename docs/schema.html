@@ -7,17 +7,17 @@
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1f2328; --muted: #5d6670; --line: #d8dbe0;
-    --accent: #2f5d8a; --accent-text: #ffffff;
+    --accent: #2f5d8a; --accent-text: #ffffff; --code-bg: #eef0f3;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #16181c; --panel: #1f2227; --text: #e6e8eb; --muted: #9aa3ad; --line: #353a42;
-      --accent: #6aa3d8; --accent-text: #0e1116;
+      --accent: #6aa3d8; --accent-text: #0e1116; --code-bg: #2a2e35;
     }
   }
   :root[data-theme="dark"] {
     --bg: #16181c; --panel: #1f2227; --text: #e6e8eb; --muted: #9aa3ad; --line: #353a42;
-    --accent: #6aa3d8; --accent-text: #0e1116;
+    --accent: #6aa3d8; --accent-text: #0e1116; --code-bg: #2a2e35;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -34,86 +34,292 @@
   .note { color: var(--muted); font-size: 13px; flex: 1 1 260px; }
   .bar button { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px;
                 padding: 4px 10px; font: inherit; cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .bar button[hidden] { display: none; }
   #stage { flex: 1; min-height: 360px; margin: 0 16px 12px; background: var(--panel); border: 1px solid var(--line);
            border-radius: 8px; overflow: hidden; position: relative; }
   #stage svg { width: 100%; height: 100%; max-width: none !important; }
-  #status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px;
+  .status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px;
             text-align: center; }
+  #tables { flex: 1; min-height: 360px; margin: 0 16px 12px; overflow-y: auto; }
+  #tables[hidden], #stage[hidden] { display: none; }
+  #tables section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+                    padding: 10px 12px; margin-bottom: 12px; }
+  #tables h2 { font-size: 17px; margin: 0 0 4px; }
+  #tables h3 { font-size: 13px; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
+  #tables p { margin: 0 0 6px; }
+  .table-box { overflow-x: auto; max-width: 100%; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; white-space: nowrap; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+  td.wide { min-width: 240px; }
+  .none { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
   footer { color: var(--muted); font-size: 12px; padding: 0 16px 12px; }
-  code { font-size: 12px; }
+  code { font-size: 12px; background: var(--code-bg); padding: 0 3px; border-radius: 3px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Yantra database schema</h1>
-  <div class="meta">Migration v41 · generated 23-10-2026, v28–v32 changes by hand 24-10-2026, v33 by hand 25-10-2026, v34 and v35 by hand 27-10-2026, v36, v37, v38, v39, v40 and v41 by hand 30-10-2026 · 45 tables, 75 links · PK primary key, FK foreign key, UK unique; "null" = may be empty. A line runs from the parent table to the table that points at it (crow's foot = many).</div>
+  <div class="meta" id="meta"></div>
 </header>
 <nav id="tabs" role="tablist"></nav>
 <div class="bar">
   <span class="note" id="note"></span>
+  <button type="button" id="show-diagram" aria-pressed="true">Show diagram</button>
+  <button type="button" id="show-tables" aria-pressed="false">Show tables</button>
   <button type="button" id="zoom-in">Zoom in</button>
   <button type="button" id="zoom-out">Zoom out</button>
   <button type="button" id="fit">Fit to screen</button>
 </div>
-<div id="stage"><div id="status">Loading the diagram…</div></div>
-<footer>Drag to move, scroll or pinch to zoom. Needs internet for the drawing library. Text form: <code>docs/schema.md</code>.</footer>
+<div id="stage"></div>
+<div id="tables" hidden></div>
+<footer>Drag to move, scroll or pinch to zoom. The diagram needs internet for its drawing library; the tables do not. Data: <code>docs/schema/schema.json</code>, made by <code>tooling\schema-docs.bat</code>.</footer>
 
-<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
-<script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+<!-- The data and the pure functions: classic scripts by relative path, so the page works from disk (file://) -->
+<script src="schema/schema-data.js"></script>
+<script src="schema/schema-view.js"></script>
+<script>
+(function () {
+  "use strict";
+  var MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  var PAN_ZOOM_URL = "https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js";
+  var TAB_KEY = "yantra-schema-tab";
+  var VIEW_KEY = "yantra-schema-view";
 
-  const TABS = [{"name": "Overview", "note": "Every table with its keyed columns, and every link. Use the area tabs for all columns.", "src": "erDiagram\n  access_log {\n    bigint id PK\n  }\n  app_settings {\n    varchar setting_key PK\n  }\n  class_properties {\n    int class_id PK,FK\n    int property_id PK,FK\n  }\n  equipment {\n    int id PK\n    varchar code UK\n    int parent_id FK \"null\"\n    int unit_id FK \"null\"\n    int class_id FK\n    int type_id FK \"null\"\n    int model_id FK \"null\"\n  }\n  equipment_categories {\n    int id PK\n    varchar name UK\n  }\n  equipment_classes {\n    int id PK\n    varchar code UK\n    int category_id FK \"null\"\n  }\n  equipment_documents {\n    int id PK\n    int equipment_id FK \"null\"\n    int model_id FK \"null\"\n    int ticket_id FK \"null\"\n    int action_id FK \"null\"\n    int procedure_id FK \"null\"\n    varchar stored_name UK\n  }\n  equipment_events {\n    int id PK\n    int equipment_id FK\n  }\n  equipment_models {\n    int id PK\n    int manufacturer_id FK\n    int class_id FK\n    int type_id FK \"null\"\n  }\n  equipment_types {\n    int id PK\n    int class_id FK\n  }\n  failure_causes {\n    int id PK\n    varchar code UK\n    varchar label UK\n  }\n  failure_modes {\n    int id PK\n    varchar code UK\n    int class_id FK \"null\"\n  }\n  improvement_actions {\n    int id PK\n    int improvement_id FK\n    int owner_id FK\n  }\n  improvement_events {\n    int id PK\n    int improvement_id FK\n    int ticket_id FK \"null\"\n    int action_id FK \"null\"\n    varchar event\n  }\n  improvement_tickets {\n    int improvement_id PK,FK\n    int ticket_id PK,FK\n    tinyint open_link UK \"null\"\n  }\n  improvement_whys {\n    int id PK\n    int improvement_id FK\n    smallint position\n  }\n  improvements {\n    int id PK\n    varchar serial UK\n    int unit_id FK\n    int equipment_id FK\n    int lead_id FK\n    int root_cause_id FK \"null\"\n    int follow_up_of_id FK,UK \"null\"\n  }\n  maintenance_actions {\n    int id PK\n    varchar code UK\n    varchar label UK\n  }\n  manufacturers {\n    int id PK\n    varchar name UK\n  }\n  memberships {\n    int person_id PK,FK\n    int site_id PK,FK\n  }\n  meter_types {\n    int id PK\n    varchar name UK\n  }\n  meter_readings {\n    int id PK\n    int equipment_id FK\n    int meter_type_id FK\n  }\n  model_meters {\n    int id PK\n    int model_id FK\n    int meter_type_id FK\n  }\n  model_property_values {\n    int model_id PK,FK\n    int property_id PK,FK\n    int option_id FK \"null\"\n  }\n  equipment_property_values {\n    int equipment_id PK,FK\n    int property_id PK,FK\n    int option_id FK \"null\"\n  }\n  node_meters {\n    int id PK\n    int equipment_id FK\n    int meter_type_id FK\n  }\n  people {\n    int id PK\n    varchar username UK \"null\"\n  }\n  person_trades {\n    int person_id PK,FK\n    int trade_id PK,FK\n  }\n  person_units {\n    int person_id PK,FK\n    int unit_id PK,FK\n  }\n  procedures {\n    int id PK\n    varchar serial UK\n    int equipment_id FK\n    int class_id FK \"null\"\n    int action_id FK,UK \"null\"\n  }\n  property_definitions {\n    int id PK\n    varchar name UK\n  }\n  property_options {\n    int id PK\n    int property_id FK\n  }\n  push_subscriptions {\n    int id PK\n    int person_id FK\n    char endpoint_hash UK\n  }\n  serial_counters {\n    varchar scope PK\n  }\n  sites {\n    int id PK\n    varchar code UK\n    tinyint is_default UK \"null\"\n  }\n  task_queue {\n    int id PK\n  }\n  ticket_assignees {\n    int ticket_id PK,FK\n    int person_id PK,FK\n  }\n  ticket_events {\n    int id PK\n    int ticket_id FK\n    int person_id FK \"null\"\n  }\n  ticket_labour {\n    int id PK\n    int ticket_id FK\n    int person_id FK\n    int trade_id FK \"null\"\n  }\n  ticket_note_edits {\n    int id PK\n    int event_id FK\n  }\n  ticket_parts {\n    int id PK\n    int ticket_id FK\n    int node_id FK\n  }\n  tickets {\n    int id PK\n    varchar serial UK\n    int equipment_id FK\n    int component_id FK \"null\"\n    int unit_id FK\n    int failure_mode_id FK \"null\"\n    int cause_id FK \"null\"\n    int action_id FK \"null\"\n    int repeat_of_id FK \"null\"\n    int reported_by_id FK \"null\"\n  }\n  trades {\n    int id PK\n    varchar name UK\n  }\n  units {\n    int id PK\n    int site_id FK\n    varchar oneerp_warehouse UK \"null\"\n  }\n  user_units {\n    varchar username PK\n    int unit_id PK,FK\n  }\n  equipment_classes ||--o{ equipment : \"class_id\"\n  equipment_categories o|--o{ equipment_classes : \"category_id\"\n  equipment_models o|--o{ equipment : \"model_id\"\n  equipment o|--o{ equipment : \"parent_id\"\n  equipment_types o|--o{ equipment : \"type_id\"\n  units o|--o{ equipment : \"unit_id\"\n  equipment o|--o{ equipment_documents : \"equipment_id\"\n  equipment_models o|--o{ equipment_documents : \"model_id\"\n  tickets o|--o{ equipment_documents : \"ticket_id\"\n  equipment ||--o{ equipment_events : \"equipment_id\"\n  equipment_models ||--o{ model_meters : \"model_id\"\n  meter_types ||--o{ model_meters : \"meter_type_id\"\n  equipment ||--o{ node_meters : \"equipment_id\"\n  meter_types ||--o{ node_meters : \"meter_type_id\"\n  equipment ||--o{ meter_readings : \"equipment_id\"\n  meter_types ||--o{ meter_readings : \"meter_type_id\"\n  equipment_classes ||--o{ class_properties : \"class_id\"\n  property_definitions ||--o{ class_properties : \"property_id\"\n  equipment_models ||--o{ model_property_values : \"model_id\"\n  property_definitions ||--o{ model_property_values : \"property_id\"\n  property_options o|--o{ model_property_values : \"option_id\"\n  equipment ||--o{ equipment_property_values : \"equipment_id\"\n  property_definitions ||--o{ equipment_property_values : \"property_id\"\n  property_options o|--o{ equipment_property_values : \"option_id\"\n  property_definitions ||--o{ property_options : \"property_id\"\n  equipment_classes ||--o{ equipment_models : \"class_id\"\n  manufacturers ||--o{ equipment_models : \"manufacturer_id\"\n  equipment_types o|--o{ equipment_models : \"type_id\"\n  equipment_classes ||--o{ equipment_types : \"class_id\"\n  equipment_classes o|--o{ failure_modes : \"class_id\"\n  people ||--o{ memberships : \"person_id\"\n  sites ||--o{ memberships : \"site_id\"\n  people ||--o{ person_trades : \"person_id\"\n  trades ||--o{ person_trades : \"trade_id\"\n  people ||--o{ person_units : \"person_id\"\n  units ||--o{ person_units : \"unit_id\"\n  people ||--o{ push_subscriptions : \"person_id\"\n  people ||--o{ ticket_assignees : \"person_id\"\n  tickets ||--o{ ticket_assignees : \"ticket_id\"\n  people o|--o{ ticket_events : \"person_id\"\n  tickets ||--o{ ticket_events : \"ticket_id\"\n  people ||--o{ ticket_labour : \"person_id\"\n  tickets ||--o{ ticket_labour : \"ticket_id\"\n  trades o|--o{ ticket_labour : \"trade_id\"\n  ticket_events ||--o{ ticket_note_edits : \"event_id\"\n  equipment ||--o{ ticket_parts : \"node_id\"\n  tickets ||--o{ ticket_parts : \"ticket_id\"\n  maintenance_actions o|--o{ tickets : \"action_id\"\n  failure_causes o|--o{ tickets : \"cause_id\"\n  equipment o|--o{ tickets : \"component_id\"\n  equipment ||--o{ tickets : \"equipment_id\"\n  failure_modes o|--o{ tickets : \"failure_mode_id\"\n  tickets o|--o{ tickets : \"repeat_of_id\"\n  people o|--o{ tickets : \"reported_by_id\"\n  units ||--o{ tickets : \"unit_id\"\n  units ||--o{ improvements : \"unit_id\"\n  equipment ||--o{ improvements : \"equipment_id\"\n  people ||--o{ improvements : \"lead_id\"\n  improvements ||--o{ improvement_tickets : \"improvement_id\"\n  tickets ||--o{ improvement_tickets : \"ticket_id\"\n  improvements ||--o{ improvement_whys : \"improvement_id\"\n  failure_causes o|--o{ improvements : \"root_cause_id\"\n  improvements ||--o{ improvement_actions : \"improvement_id\"\n  people ||--o{ improvement_actions : \"owner_id\"\n  improvement_actions o|--o{ equipment_documents : \"action_id\"\n  improvements ||--o{ improvement_events : \"improvement_id\"\n  tickets o|--o{ improvement_events : \"ticket_id\"\n  improvement_actions o|--o{ improvement_events : \"action_id\"\n  improvements o|--o| improvements : \"follow_up_of_id\"\n  equipment ||--o{ procedures : \"equipment_id\"\n  equipment_classes o|--o{ procedures : \"class_id\"\n  improvement_actions o|--o| procedures : \"action_id\"\n  procedures o|--o{ equipment_documents : \"procedure_id\"\n  sites ||--o{ units : \"site_id\"\n  units ||--o{ user_units : \"unit_id\"\n"}, {"name": "Equipment", "note": "Sites and units, the register tree, classes, types, makers, models, meter types, the meters of models and nodes and their readings, properties with their options, class links, model values and items' own values, history and files, and one-point lessons (S075). Tables of other areas show their primary key only.", "src": "erDiagram\n  class_properties {\n    int class_id PK,FK\n    int property_id PK,FK\n    datetime created_at\n    varchar created_by\n  }\n  equipment {\n    int id PK\n    varchar code UK\n    enum level\n    int parent_id FK \"null\"\n    int unit_id FK \"null\"\n    int class_id FK\n    int type_id FK \"null\"\n    int model_id FK \"null\"\n    varchar name\n    varchar serial_no \"null\"\n    smallint year \"null\"\n    enum criticality \"null\"\n    enum lifecycle\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    text notes \"null\"\n  }\n  equipment_categories {\n    int id PK\n    varchar name UK\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  equipment_classes {\n    int id PK\n    varchar code UK\n    varchar name\n    int category_id FK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  equipment_documents {\n    int id PK\n    int equipment_id FK \"null\"\n    int model_id FK \"null\"\n    int ticket_id FK \"null\"\n    int action_id FK \"null\"\n    int procedure_id FK \"null\"\n    enum kind\n    varchar title\n    varchar original_name\n    varchar stored_name UK\n    varchar content_type\n    int size_bytes\n    tinyint has_thumb\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    datetime removed_at \"null\"\n    varchar removed_by \"null\"\n  }\n  equipment_events {\n    int id PK\n    int equipment_id FK\n    enum event\n    varchar old_value \"null\"\n    varchar new_value \"null\"\n    datetime created_at\n    varchar created_by\n  }\n  equipment_models {\n    int id PK\n    int manufacturer_id FK\n    varchar designation\n    int class_id FK\n    int type_id FK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  equipment_types {\n    int id PK\n    int class_id FK\n    varchar name\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  manufacturers {\n    int id PK\n    varchar name UK\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  meter_types {\n    int id PK\n    varchar name UK\n    varchar unit \"null\"\n    enum kind\n    enum expected_answer \"null\"\n    tinyint decimals\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  meter_readings {\n    int id PK\n    int equipment_id FK\n    int meter_type_id FK\n    decimal value\n    datetime taken_at\n    tinyint is_reset\n    enum limit_state \"null\"\n    enum source\n    varchar note \"null\"\n    datetime created_at\n    varchar created_by\n    datetime removed_at \"null\"\n    varchar removed_by \"null\"\n  }\n  model_meters {\n    int id PK\n    int model_id FK\n    int meter_type_id FK\n    decimal min_value \"null\"\n    decimal max_value \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  model_property_values {\n    int model_id PK,FK\n    int property_id PK,FK\n    decimal value_number \"null\"\n    varchar value_text \"null\"\n    tinyint value_bool \"null\"\n    int option_id FK \"null\"\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    decimal value_lat \"null\"\n    decimal value_lng \"null\"\n  }\n  equipment_property_values {\n    int equipment_id PK,FK\n    int property_id PK,FK\n    decimal value_number \"null\"\n    varchar value_text \"null\"\n    tinyint value_bool \"null\"\n    int option_id FK \"null\"\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    decimal value_lat \"null\"\n    decimal value_lng \"null\"\n  }\n  node_meters {\n    int id PK\n    int equipment_id FK\n    int meter_type_id FK\n    tinyint own\n    decimal min_value \"null\"\n    decimal max_value \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  procedures {\n    int id PK\n    varchar serial UK\n    enum kind\n    int equipment_id FK\n    int class_id FK \"null\"\n    varchar title\n    varchar body\n    int action_id FK,UK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  property_definitions {\n    int id PK\n    varchar name UK\n    enum data_type\n    varchar unit \"null\"\n    varchar description \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    tinyint all_classes\n    tinyint per_item_only\n  }\n  property_options {\n    int id PK\n    int property_id FK\n    varchar label\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  sites {\n    int id PK\n    varchar code UK\n    varchar name\n    varchar address \"null\"\n    tinyint active\n    tinyint is_default UK \"null\"\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  units {\n    int id PK\n    int site_id FK\n    varchar code\n    varchar name\n    varchar oneerp_warehouse UK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  failure_modes {\n    int id PK\n  }\n  improvement_actions {\n    int id PK\n  }\n  memberships {\n    int person_id PK,FK\n    int site_id PK,FK\n  }\n  person_units {\n    int person_id PK,FK\n    int unit_id PK,FK\n  }\n  ticket_parts {\n    int id PK\n  }\n  tickets {\n    int id PK\n  }\n  user_units {\n    varchar username PK\n    int unit_id PK,FK\n  }\n  equipment_classes ||--o{ equipment : \"class_id\"\n  equipment_categories o|--o{ equipment_classes : \"category_id\"\n  equipment_models o|--o{ equipment : \"model_id\"\n  equipment o|--o{ equipment : \"parent_id\"\n  equipment_types o|--o{ equipment : \"type_id\"\n  units o|--o{ equipment : \"unit_id\"\n  equipment o|--o{ equipment_documents : \"equipment_id\"\n  equipment_models o|--o{ equipment_documents : \"model_id\"\n  tickets o|--o{ equipment_documents : \"ticket_id\"\n  improvement_actions o|--o{ equipment_documents : \"action_id\"\n  equipment ||--o{ equipment_events : \"equipment_id\"\n  equipment_models ||--o{ model_meters : \"model_id\"\n  meter_types ||--o{ model_meters : \"meter_type_id\"\n  equipment ||--o{ node_meters : \"equipment_id\"\n  meter_types ||--o{ node_meters : \"meter_type_id\"\n  equipment ||--o{ meter_readings : \"equipment_id\"\n  meter_types ||--o{ meter_readings : \"meter_type_id\"\n  equipment_classes ||--o{ class_properties : \"class_id\"\n  property_definitions ||--o{ class_properties : \"property_id\"\n  equipment_models ||--o{ model_property_values : \"model_id\"\n  property_definitions ||--o{ model_property_values : \"property_id\"\n  property_options o|--o{ model_property_values : \"option_id\"\n  equipment ||--o{ equipment_property_values : \"equipment_id\"\n  property_definitions ||--o{ equipment_property_values : \"property_id\"\n  property_options o|--o{ equipment_property_values : \"option_id\"\n  property_definitions ||--o{ property_options : \"property_id\"\n  equipment_classes ||--o{ equipment_models : \"class_id\"\n  manufacturers ||--o{ equipment_models : \"manufacturer_id\"\n  equipment_types o|--o{ equipment_models : \"type_id\"\n  equipment_classes ||--o{ equipment_types : \"class_id\"\n  equipment_classes o|--o{ failure_modes : \"class_id\"\n  sites ||--o{ memberships : \"site_id\"\n  units ||--o{ person_units : \"unit_id\"\n  equipment ||--o{ ticket_parts : \"node_id\"\n  equipment o|--o{ tickets : \"component_id\"\n  equipment ||--o{ tickets : \"equipment_id\"\n  units ||--o{ tickets : \"unit_id\"\n  equipment ||--o{ procedures : \"equipment_id\"\n  equipment_classes o|--o{ procedures : \"class_id\"\n  improvement_actions o|--o| procedures : \"action_id\"\n  procedures o|--o{ equipment_documents : \"procedure_id\"\n  sites ||--o{ units : \"site_id\"\n  units ||--o{ user_units : \"unit_id\"\n"}, {"name": "Team and access", "note": "People, trades, site roles and units, devices for push. Tables of other areas show their primary key only.", "src": "erDiagram\n  memberships {\n    int person_id PK,FK\n    int site_id PK,FK\n    varchar role\n    tinyint all_units\n    datetime granted_at\n    varchar granted_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  people {\n    int id PK\n    varchar name\n    enum employment\n    varchar username UK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n    varchar email \"null\"\n  }\n  person_trades {\n    int person_id PK,FK\n    int trade_id PK,FK\n    datetime granted_at\n    varchar granted_by\n  }\n  person_units {\n    int person_id PK,FK\n    int unit_id PK,FK\n    datetime granted_at\n    varchar granted_by\n  }\n  push_subscriptions {\n    int id PK\n    int person_id FK\n    varchar endpoint\n    char endpoint_hash UK\n    varchar p256dh\n    varchar auth\n    varchar label\n    datetime created_at\n    datetime last_sent_at \"null\"\n    varchar last_error \"null\"\n  }\n  trades {\n    int id PK\n    varchar name UK\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  user_units {\n    varchar username PK\n    int unit_id PK,FK\n    datetime granted_at\n    varchar granted_by\n  }\n  sites {\n    int id PK\n  }\n  ticket_assignees {\n    int ticket_id PK,FK\n    int person_id PK,FK\n  }\n  ticket_events {\n    int id PK\n  }\n  ticket_labour {\n    int id PK\n  }\n  tickets {\n    int id PK\n  }\n  units {\n    int id PK\n  }\n  people ||--o{ memberships : \"person_id\"\n  sites ||--o{ memberships : \"site_id\"\n  people ||--o{ person_trades : \"person_id\"\n  trades ||--o{ person_trades : \"trade_id\"\n  people ||--o{ person_units : \"person_id\"\n  units ||--o{ person_units : \"unit_id\"\n  people ||--o{ push_subscriptions : \"person_id\"\n  people ||--o{ ticket_assignees : \"person_id\"\n  people o|--o{ ticket_events : \"person_id\"\n  people ||--o{ ticket_labour : \"person_id\"\n  trades o|--o{ ticket_labour : \"trade_id\"\n  people o|--o{ tickets : \"reported_by_id\"\n  units ||--o{ user_units : \"unit_id\"\n"}, {"name": "Tickets", "note": "Breakdowns and defects, their timeline, labour, parts, assignees and codes, and the improvements that analyse them (S067) with their why-why chain and root cause (S069) and their countermeasures (S070), their timeline and the verified close (S072). Tables of other areas show their primary key only.", "src": "erDiagram\n  failure_causes {\n    int id PK\n    varchar code UK\n    varchar label UK\n    varchar description \"null\"\n    enum cause_group\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  failure_modes {\n    int id PK\n    varchar code UK\n    varchar label\n    varchar description \"null\"\n    int class_id FK \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  improvement_actions {\n    int id PK\n    int improvement_id FK\n    enum kind\n    varchar text\n    int owner_id FK\n    date due_date\n    date overdue_alert_for \"null\"\n    enum state\n    varchar done_text \"null\"\n    datetime done_at \"null\"\n    varchar done_by \"null\"\n    varchar cancel_reason \"null\"\n    datetime cancelled_at \"null\"\n    varchar cancelled_by \"null\"\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  improvement_events {\n    int id PK\n    int improvement_id FK\n    varchar event\n    datetime occurred_at\n    varchar from_state \"null\"\n    varchar to_state \"null\"\n    int ticket_id FK \"null\"\n    int action_id FK \"null\"\n    text remark \"null\"\n    text earlier \"null\"\n    datetime created_at\n    varchar created_by\n  }\n  improvement_tickets {\n    int improvement_id PK,FK\n    int ticket_id PK,FK\n    tinyint open_link UK \"null\"\n    datetime created_at\n    varchar created_by\n  }\n  improvement_whys {\n    int id PK\n    int improvement_id FK\n    smallint position\n    varchar question\n    varchar answer\n    varchar evidence \"null\"\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  improvements {\n    int id PK\n    varchar serial UK\n    int unit_id FK\n    int equipment_id FK\n    enum state\n    varchar title\n    varchar problem\n    varchar root_cause \"null\"\n    int root_cause_id FK \"null\"\n    varchar contributing_causes \"null\"\n    smallint watch_days\n    datetime watch_from \"null\"\n    datetime ready_alert_for \"null\"\n    datetime closed_at \"null\"\n    varchar closed_by \"null\"\n    varchar close_remark \"null\"\n    int follow_up_of_id FK,UK \"null\"\n    int lead_id FK\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  maintenance_actions {\n    int id PK\n    varchar code UK\n    varchar label UK\n    varchar description \"null\"\n    tinyint active\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  ticket_assignees {\n    int ticket_id PK,FK\n    int person_id PK,FK\n    datetime assigned_at\n    varchar assigned_by\n  }\n  ticket_events {\n    int id PK\n    int ticket_id FK\n    varchar event\n    varchar from_state \"null\"\n    varchar to_state \"null\"\n    datetime occurred_at\n    enum intensity \"null\"\n    int person_id FK \"null\"\n    varchar remark \"null\"\n    date planned_date \"null\"\n    enum waiting_reason \"null\"\n    tinyint machine_stopped \"null\"\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  ticket_labour {\n    int id PK\n    int ticket_id FK\n    int person_id FK\n    int trade_id FK \"null\"\n    date work_date\n    smallint minutes\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  ticket_note_edits {\n    int id PK\n    int event_id FK\n    varchar remark\n    datetime replaced_at\n    varchar replaced_by\n  }\n  ticket_parts {\n    int id PK\n    int ticket_id FK\n    int node_id FK\n    varchar description\n    varchar part_number \"null\"\n    enum number_kind \"null\"\n    varchar maker \"null\"\n    decimal quantity\n    varchar qty_unit\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  tickets {\n    int id PK\n    varchar serial UK\n    int equipment_id FK\n    int component_id FK \"null\"\n    int unit_id FK\n    enum intensity\n    enum state\n    date planned_date \"null\"\n    enum waiting_reason \"null\"\n    int failure_mode_id FK \"null\"\n    int cause_id FK \"null\"\n    int action_id FK \"null\"\n    tinyint not_a_fault\n    int repeat_of_id FK \"null\"\n    varchar description \"null\"\n    int reported_by_id FK \"null\"\n    datetime occurred_at\n    enum source\n    datetime created_at\n    varchar created_by\n    datetime updated_at \"null\"\n    varchar updated_by \"null\"\n  }\n  equipment {\n    int id PK\n  }\n  equipment_classes {\n    int id PK\n  }\n  equipment_documents {\n    int id PK\n  }\n  procedures {\n    int id PK\n  }\n  people {\n    int id PK\n  }\n  trades {\n    int id PK\n  }\n  units {\n    int id PK\n  }\n  tickets o|--o{ equipment_documents : \"ticket_id\"\n  equipment_classes o|--o{ failure_modes : \"class_id\"\n  people ||--o{ ticket_assignees : \"person_id\"\n  tickets ||--o{ ticket_assignees : \"ticket_id\"\n  people o|--o{ ticket_events : \"person_id\"\n  tickets ||--o{ ticket_events : \"ticket_id\"\n  people ||--o{ ticket_labour : \"person_id\"\n  tickets ||--o{ ticket_labour : \"ticket_id\"\n  trades o|--o{ ticket_labour : \"trade_id\"\n  ticket_events ||--o{ ticket_note_edits : \"event_id\"\n  equipment ||--o{ ticket_parts : \"node_id\"\n  tickets ||--o{ ticket_parts : \"ticket_id\"\n  maintenance_actions o|--o{ tickets : \"action_id\"\n  failure_causes o|--o{ tickets : \"cause_id\"\n  equipment o|--o{ tickets : \"component_id\"\n  equipment ||--o{ tickets : \"equipment_id\"\n  failure_modes o|--o{ tickets : \"failure_mode_id\"\n  tickets o|--o{ tickets : \"repeat_of_id\"\n  people o|--o{ tickets : \"reported_by_id\"\n  units ||--o{ tickets : \"unit_id\"\n  units ||--o{ improvements : \"unit_id\"\n  equipment ||--o{ improvements : \"equipment_id\"\n  people ||--o{ improvements : \"lead_id\"\n  improvements ||--o{ improvement_tickets : \"improvement_id\"\n  tickets ||--o{ improvement_tickets : \"ticket_id\"\n  improvements ||--o{ improvement_whys : \"improvement_id\"\n  failure_causes o|--o{ improvements : \"root_cause_id\"\n  improvements ||--o{ improvement_actions : \"improvement_id\"\n  people ||--o{ improvement_actions : \"owner_id\"\n  improvement_actions o|--o{ equipment_documents : \"action_id\"\n  improvements ||--o{ improvement_events : \"improvement_id\"\n  tickets o|--o{ improvement_events : \"ticket_id\"\n  improvement_actions o|--o{ improvement_events : \"action_id\"\n  improvements o|--o| improvements : \"follow_up_of_id\"\n  improvement_actions o|--o| procedures : \"action_id\"\n"}, {"name": "System", "note": "Settings, serial counters, the job queue and the access log. No foreign keys. Tables of other areas show their primary key only.", "src": "erDiagram\n  access_log {\n    bigint id PK\n    datetime ts\n    varchar username \"null\"\n    varchar role \"null\"\n    varchar session_id \"null\"\n    varchar client_ip\n    tinyint is_internal\n    enum outcome\n    varchar method\n    varchar path\n    varchar user_agent \"null\"\n    varchar detail \"null\"\n    date sighting_day\n    char sighting_hash\n  }\n  app_settings {\n    varchar setting_key PK\n    text setting_value \"null\"\n    datetime updated_at \"null\"\n  }\n  serial_counters {\n    varchar scope PK\n    int last_value\n  }\n  task_queue {\n    int id PK\n    varchar task_type\n    longtext payload \"null\"\n    enum status\n    int attempts\n    int max_attempts\n    datetime scheduled_for\n    datetime locked_until \"null\"\n    text last_error \"null\"\n    datetime created_at\n    datetime completed_at \"null\"\n  }\n"}];
-  const dark = () => {
-    const forced = document.documentElement.dataset.theme;
-    return forced ? forced === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  };
-  mermaid.initialize({ startOnLoad: false, theme: dark() ? "dark" : "default", er: { useMaxWidth: false },
-                       maxTextSize: 200000, securityLevel: "strict" });
+  var schema = window.YANTRA_SCHEMA;
+  var notes = window.YANTRA_SCHEMA_NOTES;
+  var view = window.YantraSchemaView;
 
-  const stage = document.getElementById("stage");
-  const tabsEl = document.getElementById("tabs");
-  let panZoom = null;
-  let current = 0;
+  var stage = document.getElementById("stage");
+  var tablesEl = document.getElementById("tables");
+  var tabsEl = document.getElementById("tabs");
+  var noteEl = document.getElementById("note");
+  var diagramButton = document.getElementById("show-diagram");
+  var tablesButton = document.getElementById("show-tables");
+  var zoomButtons = ["zoom-in", "zoom-out", "fit"].map(function (id) { return document.getElementById(id); });
 
-  function remember(i) { try { localStorage.setItem("yantra-schema-tab", String(i)); } catch (e) { /* storage blocked */ } }
-  function recalled() {
-    try { const v = Number(localStorage.getItem("yantra-schema-tab")); return v >= 0 && v < TABS.length ? v : 0; }
-    catch (e) { return 0; }
+  function el(tag, text, className) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (className) node.className = className;
+    return node;
   }
 
-  async function show(i) {
-    current = i;
-    remember(i);
-    [...tabsEl.children].forEach((b, j) => b.setAttribute("aria-selected", String(j === i)));
-    document.getElementById("note").textContent = TABS[i].note;
+  function showStatus(message) {
+    stage.replaceChildren(el("div", message, "status"));
+  }
+
+  if (!schema || !notes || !view) {
+    stage.hidden = false;
+    showStatus("The schema data was not found. The file docs/schema/schema-data.js is missing or broken. " +
+               "Run tooling\\schema-docs.bat write, then reload this page.");
+    diagramButton.hidden = tablesButton.hidden = true;
+    zoomButtons.forEach(function (b) { b.hidden = true; });
+    return;
+  }
+
+  document.getElementById("meta").textContent = view.metaLine(schema);
+  var tabNames = view.tabs(notes);
+
+  function recall(key, fallback, allowed) {
+    try { var v = localStorage.getItem(key); return allowed.indexOf(v) >= 0 ? v : fallback; }
+    catch (e) { return fallback; }
+  }
+  function remember(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* storage blocked */ }
+  }
+
+  var currentTab = recall(TAB_KEY, view.OVERVIEW, tabNames);
+  var currentView = recall(VIEW_KEY, "diagram", ["diagram", "tables"]);
+  var panZoom = null;
+  var mermaidPromise = null;
+  var drawCount = 0;
+
+  function dark() {
+    var forced = document.documentElement.dataset.theme;
+    return forced ? forced === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  // Loaded on the first drawing, not by a static import: an offline page still shows the tables
+  // svg-pan-zoom is loaded here too, not by a script tag: a tag would block the page while the
+  // network drops packets to the CDN, and the draw needs both libraries anyway
+  function loadPanZoom() {
+    if (window.svgPanZoom) return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement("script");
+      script.src = PAN_ZOOM_URL;
+      script.onload = resolve;
+      script.onerror = function () { script.remove(); reject(new Error("svg-pan-zoom did not load")); };
+      document.head.appendChild(script);
+    });
+  }
+
+  function loadMermaid() {
+    if (!mermaidPromise) {
+      mermaidPromise = Promise.all([import(MERMAID_URL), loadPanZoom()]).then(function (loaded) {
+        var mermaid = loaded[0].default;
+        mermaid.initialize({ startOnLoad: false, theme: dark() ? "dark" : "default", er: { useMaxWidth: false },
+                             maxTextSize: 200000, securityLevel: "strict" });
+        return mermaid;
+      });
+      mermaidPromise.catch(function () { mermaidPromise = null; });
+    }
+    return mermaidPromise;
+  }
+
+  function fit() {
+    if (panZoom) { panZoom.resize(); panZoom.fit(); panZoom.center(); }
+  }
+
+  async function drawDiagram() {
+    var tab = currentTab;
+    var ticket = ++drawCount;
     if (panZoom) { panZoom.destroy(); panZoom = null; }
-    stage.innerHTML = '<div id="status">Drawing…</div>';
+    showStatus("Drawing…");
     try {
-      const { svg } = await mermaid.render("er" + i + "_" + Date.now(), TABS[i].src);
-      stage.innerHTML = svg;
-      const el = stage.querySelector("svg");
-      el.removeAttribute("style");
-      el.setAttribute("width", "100%");
-      el.setAttribute("height", "100%");
-      panZoom = svgPanZoom(el, { controlIconsEnabled: false, zoomScaleSensitivity: 0.3, minZoom: 0.1, maxZoom: 20 });
-      panZoom.resize(); panZoom.fit(); panZoom.center();
+      var mermaid = await loadMermaid();
+      var result = await mermaid.render("er" + ticket + "_" + Date.now(), view.diagramSource(schema, notes, tab));
+      if (ticket !== drawCount || currentView !== "diagram") return;   // another tab or view was chosen meanwhile
+      stage.innerHTML = result.svg;   // Mermaid's own output (securityLevel strict), never the data itself
+      var svg = stage.querySelector("svg");
+      svg.removeAttribute("style");
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", "100%");
+      panZoom = svgPanZoom(svg, { controlIconsEnabled: false, zoomScaleSensitivity: 0.3, minZoom: 0.1, maxZoom: 20 });
+      fit();
     } catch (err) {
-      stage.innerHTML = '<div id="status">The diagram could not be drawn. Check the internet connection, then reload the page.</div>';
+      if (ticket !== drawCount) return;
+      showStatus("The diagram could not be drawn. Check the internet connection, then reload the page. " +
+                 "The tables work without internet: select Show tables.");
       console.error(err);
     }
   }
 
-  TABS.forEach((t, i) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.role = "tab"; b.textContent = t.name;
-    b.addEventListener("click", () => show(i));
+  // ---- The Tables view -------------------------------------------------------------------
+
+  function holdsInto(node, text) {
+    view.holdsParts(text || "").forEach(function (part) {
+      node.appendChild(part.kind === "text" ? document.createTextNode(part.text)
+                                            : el(part.kind === "code" ? "code" : "em", part.text));
+    });
+    return node;
+  }
+
+  // rows: arrays of cells; a cell is a string, or {text, className}, or {holds} for a holds text
+  function smallTable(headings, rows) {
+    if (!rows.length) return el("p", "None", "none");
+    var table = el("table");
+    var head = el("tr");
+    headings.forEach(function (h) { head.appendChild(el("th", h)); });
+    table.appendChild(el("thead")).appendChild(head);
+    var body = table.appendChild(el("tbody"));
+    rows.forEach(function (row) {
+      var tr = body.appendChild(el("tr"));
+      row.forEach(function (cell) {
+        if (cell && typeof cell === "object" && "holds" in cell) tr.appendChild(holdsInto(el("td", null, "wide"), cell.holds));
+        else if (cell && typeof cell === "object") tr.appendChild(el("td", cell.text, cell.className));
+        else tr.appendChild(el("td", cell));
+      });
+    });
+    var box = el("div", null, "table-box");
+    box.appendChild(table);
+    return box;
+  }
+
+  function yesNo(value) { return value ? "Yes" : "No"; }
+  function mono(text) { return { text: text, className: "mono" }; }
+  function notesEntry(name) { return (notes.tables && notes.tables[name]) || {}; }
+
+  function tableSection(name) {
+    var table = schema.tables[name];
+    var section = el("section");
+    section.appendChild(el("h2", name));
+    section.appendChild(holdsInto(el("p"), notesEntry(name).holds));
+    section.appendChild(el("h3", "Columns"));
+    section.appendChild(smallTable(["Column", "Type", "Empty allowed", "Default", "Key", "Extra"],
+      table.columns.map(function (c) {
+        return [mono(c.name), mono(c.type), yesNo(c.null), mono(c.default === null ? "" : c.default), c.key, c.extra];
+      })));
+    section.appendChild(el("h3", "Indexes"));
+    section.appendChild(smallTable(["Name", "Unique", "Columns"], table.indexes.map(function (ix) {
+      return [mono(ix.name), yesNo(ix.unique), mono(ix.columns.join(", "))];
+    })));
+    section.appendChild(el("h3", "Foreign keys"));
+    section.appendChild(smallTable(["Name", "Columns", "Points to", "Required"], table.foreign_keys.map(function (fk) {
+      return [mono(fk.name), mono(fk.columns.join(", ")), mono(fk.references + " (" + fk.ref_columns.join(", ") + ")"),
+              yesNo(fk.required)];
+    })));
+    section.appendChild(el("h3", "Checks"));
+    section.appendChild(smallTable(["Name", "Rule"], table.checks.map(function (ck) {
+      return [mono(ck.name), mono(ck.clause)];
+    })));
+    return section;
+  }
+
+  function overviewTables() {
+    var known = notes.areas.map(function (a) { return a.name; });
+    var parts = [];
+    var all = el("section");
+    all.appendChild(el("h2", "All tables"));
+    all.appendChild(smallTable(["Table", "Area", "Holds"], Object.keys(schema.tables).sort().map(function (name) {
+      var entry = notesEntry(name);
+      return [mono(name), known.indexOf(entry.area) >= 0 ? entry.area : "No area", { holds: entry.holds }];
+    })));
+    parts.push(all);
+    var planned = el("section");
+    planned.appendChild(el("h2", "Planned tables (not built yet)"));
+    planned.appendChild(holdsInto(el("p"), notes.planned_note));
+    planned.appendChild(smallTable(["Tables", "Holds"], (notes.planned || []).map(function (group) {
+      return [mono(group.tables.join(", ")), { holds: group.holds }];
+    })));
+    parts.push(planned);
+    return parts;
+  }
+
+  function drawTables() {
+    var parts = currentTab === view.OVERVIEW ? overviewTables()
+      : view.areaTables(schema, notes, currentTab).own.map(tableSection);
+    tablesEl.replaceChildren.apply(tablesEl, parts);
+    tablesEl.scrollTop = 0;
+  }
+
+  // ---- Tabs and views --------------------------------------------------------------------
+
+  function noteOf(tab) {
+    if (tab === view.OVERVIEW) return notes.overview_note || "";
+    var area = notes.areas.filter(function (a) { return a.name === tab; })[0];
+    return area ? area.note : "";
+  }
+
+  function render() {
+    [].forEach.call(tabsEl.children, function (b) { b.setAttribute("aria-selected", String(b.textContent === currentTab)); });
+    noteEl.textContent = noteOf(currentTab);
+    var diagram = currentView === "diagram";
+    diagramButton.setAttribute("aria-pressed", String(diagram));
+    tablesButton.setAttribute("aria-pressed", String(!diagram));
+    zoomButtons.forEach(function (b) { b.hidden = !diagram; });
+    stage.hidden = !diagram;
+    tablesEl.hidden = diagram;
+    if (diagram) { drawDiagram(); } else { drawTables(); }
+  }
+
+  tabNames.forEach(function (name) {
+    var b = el("button", name);
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.addEventListener("click", function () { currentTab = name; remember(TAB_KEY, name); render(); });
     tabsEl.appendChild(b);
   });
-  document.getElementById("zoom-in").onclick = () => panZoom && panZoom.zoomIn();
-  document.getElementById("zoom-out").onclick = () => panZoom && panZoom.zoomOut();
-  document.getElementById("fit").onclick = () => { if (panZoom) { panZoom.resize(); panZoom.fit(); panZoom.center(); } };
-  addEventListener("resize", () => { if (panZoom) { panZoom.resize(); panZoom.fit(); panZoom.center(); } });
-  show(recalled());
+  diagramButton.addEventListener("click", function () { currentView = "diagram"; remember(VIEW_KEY, "diagram"); render(); });
+  tablesButton.addEventListener("click", function () { currentView = "tables"; remember(VIEW_KEY, "tables"); render(); });
+  zoomButtons[0].addEventListener("click", function () { if (panZoom) panZoom.zoomIn(); });
+  zoomButtons[1].addEventListener("click", function () { if (panZoom) panZoom.zoomOut(); });
+  zoomButtons[2].addEventListener("click", fit);
+  addEventListener("resize", fit);
+  render();
+})();
 </script>
 </body>
 </html>

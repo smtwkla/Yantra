@@ -67,7 +67,7 @@ finds nothing outside `.venv`.
 | Documents and photos | Built (S006, S008) | `equipment_documents`, CHECK `chk_equipment_documents_owner`: one of equipment, model, ticket | A countermeasure photo (R05.3) and lesson photos (R05.6) add owners. |
 | Serial numbers | Built (S017) | `serial_counters`; `tickets_core.serial_scope` gives `TK:YYYY-MM` | `IM-YYYY-MM-NNN` (Q0.1). R03.3 adds `PM-` the same way. |
 | Time field | Built (S051) | the *Now* tick | *Done on* for a countermeasure. |
-| Procedures, one-point lessons | Proposed, not built | Plan § 4.3a; `docs/schema.md` § Planned: `procedures`, `procedure_items`, `procedure_completions`; queued *Procedure master* | R05.6 builds the first kind (one-point lesson); R05.7 the completion records. |
+| Procedures, one-point lessons | Proposed, not built | Plan § 4.3a; `docs/schema/notes.json` `planned`; § Planned: `procedures`, `procedure_items`, `procedure_completions` (`procedures` built since S075); queued *Procedure master* | R05.6 builds the first kind (one-point lesson); R05.7 the completion records. |
 | PM plans, templates | Roadmap R03, approved, not built | R03.2 (`pm_plans`), R03.8 (templates) | A preventive countermeasure becomes a PM plan (R05.9). |
 | Chronic problems report | Proposed, not built | Plan § 4.6; `report:read` is not in `config_rbac.py` yet | R05.8 builds its core as the *Suggested* list. |
 

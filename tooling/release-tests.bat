@@ -10,6 +10,11 @@ setlocal
 ::   2. frontend\node_modules: a directory junction to the working folder's (no npm install).
 ::      backend: uv builds the worktree's own .venv from its uv cache (seconds, no download).
 ::   3. The worktree's tooling\run-tests.bat, logs in scratch\release-tests\ of the working folder.
+::      Then the schema docs check (S078): the worktree's tooling\schema-docs.bat check, so the
+::      committed docs\schema\ must match the committed migrations; it builds and drops
+::      vel_yantra_test_release_schemadocs on the dev DB container. It runs also when the unit
+::      suites were red; its line goes into test-summary-release.txt after run-tests.bat printed
+::      its block, so its own last line shows the result (log schema-docs-release.log).
 ::   4. The browser tests at the Full level (S047): the worktree's tooling\run-e2e-tests.bat
 ::      --level=full: every test on the Android phone, the @device tests on desktop and on the
 ::      iPhone (S055), the iPhone in its Docker container (needs Docker Desktop). It runs also when step 3 was red, so one attempt shows every fault. It
@@ -24,7 +29,7 @@ setlocal
 :: is inside, `git worktree remove --force` (or an IDE's "remove worktree") would follow it and empty
 :: the working folder's frontend\node_modules. A locked worktree refuses that and `git worktree prune`.
 :: A run that was cut off leaves the locked worktree; running this script again cleans it up.
-:: Exit code: 0 when run-tests.bat and the e2e run are both green, else 1 (also when the worktree
+:: Exit code: 0 when run-tests.bat, the schema docs check and the e2e run are all green, else 1 (also when the worktree
 :: could not be made).
 :: Usage: release-tests.bat [<commit>]   (default HEAD; another commit only to try this script out)
 set "REPO=%~dp0.."
@@ -51,14 +56,22 @@ for /f "delims=" %%i in ('git -C "%WT%" rev-parse --short HEAD') do echo Release
 
 call "%WT%\tooling\run-tests.bat"
 set UNIT_RESULT=%ERRORLEVEL%
+:: run-tests.bat's setlocal dropped its TEST_SUMMARY_FILE: set it again for the schema docs line
+set "TEST_SUMMARY_FILE=%YANTRA_TEST_LOG_DIR%\test-summary-release.txt"
+call "%WT%\tooling\schema-docs.bat" check
+set SCHEMA_RESULT=%ERRORLEVEL%
 call "%WT%\tooling\run-e2e-tests.bat" --level=full
 set E2E_RESULT=%ERRORLEVEL%
 call :copy_e2e_report
 call :remove_worktree
-:: Both lines print when both parts failed, so the end of the output shows every fault.
+:: Every failed part prints its line, so the end of the output shows every fault.
 set RELEASE_RESULT=0
 if not "%UNIT_RESULT%"=="0" (
   echo Release tests: the unit suites failed ^(see the summary above and scratch\release-tests\^).
+  set RELEASE_RESULT=1
+)
+if not "%SCHEMA_RESULT%"=="0" (
+  echo Release tests: the schema docs are stale or were not checked ^(see scratch\release-tests\schema-docs-release.log^).
   set RELEASE_RESULT=1
 )
 if not "%E2E_RESULT%"=="0" (

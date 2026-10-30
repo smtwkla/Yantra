@@ -46,7 +46,7 @@ Checked against HEAD `c9142b4` (27-10-2026). Nothing of PM is built: no PM table
 
 | Piece | State today | Evidence | How PM uses it |
 |---|---|---|---|
-| Equipment tree, classes, models | Built | `equipment`, `equipment_classes`, `equipment_models` (`docs/schema.md`); a plan "can point at any level" (Plan § 4.1) | A plan belongs to one node at any level. A class is a kind across levels, so "apply to every press" is one class. |
+| Equipment tree, classes, models | Built | `equipment`, `equipment_classes`, `equipment_models` (`docs/schema/notes.json`); a plan "can point at any level" (Plan § 4.1) | A plan belongs to one node at any level. A class is a kind across levels, so "apply to every press" is one class. |
 | Property filter | Built (S062) | `property_filter_core.py`; `GET /api/equipment?props=` | The template's *Apply* dialog narrows the class's machines by property (e.g. rated power). |
 | Meters and readings | Built (S037–S040) | `meter_types`, `model_meters`, `node_meters`, `meter_readings`; `meter_readings.source` is already `ENUM('manual','pm','move','iiot')` (`backend/local_db.py:987`) | Meter triggers read the latest counter reading. A reading item that names a meter writes a reading with source `pm`. |
 | The reading rules | Built (S039) | `meters.log_reading` takes the node lock (`equipment.load_node_for_user`, `for_update`) and checks both neighbours (`meters_core.counter_error`); a CLAUDE.md § SMTW-Review invariant | A PM reading goes through the same locked path, never a second insert. |
@@ -54,12 +54,12 @@ Checked against HEAD `c9142b4` (27-10-2026). Nothing of PM is built: no PM table
 | Deferred work | Built (S019, S034) | state `scheduled`, planned date, waiting reason; "a target by meter value … with the PM engine" (Plan § 4.2) | R03.16 adds the meter target with the PM core. |
 | Team, contractors, site roles | Built (S010, S011) | `people`, `memberships`; `ASSIGNABLE_ROLES` (`config_rbac.py:64`); operators without a login (S017) | Assignee, *performed by*, AMC vendors as contractor people. |
 | Files and photos | Built (S006, S008, S017) | `equipment_documents` with `chk_equipment_documents_owner`: exactly one of equipment, model, ticket (`local_db.py:480`) | Job photos and reference photos add a fourth and fifth owner. |
-| Serial numbers | Built | `serial_counters`, "later `PM-`" (`docs/schema.md`); `tickets_core.serial_scope` | `PM-YYYY-MM-NNN` (Plan § 4.3). |
+| Serial numbers | Built | `serial_counters`, "later `PM-`" (`docs/schema/notes.json`); `tickets_core.serial_scope` | `PM-YYYY-MM-NNN` (Plan § 4.3). |
 | Worker and daily schedule | Built (S013) | `scheduled_tasks.SCHEDULE` (one daily entry, `purge_access_log`); `task_handlers.HANDLERS` | A daily `pm_generate` task creates the jobs that fall due. |
 | Alerts | Built (S021, S032) | `alerts_core.KINDS`, `AUDIENCE`, `CHANNELS`; push per device, email | Two new kinds: PM job due, PM job overdue. |
 | Me page | Built (S031, S035) | *Open work* lists open tickets assigned to me | PM jobs join *Open work* (Plan § 6). |
 | The time field and back-dating | Built (S051, S039) | the *Now* tick; readings 7 days back | *Started* and *Done* times on a job, entered after the fact. |
-| Planned tables | Named, not built | `docs/schema.md` § Planned tables: `pm_templates`, `pm_template_items`, `pm_plans`, `pm_plan_items`, `pm_jobs`, `pm_job_results`, `pm_job_events`, `pm_routes`, `pm_route_plans` | The items below follow these names; each brief may change them. |
+| Planned tables | Named, not built | `docs/schema/notes.json` `planned`: `pm_templates`, `pm_template_items`, `pm_plans`, `pm_plan_items`, `pm_jobs`, `pm_job_results`, `pm_job_events`, `pm_routes`, `pm_route_plans` | The items below follow these names; each brief may change them. |
 
 **What no item rebuilds:** the meters and the reading rules, the ticket flow and its dialogs, the
 equipment picker (`EquipmentPicker.vue`), the property filter, the documents store, the worker and

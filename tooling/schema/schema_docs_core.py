@@ -217,7 +217,29 @@ def parse_notes(text):
         return None, f"{NOTES_JSON} is not valid JSON: {exc}. Fix the file, then run the command again."
     if not isinstance(notes, dict):
         return None, f"{NOTES_JSON} is not valid JSON: the file must hold one object {{...}}. Fix the file, then run the command again."
+    wrong = _wrong_type(notes)
+    if wrong:
+        return None, f"{NOTES_JSON} is not valid JSON: {wrong}. Fix the file, then run the command again."
     return notes, None
+
+
+def _wrong_type(notes):
+    """The first wrong type under a key the code reads, as a phrase; None when all fit."""
+    # A missing key or null is "none"; an empty value of the wrong type is still wrong
+    tables = notes.get("tables")
+    if tables is not None and not isinstance(tables, dict):
+        return "\"tables\" must be an object {...}"
+    for key in ("areas", "planned"):
+        items = notes.get(key)
+        if items is None:
+            continue
+        if not isinstance(items, list):
+            return f"\"{key}\" must be a list [...]"
+        if not all(isinstance(item, dict) for item in items):
+            return f"every entry under \"{key}\" must be an object {{...}}"
+    if not all(isinstance(g.get("tables") or [], list) for g in notes.get("planned") or []):
+        return "\"tables\" in a \"planned\" entry must be a list [...]"
+    return None
 
 
 def _cut(text):
@@ -347,6 +369,16 @@ def create_refused_message(database):
 def migration_failed_message(detail):
     return (f"The schema docs were not built. The migrations could not be applied: {detail}. "
             "Fix the migration in backend/local_db.py, then run the command again.")
+
+
+def database_error_message(detail):
+    return (f"The schema docs were not built. The database refused a command: {detail}. "
+            "Check the dev database and the user's rights, then run the command again.")
+
+
+def cleanup_failed_message(database, detail):
+    return (f"The schema docs were not built. The database {database} could not be dropped: {detail}. "
+            f"Drop {database} by hand, then run the command again.")
 
 
 LOCK_TIMEOUT_MESSAGE = ("The schema docs were not built. Another schema docs run with the same run name is still "
