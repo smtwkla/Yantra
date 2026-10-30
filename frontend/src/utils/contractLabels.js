@@ -1,7 +1,9 @@
 /**
- * Vendor contracts (S080, R02.1) — labels and the dialog's body, pure.  The rules live in the backend
- * (contracts_core.py); this file only names things and shapes what the dialog sends.
+ * Vendor contracts (S080, R02.1; S081, R02.2: the machines and their prices) — labels and the dialogs' bodies,
+ * pure.  The rules live in the backend (contracts_core.py); this file only names things and shapes what the
+ * dialogs send.
  */
+import { formatDate } from "./datetime";
 
 // The four types (contracts.contract_type), AMC first: the dialog's default and the common case
 export const CONTRACT_TYPES = [
@@ -74,5 +76,67 @@ export function contractBody(form, site) {
   if (!body.covers_breakdown_calls) body.breakdown_calls_per_year = null;
   if (site?.can_read_callout) body.callout_number = textOrNull(form.callout_number);
   if (site?.can_read_cost) body.cost_note = textOrNull(form.cost_note);
+  return body;
+}
+
+// ---------------------------------------------------------------------------
+// The contract page and its machines (S081 § 5.7)
+// ---------------------------------------------------------------------------
+
+/** A price from the API ("9809.00", a DECIMAL as a string) → "₹9,809"; paise only when there are some
+ * ("₹9,809.50"); Indian grouping ("₹9,99,99,999.99"). */
+export function formatRupees(value) {
+  const number = Number(value);
+  const digits = Number.isInteger(number) ? 0 : 2;
+  return `₹${number.toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+/** What the four ticks say, as at most two lines: "Covered: labour, consumables, breakdown calls (4 a year)." and
+ * "Not covered: spare parts."; a line with no item is left out. */
+export function coverageLines(contract) {
+  const calls = contract.breakdown_calls_per_year;
+  const items = [
+    [contract.covers_labour, "labour"],
+    [contract.covers_parts, "spare parts"],
+    [contract.covers_consumables, "consumables"],
+    [contract.covers_breakdown_calls, calls ? `breakdown calls (${calls} a year)` : "breakdown calls"],
+  ];
+  const covered = items.filter(([tick]) => tick).map(([, text]) => text);
+  // An unticked item never has a number of calls (contracts_core.breakdown_calls_error)
+  const notCovered = items.filter(([tick]) => !tick).map(([, text]) => text);
+  const lines = [];
+  if (covered.length) lines.push(`Covered: ${covered.join(", ")}.`);
+  if (notCovered.length) lines.push(`Not covered: ${notCovered.join(", ")}.`);
+  return lines;
+}
+
+/** The response time: 24 → "24 hours", 1 → "1 hour", none → null (the page shows "—"). */
+export function responseText(hours) {
+  if (hours === null || hours === undefined) return null;
+  return hours === 1 ? "1 hour" : `${hours} hours`;
+}
+
+// The type as a noun in a sentence ("Also in another warranty: …")
+const TYPE_NOUNS = { amc: "AMC", cmc: "CMC", warranty: "warranty", on_call: "on-call contract" };
+
+/** One overlap of a machine line (contracts._overlaps): "Also in another AMC: Atlas Copco AMC 2025–26, 01-04-2025
+ * to 31-03-2026." and, when the other line is on the machine above or a part, " (on CMP001)" before the stop. */
+export function overlapText(overlap) {
+  const noun = TYPE_NOUNS[overlap.contract_type] ?? overlap.contract_type;
+  const on = overlap.on_code ? ` (on ${overlap.on_code})` : "";
+  return `Also in another ${noun}: ${overlap.title}, ${formatDate(overlap.from_date)} to ${formatDate(overlap.to_date)}${on}.`;
+}
+
+/**
+ * The machine dialog's form → the request body (S081 § 5.7). On *Add machine* the machine and, only for a reader
+ * of prices, the price ("" → null); a price is never sent by an editor without the key. On *Edit price* the price
+ * alone (the path names the machine).
+ */
+export function lineBody(form, { creating, canReadCost }) {
+  const text = String(form.price ?? "").trim();
+  const price = text === "" ? null : text;
+  if (!creating) return { price };
+  const body = { equipment_id: form.equipment_id };
+  if (canReadCost) body.price = price;
   return body;
 }

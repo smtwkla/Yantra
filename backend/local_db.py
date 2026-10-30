@@ -1465,6 +1465,36 @@ _MIGRATIONS = [
                 OR (covers_breakdown_calls = 1 AND breakdown_calls_per_year BETWEEN 1 AND 365))
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
     ]),
+    # The machines a contract covers (S081, R02.2): one row per contract and node, any level (Q2.1 a), a
+    # node of the contract's site when added.  A node may be on several contracts (Q2.2 a).  price: the
+    # vendor's price for this machine for the contract period, in rupees before GST (D8), NULL = not
+    # entered; read and written only with contract:read_senior.  The contract's total is the sum, never
+    # stored.  A line removed by mistake is deleted; the machine's history keeps the add and the remove
+    # (equipment_events, the two new kinds at the end of the ENUM, as v30 and v33 added theirs).  A new
+    # table and an ENUM widened at its end convert no existing row, so no precondition; a re-run is a no-op.
+    # Rollback: a release before v44 never reads contract_equipment; a contract_added line shows as its
+    # raw name in the history.
+    (44, "Machines on a contract (S081)", [
+        """CREATE TABLE IF NOT EXISTS contract_equipment (
+            id            INT AUTO_INCREMENT PRIMARY KEY,
+            contract_id   INT NOT NULL,
+            equipment_id  INT NOT NULL,
+            price         DECIMAL(10,2) NULL,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by    VARCHAR(100) NOT NULL,
+            updated_at    DATETIME NULL,
+            updated_by    VARCHAR(100) NULL,
+            CONSTRAINT uq_contract_equipment UNIQUE (contract_id, equipment_id),
+            KEY ix_contract_equipment_equipment (equipment_id),
+            CONSTRAINT fk_contract_equipment_contract FOREIGN KEY (contract_id) REFERENCES contracts (id),
+            CONSTRAINT fk_contract_equipment_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT chk_contract_equipment_price CHECK (price IS NULL OR price >= 0)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model',
+                 'meter_added','meter_removed','meter_limits','property','contract_added','contract_removed')
+            NOT NULL""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

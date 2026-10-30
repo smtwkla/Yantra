@@ -5,7 +5,9 @@
  * covered, PM visits, response time.  The status comes from the dates (the API sends it).  The call-out number
  * and the cost note come only to the readers who may see them (the API leaves them out otherwise), and the
  * dialog sends them only for the chosen site's flags.  Never deleted: a contract entered by mistake is
- * deactivated.
+ * deactivated.  S081: each title opens the contract page (its machines and prices), and the managers see the
+ * contract's cost before GST, the sum of its machines' prices (a column shown when some site lets the user read
+ * it; the API leaves the total out elsewhere).
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { apiGet } from "../../api";
@@ -17,6 +19,7 @@ import {
   STATUS_FILTERS,
   contractBody,
   contractTypeLabel,
+  formatRupees,
   statusBadgeClass,
 } from "../../utils/contractLabels";
 import { formatDate } from "../../utils/datetime";
@@ -36,6 +39,7 @@ const showInactive = ref(false);
 
 const addableSites = computed(() => sites.value.filter((s) => s.can_add));
 const canAdd = computed(() => addableSites.value.length > 0);
+const showCost = computed(() => sites.value.some((s) => s.can_read_cost));
 const filtersAtDefault = computed(
   () => !siteFilter.value && !typeFilter.value && !vendorFilter.value && statusFilter.value === DEFAULT_STATUS
 );
@@ -175,6 +179,7 @@ onMounted(reload);
                 <th class="d-none d-md-table-cell">Site</th>
                 <th class="d-none d-md-table-cell">From</th>
                 <th class="d-none d-md-table-cell">To</th>
+                <th v-if="showCost" class="d-none d-md-table-cell text-end">Cost before GST</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -183,7 +188,7 @@ onMounted(reload);
               <tr v-for="c in items" :key="c.id" :class="{ 'text-secondary': !c.active }">
                 <td class="d-none d-md-table-cell">{{ contractTypeLabel(c.contract_type) }}</td>
                 <td>
-                  <div class="fw-semibold">{{ c.title }}</div>
+                  <router-link :to="`/contracts/${c.id}`" class="fw-semibold d-block">{{ c.title }}</router-link>
                   <div v-if="c.contract_number" class="small text-secondary d-none d-md-block">{{ c.contract_number }}</div>
                   <div class="small text-secondary d-md-none">{{ phoneLine(c) }}</div>
                 </td>
@@ -193,6 +198,9 @@ onMounted(reload);
                 <td class="d-none d-md-table-cell">{{ c.site_code }}</td>
                 <td class="d-none d-md-table-cell text-nowrap">{{ formatDate(c.from_date) }}</td>
                 <td class="d-none d-md-table-cell text-nowrap">{{ formatDate(c.to_date) }}</td>
+                <td v-if="showCost" class="d-none d-md-table-cell text-end text-nowrap">
+                  {{ c.price_total === undefined || c.price_total === null ? "—" : formatRupees(c.price_total) }}
+                </td>
                 <td>
                   <span class="badge" :class="statusBadgeClass(c.status.kind)">{{ c.status.label }}</span>
                   <span v-if="!c.active" class="badge text-bg-light ms-1">Inactive</span>

@@ -84,6 +84,12 @@ describe("describeEvent", () => {
       .toBe("Property: Frame size: 132M → no value");
   });
 
+  it("a contract line names the contract, added or removed (S081)", () => {
+    const text = "Atlas Copco AMC 2026–27 (AMC, 01-04-2026 to 31-03-2027)";
+    expect(describeEvent(ev("contract_added", null, text))).toBe(`Added to contract: ${text}`);
+    expect(describeEvent(ev("contract_removed", text, null))).toBe(`Removed from contract: ${text}`);
+  });
+
   it("an unknown event is shown by name", () => {
     expect(describeEvent(ev("mystery", null, null))).toBe("mystery");
   });

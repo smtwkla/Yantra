@@ -6,6 +6,7 @@ import ImprovementDetailView from "../views/ImprovementDetailView.vue";
 import ImprovementRegisterView from "../views/ImprovementRegisterView.vue";
 import ImprovementsView from "../views/ImprovementsView.vue";
 import AssetListPrintView from "../views/AssetListPrintView.vue";
+import ContractView from "../views/ContractView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
 import LessonView from "../views/LessonView.vue";
 import MastersView from "../views/MastersView.vue";
@@ -123,6 +124,14 @@ const routes = [
     name: "masters",
     component: MastersView,
     meta: { title: "Masters" },
+  },
+  // A vendor contract with its machines (S081): opened from Masters › Contracts (and, with S082, from a
+  // machine's page). Not a nav item, so no item is lit and the API's 404 is the gate (as the lesson page)
+  {
+    path: "/contracts/:id(\\d+)",
+    name: "contract",
+    component: ContractView,
+    meta: { title: "Contract" },
   },
   // My notifications (S021): from the bell in the top bar, not a nav item; push:subscribe is
   // every logged-in role's, and the "no access yet" screen has no top bar route to it

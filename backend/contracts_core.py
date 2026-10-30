@@ -6,7 +6,9 @@ rules.  The one stated copy is ``_iso_date``, the 7 lines of improvements_core._
 each other's private helpers), with the date bounds of § 5.1 added here.
 """
 
+import re
 from datetime import date, timedelta
+from decimal import Decimal
 
 from masters_core import collapsed, flag_parser, id_parser, optional_text_parser, phone_parser, validate_fields
 
@@ -136,6 +138,9 @@ _CONTRACT_FIELDS = {
 # The fields only some readers see and write (§ 5.4): field -> the key needed at the contract's site
 GATED_FIELDS = {"callout_number": "contract:read", "cost_note": "contract:read_senior"}
 
+# The same for a machine line (S081 § 5.4, BS1-02): its price follows the cost key
+LINE_GATED_FIELDS = {"price": "contract:read_senior"}
+
 
 def validate_contract(body, creating):
     """The body -> ``(clean, errors)`` for clean_body (§ 5.1).  On a POST every required field must be there (an
@@ -203,3 +208,67 @@ def status_bounds(status, today):
 def newest_end_first(status):
     """The list's order (§ 5.3): the soonest end first, but the latest ended first when looking at ended ones."""
     return status == "ended"
+
+
+# ---------------------------------------------------------------------------
+# The machines a contract covers (S081, R02.2; docs/steps/S081-contract-equipment/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+# contract_equipment.price DECIMAL(10,2): rupees before GST, paise kept (D8)
+PRICE_MAX = Decimal("99999999.99")
+PRICE_FORMAT = "Enter the price in rupees, before GST, e.g. 9809 or 9809.50."
+PRICE_TOO_LARGE = "Price: at most 9,99,99,999.99."
+# ASCII digits only: Python's \d also takes other scripts' digits
+_PRICE_RE = re.compile(r"^[0-9]+(\.[0-9]{1,2})?$")
+
+# The type in a history line (§ 5.3)
+TYPE_SHORT = {"amc": "AMC", "cmc": "CMC", "warranty": "Warranty", "on_call": "On call"}
+
+
+def parse_price(raw):
+    """A line's price (§ 5.1) -> a Decimal, or None for null or "" (not entered).  An int, or a string of digits
+    with at most two decimals (trimmed), 0 to PRICE_MAX.  A float (already rounded), a boolean, a minus sign, a
+    comma or a rupee sign is refused.  Not meters_core.parse_number: money is never negative (B11)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise ValueError(PRICE_FORMAT)
+    if isinstance(raw, int):
+        if raw < 0:
+            raise ValueError(PRICE_FORMAT)
+        value = Decimal(raw)
+    else:
+        text = raw.strip()
+        if not text:
+            return None
+        if not _PRICE_RE.match(text):
+            raise ValueError(PRICE_FORMAT)
+        value = Decimal(text)
+    if value > PRICE_MAX:
+        raise ValueError(PRICE_TOO_LARGE)
+    return value
+
+
+_LINE_FIELDS = {
+    "equipment_id": (id_parser("Machine"), False),
+    "price": (parse_price, False),
+}
+
+
+def validate_line(body, creating):
+    """A machine line's body -> ``(clean, errors)`` for clean_body (§ 5.1).  On a POST the machine is required (an
+    absent one is parsed as None, so "Choose a machine." shows); on a PUT the path names it, so a sent
+    ``equipment_id`` is ignored.  Unknown fields are ignored."""
+    data = dict(body)
+    if creating:
+        data.setdefault("equipment_id", None)
+    else:
+        data.pop("equipment_id", None)
+    return validate_fields(data, _LINE_FIELDS, creating)
+
+
+def event_text(contract):
+    """The contract as the machine's history names it (§ 5.3): "<title> (<type>, DD-MM-YYYY to DD-MM-YYYY)".
+    Never the price: the history is read with equipment:read.  At most 137 characters."""
+    period = f"{contract['from_date'].strftime('%d-%m-%Y')} to {contract['to_date'].strftime('%d-%m-%Y')}"
+    return f"{contract['title']} ({TYPE_SHORT[contract['contract_type']]}, {period})"

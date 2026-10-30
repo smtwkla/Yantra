@@ -98,11 +98,11 @@ No S016 file was touched; `conftest.py` needed no new fixture.
 
 ## Manual checks
 
-- [ ] Print one unit with **Checklist columns** on the office printer, A4 portrait at
+- [x] Print one unit with **Checklist columns** on the office printer, A4 portrait at
   100 %. No column is cut off at the right, the Remarks column is wide enough to write
-  in, and the signature footer is on the sheet.
-- [ ] Print a unit long enough for two pages. The table header repeats on page 2, and
-  the next unit starts on a new page.
+  in, and the signature footer is on the sheet. — by IT Admin, 30-10-2026 (reported by KLA)
+- [x] Print a unit long enough for two pages. The table header repeats on page 2, and
+  the next unit starts on a new page. — by IT Admin, 30-10-2026 (reported by KLA)
 - [auto] (S024 browser test, see *Browser tests* below; accepted by KLA, 21-10-2026) With **Include parts**, a press shows its component-units and components indented
   under it, and the count line reads "n equipment, m parts".
 

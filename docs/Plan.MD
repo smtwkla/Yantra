@@ -231,10 +231,13 @@ The vendor contract keys (S080, R02.1, 30-10-2026; all four site-scoped, checked
 site, never by unit) follow the base's three read levels (ISO 27001 A.5.15). `contract:read_basic`,
 every role (the storekeeper too): the terms, every field but two. `contract:read`, engineer and
 manager: adds the vendor's call-out number. `contract:read_senior`, manager only: adds the cost
-note (later the prices and documents, R02.2, R02.3). `contract:edit`, engineer, manager and IT
-admin: add and change. IT admin reads neither gated field, so its dialog has neither and its save
-leaves them as they were. The API leaves a field out of its answer for a reader without its key,
-and ignores it in a write by an editor without it.
+note and (S081, R02.2) the price per machine and the contract's total, their sum (later the
+documents, R02.3). `contract:edit`, engineer, manager and IT admin: add and change, and add or
+remove the machines covered. IT admin reads neither gated field, so its dialog has neither and its
+save leaves them as they were. The API leaves a field out of its answer for a reader without its
+key, and ignores it in a write by an editor without it; an engineer or IT admin adds a machine
+without a price. A price change has no other field, so it needs `contract:edit` and
+`contract:read_senior` at the site and is refused (403) without the second (S081 B3).
 
 `pm_job:work` is granted to operators because CIL jobs are PM jobs. *Which* jobs a
 user may work is decided by data, not by more permissions: the plan's performer

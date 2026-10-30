@@ -1,13 +1,17 @@
 """Vendor contracts — the pure rules (S080 § 5.1, § 5.3, § 8.2): the fields, the period, breakdown calls, the
-status from the dates and the Status filter.  No database.  Phone values are obviously fake, never a real number."""
+status from the dates and the Status filter; S081's machine line, its price and the history text (S081 § 5.1,
+§ 5.3).  No database.  Phone values are obviously fake, never a real number."""
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
 from contracts_core import (
-    CALLS_WITHOUT_TICK, ENDING_SOON_DAYS, FROM_AFTER_TO, STATUS_FILTERS, TO_BEFORE_FROM, VENDOR_MISSING,
-    breakdown_calls_error, contract_status, newest_end_first, period_error, status_bounds, validate_contract,
+    CALLS_WITHOUT_TICK, CONTRACT_TYPES, ENDING_SOON_DAYS, FROM_AFTER_TO, LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX,
+    PRICE_TOO_LARGE, STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, breakdown_calls_error,
+    contract_status, event_text, newest_end_first, parse_price, period_error, status_bounds, validate_contract,
+    validate_line,
 )
 from masters_core import PHONE_RULE
 
@@ -202,3 +206,78 @@ class TestStatus:
         assert newest_end_first("ended") is True
         assert newest_end_first("not_ended") is False
         assert newest_end_first("all") is False
+
+
+# ---------------------------------------------------------------------------
+# The machines a contract covers (S081 § 5.1, § 5.3, § 8.2)
+# ---------------------------------------------------------------------------
+
+class TestLine:
+
+    def test_the_machine_is_required_on_a_create(self):
+        assert validate_line({}, True)[1] == [{"field": "equipment_id", "message": "Choose a machine."}]
+        for bad in (True, "5", 0, -1, None, 1.0):
+            assert validate_line({"equipment_id": bad}, True)[1] == [
+                {"field": "equipment_id", "message": "Choose a machine."}], bad
+        assert validate_line({"equipment_id": 5, "other": 1}, True) == ({"equipment_id": 5}, [])
+
+    def test_the_machine_is_ignored_on_a_put(self):
+        assert validate_line({"equipment_id": "x", "price": "10"}, False) == ({"price": Decimal("10")}, [])
+        assert validate_line({}, False) == ({}, [])
+
+    def test_a_price_error_names_the_price(self):
+        assert validate_line({"equipment_id": 5, "price": "9,809"}, True)[1] == [
+            {"field": "price", "message": PRICE_FORMAT}]
+
+
+class TestPrice:
+
+    @pytest.mark.parametrize("raw", [None, "", "   "])
+    def test_empty_is_not_entered(self, raw):
+        assert parse_price(raw) is None
+
+    @pytest.mark.parametrize("raw, value", [
+        (9809, "9809"), ("9809", "9809"), (" 9809.5 ", "9809.5"), ("9809.50", "9809.50"), (0, "0"),
+        ("0", "0"), ("99999999.99", "99999999.99"),
+    ])
+    def test_valid_prices(self, raw, value):
+        parsed = parse_price(raw)
+        assert isinstance(parsed, Decimal) and parsed == Decimal(value)
+
+    @pytest.mark.parametrize("raw", [9809.5, True, False, -1, "-1", "9809.505", "9,809", "₹9809", "9809.",
+                                     ".5", "1e3", "٣", [], {}])
+    def test_refused_with_the_format_text(self, raw):
+        with pytest.raises(ValueError, match="^Enter the price in rupees, before GST, e.g. 9809 or 9809.50.$"):
+            parse_price(raw)
+
+    @pytest.mark.parametrize("raw", ["100000000", 100000000, "99999999.999"])
+    def test_too_large(self, raw):
+        message = PRICE_TOO_LARGE if raw != "99999999.999" else PRICE_FORMAT
+        with pytest.raises(ValueError) as refused:
+            parse_price(raw)
+        assert str(refused.value) == message
+
+    def test_the_limit_is_the_column_s(self):
+        assert PRICE_MAX == Decimal("99999999.99")
+        assert PRICE_TOO_LARGE == "Price: at most 9,99,99,999.99."
+
+
+class TestEventText:
+
+    @pytest.mark.parametrize("contract_type, short", [
+        ("amc", "AMC"), ("cmc", "CMC"), ("warranty", "Warranty"), ("on_call", "On call")])
+    def test_each_type(self, contract_type, short):
+        contract = {"title": "Atlas Copco AMC 2026–27", "contract_type": contract_type,
+                    "from_date": date(2026, 4, 1), "to_date": date(2027, 3, 31)}
+        assert event_text(contract) == f"Atlas Copco AMC 2026–27 ({short}, 01-04-2026 to 31-03-2027)"
+
+    def test_every_type_has_a_short_name(self):
+        assert set(TYPE_SHORT) == set(CONTRACT_TYPES)
+
+    def test_the_longest_fits_the_history_column(self):
+        contract = {"title": "T" * TITLE_MAX, "contract_type": "warranty",
+                    "from_date": date(2026, 4, 1), "to_date": date(2027, 3, 31)}
+        assert len(event_text(contract)) == 137 <= 200   # equipment_events.new_value VARCHAR(200)
+
+    def test_the_line_gate_is_the_cost_key(self):
+        assert LINE_GATED_FIELDS == {"price": "contract:read_senior"}

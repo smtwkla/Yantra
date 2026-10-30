@@ -104,6 +104,11 @@ export function describeEvent(event) {
     // value in force marked "(model)"
     case "property":
       return change("Property", oldValue, secondSide(oldValue, newValue));
+    // A contract line (S081 § 5.3): the backend writes "<title> (<type>, <from> to <to>)", never the price
+    case "contract_added":
+      return `Added to contract: ${newValue}`;
+    case "contract_removed":
+      return `Removed from contract: ${oldValue}`;
     default:
       return String(event.event);
   }

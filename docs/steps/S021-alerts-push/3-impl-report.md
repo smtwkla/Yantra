@@ -325,7 +325,7 @@ On a real device (production, TEST machine, after the release; rows 14–25 of
 - [ ] Sign out on the engineer's phone; a new breakdown reaches it no more (row 21).
 
 Plain:
-- Install on Android shows the Yantra icon and opens without the browser bar (row 22).
+- Install on Android shows the Yantra icon and opens without the browser bar (row 22). — by IT Admin, 30-10-2026 (reported by KLA)
 - After deploy: `sw.js` answers `Cache-Control: no-cache`; the manifest's `Content-Type` is
   read (row 23).
 - Remove the phone from a desktop; it gets nothing after (row 24).

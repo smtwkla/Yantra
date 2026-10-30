@@ -223,12 +223,12 @@ No departure from the brief.
 ## Manual checks
 
 Important:
-- [ ] Print a sheet on the office printer at 100 %: each cut square measures 52 mm with a
-  ruler.
+- [x] Print a sheet on the office printer at 100 %: each cut square measures 52 mm with a
+  ruler. — by IT Admin, 30-10-2026 (reported by KLA)
 - [ ] Scan a printed label with an Android phone's camera and with an iPhone's camera, on
   mobile data: the link opens Yantra, asks for login if needed, and shows that equipment's
   page.
-- [ ] A crumpled or oil-marked label (rub a finger of grease across a corner) still scans.
+- [x] A crumpled or oil-marked label (rub a finger of grease across a corner) still scans. — by IT Admin, 30-10-2026 (reported by KLA)
 
 Also:
 - Equipment list: tick across two pages of a unit filter, print: all of them come out;

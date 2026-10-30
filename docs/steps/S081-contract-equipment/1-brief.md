@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079 (v42) and S080 (v43) coded before S081 (staleness check before coding)
-Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 4 minor accepted)
+Baseline: 31484e6 (refs/steps/S080; d216f48 + S079, S080), checked by staleness review s1
+Status: Gate B 30-10-2026 (code review r1: 4 nits, fixed in fix round 1)
 From: R02.2 (first half: the machines and their prices; the card and the list filter are S082)
 ```
 
@@ -685,3 +685,13 @@ None.
 | BR1-03 (minor) | Accepted | § 5.2, § 5.7, § 6: *Edit price* and *Remove* allowed on an inactive contract; § 8.2: two tests. |
 | BR1-04 (minor) | Accepted | § 3, § 5.7: `responseText` returns "24 hours" / "1 hour" / `null`; S082's card writes its own "Response time: " (S082 changed to match). |
 | BR1-05…BR1-11 (nits) | Accepted as recommended; BR1-11 (the INDEX row) is the orchestrator's | The total shows once, under the machines; no total line on an empty list; `_overlaps(cur, contract, lines, site_ids)`; the equipment.py bullet keeps S080's create clause; "at most 137"; the picker's `emptyText` "No machine of SMTW matches."; B3 flagged for KLA at gate B in § 9. |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 30-10-2026
+
+These answers override the brief text above where they differ; the coder follows them.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor | Accepted: the code's names are `_contract_out(row, flags, today)`, `_contract_row(cur, contract_id)` (the joined read) and `_answer(cur, contract_id)` (a write's answer); § 6.1's detail (machines, total) is built in one helper that both `get_contract` and `_answer` call, so S080's `PUT` answer carries it too. |
+| BS1-02 minor | Accepted: the price goes through S080's one gating mechanism — `contracts_core.LINE_GATED_FIELDS = {"price": "contract:read_senior"}`; `contracts._drop_gated(clean, site_id, fields=GATED_FIELDS)` gains the `fields` argument; the line write routes call it with `LINE_GATED_FIELDS` (the price-change route keeps its 403 by B3 before any drop); § 8.6's SMTW-Review text names `_drop_gated` for the line. |
+| BS1-03…BS1-06 nits | Accepted as recommended: rewrite contracts.py's whole docstring (first paragraph, ACCESS, no-cycle list, LOCK ORDER); S080's API tests pin no whole key set, so they stay green; `test_migration_v43.py` is the pattern; the dialog uses `useFormModal` (not the panel's `useMasterForm` wiring). |

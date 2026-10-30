@@ -454,3 +454,13 @@ None.
 | BR1-05 (minor) | Accepted | § 1, § 5.3: "To call the vendor, ask the engineer."; § 9 flags it for KLA at gate B. |
 | BR1-06 (minor) | Accepted | § 8.5: the device check on the dev server only, with its set-up in the row. |
 | BR1-07…BR1-12 (nits) | Accepted as recommended | "about contracts in force"; order `to_date, id`; `via` "Through CMP001 — Screw compressor 1, this part's machine."; "Any contract status"; the moved-machine residual in § 9; a scrapped node shows the card as any other (§ 5.3). Also: S081's `responseText` returns "24 hours" / `null`, so the card writes "Response time: " itself (S081 BR1-04). |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 30-10-2026
+
+These answers override the brief text above where they differ; the coder follows them.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor | Accepted: the card query builds on `_CONTRACT_SELECT` (used by `list_contracts` and `_contract_row`; there is no `_fetch_contract`) and joins the lines as `contract_equipment cl` (reading `cl.equipment_id`), because `ce` is already taken inside `_CONTRACT_SELECT`. The row now also carries `machine_count`, `priced_count`, `price_total`; the card's key whitelist keeps them out (§ 5.2). |
+| BS1-02 minor | Accepted: the technician, engineer and manager of the card and list tests are `user_at_sites` clients at the test's site (the conftest `engineer` holds no unit, so `load_node_for_user` answers 404 for it). |
+| BS1-03…BS1-07 nits | Accepted: `_contract_out(row, flags, today)` takes three arguments; `_sites_holding`'s callers are `list_contracts` and `_detail`; an empty `?contract=` is refused with 400 by `enum_arg`, as the other enum filters — only an absent parameter means no filter; `CONTRACT_FILTER_CHOICES` goes in `contractLabels.js` (one file fewer); the SMTW-Review point to extend is *Contract fields by key (S080)*. |

@@ -1,13 +1,16 @@
 // Masters › Contracts (S080, R02.1) — the register of vendor contracts: add and edit in one dialog, the
 // call-out number and cost note by role, the status badges and the Status filter, an inactive vendor, a
-// deactivated contract, the sites a user reads, and the list on a phone.  The seed has no vendors or contracts:
+// deactivated contract, the sites a user reads, and the list on a phone.  The contract page (S081, R02.2): the
+// machines covered, Add machine, the price per machine and the total for the manager only, Remove, the overlap
+// of two AMCs, the machine's history lines, and Cost before GST in the list; each S081 test makes its own
+// machines by API (as equipment.spec.js's createEquipment).  The seed has no vendors or contracts:
 // each test makes its own by API, named with its tag, and looks for its own rows only.  Dates are relative to
 // today (IST), far from the 60-day edge.  The call-out number is obviously fake (D10).
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { apiAs, asPerson } from "./support/people.js";
 import { propertyTag } from "./support/properties.js";
-import { saveDialog } from "./support/tickets.js";
+import { card, saveDialog } from "./support/tickets.js";
 
 const CALLOUT = "+91 00000 00000";
 const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -235,4 +238,152 @@ test("S080: the Contracts list fits a phone with no sideways scroll", { tag: "@d
     await expect(page.locator("table thead th", { hasText: "Site" })).toBeVisible();
     await expect(first.locator("td").nth(3)).toHaveText("SMTW");
   }
+});
+
+// ---------------------------------------------------------------------------
+// The machines on a contract (S081)
+// ---------------------------------------------------------------------------
+
+/** A machine by API as IT admin, in the unit `unitCode` (a GA37 compressor) -> the node. */
+async function machineByApi(name, unitCode = "SMTW.MCC1") {
+  const units = await callAs("admin", "get", "/api/masters/units");
+  const models = await callAs("admin", "get", "/api/masters/equipment-models");
+  return callAs("admin", "post", "/api/equipment", {
+    level: "equipment", unit_id: units.items.find((u) => u.full_code === unitCode).id,
+    model_id: models.items.find((m) => m.label === "Atlas Copco GA37").id, name,
+  });
+}
+
+/** A machine line by API (the manager, so a price is kept). */
+const lineByApi = (contract, machine, price = null) =>
+  callAs("manager", "post", `/api/contracts/${contract.id}/equipment`, { equipment_id: machine.id, price });
+
+/** The tag's vendor, an AMC at SMTW and one machine, on it unless `onIt` is false. */
+async function contractWithMachine(testInfo, { onIt = true, price = null } = {}) {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag}`);
+  const machine = await machineByApi(`E2E compressor ${tag}`);
+  if (onIt) await lineByApi(contract, machine, price);
+  return { tag, vendor, contract, machine };
+}
+
+const machinesCard = (page) => page.getByTestId("contract-machines");
+const machineLine = (page, machine) => machinesCard(page).getByTestId("contract-machine").filter({ hasText: machine.code });
+const historyText = (contract) => `${contract.title} (AMC, ${shown(day(-30))} to ${shown(day(300))})`;
+
+test("S081: the engineer adds a machine to a contract; the page lists it and the machine's history shows the line", async ({ page }, testInfo) => {
+  const { contract, machine } = await contractWithMachine(testInfo, { onIt: false });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(machinesCard(page)).toContainText("No machines on this contract yet. Add the first one with Add machine.");
+  await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-footer")).toContainText("Choose a machine");
+  await dialog.getByLabel("Which equipment?").fill(machine.name);
+  await dialog.locator(".list-group-item", { hasText: machine.name }).click();
+  await expect(dialog.getByTestId("picked-machine")).toContainText(`${machine.code} — ${machine.name}`);
+  await saveDialog(page, "Add machine");
+  const line = machineLine(page, machine);
+  await expect(line).toContainText(`${machine.code} — ${machine.name}`);
+  await expect(machinesCard(page).locator(".card-header")).toContainText("Machines covered (1)");
+  await line.getByRole("link", { name: `${machine.code} — ${machine.name}` }).click();
+  await expect(card(page, "History")).toContainText(`Added to contract: ${historyText(contract)}`);
+});
+
+test("S081: the manager enters a price per machine and sees the total; the engineer sees no price", async ({ page }, testInfo) => {
+  const { contract, machine } = await contractWithMachine(testInfo);
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  const line = machineLine(page, machine);
+  await expect(line.getByTestId("line-price")).toHaveText("No price");
+  await expect(page.getByTestId("contract-total")).toHaveText("No prices entered yet.");
+  await line.getByRole("button", { name: "Edit price" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.locator(".modal-title")).toHaveText(`Edit price — ${machine.code}`);
+  await dialog.getByLabel("Price (₹, before GST)").fill("9809");
+  await saveDialog(page, "Save price");
+  await expect(line.getByTestId("line-price")).toHaveText("₹9,809");
+  await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹9,809 before GST · 1 of 1 machines priced.");
+
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(machineLine(page, machine)).toBeVisible();
+  await expect(page.getByTestId("line-price")).toHaveCount(0);
+  await expect(page.getByTestId("contract-total")).toHaveCount(0);
+  await expect(machineLine(page, machine).getByRole("button", { name: "Edit price" })).toHaveCount(0);
+  await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+  await expectDialogFits(page);
+  const engineerDialog = await openDialog(page);
+  await expect(engineerDialog.getByLabel("Which equipment?")).toBeVisible();
+  await expect(engineerDialog.getByLabel("Price (₹, before GST)")).toHaveCount(0);
+});
+
+test("S081: a machine of another site is not offered in Add machine", async ({ page }, testInfo) => {
+  const { tag, contract } = await contractWithMachine(testInfo, { onIt: false });
+  const bricks = await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER");
+  // The manager holds both sites, so only the contract's site keeps the BRICKS machine out
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("Which equipment?").fill(bricks.name);
+  await expect(dialog.getByText("No machine of SMTW matches.")).toBeVisible();
+  await expect(dialog.locator(".list-group-item", { hasText: bricks.name })).toHaveCount(0);
+});
+
+test("S081: Remove asks first; the machine leaves the contract page and its history shows the line", async ({ page }, testInfo) => {
+  const { contract, machine } = await contractWithMachine(testInfo, { price: "9809" });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  const line = machineLine(page, machine);
+  await line.getByRole("button", { name: "Remove" }).click();
+  await expect(line).toContainText(`Remove ${machine.code} from this contract? Its history keeps the line.`);
+  await line.getByRole("button", { name: "Keep" }).click();
+  await expect(line).not.toContainText("from this contract?");
+  await line.getByRole("button", { name: "Remove" }).click();
+  await expect(line.getByRole("button", { name: "Keep" })).toBeVisible();
+  await line.getByRole("button", { name: "Remove" }).click(); // the question's Remove: the row's own button is gone
+  await expect(machineLine(page, machine)).toHaveCount(0);
+  await expect(machinesCard(page)).toContainText("No machines on this contract yet.");
+  await asPerson(page, "engineer", `/equipment/${machine.id}`);
+  await expect(card(page, "History")).toContainText(`Removed from contract: ${historyText(contract)}`);
+});
+
+test("S081: a second AMC on the same machine shows the overlap line on both contract pages", async ({ page }, testInfo) => {
+  const { vendor, contract, machine, tag } = await contractWithMachine(testInfo);
+  const second = await contractByApi(vendor, `E2E second AMC ${tag}`, { from_date: day(100), to_date: day(500) });
+  await lineByApi(second, machine);
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(machineLine(page, machine).getByTestId("overlap")).toHaveText(
+    `Also in another AMC: ${second.title}, ${shown(day(100))} to ${shown(day(500))}.`);
+  await asPerson(page, "engineer", `/contracts/${second.id}`);
+  await expect(machineLine(page, machine).getByTestId("overlap")).toHaveText(
+    `Also in another AMC: ${contract.title}, ${shown(day(-30))} to ${shown(day(300))}.`);
+});
+
+test("S081: Masters › Contracts shows Cost before GST to the manager only, and the title opens the contract page", async ({ page }, testInfo) => {
+  const { contract } = await contractWithMachine(testInfo, { price: "28028" });
+  await openContracts(page, "engineer");
+  await expect(row(page, contract.title)).toBeVisible();
+  await expect(page.locator("table thead th", { hasText: "Cost before GST" })).toHaveCount(0);
+  await expect(row(page, contract.title)).not.toContainText("₹");
+
+  await openContracts(page, "manager");
+  await expect(page.locator("table thead th", { hasText: "Cost before GST" })).toHaveCount(1);
+  // The column shows from the md width; on a phone its cell is in the page but hidden
+  await expect(row(page, contract.title).locator("td").filter({ hasText: "₹" })).toHaveText("₹28,028");
+  await row(page, contract.title).getByRole("link", { name: contract.title }).click();
+  await expect(page).toHaveURL(new RegExp(`/contracts/${contract.id}$`));
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹28,028 before GST · 1 of 1 machines priced.");
+});
+
+test("S081: the contract page with its machines fits a phone with no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
+  const { tag, contract, machine } = await contractWithMachine(testInfo, { price: "9809.50" });
+  for (const n of [2, 3]) await lineByApi(contract, await machineByApi(`E2E compressor ${n} ${tag}`), "18040");
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  await expect(machinesCard(page).getByTestId("contract-machine")).toHaveCount(3);
+  await expect(machineLine(page, machine).getByTestId("line-price")).toHaveText("₹9,809.50");
+  await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹45,889.50 before GST · 3 of 3 machines priced.");
+  await expectNoSidewaysScroll(page);
 });
