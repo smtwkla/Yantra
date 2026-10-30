@@ -5,7 +5,7 @@ Author: orchestrator (Opus 5.5)
 Date: 30-10-2026
 Track: full
 Baseline: 1643f65 (review r1 against 12a682e; only S078's own files changed since; stale check 30-10-2026: nothing changed)
-Status: Gate B 30-10-2026 (verify review r2: 1 nit, fixed by the orchestrator) — approved 30-10-2026 by KLA
+Status: Done (committed 8f4c93d, adopted 30-10-2026; checks: 1 done by KLA — the page in Chrome and Edge, online and offline)
 ```
 
 # S078 — Schema docs from the migrations

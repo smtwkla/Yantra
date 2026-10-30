@@ -315,12 +315,12 @@ table, key or migration changed.
 
 ## Manual checks
 
-- [ ] **important** — On KLA's laptop, in Chrome and in Edge, open `docs/schema.html` from the file
+- [x] **important** — On KLA's laptop, in Chrome and in Edge, open `docs/schema.html` from the file
   explorer (a `file://` address, no server). See: the meta line "Migration v41 · 46 tables, 75 links";
   the tabs Overview, Equipment, Team and access, Tickets, System; each diagram draws; `Show tables`
   lists the tables with columns, and the Overview's planned tables. Then turn Wi-Fi off and reload:
   the tables still show, the diagram shows its internet message. Network: any (offline for the last
-  part). (KLA, at gate B; not a row of `docs/steps/device-checks.md`.)
+  part). (KLA, at gate B; not a row of `docs/steps/device-checks.md`.) Passed, reported by KLA 30-10-2026.
 
 ## Verify review r2: CR2-01, fixed by the orchestrator
 
