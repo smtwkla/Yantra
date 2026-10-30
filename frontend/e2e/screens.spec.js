@@ -67,6 +67,11 @@ const screens = () => [
     path: `/tickets/improvements/${improvement.id}`, title: "Improvement",
     shows: (page) => page.getByRole("heading", { name: improvement.serial }), who: TICKET_ROLES,
   },
+  // S076: the register's print page (report:read: the engineer and the manager)
+  {
+    path: "/tickets/improvements/register", title: "Improvement register",
+    shows: (page) => page.getByRole("heading", { name: "Improvement register" }), who: ["engineer", "manager"],
+  },
   { path: "/me", title: "Me", shows: (page) => page.getByRole("button", { name: "My activity", exact: true }), who: TICKET_ROLES },
   { path: "/tickets/new", title: "Raise ticket", shows: (page) => page.getByRole("heading", { name: "Raise ticket" }), who: TICKET_ROLES },
   {

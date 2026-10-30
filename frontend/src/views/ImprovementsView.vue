@@ -14,6 +14,7 @@ import { userPermissions } from "../stores/auth";
 import { ensureMyUnits, filterableUnits, myUnits, noUnits } from "../stores/equipment";
 import { ensureUnits, units } from "../stores/masters";
 import { IMPROVEMENT_STATE_FILTERS, improvementStateLabel, lossText } from "../utils/improvementLabels";
+import { registerPath } from "../utils/improvementRegister";
 import { NO_UNITS_TEXT } from "../utils/messages";
 
 const PAGE_SIZE = 50; // the API default
@@ -32,6 +33,12 @@ const query = computed(() => route.query);
 const state = computed(() => query.value.state ?? DEFAULT_STATE);
 const pageNumber = computed(() => Math.max(1, Number.parseInt(query.value.page, 10) || 1));
 const canStart = computed(() => userPermissions.value.includes("improvement:edit"));
+const canPrintRegister = computed(() => userPermissions.value.includes("report:read"));
+
+// The management review's register on a printable page in a new tab (S076), as the asset list from Equipment
+function printRegister() {
+  window.open(router.resolve(registerPath()).href, "_blank");
+}
 
 /** Merge `changes` into the query; defaults and empty values are left out of the URL. */
 function update(changes) {
@@ -99,6 +106,9 @@ watch(() => route.fullPath, load);
           <option value="">All units</option>
           <option v-for="u in unitChoices" :key="u.id" :value="u.id">{{ u.full_code }}</option>
         </select>
+        <button v-if="canPrintRegister" class="btn btn-sm btn-outline-primary ms-auto d-none d-md-inline-block" @click="printRegister">
+          <i class="fa-solid fa-print me-1"></i>Print register
+        </button>
       </div>
 
       <div v-if="loading && page" class="text-secondary small mb-1">Loading…</div>

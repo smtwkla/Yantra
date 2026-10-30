@@ -101,6 +101,8 @@ guards it is held.
   takes no lock on a row the scan holds), so no cycle.  A deadlock all the same (1213) rolls the
   scan back and the queue retries it.
 - Reads (list, detail, leads, mine, owners; the ticket detail in tickets.py): plain, no lock.
+  S076: the register is plain too, no lock; its reads run inside one transaction block only to share one
+  REPEATABLE READ snapshot (D10), and it writes nothing.
   S075: the detail reads each countermeasure's lesson (procedures) and its machine's current unit
   plainly; lesson_source is one plain read.  No route here locks or writes a procedures row.
   procedures.py links a lesson by taking a countermeasure (6c) LOCK IN SHARE MODE after its own
@@ -166,20 +168,22 @@ lesson* from procedures_core.
 
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, g, jsonify
 
 from alerts import enqueue_improvement_alert
 from alerts_core import ACTION_GIVEN, given_alert
 from api_common import (
-    DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
+    DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, date_arg, enum_arg,
+    int_arg,
 )
 from auth_utils import current_person_id, has_perm_at, permissions_at_site, require_perm, require_perm_at
 from db_helpers import count, marks, get_db, insert_row, next_counter, row_to_dict, transaction, update_row
 from equipment import IST, NODE_JOINS, accessible_unit_ids, unit_access_condition
+from improvement_register_core import REPORT_KEY, age_days, closed_summary, open_summary, parse_period, period_bounds
 from improvements_core import (
     ACTION_ADDED, ACTION_CANCELLED, ACTION_CANCELLED_EVENT, ACTION_CHANGED, ACTION_DONE, ACTION_DONE_EVENT,
     ACTION_EDIT_LABELS, ACTION_KIND_LABELS, ACTION_OPEN, ACTIONS_FULL, ACTIONS_MAX, ALREADY_OPEN_RACE, CAUSE_ACTIVE,
-    CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE, DROPPED, EDIT_KEY, EDIT_LABELS, EDITED, IMPROVEMENT_CLOSED,
+    CLOSED_EFFECTIVE, CLOSED_NOT_EFFECTIVE, CLOSED_STATES, DROPPED, EDIT_KEY, EDIT_LABELS, EDITED, IMPROVEMENT_CLOSED,
     IMPROVEMENT_OPEN_STATES, LEAD_AT_SITE, NOT_A_FAULT, NOTE, NOTE_KEY, OWNER_AT_SITE, OWNER_OR_EDITOR, READ_KEY,
     READY_TO_VERIFY, ROOT_CAUSE_CHANGED, ROOT_CAUSE_SET, SERIAL_PREFIX, STARTED, STATE_CHANGED, TICKET_FROM_LIST,
     TICKET_LINKED, TICKET_OTHER_SITE, TICKET_REMOVED, VERIFY_KEY, WATCHING, WHY_ADDED, WHY_CHANGED, WHY_REMOVED,
@@ -767,6 +771,168 @@ def list_improvements():
 def get_improvement(improvement_id):
     with get_db().cursor() as cur:
         return jsonify(_detail_response(cur, improvement_id))
+
+
+# ---------------------------------------------------------------------------
+# The register (S076): the printable list of a site's improvements for the management review
+# ---------------------------------------------------------------------------
+
+def _register_choices(cur):
+    """The active sites with an active unit among the units where the user holds report:read ->
+    ``(sites ordered by code, {site id: [(unit id, unit code)]})`` of those units."""
+    unit_ids = accessible_unit_ids(cur, REPORT_KEY)
+    if unit_ids is not None and not unit_ids:
+        return [], {}
+    sql = ("SELECT s.id, s.code, s.name, u.id AS unit_id, u.code AS unit_code FROM units u"
+           " JOIN sites s ON s.id = u.site_id WHERE u.active = 1 AND s.active = 1")
+    params = []
+    if unit_ids is not None:
+        sql += f" AND u.id IN ({marks(unit_ids)})"
+        params = sorted(unit_ids)
+    cur.execute(f"{sql} ORDER BY s.code, u.code", params)
+    sites, units = {}, {}
+    for row in cur.fetchall():
+        sites.setdefault(row["id"], {"id": row["id"], "code": row["code"], "name": row["name"]})
+        units.setdefault(row["id"], []).append((row["unit_id"], row["unit_code"]))
+    return list(sites.values()), units
+
+
+def _register_units(cur, site, my_units):
+    """The paper's "Units" line: None when the reader's units are all the site's active units, else
+    their codes, so a partial register is never mistaken for the whole (§ 5.2)."""
+    cur.execute("SELECT COUNT(*) AS n FROM units WHERE site_id = %s AND active = 1", (site["id"],))
+    if cur.fetchone()["n"] == len(my_units):
+        return None
+    return [f"{site['code']}.{code}" for _, code in my_units]
+
+
+_REGISTER_COLUMNS = ("SELECT i.id, i.serial, i.title, i.state, i.watch_from, i.watch_days, i.created_at,"
+                     " m.id AS m_id, m.code AS m_code, m.name AS m_name, u.code AS unit_code, l.name AS lead_name")
+
+
+def _register_started(cur, site_id, visible, start, end, now):
+    cur.execute(f"{_REGISTER_COLUMNS}, fo.id AS fo_id, fo.serial AS fo_serial{_IMPROVEMENT_FROM}"
+                f" WHERE u.site_id = %s AND {visible[0]} AND i.created_at >= %s AND i.created_at < %s"
+                " ORDER BY i.created_at, i.id", [site_id, *visible[1], start, end])
+    items = []
+    for row in cur.fetchall():
+        plain = row_to_dict(row)
+        items.append({
+            "id": plain["id"], "serial": plain["serial"], "title": plain["title"], "machine": _machine(plain),
+            "unit_code": plain["unit_code"], "lead_name": plain["lead_name"], "started_at": plain["created_at"],
+            "state": display_state(row["state"], row["watch_from"], row["watch_days"], now),
+            "follow_up_of": _ref(plain, "fo"),
+        })
+    return {"count": len(items), "items": items}
+
+
+def _register_open(cur, site_id, visible, now):
+    """The open improvements, oldest first, with their open and overdue countermeasures (one query for
+    all, no N+1).  The stored state decides *open*, the display state the row (BR1-03)."""
+    cur.execute(f"{_REGISTER_COLUMNS}{_IMPROVEMENT_FROM} WHERE u.site_id = %s AND {visible[0]}"
+                f" AND i.state IN ({marks(IMPROVEMENT_OPEN_STATES)}) ORDER BY i.created_at, i.id",
+                [site_id, *visible[1], *IMPROVEMENT_OPEN_STATES])
+    rows = cur.fetchall()
+    counts = {}
+    if rows:
+        ids = [row["id"] for row in rows]
+        cur.execute("SELECT improvement_id, SUM(state = 'open') AS open_n,"
+                    " SUM(state = 'open' AND due_date < %s) AS overdue_n"
+                    f" FROM improvement_actions WHERE improvement_id IN ({marks(ids)}) GROUP BY improvement_id",
+                    [now.date(), *ids])
+        counts = {r["improvement_id"]: (int(r["open_n"]), int(r["overdue_n"])) for r in cur.fetchall()}
+    items = []
+    for row in rows:
+        plain = row_to_dict(row)
+        open_n, overdue_n = counts.get(row["id"], (0, 0))
+        items.append({
+            "id": plain["id"], "serial": plain["serial"], "title": plain["title"], "machine": _machine(plain),
+            "unit_code": plain["unit_code"], "lead_name": plain["lead_name"],
+            "state": display_state(row["state"], row["watch_from"], row["watch_days"], now),
+            "age_days": age_days(row["created_at"], now.date()), "actions_open": open_n, "actions_overdue": overdue_n,
+        })
+    summary = open_summary([{"display_state": item["state"], "age_days": item["age_days"]} for item in items])
+    return {**summary, "items": items}
+
+
+def _register_overdue(cur, site_id, visible, today):
+    """Open countermeasures past their due date on open improvements (D8), most days late first."""
+    cur.execute(
+        "SELECT a.id, a.kind, a.text, a.due_date, p.name AS owner_name, i.id AS i_id, i.serial AS i_serial,"
+        " i.title AS i_title"
+        " FROM improvement_actions a"
+        " JOIN improvements i ON i.id = a.improvement_id"
+        " JOIN equipment m ON m.id = i.equipment_id"
+        " JOIN units u ON u.id = i.unit_id"
+        " JOIN people p ON p.id = a.owner_id"
+        f" WHERE u.site_id = %s AND {visible[0]} AND a.state = 'open' AND a.due_date < %s"
+        f" AND i.state IN ({marks(IMPROVEMENT_OPEN_STATES)}) ORDER BY a.due_date, a.id",
+        [site_id, *visible[1], today, *IMPROVEMENT_OPEN_STATES])
+    items = [{
+        "id": row["id"], "kind": row["kind"], "text": row["text"], "owner_name": row["owner_name"],
+        "due_date": row["due_date"].isoformat(), "overdue_days": overdue_days(ACTION_OPEN, row["due_date"], today),
+        "improvement": {"id": row["i_id"], "serial": row["i_serial"], "title": row["i_title"]},
+    } for row in cur.fetchall()]
+    return {"count": len(items), "items": items}
+
+
+def _register_closed(cur, site_id, visible, start, end):
+    cur.execute(f"{_REGISTER_COLUMNS}, i.closed_at, i.closed_by, i.close_remark, i.lead_id,"
+                f" clp.id AS closed_by_person_id, clp.name AS closed_by_name, fu.id AS fu_id, fu.serial AS fu_serial{_IMPROVEMENT_FROM}"
+                f" WHERE u.site_id = %s AND {visible[0]} AND i.state IN ({marks(CLOSED_STATES)})"
+                " AND i.closed_at >= %s AND i.closed_at < %s ORDER BY i.closed_at, i.id",
+                [site_id, *visible[1], *CLOSED_STATES, start, end])
+    items = []
+    for row in cur.fetchall():
+        plain = row_to_dict(row)
+        closed = _closed(plain, row)
+        items.append({
+            "id": plain["id"], "serial": plain["serial"], "title": plain["title"], "machine": _machine(plain),
+            "unit_code": plain["unit_code"], "state": row["state"], "closed_at": closed["at"],
+            "closed_by_name": closed["by_name"],
+            # The person who dropped it is no verifier (D6); admin, with no Team record, is never the lead
+            "by_lead": None if row["state"] == DROPPED else closed["by_lead"],
+            "remark": closed["remark"], "follow_up": _ref(plain, "fu"),
+        })
+    return {**closed_summary(items), "items": items}
+
+
+@improvements_bp.route("/register")
+@require_perm(REPORT_KEY)
+def register():
+    """The improvement register of one site and period (S076): what was started and closed in the
+    period, and what is open and overdue now (D2).  One read-only transaction, so every section
+    comes from one snapshot (D10)."""
+    from_date, to_date, site_id = date_arg("from"), date_arg("to"), int_arg("site_id", None, minimum=1)
+    now = _now()
+    period, error = parse_period(from_date, to_date, now.date())
+    if error:
+        raise ApiError(error["message"], 400, error["field"])
+    start, end = period_bounds(period)
+    answer = {
+        "sites": [], "site": None, "units": None, "period": {"from": period[0].isoformat(), "to": period[1].isoformat()},
+        "today": now.date().isoformat(), "printed_at": datetime.now(IST).isoformat(timespec="seconds"),
+        "printed_by": g.user.get("name") or actor(),
+        "started": {"count": 0, "items": []}, "open": {**open_summary([]), "items": []},
+        "overdue": {"count": 0, "items": []}, "closed": {**closed_summary([]), "items": []},
+    }
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        sites, units = _register_choices(cur)
+        answer["sites"] = sites
+        if not sites:
+            return jsonify(answer)
+        site = sites[0] if site_id is None else next((s for s in sites if s["id"] == site_id), None)
+        if site is None:
+            raise ApiError("Not found", 404)
+        visible = unit_access_condition(cur, REPORT_KEY, "i.unit_id", "m.unit_id")   # not None: the site has units
+        answer["site"] = site
+        answer["units"] = _register_units(cur, site, units[site["id"]])
+        answer["started"] = _register_started(cur, site["id"], visible, start, end, now)
+        answer["open"] = _register_open(cur, site["id"], visible, now)
+        answer["overdue"] = _register_overdue(cur, site["id"], visible, now.date())
+        answer["closed"] = _register_closed(cur, site["id"], visible, start, end)
+    return jsonify(answer)
 
 
 @improvements_bp.route("/leads")

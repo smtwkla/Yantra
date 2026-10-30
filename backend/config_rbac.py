@@ -140,6 +140,13 @@ PERMISSIONS = {
     # reads only, so this key, not improvement:read.
     "improvement:note": ("maint_operator",),
 
+    # Reports for the management review (S076, Plan § 3; PM compliance joins in R03.14): the
+    # improvement register today.  Engineers and managers of the site; not IT admin, who keeps
+    # the system but does not run the maintenance review (ISO 27001 A.5.15); not the supervisor
+    # yet ("more reports later").  Every holder must also hold the read keys of the records the
+    # report lists at the same units (test_report_key).
+    "report:read": ("maint_engineer",),
+
     # One-point lessons (S075, Q6.3 a, D4): the first kind of the Procedures master (Plan § 4.3a).
     # Written by the engineer (so the manager), who knows the point; not IT admin, not the
     # supervisor.  Site-scoped and checked per record: a machine lesson at its machine's site, a
@@ -206,6 +213,8 @@ SITE_SCOPED = frozenset({
     # S072: checked at the improvement's site
     "improvement:verify",
     "improvement:note",
+    # S076: at the units the report lists
+    "report:read",
     # S075: at the lesson's machine's site; held at any site for a class lesson (procedures.py)
     "procedure:edit",
 })

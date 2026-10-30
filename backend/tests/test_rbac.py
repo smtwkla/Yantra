@@ -104,6 +104,16 @@ class TestRoleSources:
         assert editors == {"maint_engineer", "maint_manager"}
         assert {"improvement:read", "improvement:edit"} <= SITE_SCOPED
 
+    def test_report_key(self):
+        """S076 § 5.7, D3, D4: the reports for the review go to the engineer (so the manager); not IT admin, the
+        supervisor or the floor roles.  Site-scoped.  Every holder also holds the read keys of the records the
+        register lists (improvement:read), so it never shows more than the list would."""
+        holders = {role for role in ROLES if "report:read" in compute_permissions([role])}
+        assert holders == {"maint_engineer", "maint_manager"}
+        assert "report:read" in SITE_SCOPED
+        for role in holders:
+            assert "improvement:read" in compute_permissions([role])
+
     def test_procedure_keys(self):
         """S075 § 5.7, Q6.3 a: one-point lessons are written by the engineer (so the manager); not IT
         admin, not the supervisor or the floor roles.  Site-scoped, checked per record."""
@@ -209,6 +219,7 @@ class TestComputePermissions:
         # S067: improvement:read to the operator and IT admin; improvement:edit to the engineer only
         # S072: improvement:note to the operator (not IT admin); improvement:verify to the engineer
         # S075: procedure:edit to the engineer (so the manager); not IT admin, not the supervisor
+        # S076: report:read to the engineer (so the manager); not IT admin, not the supervisor
         ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
                                "reading:log", "improvement:read", "improvement:note"}),
         ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise", "ticket:restore",
@@ -219,14 +230,14 @@ class TestComputePermissions:
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
                                "ticket:edit_notes", "reading:log", "improvement:read", "improvement:edit",
-                               "improvement:note", "improvement:verify", "procedure:edit"}),
+                               "improvement:note", "improvement:verify", "procedure:edit", "report:read"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
                                "people:assign_technicians", "access_log:view", "failure_codes:edit",
                                "ticket:read", "ticket:raise", "ticket:restore", "ticket:work", "ticket:assign",
                                "ticket:close", "ticket:edit_notes", "reading:log", "improvement:read",
-                               "improvement:edit", "improvement:note", "improvement:verify", "procedure:edit"}),
+                               "improvement:edit", "improvement:note", "improvement:verify", "procedure:edit", "report:read"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe", "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",

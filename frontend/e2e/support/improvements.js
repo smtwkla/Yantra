@@ -12,17 +12,18 @@ export const TEST_PHOTO = path.join(path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * A ticket on `machineId` raised by the engineer with *Already fixed* (S018 A1), so it is back in
- * service and can start an improvement. A breakdown stopped 60 min ago and fixed 10 min ago
- * (50 min down), or a defect (no downtime).
+ * service and can start an improvement. A breakdown stopped `minutesAgo` minutes ago (default 60) and
+ * fixed 50 minutes later (50 min down), or a defect (no downtime). `minutesAgo` goes back up to the
+ * 7-day back-dating of a ticket (S076: a register test wants a ticket 3 days old).
  */
-export async function raiseFixed(machineId, description, { breakdown = false } = {}) {
+export async function raiseFixed(machineId, description, { breakdown = false, minutesAgo = 60 } = {}) {
   const kannan = await personId("technician");
   return raiseByApi("engineer", {
     equipment_id: machineId,
     intensity: breakdown ? "critical" : "degraded",
     description,
-    ...(breakdown ? { occurred_at: istLocal(60) } : {}),
-    restore: { person_id: kannan, ...(breakdown ? { occurred_at: istLocal(10) } : {}) },
+    ...(breakdown ? { occurred_at: istLocal(minutesAgo) } : {}),
+    restore: { person_id: kannan, ...(breakdown ? { occurred_at: istLocal(minutesAgo - 50) } : {}) },
   });
 }
 
@@ -33,6 +34,18 @@ export async function startImprovementByApi(ticket, { title = `Set-up: ${ticket.
   try {
     const res = await api.post("/api/improvements", { data: { ticket_id: ticket.id, title, problem, lead_id: lead } });
     expect(res.status(), await res.text()).toBe(201);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** Drop `improvement` with `reason` through the API as the engineer, who leads it -> the detail (S076). */
+export async function dropByApi(improvement, reason) {
+  const api = await apiAs("engineer");
+  try {
+    const res = await api.post(`/api/improvements/${improvement.id}/drop`, { data: { reason } });
+    expect(res.status(), await res.text()).toBe(200);
     return await res.json();
   } finally {
     await api.dispose();

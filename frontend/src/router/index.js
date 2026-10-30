@@ -3,6 +3,7 @@ import EquipmentByCodeView from "../views/EquipmentByCodeView.vue";
 import EquipmentDetailView from "../views/EquipmentDetailView.vue";
 import EquipmentView from "../views/EquipmentView.vue";
 import ImprovementDetailView from "../views/ImprovementDetailView.vue";
+import ImprovementRegisterView from "../views/ImprovementRegisterView.vue";
 import ImprovementsView from "../views/ImprovementsView.vue";
 import AssetListPrintView from "../views/AssetListPrintView.vue";
 import LabelsPrintView from "../views/LabelsPrintView.vue";
@@ -68,6 +69,13 @@ const routes = [
     name: "improvements",
     component: ImprovementsView,
     meta: { title: "Tickets" },
+  },
+  // The register for the management review (S076): a print page opened in a new tab from the Improvements list
+  {
+    path: "/tickets/improvements/register",
+    name: "improvement-register",
+    component: ImprovementRegisterView,
+    meta: { title: "Improvement register" },
   },
   {
     path: "/tickets/improvements/:id(\\d+)",
