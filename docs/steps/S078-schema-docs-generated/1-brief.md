@@ -4,8 +4,8 @@ Doc: brief
 Author: orchestrator (Opus 5.5)
 Date: 30-10-2026
 Track: full
-Baseline: 12a682e
-Status: Gate A 30-10-2026 (review r1: 0 blocker, 0 major, 3 minor, 8 nits, all accepted)
+Baseline: 1643f65 (review r1 against 12a682e; only S078's own files changed since; stale check 30-10-2026: nothing changed)
+Status: Implementing (approved 30-10-2026 by KLA: one step; Q1 a; Q2 keep)
 ```
 
 # S078 — Schema docs from the migrations
@@ -739,7 +739,7 @@ This is a check of a developer document, not of the app on a device, so it is no
 
 ## 9. Open questions and assumptions
 
-**Questions for KLA (gate A)**
+**Questions for KLA (gate A)** — answered 30-10-2026 by KLA: one step (no cut); Q1 (a) copy the texts whole; Q2 keep the check clauses.
 
 - **Q1 — The table texts.** Decision 3 says "one sentence on what it holds". Today's *Holds* texts are
   often many sentences (`improvements` about 250 words), with the rules and the step that made each
