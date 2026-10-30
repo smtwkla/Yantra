@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 32eb122 + uncommitted S066–S069 (gate B), S070 (being coded); S071–S073 coded before S074
-Status: Gate B 30-10-2026 (snapshot b826d2b; verify review r2: 0 major, 1 nit CR2-01 to fix in the next fix round on the tree) — approved 30-10-2026 by KLA (delegated)
+Status: Committed 5e2a8e2 (adopted 30-10-2026); checks: 3 auto; important check pending: row 53 of device-checks.md (IT Admin)
 From: R05.5
 ```
 

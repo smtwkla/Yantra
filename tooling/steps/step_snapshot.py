@@ -4,9 +4,11 @@ own while the next step's coder carries on in the same working tree (decided 24-
     python tooling/steps/step_snapshot.py snapshot S038 "S038: meters on models and equipment; v30;"
     python tooling/steps/step_snapshot.py list
     python tooling/steps/step_snapshot.py adopt S038
-    python tooling/steps/step_snapshot.py diff S038 [--stat] [-- <path>…]   the step's change so far
-    python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] [-- <path>…]
+    python tooling/steps/step_snapshot.py diff S038 [--stat] [--all] [-- <path>…]   the step's change so far
+    python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] [--all] [-- <path>…]
                                                                 the change since round 1
+        (diff leaves out the step folders, docs/steps/INDEX.md, docs/steps/feedback-log.md and
+        docs/roadmap/; --all shows them, and paths after -- replace that default)
     python tooling/steps/step_snapshot.py rounds S038
 
 A snapshot is the whole working tree (tracked and untracked, .gitignore respected) written as a
@@ -34,7 +36,13 @@ files as deleted; this does not.
 ``diff`` leaves out the step's own folder, docs/steps/<step>-*/ (29-10-2026, from the agents'
 feedback on S063 and S064): the reviewer reads the brief, the impl report and the reviews in full
 anyway, and they were a third of a step's diff. Paths after ``--`` replace that default, e.g.
-``diff S038 -- backend frontend``."""
+``diff S038 -- backend frontend``.
+
+Since 30-10-2026 (16 feedback items): ``diff`` leaves out every step folder under docs/steps/,
+docs/steps/INDEX.md, docs/steps/feedback-log.md and docs/roadmap/. The orchestrator edits other
+steps' files while a coder works, so they land in the snapshot, but they are not the step's code.
+The device-check list (docs/steps/device-checks.md) stays: a coder's docs pass adds rows to it.
+``--all`` shows everything; the last line of the output names what was left out."""
 
 import os
 import re
@@ -132,9 +140,14 @@ def step_base(repo, step_id):
     return others[-1] if others else head
 
 
-def diff(repo, step_id, from_round=None, stat=False, paths=()):
+# What ``diff`` leaves out by default: the workflow's own files, not the step's code.
+LEFT_OUT = ("docs/steps/*/**", "docs/steps/INDEX.md", "docs/steps/feedback-log.md", "docs/roadmap/**")  # git globs
+
+
+def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False):
     """The diff from the step's base (or the round named) to the working files: the paths named, or
-    everything but the step's own docs/steps/ folder."""
+    everything (``show_all``), or everything but LEFT_OUT, with a last line that counts what was left
+    out."""
     if from_round is None:
         base = step_base(repo, step_id)
     else:
@@ -144,23 +157,32 @@ def diff(repo, step_id, from_round=None, stat=False, paths=()):
                                 + (", ".join(str(n) for n in found) or "none"))
         base = found[from_round]
     tree = working_tree(repo, base)
-    pathspec = list(paths) or [".", f":(exclude)docs/steps/{step_id}-*"]
-    return git(repo, "diff", *(["--stat"] if stat else []), base, tree, "--", *pathspec)
+    stat_flag = ["--stat"] if stat else []
+    if paths or show_all:
+        return git(repo, "diff", *stat_flag, base, tree, "--", *(paths or ["."]))
+    shown = git(repo, "diff", *stat_flag, base, tree, "--", ".", *(f":(exclude,glob){p}" for p in LEFT_OUT))
+    left_out = git(repo, "diff", "--name-only", base, tree, "--", *(f":(glob){p}" for p in LEFT_OUT)).splitlines()
+    if not left_out:
+        return shown
+    note = (f"left out: {len(left_out)} file(s) of the step folders, docs/steps/INDEX.md, "
+            "docs/steps/feedback-log.md or docs/roadmap/ (--all shows them)")
+    return f"{shown}\n{note}" if shown else note
 
 
 def parse_diff_args(rest):
-    """The arguments after ``diff S0NN``: [--stat] [--from-round n] [-- <path>…], in any order before
-    the ``--``. Returns (stat, from_round, paths), or None when an argument is wrong."""
+    """The arguments after ``diff S0NN``: [--stat] [--all] [--from-round n] [-- <path>…], in any
+    order before the ``--``. Returns (stat, from_round, paths, show_all), or None when an argument
+    is wrong."""
     paths = []
     if "--" in rest:
         cut = rest.index("--")
         rest, paths = rest[:cut], rest[cut + 1:]
-    stat = "--stat" in rest
-    rest = [a for a in rest if a != "--stat"]
+    stat, show_all = "--stat" in rest, "--all" in rest
+    rest = [a for a in rest if a not in ("--stat", "--all")]
     from_round = None
     if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
         from_round, rest = int(rest[1]), []
-    return None if rest else (stat, from_round, paths)
+    return None if rest else (stat, from_round, paths, show_all)
 
 
 def snapshot(repo, step_id, message):
@@ -236,8 +258,8 @@ def main(argv, repo=ROOT):
             if parsed is None:
                 print(__doc__)
                 return 2
-            stat, from_round, paths = parsed
-            print(diff(repo, argv[1], from_round, stat, paths))
+            stat, from_round, paths, show_all = parsed
+            print(diff(repo, argv[1], from_round, stat, paths, show_all))
             return 0
         if argv[:1] == ["rounds"] and len(argv) == 2:
             found = rounds(repo, argv[1])

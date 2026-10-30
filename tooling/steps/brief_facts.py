@@ -20,6 +20,19 @@ Reads every `backticked` reference in the brief:
     use it, so a step that hides, renames or moves a control sees the tests it breaks.
 Plain words in backticks (`down`, `critical`) are skipped: too common to grep usefully.
 It judges nothing: "not found" may be right for a name the brief says is new.
+
+Since 30-10-2026 (the agents' feedback, 23 items):
+  - *Cited lines*: every path:NN or path:NN-MM in the brief, in backticks or not, with the line's
+    text now; when the sentence names a code name that is not on that line, where the file
+    defines it now ("moved? now :NN") — anchors move when a brief is planned ahead of its
+    dependencies;
+  - a route matches a test line only by its whole shape, a placeholder matching one segment; the
+    test file's own route constants (EQUIPMENT = "/api/equipment") are put into the line first;
+  - a dotted name is looked up only when <module>.py in the code folders defines it at top level;
+    else it is listed as a table.column or attribute, not looked up;
+  - the names found nowhere go in one line, with "(planned in S0NN)" when their sentence names
+    another step; a name in more than 10 test files lists 3 files only;
+  - screen text is looked for in the frontend test files only.
 Writes the same text to scratch/brief-facts-<step>.md.
 
 The folders searched are the repo's `Code folders` setting (.claude/CLAUDE.md § Step workflow);
@@ -35,6 +48,10 @@ from step_facts import ROOT, STEPS_DIR, backticked, load_step_settings
 
 STEP_TOOLS_DIR = "tooling/steps"          # the step tools sync to every repo: modules are looked up here too
 MAX_LISTED = 8                          # files or lines listed per name; the count says the rest
+COMMON_TEST_FILES = 10                  # a name in more test files than this is common: ...
+COMMON_LISTED = 3                       # ... its lists show this many files
+MAX_LINE_TEXT = 160                     # characters of a cited line shown
+FRONTEND_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".vue")   # screen text is tested here
 
 BACKTICKED = re.compile(r"`([^`\n]+)`")
 PATH = re.compile(r"^([\w.\-]+(?:/[\w.\-\[\]]+)*\.\w+)(?::(\d+)(?:-(\d+))?)?$")
@@ -47,6 +64,14 @@ NAME = re.compile(r"^[A-Za-z_][\w.]*$")
 DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
 UI_TEXT = re.compile(r'^"([^"\n]{2,60})"$')
+# path:NN or path:NN-MM anywhere in the text; the extension starts with a letter, so 127.0.0.1:5002 is no path
+CITED = re.compile(r"(?<![\w./\-])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z]\w*):(\d+)(?:-(\d+))?(?!\d)")
+STEP_MENTION = re.compile(r"\bS\d{3}\b")
+# EQUIPMENT = "/api/equipment", const BASE = `/api/x`, REGISTER = f"{IMPROVEMENTS}/register"
+ROUTE_CONSTANT = re.compile(r"^\s*(?:export\s+)?(?:const\s+)?([A-Z][A-Z0-9_]*)\s*=\s*f?[\"'`]([^\"'`\n]*)[\"'`]", re.M)
+# A paragraph ends at a blank line or before a heading, list item or table row
+PARAGRAPH_BREAK = re.compile(r"\n\s*\n|\n(?=\s*(?:#|[-*] |\d+\. |\|))")
+SENTENCE_END = re.compile(r"(?<=[.!?])(?<!\d\.)\s+")   # not after "1." of a numbered item
 
 
 @dataclass(frozen=True)
@@ -111,8 +136,70 @@ def extract_refs(text):
     return list(found.values())
 
 
+def sentences(text):
+    """Brief text -> its sentences.  A brief wraps a sentence over several lines, so each paragraph
+    (or list item, or table row) is joined into one line first."""
+    found = []
+    for paragraph in PARAGRAPH_BREAK.split(text.replace("\r\n", "\n")):
+        found += [s for s in SENTENCE_END.split(" ".join(paragraph.split())) if s]
+    return found
+
+
+def citations(text):
+    """Brief text -> {(path, first, last): [code names its sentences name]}, in order of first
+    mention.  The names are the backticked code names of each sentence that cites the line."""
+    found = {}
+    for sentence in sentences(text):
+        names = names_in(sentence)
+        for path, first, last in CITED.findall(sentence):
+            key = (path, int(first), int(last or first))
+            found.setdefault(key, [])
+            found[key] += [n for n in names if n not in found[key]]
+    return found
+
+
+def names_in(sentence):
+    """The backticked code names of a sentence, by their last part (`tickets.load` -> load)."""
+    refs = [classify(token) for token in BACKTICKED.findall(sentence)]
+    return [ref.value.rpartition(".")[2] for ref in refs if ref and ref.kind == "name"]
+
+
+def planned_in(name, all_sentences, own_step=None):
+    """' (planned in S070)' when a sentence that names `name` also names another step, else ''."""
+    steps = []
+    for sentence in all_sentences:
+        if f"`{name}" in sentence:
+            steps += [s for s in STEP_MENTION.findall(sentence) if s != own_step and s not in steps]
+    return f" (planned in {', '.join(steps)})" if steps else ""
+
+
+def route_shape(route):
+    """A route -> a regex for the test lines that call it: the same segments, and a placeholder
+    (<id>) matching any one segment (5, ${id}, {node['id']}).  Nothing may follow the last segment
+    but its end.  A line that builds the route on a constant is expanded first (expand_constants)."""
+    one = r"(?:\$?\{[^}]*\}|[^/\s\"'`?#{}]+)"
+    parts = [one if s.startswith("<") else re.escape(s) for s in route.strip("/").split("/")]
+    return re.compile(rf"/{'/'.join(parts)}(?![\w/\-])")
+
+
+def route_constants(text):
+    """A test file's constants that hold a route, {NAME: value}; a value built on another constant
+    of the file is expanded (SITES = f"{MASTERS}/sites")."""
+    found = dict(ROUTE_CONSTANT.findall(text))
+    return {name: expand_constants(value, found) for name, value in found.items()}
+
+
+def expand_constants(line, constants):
+    """{NAME} and ${NAME} of the constants given -> their values; others stay as written."""
+    return re.sub(r"\$?\{([A-Z][A-Z0-9_]*)\}", lambda m: constants.get(m.group(1), m.group(0)), line)
+
+
 def is_test_path(path):
     return bool(TEST_PATH.search(path))
+
+
+def is_frontend_test(path):
+    return is_test_path(path) and path.endswith(FRONTEND_SUFFIXES)
 
 
 def definition_pattern(name):
@@ -139,18 +226,80 @@ def summarise_hits(name, hits, folders=None):
             code_files.append(path)
     if not hits:
         return [f"- `{name}`: not found"]
-    module = next((f"{d}/{short}.py" for d in (*(folders or ()), STEP_TOOLS_DIR) if (ROOT / d / f"{short}.py").is_file()),
-                  None)
+    module = module_file(short, folders)
     where = f"a module ({module})" if module else (listing(definitions) or "none found")
+    # A name in many test files is a common one (updated_at, class_id): three files say enough
+    limit = COMMON_LISTED if len(test_files) > COMMON_TEST_FILES else MAX_LISTED
     lines = [f"- `{name}`: defined at {where}"]
-    lines.append(f"  - used in {len(code_files)} code file(s): {listing(code_files) or '—'}")
-    lines.append(f"  - used in {len(test_files)} test file(s): {listing(test_files) or '—'}")
+    lines.append(f"  - used in {len(code_files)} code file(s): {listing(code_files, limit) or '—'}")
+    lines.append(f"  - used in {len(test_files)} test file(s): {listing(test_files, limit) or '—'}")
     return lines
 
 
-def listing(items):
-    shown = ", ".join(items[:MAX_LISTED])
-    return shown + (f", … (+{len(items) - MAX_LISTED})" if len(items) > MAX_LISTED else "")
+def module_file(name, folders=None):
+    """`name.py` in a code folder, then in the step tools' folder, or None."""
+    return next((f"{d}/{name}.py" for d in (*(folders or ()), STEP_TOOLS_DIR) if (ROOT / d / f"{name}.py").is_file()),
+                None)
+
+
+def listing(items, limit=MAX_LISTED):
+    shown = ", ".join(items[:limit])
+    return shown + (f", … (+{len(items) - limit} more)" if len(items) > limit else "")
+
+
+def defines_at_top(text, name):
+    """Whether module text defines ``name`` at top level: a def, a class or an assignment."""
+    word = re.escape(name)
+    return bool(re.search(rf"^(?:async\s+def|def|class)\s+{word}\b|^{word}\s*(?::[^=\n]*)?=(?!=)", text, re.M))
+
+
+def cited_row(lines, first, last, names):
+    """One citation of a file's ``lines`` -> its report text: the line now (for a range, the first
+    line and the count), and for each code name of its sentence not on those lines, where the file
+    defines it now."""
+    spot = f":{first}" if first == last else f":{first}-{last} ({last - first + 1} lines)"
+    if not 1 <= first <= len(lines):
+        return f"{spot} **past the end**"
+    row = f"{spot} {code_span(lines[first - 1])}"
+    if last > len(lines):
+        row += f" **(the file ends at line {len(lines)})**"
+    cited = "\n".join(lines[first - 1:last])
+    notes, absent = [], []
+    for name in names:
+        note = name_note(lines, cited, name)
+        if note == NOT_IN_FILE:
+            absent.append(f"`{name}`")
+        elif note:
+            notes.append(note)
+    if absent:                           # one note: a sentence often names several files' names
+        notes.append(f"{', '.join(absent)} not in file")
+    return row + "".join(f"; {note}" for note in notes)
+
+
+NOT_IN_FILE = "not in file"
+
+
+def name_note(lines, cited, name):
+    """None when ``name`` is on the cited lines; else where the file defines it (or first uses
+    it), or NOT_IN_FILE."""
+    word = re.compile(rf"\b{re.escape(name)}\b")
+    if word.search(cited):
+        return None
+    defines = definition_pattern(name)
+    defined = next((i for i, line in enumerate(lines, 1) if defines.search(line)), None)
+    if defined:
+        return f"`{name}` moved? now :{defined}"
+    used = next((i for i, line in enumerate(lines, 1) if word.search(line)), None)
+    return f"`{name}` moved? first used at :{used}" if used else NOT_IN_FILE
+
+
+def code_span(line):
+    text = line.strip()
+    if not text:
+        return "(blank line)"
+    if len(text) > MAX_LINE_TEXT:
+        text = text[:MAX_LINE_TEXT - 1] + "…"
+    return f"`` {text} ``" if "`" in text else f"`{text}`"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -213,40 +362,86 @@ def check_test(ref, folders=None):
     return [f"- `{ref.value}`: " + (f"**not found: {', '.join(missing)}**" if missing else "exists")]
 
 
-def test_files_naming(text, folders=None):
-    return sorted({hit.split(":", 1)[0] for hit in grep(text, folders, word=False)
-                   if is_test_path(hit.split(":", 1)[0])})
+def split_hit(hit):
+    """A git grep line 'path:line:text' -> (path, line, text)."""
+    return tuple((hit.split(":", 2) + ["", ""])[:3])
 
 
 def check_route(ref, folders=None):
-    """Tests often build a route from a constant (f"{EQUIPMENT}/asset-list"), so when the whole
-    route is in no test file, its last segment is looked for instead, and the line says so."""
-    prefix = re.sub(r"/?<[^>]+>.*$", "", ref.value)
-    files, how = test_files_naming(prefix, folders), ""
-    last = "/" + prefix.rsplit("/", 1)[-1]
-    if not files and last != prefix and last != "/api":
-        files, how = test_files_naming(last, folders), f" (by its last segment `{last}`)"
-    return [f"- `{ref.value}`: called in {len(files)} test file(s){how}: {listing(files) or '—'}"]
+    """The test files with a line that calls the route by its whole shape (route_shape), after the
+    file's own route constants are put into the line; the grep looks for the route's last literal
+    segment first, then each line is matched."""
+    literal = next((s for s in reversed(ref.value.strip("/").split("/")) if not s.startswith("<")), "api")
+    shape = route_shape(ref.value)
+    files, constants = [], {}
+    for path, _, text in map(split_hit, grep(literal, folders, word=False)):
+        if not is_test_path(path) or path in files:
+            continue
+        if path not in constants:
+            constants[path] = route_constants((ROOT / path).read_text(encoding="utf-8", errors="replace"))
+        if shape.search(expand_constants(text, constants[path])):
+            files.append(path)
+    return [f"- `{ref.value}`: called in {len(files)} test file(s): {listing(sorted(files)) or '—'}"]
 
 
 def check_ui(ref, folders=None):
-    """Screen text -> the test lines that hold it."""
-    lines = [":".join(hit.split(":", 2)[:2]) for hit in grep(ref.value, folders, word=False)
-             if is_test_path(hit.split(":", 1)[0])]
+    """Screen text -> the frontend test lines that hold it (a backend line is no screen text)."""
+    lines = [f"{path}:{line}" for path, line, _ in map(split_hit, grep(ref.value, folders, word=False))
+             if is_frontend_test(path)]
     return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
 
 
-def check_name(ref, folders=None):
-    module, _, short = ref.value.rpartition(".")
-    hits = grep(short, folders)
-    if module:
-        own = [h for h in hits if Path(h.split(":", 1)[0]).stem == module.rsplit(".", 1)[-1]]
-        hits = own or hits
-    return summarise_hits(ref.value, hits, folders)
+def check_names(group, folders=None, all_sentences=(), own_step=None):
+    """The code names: one entry per name found; the names found nowhere in one line; and a dotted
+    name whose module is no code file defining it (a table.column, a JS object) in one line."""
+    lines, missing, not_looked_up = [], [], []
+    for ref in group:
+        module, _, short = ref.value.rpartition(".")
+        own_file = None
+        if module:
+            own_file = module_file(module.rsplit(".", 1)[-1], folders)
+            text = (ROOT / own_file).read_text(encoding="utf-8", errors="replace") if own_file else ""
+            if not defines_at_top(text, short):
+                not_looked_up.append(f"`{ref.value}`")
+                continue
+        hits = grep(short, folders)
+        if own_file:
+            hits = [h for h in hits if h.startswith(own_file + ":")] or hits
+        if not hits:
+            missing.append(f"`{ref.value}`{planned_in(ref.value, all_sentences, own_step)}")
+            continue
+        lines += summarise_hits(ref.value, hits, folders)
+    if missing:
+        lines.append(f"- not found: {', '.join(missing)}")
+    if not_looked_up:
+        lines.append(f"- table.column or attribute, not looked up: {', '.join(not_looked_up)}")
+    return lines
 
 
-CHECKS = {"path": check_path, "file": check_file, "test": check_test, "route": check_route, "name": check_name,
-          "ui": check_ui}
+def check_cited(cites):
+    """{(path, first, last): names} -> the Cited lines section, one line per citation, grouped by
+    file."""
+    by_file = {}
+    for (path, first, last), names in cites.items():
+        by_file.setdefault(path, []).append((first, last, names))
+    out = []
+    for path, rows in by_file.items():
+        found = [path] if (ROOT / path).is_file() else files_ending(path)
+        spots = ", ".join(f":{a}" if a == b else f":{a}-{b}" for a, b, _ in rows)
+        if not found:
+            out.append(f"- `{path}`: **no such file**, cited at {spots}")
+            continue
+        if len(found) > 1:
+            out.append(f"- `{path}`: **{len(found)} files end so** ({listing(found, COMMON_LISTED)}), cited at {spots}")
+            continue
+        lines = (ROOT / found[0]).read_text(encoding="utf-8", errors="replace").splitlines()
+        where = "" if found[0] == path else f" (at `{found[0]}`)"
+        out.append(f"- `{path}`{where} ({len(lines)} lines):")
+        out += [f"  - {cited_row(lines, first, last, names)}" for first, last, names in rows]
+    return out
+
+
+CHECKS = {"path": check_path, "file": check_file, "test": check_test, "route": check_route, "ui": check_ui}
 SECTIONS = (("path", "Files"), ("file", "Files named without a folder"), ("test", "Test ids"), ("route", "Routes"),
             ("name", "Code names"), ("ui", "Screen text in the tests"))
 
@@ -266,18 +461,27 @@ def main(argv):
         return 2
     folders = backticked(load_step_settings().get("Code folders")) or None
     path = brief_path(argv[0])
-    refs = extract_refs(path.read_text(encoding="utf-8"))
+    brief = path.read_text(encoding="utf-8")
+    refs = extract_refs(brief)
+    step = re.match(r"S\d{3}", path.parent.name)
+    all_sentences = sentences(brief)
     out = [f"# Brief facts — {path.relative_to(ROOT).as_posix()}", "",
            "Facts only: \"not found\" is right for a name the brief says is new.", ""]
     for kind, title in SECTIONS:
         group = [r for r in refs if r.kind == kind]
         if group:
             out += [f"## {title}", ""]
-            for ref in group:
-                out += CHECKS[kind](ref, folders)
+            if kind == "name":
+                out += check_names(group, folders, all_sentences, step.group(0) if step else None)
+            else:
+                for ref in group:
+                    out += CHECKS[kind](ref, folders)
             out.append("")
+        if kind == "path":
+            cites = citations(brief)
+            if cites:
+                out += ["## Cited lines", ""] + check_cited(cites) + [""]
     text = "\n".join(out)
-    step = re.match(r"S\d{3}", path.parent.name)
     report = ROOT / "scratch" / f"brief-facts-{step.group(0) if step else 'brief'}.md"
     report.parent.mkdir(exist_ok=True)
     report.write_text(text, encoding="utf-8")

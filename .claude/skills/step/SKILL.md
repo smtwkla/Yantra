@@ -556,9 +556,10 @@ next step's coder carries on in the same working tree.
   since a `.bat` argument holds none). From the Bash tool, call
   `uv run --no-project python tooling/steps/step_snapshot.py …` directly:
   `cmd //c` garbles a quoted message on its way to the `.bat`.
-- **Diff** (29-10-2026): `diff S00N [--from-round n] [--stat] [-- <path>…]`
-  leaves out the step's own `docs/steps/S00N-*/` folder unless paths are
-  named; a spawn prompt names the command only, no list of files to skip.
+- **Diff** (29-10-2026; 30-10-2026): `diff S00N [--from-round n] [--stat] [--all] [-- <path>…]`
+  leaves out every step folder, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
+  and `docs/roadmap/`, and its last line counts them; `--all` or named paths
+  show them. A spawn prompt names the command only, no list of files to skip.
   A fix after gate B re-runs `snapshot` for the same step; only the newest
   snapshot can be replaced.
 - **Rounds** (27-10-2026): `snapshot` also runs after every coder hand-back

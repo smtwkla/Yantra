@@ -102,7 +102,14 @@ track, and the user may keep light at approval.
 **Facts run.** Before brief review round 1, the orchestrator runs
 `tooling/step-brief-facts.bat S0NN`: where each file, test, route and code name
 the brief cites exists, and which tests use it. The orchestrator fixes the brief
-from it; the brief reviewer gets the output (23-10-2026, S029).
+from it; the brief reviewer gets the output (23-10-2026, S029). Its *Cited lines*
+section shows the text of each `file:line` the brief cites, and where a named
+function or constant is now when it has moved (30-10-2026).
+
+**Anchors by name** (30-10-2026): line numbers move when other steps are coded.
+A brief planned ahead of a step it depends on, or citing a file that another
+open step edits, anchors by name (function, test, constant). It adds
+`file:line` only for files no open step touches.
 
 **The light brief** (about a page):
 1. What will be built, and out of scope;
@@ -267,6 +274,8 @@ between approval and coding. The check catches it before the coder starts.
      `major` finding changes what the user approved, so the brief goes back to
      the user (gate A) before coding. Minor findings and nits are fixed in the
      brief text and the coder starts;
+   - the check refreshes the brief's anchors by name (§ Anchors by name): a
+     `file:line` whose function or constant has moved gets the new line;
    - after the check, `Baseline:` is set to the code just checked.
 3. **Skipped** only when the user says so; the orchestrator records it in the brief.
 
@@ -342,6 +351,10 @@ terminal, with each role as a subagent (`.claude/agents/`):
   each snapshot keeps a round ref (`refs/step-rounds/S00N-<n>`), so a verify
   review reads only the fix round: `tooling/step-snapshot.bat diff S00N
   --from-round <n>`.
+- **The step's diff leaves out the workflow files** (30-10-2026): `diff` does
+  not show the step folders, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
+  or `docs/roadmap/`, and its last line counts what it left out. The
+  device-check list stays in. `--all` shows everything; paths after `--` win.
 - **The files and conventions above are unchanged.** The separate terminals
   below still work.
 

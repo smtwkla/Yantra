@@ -4,7 +4,7 @@ Author: orchestrator (Opus 5.5)
 Date: 29-10-2026
 Track: light
 Baseline: 32eb122
-Status: Implementing
+Status: Committed 9162097 (adopted 30-10-2026); checks: 5 auto; important check pending: row 47 of device-checks.md (IT Admin)
 
 ## 1. What will be built, and out of scope
 

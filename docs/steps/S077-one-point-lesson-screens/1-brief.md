@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 32eb122 + uncommitted S066–S070, S071 (being coded); S072–S075 coded before S077
-Status: In code review (approved 30-10-2026 by KLA, delegated: R05 gate R, "start coding unless a defining question")
+Status: Committed fe27950 (adopted 30-10-2026); checks: 13 auto; important checks pending: rows 56 and 57 of device-checks.md (IT Admin)
 From: R05.6 (second half; backend in S075)
 ```
 

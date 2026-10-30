@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 32eb122 + uncommitted S066
-Status: Gate B 30-10-2026 (snapshot 4182561; verify review r2 clean) — approved 30-10-2026 by KLA (delegated)
+Status: Done (committed 545b04f, adopted 30-10-2026; checks: backend tests only, no manual check)
 From: R05.1 (first half: the record and its API; the screens are S068)
 ```
 
