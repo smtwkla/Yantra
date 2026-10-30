@@ -28,9 +28,11 @@ review file there.
   untracked files included. A plain `git diff <ref>` lists them as deleted and
   mixes in the earlier step's files. In round 2 and later, `diff S00N
   --from-round N` shows only the fix round's change (the orchestrator names
-  N; `rounds S00N` lists them). The diff leaves out the step's own
-  `docs/steps/S00N-*/` folder, which you read in full anyway; paths after
-  `--` replace that (`diff S00N --from-round 2 -- backend`). From the Bash
+  N; `rounds S00N` lists them). The diff leaves out every step folder (you
+  read this step's in full anyway), `docs/steps/INDEX.md`,
+  `docs/steps/feedback-log.md` and `docs/roadmap/`, and its last line counts
+  them; `--all` shows them, and paths after `--` replace that default
+  (`diff S00N --from-round 2 -- backend`). From the Bash
   tool, call `uv run --no-project python tooling/steps/step_snapshot.py diff …`.
   Read the touched files in full where needed, not only the hunks.
 - The engineering rules: `.claude/CLAUDE-COMMON.md`, `.claude/CLAUDE.md`, and
