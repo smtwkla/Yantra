@@ -40,6 +40,11 @@
  *
  * S068: *Start improvement* in the action bar when the detail says `can_start_improvement`; a line
  * "Analysed in IM-… · Analysing" per entry of `improvements`, in the repeats box.
+ *
+ * S086: on an open ticket whose machine or part is under a vendor contract in force, the contract
+ * line (TicketContractLine) between the plan line and the action bar, with S082's "Do not repair"
+ * warning when only the vendor may repair: the technician reads it before *Start*, the engineer
+ * reads the vendor before *Assign*.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -62,6 +67,7 @@ import MoveDialog from "./tickets/MoveDialog.vue";
 import NoteDialog from "./tickets/NoteDialog.vue";
 import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
+import TicketContractLine from "./tickets/TicketContractLine.vue";
 import TicketMetersCard from "./tickets/TicketMetersCard.vue";
 import TicketShare from "./tickets/TicketShare.vue";
 
@@ -234,6 +240,7 @@ watch(() => route.params.id, load, { immediate: true });
       <p v-if="planLine(ticket)" class="plan-line mb-3" :class="ticket.overdue ? 'text-danger fw-semibold' : 'text-secondary'">
         <i class="fa-regular fa-calendar me-1"></i>{{ planLine(ticket) }}
       </p>
+      <TicketContractLine :ticket="ticket" />
 
       <!-- 1. The action bar: stacked on a phone; one row on a wider screen, the significant moves on the left -->
       <div class="action-bar d-grid gap-2 d-md-flex flex-md-wrap align-items-md-start mb-3">

@@ -289,15 +289,17 @@ export function firstName(name) {
 /**
  * The people picker's groups (§ 5.8, BR3-07, BR4-03): the user's own person first, then the
  * ticket's assignees, then the maintenance ladder (assignable), then everyone else the field
- * allows; filtered by `filter` (part of the name, any case). `excludeIds` are left out (the
- * Assign dialog leaves out who is assigned); `assignableOnly` keeps the ladder only.
+ * allows; filtered by `filter` (part of the name or of a contractor's vendor, S086, any case).
+ * `excludeIds` are left out (the Assign dialog leaves out who is assigned); `assignableOnly`
+ * keeps the ladder only.
  * -> [{label, people}], empty groups left out.
  */
 export function groupPeople(people, { ownId = null, assigneeIds = [], excludeIds = [], assignableOnly = false, filter = "" } = {}) {
   const needle = filter.trim().toLowerCase();
+  const matches = (p) => p.name.toLowerCase().includes(needle) || (p.vendor_name ?? "").toLowerCase().includes(needle);
   const shown = people.filter((p) => !excludeIds.includes(p.id)
     && (!assignableOnly || p.assignable)
-    && (!needle || p.name.toLowerCase().includes(needle)));
+    && (!needle || matches(p)));
   const groups = [
     { label: "You", people: shown.filter((p) => p.id === ownId) },
     { label: "Assigned", people: shown.filter((p) => p.id !== ownId && assigneeIds.includes(p.id)) },

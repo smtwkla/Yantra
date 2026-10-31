@@ -69,7 +69,7 @@ test("supervisor: back in service on an acknowledged ticket, the technician foun
 
   const dialog = await openAction(page, "Back in service");
   await setEventTime(dialog, istLocal(20, base));
-  await dialog.getByPlaceholder("Type a name to filter").fill("Kann");
+  await dialog.getByPlaceholder("Type a name or vendor to filter").fill("Kann");
   await dialog.getByRole("button", { name: /Kannan \(technician\)/ }).click();
   await expect(dialog.locator(".fw-semibold", { hasText: "Kannan (technician)" })).toBeVisible();
   const started = istLocal(60, base);

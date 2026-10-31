@@ -11,7 +11,10 @@
 // Contract filter; each test makes its own machines, so other tests' contracts never show on its card.  The
 // contract's documents (S083): a manager adds a PDF, removes it and restores it from Settings; an engineer sees
 // no Documents card.  Contract renewal (S085): Renew contract, its notice, the chain lines on both pages, an
-// inactive vendor, a scrapped machine and an inactive renewal.
+// inactive vendor, a scrapped machine and an inactive renewal.  Breakdown calls (S086): the vendor's tickets on
+// the contract page with their downtime and the wait on the vendor, the calls used, the two warnings, the rows by
+// the reader's units, the contract line and Do not repair on the ticket page, and the vendor in the people picker;
+// each test makes its own Team records of its own vendor and never links a seed person.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,9 +22,9 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { equipmentRow, openFilters } from "./support/equipmentList.js";
 import { writeLessonByApi } from "./support/lessons.js";
-import { apiAs, asPerson } from "./support/people.js";
+import { apiAs, asPerson, personId } from "./support/people.js";
 import { propertyTag } from "./support/properties.js";
-import { card, raiseByApi, saveDialog } from "./support/tickets.js";
+import { card, causeId, istDay, istLocal, moveByApi, raiseByApi, saveDialog, thisMinute } from "./support/tickets.js";
 
 const CALLOUT = "+91 00000 00000";
 const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -793,4 +796,247 @@ test("S085: the operator sees the chain but no Renew contract button", async ({ 
   await asPerson(page, "operator", `/contracts/${renewal.id}`);
   await expect(chain(page)).toContainText(`Renews: ${contract.title}`);
   await expect(renewButton(page)).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// Breakdown calls (S086, R02.6): the vendor's tickets on the contract page, and the contract on the ticket page.
+// Each test makes its own vendor, Team records (by API as IT admin, never a seed person: other specs read the
+// seed people's picker text unchanged, BR1-01), machines and tickets.
+// ---------------------------------------------------------------------------
+
+const callsCard = (page) => page.getByTestId("breakdown-calls");
+const callRow = (page, ticket) => callsCard(page).getByTestId("breakdown-call").filter({ hasText: ticket.serial });
+const NOT_ALL_UNITS = "Only the calls on machines of your units are listed.";
+const NO_CALLS_OF_YOURS = "No calls on machines of your units. Only those are listed here.";
+
+/** A contractor's Team record of `vendor` with `role` at SMTW, all units, by API as IT admin -> the person. */
+async function teamRecordByApi(vendor, name, role = "maint_technician") {
+  const person = await callAs("admin", "post", "/api/masters/people", {
+    name, employment: "contractor", vendor_id: vendor.id, trade_ids: [],
+  });
+  await siteRoleByApi(person, role);
+  return person;
+}
+
+const siteRoleByApi = async (person, role) => callAs("admin", "put",
+  `/api/masters/people/${person.id}/sites/${await siteId("SMTW")}`, { role, all_units: true, unit_ids: [] });
+
+const assignByApi = (ticket, person) => callAs("engineer", "post", `/api/tickets/${ticket.id}/assignees`,
+  { person_id: person.id });
+
+const labourByApi = (ticket, person) => callAs("engineer", "post", `/api/tickets/${ticket.id}/labour`,
+  { person_id: person.id, work_date: istDay(0), minutes: 60 });
+
+/** A breakdown on `node` raised `minutesAgo` before `base`, with `person` assigned -> the ticket. */
+async function callByApi(node, person, tag, { minutesAgo = 60, base = thisMinute() } = {}) {
+  const ticket = await raiseByApi("engineer", {
+    equipment_id: node.id, intensity: "critical", description: `S086 call ${tag}`, occurred_at: istLocal(minutesAgo, base),
+  });
+  await assignByApi(ticket, person);
+  return ticket;
+}
+
+/** The tag's vendor, a contract at SMTW with `fields` covering one new machine in `unitCode`, and a Team record. */
+async function callsSetUp(testInfo, { fields = {}, unitCode = "SMTW.MCC1", role = "maint_technician" } = {}) {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag}`, fields);
+  const machine = await machineByApi(`E2E compressor ${tag}`, unitCode);
+  await lineByApi(contract, machine);
+  const person = await teamRecordByApi(vendor, `E2E vendor tech ${tag}`, role);
+  return { tag, vendor, contract, machine, person };
+}
+
+/** The contract page as `key`, after the calls card's answer is in. */
+async function openCallsAs(page, key, contract) {
+  await asPerson(page, key);
+  const answered = page.waitForResponse((r) => r.url().includes(`/api/contracts/${contract.id}/calls`));
+  await page.goto(`/contracts/${contract.id}`);
+  await answered;
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+}
+
+test("S086: the contract page lists the vendor's breakdown call with downtime and the total line", async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo);
+  const base = thisMinute();
+  const ticket = await callByApi(machine, person, tag, { minutesAgo: 200, base });
+  await moveByApi("engineer", ticket.id, "schedule", {
+    occurred_at: istLocal(150, base), planned_date: istDay(1), waiting_reason: "vendor",
+  });
+  await moveByApi("engineer", ticket.id, "start", { occurred_at: istLocal(30, base) });
+  await moveByApi("engineer", ticket.id, "restore", { occurred_at: istLocal(10, base), person_id: person.id });
+
+  await openCallsAs(page, "engineer", contract);
+  await expect(callsCard(page).locator(".card-header")).toContainText("Breakdown calls");
+  const row = callRow(page, ticket);
+  await expect(row).toContainText(`${machine.code} — ${machine.name}`);
+  await expect(row).toContainText("Down 3 h 10 min · waited on the vendor 2 h");
+  await expect(row).toContainText("back in service");
+  await expect(row).toContainText(`By: ${person.name}`);
+  await expect(callsCard(page).getByTestId("calls-total")).toHaveText("1 call · down 3 h 10 min · waited on the vendor 2 h");
+  await row.getByRole("link", { name: ticket.serial }).click();
+  await expect(page).toHaveURL(new RegExp(`/tickets/${ticket.id}$`));
+  await expect(page.getByRole("heading", { name: ticket.serial })).toBeVisible();
+});
+
+test("S086: an open defect call does not say the machine is not back in service", async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo);
+  const defect = await raiseByApi("engineer", {
+    equipment_id: machine.id, intensity: "degraded", description: `S086 defect ${tag}`,
+  });
+  await assignByApi(defect, person);
+  const breakdown = await callByApi(machine, person, tag);
+  await openCallsAs(page, "engineer", contract);
+  await expect(callRow(page, breakdown)).toContainText("not back in service yet");
+  await expect(callRow(page, defect)).toBeVisible();
+  await expect(callRow(page, defect)).not.toContainText("not back in service");
+});
+
+test("S086: a ticket worked only by in-house people is not a breakdown call", async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo);
+  const vendorCall = await callByApi(machine, person, tag);
+  const inHouse = await raiseByApi("engineer", {
+    equipment_id: machine.id, intensity: "critical", description: `S086 in-house ${tag}`,
+  });
+  await assignByApi(inHouse, { id: await personId("technician") });
+
+  await openCallsAs(page, "engineer", contract);
+  await expect(callRow(page, vendorCall)).toBeVisible();
+  await expect(callsCard(page).getByTestId("breakdown-call")).toHaveCount(1);
+  await expect(callsCard(page)).not.toContainText(inHouse.serial);
+});
+
+test("S086: a call on a part of the covered machine is listed with the part", async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo);
+  const part = await partByApi(machine, `E2E motor ${tag}`);
+  const ticket = await callByApi(part, person, tag);
+
+  await openCallsAs(page, "engineer", contract);
+  await expect(callRow(page, ticket)).toContainText(`${machine.code} — ${machine.name} › ${part.code} — ${part.name}`);
+});
+
+test("S086: 1 of 2 calls used shows when the contract agrees a number", async ({ page }, testInfo) => {
+  const { tag, vendor, contract, machine, person } = await callsSetUp(testInfo, {
+    fields: { covers_breakdown_calls: true, breakdown_calls_per_year: 2 },
+  });
+  await callByApi(machine, person, tag);
+  const tight = await contractByApi(vendor, `E2E AMC tight ${tag}`, { covers_breakdown_calls: true, breakdown_calls_per_year: 1 });
+  const second = await machineByApi(`E2E compressor 2 ${tag}`);
+  await lineByApi(tight, second);
+  await callByApi(second, person, tag, { minutesAgo: 90 });
+  await callByApi(second, person, tag, { minutesAgo: 30 });
+
+  await openCallsAs(page, "engineer", contract);
+  await expect(callsCard(page).getByTestId("calls-used")).toHaveText("1 of 2 calls used this period.");
+  await openCallsAs(page, "engineer", tight);
+  const used = callsCard(page).getByTestId("calls-used");
+  await expect(used).toHaveText("2 of 1 calls used — more than agreed.");
+  await expect(used).toHaveClass(/text-danger/);
+});
+
+test("S086: the contract page warns when no Team record is linked to the vendor", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag}`);
+  const warning = callsCard(page).getByRole("alert");
+
+  await openCallsAs(page, "engineer", contract);
+  await expect(warning).toHaveText(`No Team record is linked to ${vendor.name}. Link the vendor's technician, or a`
+    + ` record such as '${vendor.name} service', in Masters › Team.`);
+  const person = await teamRecordByApi(vendor, `E2E vendor tech ${tag}`, "maint_operator");
+  await openCallsAs(page, "engineer", contract);
+  await expect(warning).toHaveText(`No Team record of ${vendor.name} can be assigned at SMTW. Give one a Technician`
+    + " role there in Masters › Team.");
+  await siteRoleByApi(person, "maint_technician");
+  await openCallsAs(page, "engineer", contract);
+  await expect(callsCard(page)).toContainText("No breakdown calls on this contract yet.");
+  await expect(warning).toHaveCount(0);
+});
+
+test("S086: the storekeeper sees the contract page without the Breakdown calls card", async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo);
+  await callByApi(machine, person, tag);
+  await asPerson(page, "storekeeper", `/contracts/${contract.id}`);
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(machinesCard(page)).toBeVisible();
+  await expect(callsCard(page)).toHaveCount(0);
+});
+
+test("S086: the operator sees only the calls of their units and no used line", async ({ page }, testInfo) => {
+  const { tag, vendor, contract, machine, person } = await callsSetUp(testInfo, {
+    fields: { covers_breakdown_calls: true, breakdown_calls_per_year: 4 }, unitCode: "SMTW.MCC2",
+  });
+  const mcc1Machine = await machineByApi(`E2E MCC1 compressor ${tag}`, "SMTW.MCC1");
+  await lineByApi(contract, mcc1Machine);
+  const mine = await callByApi(machine, person, tag, { minutesAgo: 90 });
+  const notMine = await callByApi(mcc1Machine, person, tag, { minutesAgo: 30 });
+  const elsewhere = await contractByApi(vendor, `E2E AMC MCC1 only ${tag}`);
+  const other = await machineByApi(`E2E MCC1 compressor 2 ${tag}`, "SMTW.MCC1");
+  await lineByApi(elsewhere, other);
+  await callByApi(other, person, tag);
+
+  await openCallsAs(page, "operator", contract);
+  await expect(callRow(page, mine)).toBeVisible();
+  await expect(callsCard(page)).not.toContainText(notMine.serial);
+  await expect(callsCard(page)).toContainText(NOT_ALL_UNITS);
+  await expect(callsCard(page).getByTestId("calls-used")).toHaveCount(0);
+
+  await openCallsAs(page, "operator", elsewhere);
+  await expect(callsCard(page).getByTestId("breakdown-call")).toHaveCount(0);
+  await expect(callsCard(page).locator(".card-body")).toHaveText(NO_CALLS_OF_YOURS);
+  await expect(callsCard(page)).not.toContainText(NOT_ALL_UNITS);
+});
+
+test("S086: an open ticket on a covered machine shows the contract line and Do not repair", async ({ page }, testInfo) => {
+  const { tag, vendor, contract, machine } = await callsSetUp(testInfo, {
+    fields: { only_vendor_repairs: true, response_hours: 24, covers_breakdown_calls: true },
+  });
+  const ticket = await raiseByApi("engineer", { equipment_id: machine.id, intensity: "critical", description: `S086 line ${tag}` });
+
+  const line = page.getByTestId("ticket-contract");
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  await expect(line).toContainText(`Under AMC with ${vendor.name} until ${shown(day(300))} · response 24 hours · breakdown calls included`);
+  await expect(line.getByRole("alert")).toHaveText(DO_NOT_REPAIR);
+  const before = await line.evaluate((el) => {
+    const bar = document.querySelector(".action-bar");
+    return Boolean(bar) && Boolean(el.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(before, "the contract line comes before the action bar").toBe(true);
+  await line.getByRole("link", { name: `Under AMC with ${vendor.name}` }).click();
+  await expect(page).toHaveURL(new RegExp(`/contracts/${contract.id}$`));
+
+  await moveByApi("engineer", ticket.id, "not-a-fault", { cause_id: await causeId("5.1"), remark: `S086 closed ${tag}` });
+  await asPerson(page, "technician", `/tickets/${ticket.id}`);
+  await expect(page.getByRole("heading", { name: ticket.serial })).toBeVisible();
+  await expect(page.getByText("Not a fault", { exact: true }).first()).toBeVisible();
+  await expect(line).toHaveCount(0);
+});
+
+test("S086: the assignee picker shows the vendor beside a linked person and finds them by the vendor's name", async ({ page }, testInfo) => {
+  const { tag, vendor, machine, person } = await callsSetUp(testInfo);
+  const ticket = await raiseByApi("engineer", { equipment_id: machine.id, intensity: "degraded", description: `S086 picker ${tag}` });
+  await asPerson(page, "engineer", `/tickets/${ticket.id}`);
+  await page.getByRole("button", { name: "Assign" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByPlaceholder("Type a name or vendor to filter").fill(vendor.name.toLowerCase());
+  const pick = dialog.getByRole("button", { name: `${person.name} · Technician · ${vendor.name}` });
+  await expect(pick).toBeVisible();
+  await pick.click();
+  await expect(dialog).toContainText(`${person.name}Technician · ${vendor.name}`); // the picked line, above the filter
+  await saveDialog(page, "Assign");
+  await expect(card(page, "Assigned")).toContainText(person.name);
+});
+
+test("S086: the Breakdown calls card fits a phone with no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
+  const { tag, contract, machine, person } = await callsSetUp(testInfo, { role: "maint_operator" });
+  const part = await partByApi(machine, `E2E motor with a long name for the phone ${tag}`);
+  for (const node of [machine, part]) {
+    const ticket = await raiseByApi("engineer", { equipment_id: node.id, intensity: "critical", description: `S086 fit ${tag}` });
+    await labourByApi(ticket, person);
+  }
+  await openCallsAs(page, "engineer", contract);
+  await expect(callsCard(page).getByTestId("breakdown-call")).toHaveCount(2);
+  await expect(callsCard(page).getByRole("alert")).toBeVisible();
+  await expectNoSidewaysScroll(page);
 });

@@ -1,9 +1,11 @@
 /**
  * Vendor contracts (S080, R02.1; S081, R02.2: the machines and their prices; S082: the Under contract card and the
- * list's Contract filter) — labels and the dialogs' bodies, pure.  The rules live in the backend (contracts_core.py); this file only names things and shapes what the
+ * list's Contract filter; S086: the Breakdown calls card and the ticket's contract line) — labels and the dialogs'
+ * bodies, pure.  The rules live in the backend (contracts_core.py); this file only names things and shapes what the
  * dialogs send.
  */
 import { formatDate } from "./datetime";
+import { minutesText } from "./ticketLabels";
 
 // The four types (contracts.contract_type), AMC first: the dialog's default and the common case
 export const CONTRACT_TYPES = [
@@ -265,4 +267,59 @@ export function lineBody(form, { creating, canReadCost }) {
   const body = { equipment_id: form.equipment_id };
   if (canReadCost) body.price = price;
   return body;
+}
+
+// ---------------------------------------------------------------------------
+// Breakdown calls on the contract, and the contract on the ticket (S086 § 5.3, § 5.4, § 5.6)
+// ---------------------------------------------------------------------------
+
+/** "Down 5 h 30 min · waited on the vendor 2 h" for one call; a part that is null or 0 is left out, and the line is
+ * null when both are (a defect never down). */
+export function callFiguresLine(call) {
+  const parts = [];
+  if (call.downtime_minutes) parts.push(`Down ${minutesText(call.downtime_minutes)}`);
+  if (call.vendor_waiting_minutes) {
+    parts.push(`${parts.length ? "waited" : "Waited"} on the vendor ${minutesText(call.vendor_waiting_minutes)}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/** The card's total: "3 calls · down 5 h 20 min · waited on the vendor 2 h"; "1 call · no downtime"; the waiting
+ * part left out at 0. */
+export function callsTotalLine(total) {
+  const parts = [total.count === 1 ? "1 call" : `${total.count} calls`];
+  parts.push(total.downtime_minutes ? `down ${minutesText(total.downtime_minutes)}` : "no downtime");
+  if (total.vendor_waiting_minutes) parts.push(`waited on the vendor ${minutesText(total.vendor_waiting_minutes)}`);
+  return parts.join(" · ");
+}
+
+/** The calls used against the number agreed (contracts_core.calls_used), or null when the answer has none. */
+export function callsUsedLine(used) {
+  if (!used) return null;
+  if (used.per_year_only) {
+    return `${used.count === 1 ? "1 call" : `${used.count} calls`} in this period · ${used.agreed} a year agreed.`;
+  }
+  if (used.over) return `${used.count} of ${used.agreed} calls used — more than agreed.`;
+  return `${used.count} of ${used.agreed} calls used this period.`;
+}
+
+/** The card's warning (contracts_core.vendor_warning) as the floor reads it, or null. */
+export function vendorWarningText(warning, vendorName, siteCode) {
+  if (warning === "no_linked") {
+    return `No Team record is linked to ${vendorName}. Link the vendor's technician, or a record such as`
+      + ` '${vendorName} service', in Masters › Team.`;
+  }
+  if (warning === "no_assignable") {
+    return `No Team record of ${vendorName} can be assigned at ${siteCode}. Give one a Technician role there in`
+      + " Masters › Team.";
+  }
+  return null;
+}
+
+/** The contract line on a ticket: S082's headline (the page links it) and what follows it, e.g. " · response 24
+ * hours · breakdown calls included". */
+export function ticketContractLine(item) {
+  const response = responseText(item.response_hours);
+  const details = (response ? ` · response ${response}` : "") + (item.covers_breakdown_calls ? " · breakdown calls included" : "");
+  return { headline: cardHeadline(item), details };
 }

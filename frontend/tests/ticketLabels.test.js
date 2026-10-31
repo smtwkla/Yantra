@@ -310,6 +310,17 @@ describe("groupPeople", () => {
     expect(ids(groupPeople(people, { filter: "AL" }))).toEqual([["Maintenance", [2]]]);
     expect(groupPeople(people, { filter: "zz" })).toEqual([]);
   });
+
+  it("S086: finds a contractor by the vendor's name; no vendor matches by name only", () => {
+    const withVendor = [
+      ...people,
+      { id: 5, name: "Ravi", assignable: true, vendor_name: "Atlas Copco" },
+      { id: 6, name: "Atlas service desk", assignable: false, vendor_name: null },
+    ];
+    expect(ids(groupPeople(withVendor, { filter: "atlas" }))).toEqual([["Maintenance", [5]], ["Others at the site", [6]]]);
+    expect(ids(groupPeople(withVendor, { filter: "copco" }))).toEqual([["Maintenance", [5]]]);
+    expect(ids(groupPeople(withVendor, { filter: "anand" }))).toEqual([["Maintenance", [1]]]);
+  });
 });
 
 describe("parts used (S020)", () => {

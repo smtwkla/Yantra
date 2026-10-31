@@ -1,23 +1,25 @@
 """Vendor contracts — the pure rules (S080 § 5.1, § 5.3, § 8.2): the fields, the period, breakdown calls, the
 status from the dates and the Status filter; S081's machine line, its price and the history text (S081 § 5.1,
 § 5.3); S082's card items and the list's Contract filter (S082 § 5.1, § 5.4); S085's renewal: the proposed period,
-the machines copied and skipped, the body and the refusals' texts (S085 § 5.2-§ 5.5).  No database.  Phone values are
+the machines copied and skipped, the body and the refusals' texts (S085 § 5.2-§ 5.5); S086's breakdown calls: one
+call's figures, the total, the calls used and the vendor warning (S086 § 5.2-§ 5.4).  No database.  Phone values are
 obviously fake, never a real number."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
 from contracts_core import (
-    CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS, FROM_AFTER_TO,
-    LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE, STATUS_FILTERS,
-    TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed, breakdown_calls_error,
-    card_items, contract_status, covered_sql, event_text, newest_end_first, parse_price, period_error,
-    renew_site_inactive, renewal_lines, renewal_period, status_bounds, validate_contract, validate_line,
-    validate_renewal,
+    CALLS_USED_MAX_DAYS, CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS,
+    FROM_AFTER_TO, LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE,
+    STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed,
+    breakdown_calls_error, call_figures, calls_total, calls_used, card_items, contract_status, covered_sql,
+    event_text, newest_end_first, parse_price, period_error, renew_site_inactive, renewal_lines, renewal_period,
+    status_bounds, validate_contract, validate_line, validate_renewal, vendor_warning,
 )
 from masters_core import PHONE_RULE
+from tickets_core import ticket_times
 
 TODAY = date(2026, 10, 30)
 VALID = {"site_id": 1, "vendor_id": 2, "contract_type": "amc", "title": "Atlas Copco AMC 2026–27",
@@ -427,3 +429,80 @@ class TestRenewal:
         assert already_renewed("Atlas Copco AMC 2027–28") == (
             "This contract is already renewed: Atlas Copco AMC 2027–28. Open that contract to change it.")
         assert RENEWAL_RACE == "This contract is already renewed. Reload the page to see the renewal."
+
+
+# ---------------------------------------------------------------------------
+# Breakdown calls on the contract (S086 § 5.2-§ 5.4, § 8.2)
+# ---------------------------------------------------------------------------
+
+T0 = datetime(2026, 4, 12, 10, 30)
+
+
+def _event(name, minutes, **fields):
+    return {"event": name, "occurred_at": T0 + timedelta(minutes=minutes), "intensity": None, "waiting_reason": None,
+            "machine_stopped": None, **fields}
+
+
+def _breakdown(reason, intensity="critical"):
+    """Raised at T0, on hold for ``reason`` from +30 for 120 min, started at +150, back in service at +210."""
+    return [_event("raised", 0, intensity=intensity), _event("scheduled", 30, waiting_reason=reason),
+            _event("started", 150), _event("back_in_service", 210)]
+
+
+class TestBreakdownCalls:
+
+    def test_call_figures_downtime_and_vendor_waiting(self):
+        events = _breakdown("vendor")
+        now = T0 + timedelta(days=1)
+        figures = call_figures("back_in_service", False, events, now)
+        assert figures == {"downtime_minutes": ticket_times(events, now)["downtime_minutes"],
+                           "vendor_waiting_minutes": 120, "back_in_service_at": T0 + timedelta(minutes=210)}
+        assert figures["downtime_minutes"] == 210
+
+    def test_call_figures_open_breakdown_runs_to_now(self):
+        events = [_event("raised", 0, intensity="critical")]
+        figures = call_figures("raised", False, events, T0 + timedelta(minutes=90))
+        assert figures == {"downtime_minutes": 90, "vendor_waiting_minutes": None, "back_in_service_at": None}
+
+    def test_call_figures_waiting_for_parts_is_not_vendor(self):
+        figures = call_figures("back_in_service", False, _breakdown("parts"), T0 + timedelta(days=1))
+        assert figures["vendor_waiting_minutes"] is None
+        assert figures["downtime_minutes"] == 210
+
+    def test_call_figures_defect_waiting_is_not_delay(self):
+        figures = call_figures("back_in_service", False, _breakdown("vendor", intensity="degraded"),
+                               T0 + timedelta(days=1))
+        assert figures == {"downtime_minutes": 0, "vendor_waiting_minutes": None,
+                           "back_in_service_at": T0 + timedelta(minutes=210)}
+
+    def test_call_figures_not_a_fault(self):
+        events = [_event("raised", 0, intensity="critical"), _event("closed_not_a_fault", 40)]
+        assert call_figures("closed", True, events, T0 + timedelta(days=1)) == {
+            "downtime_minutes": None, "vendor_waiting_minutes": None, "back_in_service_at": None}
+
+    def test_calls_total_sums_known_values(self):
+        calls = [{"downtime_minutes": 200, "vendor_waiting_minutes": 120},
+                 {"downtime_minutes": None, "vendor_waiting_minutes": None},
+                 {"downtime_minutes": 120, "vendor_waiting_minutes": None}]
+        assert calls_total(calls) == {"count": 3, "downtime_minutes": 320, "vendor_waiting_minutes": 120}
+        assert calls_total([]) == {"count": 0, "downtime_minutes": 0, "vendor_waiting_minutes": 0}
+
+    def test_calls_used(self):
+        year_from, year_to = date(2026, 4, 1), date(2027, 3, 31)
+        assert calls_used(3, 4, year_from, year_to, True) == {"count": 3, "agreed": 4, "over": False,
+                                                              "per_year_only": False}
+        assert calls_used(5, 4, year_from, year_to, True)["over"] is True
+        assert calls_used(4, 4, year_from, year_to, True)["over"] is False
+        assert calls_used(3, None, year_from, year_to, True) is None
+        assert calls_used(3, 4, year_from, year_to, False) is None
+        leap_from = date(2027, 4, 1)
+        assert CALLS_USED_MAX_DAYS == 366
+        assert calls_used(1, 4, leap_from, leap_from + timedelta(days=365), True)["per_year_only"] is False
+        assert calls_used(1, 4, leap_from, leap_from + timedelta(days=366), True)["per_year_only"] is True
+        assert calls_used(1, 1, leap_from, leap_from, True) == {"count": 1, "agreed": 1, "over": False,
+                                                                "per_year_only": False}
+
+    def test_vendor_warning(self):
+        assert vendor_warning(0, 0) == "no_linked"
+        assert vendor_warning(2, 0) == "no_assignable"
+        assert vendor_warning(2, 1) is None

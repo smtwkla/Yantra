@@ -4,7 +4,8 @@
  * coverage lines, the response time, the overlap line and the machine dialog's body, which never sends a price
  * for an editor without the key.  S082: the Under contract card's headline, call line, tel: link and via line, and
  * the list's Contract filter choices.  S085: the dialog's form from a contract, the renewal's form, its notice and
- * the chain line.
+ * the chain line.  S086: the breakdown calls' lines (one call's figures, the total, the calls used), the vendor
+ * warning and the ticket's contract line.
  */
 
 import { describe, expect, it } from "vitest";
@@ -15,7 +16,10 @@ import {
   EMPTY_CONTRACT_FORM,
   NO_CALLOUT_NUMBER,
   STATUS_FILTERS,
+  callFiguresLine,
   callLine,
+  callsTotalLine,
+  callsUsedLine,
   cardHeadline,
   chainText,
   contractBody,
@@ -31,6 +35,8 @@ import {
   showsDoNotRepair,
   statusBadgeClass,
   telHref,
+  ticketContractLine,
+  vendorWarningText,
   viaText,
 } from "../src/utils/contractLabels";
 
@@ -290,5 +296,66 @@ describe("the renewal (S085)", () => {
     expect(body.callout_number).toBe("+91 00000 00000");
     expect("cost_note" in body).toBe(false);
     expect("callout_number" in contractBody(form, { can_read_callout: false, can_read_cost: false })).toBe(false);
+  });
+});
+
+describe("breakdown calls and the ticket's contract line (S086)", () => {
+  it("callFiguresLine gives the downtime and the wait on the vendor, leaving out null or 0", () => {
+    expect(callFiguresLine({ downtime_minutes: 330, vendor_waiting_minutes: 120 })).toBe(
+      "Down 5 h 30 min · waited on the vendor 2 h",
+    );
+    expect(callFiguresLine({ downtime_minutes: 45, vendor_waiting_minutes: null })).toBe("Down 45 min");
+    expect(callFiguresLine({ downtime_minutes: 0, vendor_waiting_minutes: 30 })).toBe("Waited on the vendor 30 min");
+    expect(callFiguresLine({ downtime_minutes: 0, vendor_waiting_minutes: 0 })).toBeNull();
+    expect(callFiguresLine({ downtime_minutes: null, vendor_waiting_minutes: null })).toBeNull();
+  });
+
+  it("callsTotalLine counts the calls and sums the minutes", () => {
+    expect(callsTotalLine({ count: 3, downtime_minutes: 320, vendor_waiting_minutes: 120 })).toBe(
+      "3 calls · down 5 h 20 min · waited on the vendor 2 h",
+    );
+    expect(callsTotalLine({ count: 1, downtime_minutes: 0, vendor_waiting_minutes: 0 })).toBe("1 call · no downtime");
+    expect(callsTotalLine({ count: 2, downtime_minutes: 90, vendor_waiting_minutes: 0 })).toBe("2 calls · down 1 h 30 min");
+  });
+
+  it("callsUsedLine gives the three texts, or null", () => {
+    expect(callsUsedLine({ count: 3, agreed: 4, over: false, per_year_only: false })).toBe("3 of 4 calls used this period.");
+    expect(callsUsedLine({ count: 5, agreed: 4, over: true, per_year_only: false })).toBe(
+      "5 of 4 calls used — more than agreed.",
+    );
+    expect(callsUsedLine({ count: 5, agreed: 4, over: true, per_year_only: true })).toBe(
+      "5 calls in this period · 4 a year agreed.",
+    );
+    expect(callsUsedLine({ count: 1, agreed: 4, over: false, per_year_only: true })).toBe(
+      "1 call in this period · 4 a year agreed.",
+    );
+    expect(callsUsedLine(null)).toBeNull();
+  });
+
+  it("vendorWarningText names the vendor, the site and what to do", () => {
+    expect(vendorWarningText("no_linked", "Atlas Copco", "SMTW")).toBe(
+      "No Team record is linked to Atlas Copco. Link the vendor's technician, or a record such as 'Atlas Copco" +
+        " service', in Masters › Team.",
+    );
+    expect(vendorWarningText("no_assignable", "Atlas Copco", "SMTW")).toBe(
+      "No Team record of Atlas Copco can be assigned at SMTW. Give one a Technician role there in Masters › Team.",
+    );
+    expect(vendorWarningText(null, "Atlas Copco", "SMTW")).toBeNull();
+  });
+
+  it("ticketContractLine adds the response time and the breakdown calls to S082's headline", () => {
+    const item = {
+      contract_type: "amc", vendor_name: "Atlas Copco", to_date: "2027-03-31",
+      status: { kind: "in_force", label: "In force", days: null }, response_hours: 24, covers_breakdown_calls: 1,
+    };
+    const whole = (it) => {
+      const line = ticketContractLine(it);
+      return line.headline + line.details;
+    };
+    expect(whole(item)).toBe("Under AMC with Atlas Copco until 31-03-2027 · response 24 hours · breakdown calls included");
+    expect(ticketContractLine(item).headline).toBe("Under AMC with Atlas Copco until 31-03-2027");
+    expect(whole({ ...item, response_hours: null })).toBe("Under AMC with Atlas Copco until 31-03-2027 · breakdown calls included");
+    expect(whole({ ...item, covers_breakdown_calls: 0 })).toBe("Under AMC with Atlas Copco until 31-03-2027 · response 24 hours");
+    expect(whole({ ...item, response_hours: null, covers_breakdown_calls: 0 })).toBe("Under AMC with Atlas Copco until 31-03-2027");
   });
 });

@@ -86,7 +86,8 @@ inactive code stays on tickets that already use it.
 Import direction: documents.py imports the ticket owner's read and lock functions from here;
 this module never imports documents.py.  improvements.py (S067) imports read_ticket,
 person_at_site and people_at_site from here; this module imports only improvements_core (pure),
-never improvements.py.
+never improvements.py.  contracts.py (S086) imports events_by_ticket from here; this module never
+imports contracts.py.
 """
 
 from datetime import datetime
@@ -101,7 +102,7 @@ from auth_utils import check_perm, current_person_id, has_perm, has_perm_at, per
 import alerts
 from alerts_core import ASSIGNED_ALERT, close_alert, raise_alert, regrade_alert, send_back_alert
 from config_rbac import ASSIGNABLE_ROLES
-from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
+from db_helpers import count, get_db, insert_row, marks, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment import IST, load_node_for_user, unit_access_condition
 from equipment_core import SCRAPPED
 import improvements_core
@@ -748,8 +749,11 @@ def list_modes():
 def people_at_site(cur, site_id):
     """Active people with a membership at the site, by name, with their active trades
     ``[{id, name}]``, their role there and whether that role may be assigned (§ 5.8): the one
-    people picker (reported by, the back-in-service person, labour, assignees)."""
-    cur.execute("SELECT p.id, p.name, ms.role FROM people p JOIN memberships ms ON ms.person_id = p.id"
+    people picker (reported by, the back-in-service person, labour, assignees).  A contractor's
+    vendor by name (S086 § 5.7; None without one), also an inactive vendor's: the person still
+    works for it until relinked."""
+    cur.execute("SELECT p.id, p.name, ms.role, v.name AS vendor_name FROM people p"
+                " JOIN memberships ms ON ms.person_id = p.id LEFT JOIN vendors v ON v.id = p.vendor_id"
                 " WHERE ms.site_id = %s AND p.active = 1 ORDER BY p.name, p.id", (site_id,))
     people = [{**row, "assignable": row["role"] in ASSIGNABLE_ROLES, "trades": []} for row in cur.fetchall()]
     if people:
@@ -760,6 +764,20 @@ def people_at_site(cur, site_id):
         for row in cur.fetchall():
             by_id[row["person_id"]]["trades"].append({"id": row["id"], "name": row["name"]})
     return people
+
+
+def events_by_ticket(cur, ticket_ids):
+    """The events ticket_times needs, of every ticket in one query, oldest first ->
+    ``{ticket_id: [event, …]}``.  Shared by the improvement page (S069) and the contract's
+    breakdown calls (S086, moved here from improvements.py): one rule for the figures."""
+    events = {ticket_id: [] for ticket_id in ticket_ids}
+    if ticket_ids:
+        cur.execute("SELECT ticket_id, event, occurred_at, intensity, waiting_reason, machine_stopped"
+                    f" FROM ticket_events WHERE ticket_id IN ({marks(ticket_ids)}) ORDER BY occurred_at, id",
+                    list(ticket_ids))
+        for row in cur.fetchall():
+            events[row["ticket_id"]].append(row)
+    return events
 
 
 @tickets_bp.route("/people")

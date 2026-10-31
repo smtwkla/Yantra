@@ -158,8 +158,8 @@ holds the cause's shared lock commits before the code change gets its exclusive 
 count sees it; a later one waits behind the cause's lock and then sees the new code, which is
 allowed (the code changed before its first use).
 
-Import direction: this module imports read_ticket, improvement_links, person_at_site and
-people_at_site from tickets.py; tickets.py never imports this module (only improvements_core).
+Import direction: this module imports read_ticket, improvement_links, person_at_site,
+people_at_site and events_by_ticket (S086) from tickets.py; tickets.py never imports this module (only improvements_core).
 It imports alerts (S074), as tickets.py does; alerts never imports this module.  procedures.py
 (S075) imports lesson_source from this module; this module never imports procedures.py: it reads
 the procedures table by SQL only (each countermeasure's lesson, plain) and the rule of *Write
@@ -195,7 +195,7 @@ from improvements_core import (
     with_watch_ended, working_state,
 )
 from procedures_core import EDIT_KEY as LESSON_EDIT_KEY, may_write_lesson
-from tickets import code_ref, improvement_links, people_at_site, person_at_site, read_ticket
+from tickets import code_ref, events_by_ticket, improvement_links, people_at_site, person_at_site, read_ticket
 from tickets_core import edit_lines, format_serial, is_breakdown, serial_scope, ticket_times
 
 improvements_bp = Blueprint("improvements", __name__)
@@ -377,19 +377,6 @@ def _check_lead(cur, lead_id, site_id):
         raise ApiError(LEAD_AT_SITE, 400, "lead_id")
 
 
-def _events_by_ticket(cur, ticket_ids):
-    """The events ticket_times needs, of every ticket in one query, oldest first ->
-    ``{ticket_id: [event, …]}``."""
-    events = {ticket_id: [] for ticket_id in ticket_ids}
-    if ticket_ids:
-        cur.execute("SELECT ticket_id, event, occurred_at, intensity, waiting_reason, machine_stopped"
-                    f" FROM ticket_events WHERE ticket_id IN ({marks(ticket_ids)}) ORDER BY occurred_at, id",
-                    list(ticket_ids))
-        for row in cur.fetchall():
-            events[row["ticket_id"]].append(row)
-    return events
-
-
 def _linked_tickets(cur, improvement_ids, now):
     """The tickets of the improvements, each with its downtime as the ticket page computes it
     (an open breakdown to ``now``), newest first -> ``{improvement_id: [ticket, …]}``.  Two
@@ -400,7 +387,7 @@ def _linked_tickets(cur, improvement_ids, now):
     cur.execute(f"{_LINKED_TICKETS} WHERE it.improvement_id IN ({marks(improvement_ids)})"
                 " ORDER BY t.occurred_at DESC, t.id DESC", list(improvement_ids))
     rows = cur.fetchall()
-    events = _events_by_ticket(cur, sorted({row["id"] for row in rows}))
+    events = events_by_ticket(cur, sorted({row["id"] for row in rows}))
     for row in rows:
         plain = row_to_dict(row)
         result[row["improvement_id"]].append({
@@ -599,7 +586,7 @@ def _figures(cur, row, tickets, end):
                     " AND t.occurred_at >= %s AND t.occurred_at < %s ORDER BY t.occurred_at, t.id",
                     [*machine_ids, watch_from - timedelta(days=days), end])
         rows = cur.fetchall()
-    events = _events_by_ticket(cur, [r["id"] for r in rows])
+    events = events_by_ticket(cur, [r["id"] for r in rows])
     watch_tickets = [{
         "id": r["id"], "serial": r["serial"], "occurred_at": r["occurred_at"], "intensity": r["intensity"],
         "failure_mode_id": r["failure_mode_id"], "machine_code": r["m_code"],

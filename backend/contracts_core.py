@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from equipment_core import SCRAPPED
 from masters_core import collapsed, flag_parser, id_parser, optional_text_parser, phone_parser, validate_fields
+from tickets_core import latest_restoration, ticket_times
 
 # The ENUM of contracts.contract_type (v43), in the order the dialog lists them after AMC
 CONTRACT_TYPES = ("warranty", "amc", "cmc", "on_call")
@@ -396,3 +397,59 @@ def renewal_lines(machines):
             continue
         skipped.append({"equipment_id": line["equipment_id"], "code": line["code"], "reason": reason})
     return copied, skipped
+
+
+# ---------------------------------------------------------------------------
+# Breakdown calls on the contract (S086, R02.6; docs/steps/S086-contract-breakdown-calls/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+# The longest period whose call count is compared with the calls agreed per year (§ 5.3): a leap year's contract
+# still compares; a longer one shows the count beside the yearly number instead
+CALLS_USED_MAX_DAYS = 366
+
+VENDOR_WAITING_REASON = "vendor"   # tickets_core.WAITING_REASONS: "At or waiting for a vendor, garage or maker"
+NO_LINKED = "no_linked"
+NO_ASSIGNABLE = "no_assignable"
+
+
+def call_figures(state, not_a_fault, events, now):
+    """One call's figures (§ 5.2) -> ``{downtime_minutes, vendor_waiting_minutes, back_in_service_at}``, from the
+    ticket page's own functions: the downtime (EN 13306 time to restoration, an open breakdown to ``now``), the
+    logistic delay with the reason *vendor* (None when the ticket never waited for the vendor while critical: a
+    defect waiting is backlog, not delay), and the latest back in service (None while open, sent back, or for *Not
+    a fault*, whose times are all None)."""
+    times = ticket_times(events, now)
+    return {
+        "downtime_minutes": times["downtime_minutes"],
+        "vendor_waiting_minutes": (times["waiting_by_reason"] or {}).get(VENDOR_WAITING_REASON),
+        "back_in_service_at": latest_restoration(state, not_a_fault, events),
+    }
+
+
+def calls_total(calls):
+    """The card's total line (§ 5.3) -> ``{count, downtime_minutes, vendor_waiting_minutes}``: the sums of the known
+    values (None skipped), each 0 when none is known."""
+    def known_sum(key):
+        return sum(call[key] for call in calls if call[key] is not None)
+    return {"count": len(calls), "downtime_minutes": known_sum("downtime_minutes"),
+            "vendor_waiting_minutes": known_sum("vendor_waiting_minutes")}
+
+
+def calls_used(count, per_year, from_date, to_date, complete):
+    """"3 of 4 calls used" (§ 5.3, C3) -> None when the reader does not see the whole site (``complete`` false) or
+    no number is agreed; else ``{count, agreed, over, per_year_only}``, ``per_year_only`` when the period is longer
+    than CALLS_USED_MAX_DAYS (both end days count), so the count is not compared with one year's number."""
+    if not complete or per_year is None:
+        return None
+    days = (to_date - from_date).days + 1
+    return {"count": count, "agreed": per_year, "over": count > per_year, "per_year_only": days > CALLS_USED_MAX_DAYS}
+
+
+def vendor_warning(linked_count, assignable_count):
+    """The card's warning (§ 5.4): no active Team record linked to the vendor; or none that may be assigned at the
+    contract's site (a Technician, Engineer or Manager role there); else None."""
+    if linked_count == 0:
+        return NO_LINKED
+    if assignable_count == 0:
+        return NO_ASSIGNABLE
+    return None

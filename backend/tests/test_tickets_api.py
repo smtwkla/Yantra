@@ -432,4 +432,22 @@ class TestPickers:
         people = res.get_json()["items"]
         assert [p["id"] for p in people] == [here["id"]]
         assert people[0] == {"id": here["id"], "name": "Aa operator here", "role": "maint_operator",
-                             "assignable": False, "trades": [{"id": trade["id"], "name": trade["name"]}]}
+                             "assignable": False, "trades": [{"id": trade["id"], "name": trade["name"]}],
+                             "vendor_name": None}
+
+    def test_people_show_their_vendor(self, admin, make_person, make_vendor, give_site_role, machine, unit):
+        """S086 § 5.7: a contractor linked to a vendor carries its name, also an inactive vendor's; a direct
+        employee None."""
+        site = {"id": unit["site_id"]}
+        vendor, closed = make_vendor(), make_vendor()
+        linked = make_person(name="Ab vendor's technician", employment="contractor", vendor_id=vendor["id"])
+        old = make_person(name="Ac old vendor's technician", employment="contractor", vendor_id=closed["id"])
+        direct = make_person(name="Ad direct employee")
+        for person in (linked, old, direct):
+            give_site_role(person, site, "maint_technician")
+        assert admin.put(f"{MASTERS}/vendors/{closed['id']}", json={"active": False}).status_code == 200
+        res = admin.get(f"{TICKETS}/people", query_string={"equipment_id": machine["id"]})
+        by_id = {p["id"]: p for p in res.get_json()["items"]}
+        assert by_id[linked["id"]]["vendor_name"] == vendor["name"]
+        assert by_id[old["id"]]["vendor_name"] == closed["name"]
+        assert by_id[direct["id"]]["vendor_name"] is None

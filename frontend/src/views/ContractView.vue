@@ -17,6 +17,9 @@
  * The renewal (docs/steps/S085-contract-renewal/1-brief.md § 5.7): *Renew contract* shows only when the detail's
  * can_renew; its dialog makes the next contract and the page then opens it. The chain lines link the contract this
  * one renews and its renewal; an inactive renewal tells an editor how to renew again.
+ *
+ * The breakdown calls (docs/steps/S086-contract-breakdown-calls/1-brief.md § 5.3): the Breakdown calls card, last on
+ * the page, loads the vendor's tickets on the covered machines itself, for holders of ticket:read only.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -33,6 +36,7 @@ import {
   statusBadgeClass,
 } from "../utils/contractLabels";
 import { formatDate } from "../utils/datetime";
+import BreakdownCallsCard from "./contracts/BreakdownCallsCard.vue";
 import ContractMachineDialog from "./contracts/ContractMachineDialog.vue";
 import ContractRenewDialog from "./contracts/ContractRenewDialog.vue";
 
@@ -262,6 +266,9 @@ function onRenewed(detail) {
         <p class="small text-secondary mb-2">Only the managers of {{ contract.site_code }} see these documents and photos.</p>
         <DocumentsCards :key="contract.id" :base-path="docsPath" :can-edit="contract.can_edit_documents" />
       </template>
+
+      <!-- S086 § 5.3: the vendor's tickets on the covered machines, last on the page -->
+      <BreakdownCallsCard :contract="contract" />
 
       <ContractMachineDialog
         :key="contract.id"

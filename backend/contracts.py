@@ -9,7 +9,10 @@ before GST; the total is their sum, never stored.  Each add and remove writes a 
 a new contract at the old one's site with renewal_of_id the old one (one renewal per contract, v47), its terms from
 the dialog, the old contract's in-service machines of the site copied without prices; the old contract, its prices,
 cost note and documents stay as they were.  The renewal is made only here (renew_contract), under the old contract's
-lock.
+lock.  The breakdown calls (S086, R02.6; docs/steps/S086-contract-breakdown-calls/1-brief.md): the tickets on a
+covered node or its parts, happened in the period, that a Team record linked to the contract's vendor is assigned to
+or logs labour on (the current link counts, Q9.5 a), with their downtime and the wait on the vendor from
+tickets_core.ticket_times (through contracts_core.call_figures); derived on every read, nothing stored.
 
 Thin shell: contracts_core holds the rules; this module checks access, locks, reads and stores.
 
@@ -28,7 +31,12 @@ price, a total or a cost note, for any reader.  The contract's documents and pho
 OWNERS["contract"] calling read_contract, read_contract_for_change and lock_contract_for_change below) are read
 with contract:read_senior at the contract's site (D5: a quote or a signed contract shows the price), written with
 contract:edit and contract:read_senior there, restored and erased with equipment:purge_documents and
-contract:read_senior there; the flags can_read_documents and can_edit_documents say so to the page.
+contract:read_senior there; the flags can_read_documents and can_edit_documents say so to the page.  The breakdown
+calls (S086 § 5.5, /<id>/calls) need contract:read_basic at the contract's site (404) and ticket:read somewhere (403);
+each row passes the ticket predicate (unit_access_condition over ticket:read, as tickets._visible_condition), so the
+card never lists a ticket the reader could not open and sends no count of the others; "N of M calls used" comes only
+when the reader holds ticket:read at every active unit of the contract's site (complete).  No contract field beyond
+the vendor's name and the site code.
 
 LOCK ORDER (S080 § 5.6, S081 § 5.5).  The database runs REPEATABLE READ; each write decides from its locking reads,
 and access checks are plain reads.  Per write this module takes at most one exclusive contract lock and one
@@ -61,7 +69,8 @@ existing contract, so every plain read comes after it.
 - Documents (S083): documents.py locks the contract row FOR UPDATE through lock_contract_for_change, first in its
   transaction, then touches only equipment_documents rows (plain: 404, the write or purge key 403,
   contract:read_senior 403).
-- Reads: plain, no lock.
+- Reads: plain, no lock.  The breakdown calls (S086 § 5.8) too: plain reads on autocommit connections, each query its
+  own snapshot, nothing written.
 No deadlock cycle:
 - The contract row: only this module's functions lock it, always first in their transaction (the PUT, the three
   line writes, and documents.py's writes through lock_contract_for_change); nothing holds another lock and then
@@ -93,22 +102,27 @@ No deadlock cycle:
   two adds of one node to two contracts share the node's lock.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from flask import Blueprint, jsonify, request
 
 from api_common import MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg
 from auth_utils import has_perm_at, require_perm, require_perm_at, sites_holding
+from config_rbac import ASSIGNABLE_ROLES
 from contracts_core import (
     CARD_ENDED_DAYS, CONTRACT_TYPES, DEFAULT_STATUS, GATED_FIELDS, LINE_GATED_FIELDS, RENEW_INACTIVE, RENEWAL_RACE,
-    SITE_INACTIVE, SITE_KEPT, STATUS_FILTERS, already_renewed, breakdown_calls_error, card_items, contract_status,
-    event_text, newest_end_first, period_error, renew_site_inactive, renewal_lines, renewal_period, status_bounds,
-    validate_contract, validate_line, validate_renewal,
+    SITE_INACTIVE, SITE_KEPT, STATUS_FILTERS, already_renewed, breakdown_calls_error, call_figures, calls_total,
+    calls_used, card_items, contract_status, event_text, newest_end_first, period_error, renew_site_inactive,
+    renewal_lines, renewal_period, status_bounds, validate_contract, validate_line, validate_renewal, vendor_warning,
 )
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, transaction, update_row
-from equipment import IST, NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path, write_events
+from equipment import (
+    IST, NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path, unit_access_condition, write_events,
+)
 from equipment_core import SCRAPPED
 from masters import check_active_vendor
+from tickets import READ_KEY as TICKET_READ, events_by_ticket
+from tickets_core import MACHINE_LEVEL, is_breakdown, is_overdue
 
 contracts_bp = Blueprint("contracts", __name__)
 
@@ -641,6 +655,160 @@ def renew_contract(contract_id):
             write_events(cur, machine["equipment_id"], [("contract_added", None, added)])
         answer = {**_answer(cur, new_id), "skipped": skipped}
     return jsonify(answer), 201
+
+
+# ---------------------------------------------------------------------------
+# Breakdown calls (S086 § 5, § 6): read-only, no lock
+# ---------------------------------------------------------------------------
+
+# A call's ticket: the machine at raise (t.equipment_id) and the part as it stands (t.component_id)
+_CALL_SELECT = (
+    "SELECT t.id, t.serial, t.state, t.intensity, t.occurred_at, t.not_a_fault, t.planned_date,"
+    " m.id AS m_id, m.code AS m_code, m.name AS m_name, c.id AS c_id, c.code AS c_code, c.name AS c_name"
+    " FROM tickets t JOIN equipment m ON m.id = t.equipment_id LEFT JOIN equipment c ON c.id = t.component_id"
+)
+# The ticket is on a line node (§ 5.1 rule 1): the machine, the part, or the part's current parent
+_ON_A_LINE = ("EXISTS (SELECT 1 FROM contract_equipment ce WHERE ce.contract_id = %s"
+              " AND ce.equipment_id IN (t.equipment_id, t.component_id, c.parent_id))")
+# A Team record linked to the vendor now is an assignee or has a labour row (§ 5.1 rule 3)
+_BY_THE_VENDOR = (
+    "(EXISTS (SELECT 1 FROM ticket_assignees ta JOIN people pa ON pa.id = ta.person_id"
+    " WHERE ta.ticket_id = t.id AND pa.vendor_id = %s)"
+    " OR EXISTS (SELECT 1 FROM ticket_labour tl JOIN people pl ON pl.id = tl.person_id"
+    " WHERE tl.ticket_id = t.id AND pl.vendor_id = %s))"
+)
+
+
+def _covered_nodes(cur, contract_id):
+    """Query 1 (§ 5.1): the contract's lines -> ``(machines, parts)``: the machines the lines stand on (the root of
+    each line's tree, as NODE_JOINS), and the part lines with their current children (a component-unit's
+    components).  Both empty when the contract has no line."""
+    cur.execute("SELECT ce.equipment_id, e.level, COALESCE(gp.id, p.id, e.id) AS machine_id"
+                " FROM contract_equipment ce JOIN equipment e ON e.id = ce.equipment_id"
+                " LEFT JOIN equipment p ON p.id = e.parent_id LEFT JOIN equipment gp ON gp.id = p.parent_id"
+                " WHERE ce.contract_id = %s", (contract_id,))
+    rows = cur.fetchall()
+    machines = sorted({row["machine_id"] for row in rows})
+    parts = sorted({row["equipment_id"] for row in rows if row["level"] != MACHINE_LEVEL})
+    if parts:
+        cur.execute(f"SELECT id FROM equipment WHERE parent_id IN ({marks(parts)})", parts)
+        parts = sorted({*parts, *(row["id"] for row in cur.fetchall())})
+    return machines, parts
+
+
+def _call_rows(cur, contract):
+    """Query 2 (§ 5.1): the contract's calls the reader may open, newest first.  A covered machine's tickets come by
+    t.equipment_id; a covered part's by t.component_id, wherever the part stood when raised (BR1-03).  [] when the
+    contract has no line or the reader holds ticket:read at no unit."""
+    machines, parts = _covered_nodes(cur, contract["id"])
+    visible = unit_access_condition(cur, TICKET_READ, "t.unit_id", "m.unit_id")
+    if not machines or visible is None:
+        return []
+    on_nodes, node_params = f"t.equipment_id IN ({marks(machines)})", list(machines)
+    if parts:
+        on_nodes = f"({on_nodes} OR t.component_id IN ({marks(parts)}))"
+        node_params += parts
+    visible_sql, visible_params = visible
+    start = datetime.combine(contract["from_date"], time.min)
+    end = datetime.combine(contract["to_date"] + timedelta(days=1), time.min)   # both end days count
+    cur.execute(f"{_CALL_SELECT} WHERE {on_nodes} AND t.occurred_at >= %s AND t.occurred_at < %s"
+                f" AND {_ON_A_LINE} AND {_BY_THE_VENDOR} AND {visible_sql}"
+                " ORDER BY t.occurred_at DESC, t.id DESC",
+                [*node_params, start, end, contract["id"], contract["vendor_id"], contract["vendor_id"],
+                 *visible_params])
+    return cur.fetchall()
+
+
+def _vendor_people(cur, ticket_ids, vendor_id):
+    """Query 4 (§ 5.1): the vendor's people on each ticket, as assignee or on a labour row, each once, by name ->
+    ``{ticket_id: [{id, name}, …]}``."""
+    people = {ticket_id: [] for ticket_id in ticket_ids}
+    if not ticket_ids:
+        return people
+    ids = marks(ticket_ids)
+    cur.execute("SELECT DISTINCT w.ticket_id, p.id, p.name FROM"
+                f" (SELECT ticket_id, person_id FROM ticket_assignees WHERE ticket_id IN ({ids})"
+                f" UNION SELECT ticket_id, person_id FROM ticket_labour WHERE ticket_id IN ({ids})) w"
+                " JOIN people p ON p.id = w.person_id WHERE p.vendor_id = %s ORDER BY w.ticket_id, p.name, p.id",
+                [*ticket_ids, *ticket_ids, vendor_id])
+    for row in cur.fetchall():
+        people[row["ticket_id"]].append({"id": row["id"], "name": row["name"]})
+    return people
+
+
+def _vendor_reach(cur, vendor_id, site_id):
+    """§ 5.4 -> ``(linked_count, assignable_count)``: the active Team records linked to the vendor, and those of them
+    whose role at the site may be assigned (ASSIGNABLE_ROLES)."""
+    roles = sorted(ASSIGNABLE_ROLES)
+    cur.execute("SELECT COUNT(DISTINCT p.id) AS linked,"
+                f" COUNT(DISTINCT CASE WHEN ms.role IN ({marks(roles)}) THEN p.id END) AS assignable"
+                " FROM people p LEFT JOIN memberships ms ON ms.person_id = p.id AND ms.site_id = %s"
+                " WHERE p.vendor_id = %s AND p.active = 1", [*roles, site_id, vendor_id])
+    row = cur.fetchone()
+    return row["linked"], row["assignable"]
+
+
+def _sees_whole_site(cur, site_id):
+    """``complete`` (§ 5.5): the reader holds ticket:read at every active unit of the site, so the listed calls are
+    the contract's calls."""
+    unit_ids = accessible_unit_ids(cur, TICKET_READ)
+    if unit_ids is None:
+        return True
+    cur.execute("SELECT id FROM units WHERE site_id = %s AND active = 1", (site_id,))
+    return {row["id"] for row in cur.fetchall()} <= unit_ids
+
+
+def _call_out(row, figures, people, today):
+    plain = row_to_dict({**row, "back_in_service_at": figures["back_in_service_at"]})
+    return {
+        "id": plain["id"], "serial": plain["serial"], "state": plain["state"], "intensity": plain["intensity"],
+        "is_breakdown": is_breakdown(plain["intensity"]),
+        "overdue": is_overdue(row["state"], row["planned_date"], today),
+        "not_a_fault": bool(plain["not_a_fault"]),
+        "occurred_at": plain["occurred_at"], "back_in_service_at": plain["back_in_service_at"],
+        "machine": {"id": plain["m_id"], "code": plain["m_code"], "name": plain["m_name"]},
+        "component": ({"id": plain["c_id"], "code": plain["c_code"], "name": plain["c_name"]}
+                      if plain["c_id"] is not None else None),
+        "downtime_minutes": figures["downtime_minutes"],
+        "vendor_waiting_minutes": figures["vendor_waiting_minutes"],
+        "vendor_people": people,
+    }
+
+
+@contracts_bp.route("/<int:contract_id>/calls")
+@require_perm(READ_BASIC)
+@require_perm(TICKET_READ)
+def contract_calls(contract_id):
+    """The contract's breakdown calls (§ 5.1-§ 5.5, § 6): the tickets the reader may open, their figures, the
+    total, the calls used (only for a reader of the whole site) and the vendor warning (an active contract not
+    ended).  Plain reads, no lock."""
+    today = _today()
+    now = datetime.now(IST).replace(tzinfo=None)
+    with get_db().cursor() as cur:
+        contract = _contract_row(cur, contract_id)
+        if contract is None or not has_perm_at(READ_BASIC, contract["site_id"]):
+            raise ApiError("Not found", 404)
+        rows = _call_rows(cur, contract)
+        ids = [row["id"] for row in rows]
+        events = events_by_ticket(cur, ids)
+        people = _vendor_people(cur, ids, contract["vendor_id"])
+        complete = _sees_whole_site(cur, contract["site_id"])
+        warning = None
+        if contract["active"] and contract_status(contract["from_date"], contract["to_date"], today)["kind"] != "ended":
+            warning = vendor_warning(*_vendor_reach(cur, contract["vendor_id"], contract["site_id"]))
+    calls = [_call_out(row, call_figures(row["state"], bool(row["not_a_fault"]), events[row["id"]], now),
+                       people[row["id"]], today) for row in rows]
+    total = calls_total(calls)
+    return jsonify({
+        "calls": calls,
+        "total": total,
+        "complete": complete,
+        "used": calls_used(total["count"], contract["breakdown_calls_per_year"], contract["from_date"],
+                           contract["to_date"], complete),
+        "warning": warning,
+        "vendor_name": contract["vendor_name"],
+        "site_code": contract["site_code"],
+    })
 
 
 # ---------------------------------------------------------------------------

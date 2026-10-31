@@ -8,6 +8,9 @@
  * A site may have a hundred names, so the list is grouped and ordered (groupPeople): the
  * user's own person first, the ticket's assignees, the maintenance ladder, then everyone else
  * the field allows, with a type-to-filter box on top. The server checks every pick again.
+ *
+ * S086: a contractor's vendor follows the role ("Atlas Copco service · Technician · Atlas Copco"),
+ * in the list and on the picked line, and the filter finds people by the vendor's name.
  */
 import { computed, ref } from "vue";
 import { roleLabel } from "../../utils/siteRoles";
@@ -42,7 +45,7 @@ const picked = computed(() => props.people.find((p) => p.id === props.modelValue
     <div v-if="picked" class="d-flex align-items-center gap-2 mb-2">
       <i class="fa-solid fa-user text-secondary"></i>
       <span class="fw-semibold">{{ picked.name }}</span>
-      <span class="text-secondary small">{{ roleLabel(picked.role) }}</span>
+      <span class="text-secondary small">{{ roleLabel(picked.role) }}<template v-if="picked.vendor_name"> · {{ picked.vendor_name }}</template></span>
     </div>
     <input
       :id="`${idPrefix}-filter`"
@@ -50,7 +53,7 @@ const picked = computed(() => props.people.find((p) => p.id === props.modelValue
       class="form-control mb-2"
       :class="{ 'is-invalid': invalid }"
       type="search"
-      placeholder="Type a name to filter"
+      placeholder="Type a name or vendor to filter"
       autocomplete="off"
     />
     <div class="picker-list border rounded">
@@ -67,7 +70,7 @@ const picked = computed(() => props.people.find((p) => p.id === props.modelValue
             :aria-pressed="person.id === modelValue"
             @click="emit('update:modelValue', person.id)"
           >
-            {{ person.name }} <span class="small" :class="person.id === modelValue ? '' : 'text-secondary'">· {{ roleLabel(person.role) }}</span>
+            {{ person.name }} <span class="small" :class="person.id === modelValue ? '' : 'text-secondary'">· {{ roleLabel(person.role) }}<template v-if="person.vendor_name"> · {{ person.vendor_name }}</template></span>
           </button>
         </div>
       </template>

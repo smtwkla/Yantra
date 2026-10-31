@@ -92,7 +92,7 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S083 | [Contract documents](S083-contract-documents/1-brief.md) — R02.3: the signed contract, annexures and quotes on the contract, the sixth documents owner, read with `contract:read_senior` (full track) | R02.3 | Gate B (gate A delegated, 30-10-2026) | 31-10-2026 |
 | S084 | [Contract reminders](S084-contract-reminders/1-brief.md) — R02.5: push and email 60 and 15 days before a contract ends, not once renewed (full track) | R02.5 | Gate B (gate A delegated, 30-10-2026; 2 points flagged for gate B) | 31-10-2026 |
 | S085 | [Contract renewal](S085-contract-renewal/1-brief.md) — R02.4: *Renew* makes the next contract with the same terms and machines; the chain is kept (full track) | R02.4 | Gate B (gate A delegated, 30-10-2026; 2 points flagged for gate B) | 31-10-2026 |
-| S086 | [Breakdown calls on the contract](S086-contract-breakdown-calls/1-brief.md) — R02.6: the vendor's tickets on the covered machines in the period, derived through the linked Team records; the contract line on the ticket page (full track) | R02.6 | Approved (gate A delegated, 30-10-2026; 3 points flagged for gate B) | 30-10-2026 |
+| S086 | [Breakdown calls on the contract](S086-contract-breakdown-calls/1-brief.md) — R02.6: the vendor's tickets on the covered machines in the period, derived through the linked Team records; the contract line on the ticket page (full track) | R02.6 | In code review (gate A delegated, 30-10-2026; 3 points flagged for gate B) | 31-10-2026 |
 ## Queued (not yet briefed)
 
 Ideas agreed as worth doing, in no fixed order. A queued item gets its step ID
