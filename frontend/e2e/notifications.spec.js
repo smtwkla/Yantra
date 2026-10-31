@@ -201,6 +201,7 @@ test("S021 A1: What you will get — the engineer's breakdowns and defects, the 
   await expect(lines).toContainText("Breakdowns and defects at SMTW, escalations");
   await expect(lines).toContainText("Jobs assigned to you");
   await expect(lines).toContainText("Improvements ready to verify at SMTW");   // S074
+  await expect(lines).toContainText("Contracts ending at SMTW");   // S084
   await asPerson(page, "technician", "/notifications");
   await expect(lines.getByRole("listitem")).toHaveText([
     "Jobs assigned to you", "Countermeasures given to you, and when they are overdue"]);
@@ -260,6 +261,8 @@ test("S032: the manager sees the closed-ticket email line and their address; Sen
   // The manager's token carries an email claim (people.js EMAILS); the page load stores it
   await asPerson(page, "manager", "/notifications");
   await expect(page.locator(".card").filter({ hasText: "What you will get" })).toContainText("Closed tickets at SMTW, by email");
+  await expect(page.locator(".card").filter({ hasText: "What you will get" }))
+    .toContainText("Contracts ending at SMTW, by email");   // S084
   const card = page.locator(".email-card");
   await expect(card).toContainText("Email goes to e2e_manager@example.test, from your login.");
   await card.getByRole("button", { name: "Send test email" }).click();

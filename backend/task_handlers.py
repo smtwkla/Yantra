@@ -29,17 +29,19 @@ import alerts
 import mail_sender
 import push_sender
 from alerts_core import (
-    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, CHANNELS, EMAIL, ESCALATION, IMPROVEMENT_KINDS, PAYLOAD_DATE, PAYLOAD_TIME,
-    PUSH, TICKET_KINDS, VERIFY_READY, improvement_message, message, overdue_alert_due, ready_alert_due,
-    should_escalate, should_send, should_send_improvement,
+    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, CHANNELS, CONTRACT_KINDS, EMAIL, ESCALATION, FIRST, IMPROVEMENT_KINDS,
+    PAYLOAD_DATE, PAYLOAD_TIME, PUSH, SECOND, TICKET_KINDS, VERIFY_READY, contract_facts, contract_message,
+    contract_reminder_due, improvement_message, message, overdue_alert_due, ready_alert_due, should_escalate,
+    should_send, should_send_contract, should_send_improvement,
 )
 from company_settings import ACCESS_LOG_RETENTION_DAYS, DONE_TASK_RETENTION_DAYS, PURGE_BATCH_ROWS
 from improvements_core import watch_until
 from push_core import (
-    ALERT_TTL_SECONDS, GONE, IMPROVEMENT_TTL_SECONDS, REFUSED, RETRY_LATER, SENT, push_data, refused_host,
-    send_outcome, send_task_payload,
+    ALERT_TTL_SECONDS, CONTRACT_TTL_SECONDS, GONE, IMPROVEMENT_TTL_SECONDS, REFUSED, RETRY_LATER, SENT, push_data,
+    refused_host, send_outcome, send_task_payload,
 )
-from email_core import closed_email, smtp_outcome
+from email_core import closed_email, contract_ending_email, smtp_outcome
+from settings import label_base_url
 from task_queue import enqueue
 
 logger = logging.getLogger(__name__)
@@ -199,12 +201,13 @@ def ticket_escalate(conn, payload, should_stop):
 # finds the overdue countermeasures and the ended watches once a day
 # ---------------------------------------------------------------------------
 
-def _payload_time(payload, key, fmt):
-    """A payload date or time, written by alerts.enqueue_improvement_alert; else a BadTask."""
+def _payload_time(task_type, payload, key, fmt):
+    """A payload date or time, written by alerts.enqueue_improvement_alert or enqueue_contract_alert; else a
+    BadTask naming ``task_type``."""
     try:
         return datetime.strptime(payload.get(key), fmt)
     except (TypeError, ValueError):
-        raise BadTask(f"improvement_alert needs {key} as {fmt}, got {payload!r}") from None
+        raise BadTask(f"{task_type} needs {key} as {fmt}, got {payload!r}") from None
 
 
 def _improvement_payload(payload):
@@ -215,10 +218,12 @@ def _improvement_payload(payload):
     if kind not in IMPROVEMENT_KINDS:
         raise BadTask(f"improvement_alert: unknown kind {kind!r}")
     if kind == VERIFY_READY:
-        return kind, improvement_id, None, {"watch_until": _payload_time(payload, "watch_until", PAYLOAD_TIME)}, None
+        end = _payload_time(alerts.IMPROVEMENT_ALERT, payload, "watch_until", PAYLOAD_TIME)
+        return kind, improvement_id, None, {"watch_until": end}, None
     (action_id,) = _ids("improvement_alert", payload, "action_id")
     if kind == ACTION_OVERDUE:
-        return kind, improvement_id, action_id, {"due_date": _payload_time(payload, "due_date", PAYLOAD_DATE).date()}, None
+        due = _payload_time(alerts.IMPROVEMENT_ALERT, payload, "due_date", PAYLOAD_DATE).date()
+        return kind, improvement_id, action_id, {"due_date": due}, None
     (person_id,) = _ids("improvement_alert", payload, "person_id")
     given_by = payload.get("given_by")
     if not isinstance(given_by, str):
@@ -283,6 +288,84 @@ def improvement_alert_scan(conn, payload, should_stop):
                                                      due_date=action["due_date"])
                     overdue += 1
     logger.info("improvement_alert_scan: %d overdue, %d ready to verify", overdue, ready)
+
+
+# ---------------------------------------------------------------------------
+# Contract reminders (S084, R02.5): contract_reminder_scan queues them once a day, contract_alert
+# sends one by push and by email
+# ---------------------------------------------------------------------------
+
+def contract_reminder_scan(conn, payload, should_stop):
+    """Daily (scheduled_tasks.SCHEDULE): queue the reminder due per contract (§ 5.3), at most one
+    each, with its marker (v46), all in the worker's one transaction: a fault rolls back the markers
+    and the tasks together, and the retry finds the same contracts.  The markers are written even
+    when push and email are off (D7).  Locks: alerts.py's docstring."""
+    _expect_no_payload(alerts.CONTRACT_SCAN, payload)
+    sent = {FIRST: 0, SECOND: 0}
+    with conn.cursor() as cur:
+        # The session clock (IST), as improvement_alert_scan; it reads no table, so the candidates'
+        # read below opens the transaction's snapshot
+        cur.execute("SELECT NOW() AS now")
+        today = cur.fetchone()["now"].date()
+        for contract_id in alerts.contract_scan_candidates(cur, today):
+            contract = alerts.lock_contract_for_scan(cur, contract_id)
+            if contract is None:
+                continue
+            which = contract_reminder_due(contract["active"], alerts.contract_renewed(cur, contract_id),
+                                          contract["from_date"], contract["to_date"], contract["first_reminder_for"],
+                                          contract["second_reminder_for"], today)
+            if which is None:
+                continue
+            alerts.mark_contract_reminded(cur, contract_id, which, contract["to_date"])
+            alerts.enqueue_contract_alert(cur, contract_id, contract["to_date"])
+            sent[which] += 1
+    logger.info("contract_reminder_scan: %d first, %d second reminders", sent[FIRST], sent[SECOND])
+
+
+def contract_alert(conn, payload, should_stop):
+    """One contract reminder -> one push_send per device of the holders of contract:read at the
+    contract's site, and one email_send per holder of contract:read_senior there with an address
+    (§ 5.4), in this transaction (all or nothing, so a retry never doubles them).  Sent only while
+    still true (should_send_contract, from the row as it is now); a channel not set up on the
+    server is skipped."""
+    (contract_id,) = _ids(alerts.CONTRACT_ALERT, payload, "contract_id")
+    kind = payload.get("kind")
+    if kind not in CONTRACT_KINDS:
+        raise BadTask(f"contract_alert: unknown kind {kind!r}")
+    expected_to_date = _payload_time(alerts.CONTRACT_ALERT, payload, "to_date", PAYLOAD_DATE).date()
+    with conn.cursor() as cur:
+        cur.execute("SELECT NOW() AS now")
+        today = cur.fetchone()["now"].date()
+        row = alerts.read_alert_contract(cur, contract_id)
+        if row is None:
+            raise BadTask(f"contract_alert: no contract {contract_id}")
+        if not should_send_contract(row["active"], row["renewed"], row["from_date"], row["to_date"],
+                                    expected_to_date, today):
+            logger.info("contract_alert for contract %s: not sent, no longer true (active %s, renewed %s, from %s,"
+                        " to %s; payload to %s; today %s)", contract_id, row["active"], row["renewed"],
+                        row["from_date"], row["to_date"], expected_to_date, today)
+            return
+        facts = contract_facts(row, today, label_base_url(cur))
+        people = devices = emails = 0
+        if PUSH in CHANNELS[kind]:
+            if not push_sender.enabled():
+                logger.info("contract_alert for contract %s: push is not set up, no channel", contract_id)
+            else:
+                pushed = alerts.contract_recipients(cur, row, PUSH)
+                devices = _push_to_people(cur, pushed, contract_message(facts), CONTRACT_TTL_SECONDS)
+                people = len(pushed)
+        if EMAIL in CHANNELS[kind]:
+            if not mail_sender.enabled():
+                logger.info("contract_alert for contract %s: email is not set up, no channel", contract_id)
+            else:
+                mailed = alerts.contract_recipients(cur, row, EMAIL)
+                if mailed:
+                    subject, body = contract_ending_email(facts)
+                    for person_id in mailed:
+                        alerts.enqueue_email(cur, person_id, subject, body)
+                emails = len(mailed)
+    logger.info("contract_alert for contract %s: %d people and %d devices by push, %d emails", contract_id, people,
+                devices, emails)
 
 
 # push_subscriptions.last_error
@@ -396,6 +479,8 @@ HANDLERS = {
     alerts.TICKET_ESCALATE: ticket_escalate,
     alerts.IMPROVEMENT_ALERT: improvement_alert,
     alerts.IMPROVEMENT_SCAN: improvement_alert_scan,
+    alerts.CONTRACT_ALERT: contract_alert,
+    alerts.CONTRACT_SCAN: contract_reminder_scan,
     alerts.PUSH_SEND: push_send,
     alerts.EMAIL_SEND: email_send,
 }

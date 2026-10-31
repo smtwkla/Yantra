@@ -5,9 +5,10 @@ Telegram would read the same facts and texts.
 An alert is a message about a record.  About a ticket: a new breakdown, a new defect, *down
 again*, an escalation of a breakdown nobody acknowledged in time, *assigned to you*, or (S032)
 *ticket closed*.  About an improvement (S074, R05.5): *countermeasure for you*, *countermeasure
-overdue* and *ready to verify*.  Each record has its own kinds, rules and texts here and its own
-alert task (task_handlers); the channels, the push fan-out and the recipient query are shared
-(S074 D1), so PM (R03.7) adds its kinds the same way.  It answers ISO 55001 § 7.4 / ISO 9001
+overdue* and *ready to verify*.  About a vendor contract (S084, R02.5): *contract ending*, 60 and
+15 days before its To date, by push and by email.  Each record has its own kinds, rules and texts
+here and its own alert task (task_handlers); the channels, the push fan-out and the recipient
+query are shared (S074 D1), so PM (R03.7) adds its kinds the same way.  It answers ISO 55001 § 7.4 / ISO 9001
 § 7.4 (what is communicated, when, to whom and how): the audience and channel tables below are
 that decision, and you_get shows each person their part of it.
 """
@@ -17,6 +18,7 @@ from datetime import timedelta
 
 from access_core import compute_permissions
 from config_rbac import ASSIGNABLE_ROLES
+from contracts_core import ENDING_SOON_DAYS, TYPE_SHORT, contract_status
 from equipment_core import effective_criticality
 from improvements_core import ACTION_OPEN, EDIT_KEY, IMPROVEMENT_OPEN_STATES, READ_KEY, VERIFY_KEY, WATCHING, watch_until
 from tickets_core import (
@@ -35,7 +37,10 @@ ACTION_GIVEN = "action_given"        # Countermeasure for you
 ACTION_OVERDUE = "action_overdue"    # Countermeasure overdue
 VERIFY_READY = "verify_ready"        # Ready to verify
 IMPROVEMENT_KINDS = (ACTION_GIVEN, ACTION_OVERDUE, VERIFY_READY)
-KINDS = TICKET_KINDS + IMPROVEMENT_KINDS
+# S084: about a vendor contract
+CONTRACT_ENDING = "contract_ending"  # Contract ends in N days
+CONTRACT_KINDS = (CONTRACT_ENDING,)
+KINDS = TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS
 
 ENGINEER = "maint_engineer"
 SUPERVISOR = "maint_supervisor"
@@ -66,6 +71,8 @@ CHANNELS = {
     ACTION_GIVEN: (PUSH,),
     ACTION_OVERDUE: (PUSH,),
     VERIFY_READY: (PUSH,),
+    # S084 (Plan.MD § 2 item 9): push to the engineers and managers, email to the managers
+    CONTRACT_ENDING: (PUSH, EMAIL),
 }
 
 # S074 § 5.6, D6: an improvement alert goes to the holders of the key it is about, at the
@@ -73,6 +80,19 @@ CHANNELS = {
 # refuse them (ISO 27001 A.8.3).  Unlike AUDIENCE, by key, not by exact role: the manager verifies
 # too.  ACTION_GIVEN and ACTION_OVERDUE keep only the owner (and the lead) among the holders.
 IMPROVEMENT_AUDIENCE_KEY = {ACTION_GIVEN: READ_KEY, ACTION_OVERDUE: READ_KEY, VERIFY_READY: VERIFY_KEY}
+
+# S084 § 5.6, D1: a contract reminder goes to the holders of a key at the contract's site, by key
+# as IMPROVEMENT_AUDIENCE_KEY, one key per channel because the audiences differ: the push to who
+# reads the contract (engineers and managers, R02 D10), the email to who reads its price (the
+# managers: renewing is a buying decision, R02 D5).
+CONTRACT_AUDIENCE_KEY = {PUSH: "contract:read", EMAIL: "contract:read_senior"}
+
+# S084 § 5.1: the two reminders, by days left to the To date.  The first is S080's ENDING_SOON_DAYS,
+# so the *Ends in N days* badge and the first reminder start the same day.
+FIRST_REMINDER_DAYS = ENDING_SOON_DAYS
+SECOND_REMINDER_DAYS = 15
+FIRST = "first"
+SECOND = "second"
 
 # When a drained alert is still worth sending (BR2-04): a worker an hour late does not wake the
 # supervisor for a machine already back in service
@@ -90,6 +110,7 @@ DESCRIPTION_CUT = 80
 REMARK_CUT = 80
 TICKET_PATH = "/tickets/{id}"
 IMPROVEMENT_PATH = "/tickets/improvements/{id}"
+CONTRACT_PATH = "/contracts/{id}"
 # How an improvement alert's payload carries its dates (S074 § 5.3): text, as JSON has no date
 PAYLOAD_DATE = "%Y-%m-%d"
 PAYLOAD_TIME = "%Y-%m-%d %H:%M:%S"
@@ -354,6 +375,77 @@ def improvement_message(kind, facts):
     return {"title": title, "body": body, "path": facts["path"], "tag": tag, "quiet": True}
 
 
+# ---------------------------------------------------------------------------
+# Contracts (S084, R02.5; ISO 55001 § 8.3, ISO 9001 § 8.4)
+# ---------------------------------------------------------------------------
+
+def contract_reminder_due(active, renewed, from_date, to_date, first_for, second_for, today):
+    """The reminder due for a contract now (§ 5.1) -> FIRST, SECOND or None.  Never for an inactive
+    or a renewed contract, one not started or one ended; with SECOND_REMINDER_DAYS or fewer left the
+    second, else with FIRST_REMINDER_DAYS or fewer the first, each once per To date (``first_for``,
+    ``second_for``: the To date it was queued for, or None).  At most one per run: a contract found
+    late in the window gets only the reminder of its window, with the true days."""
+    if not active or renewed:
+        return None
+    if from_date > today or to_date < today:
+        return None
+    days = (to_date - today).days
+    if days <= SECOND_REMINDER_DAYS:
+        return SECOND if second_for != to_date else None
+    if days <= FIRST_REMINDER_DAYS:
+        return FIRST if first_for != to_date else None
+    return None
+
+
+def should_send_contract(active, renewed, from_date, to_date, expected_to_date, today):
+    """Is the queued reminder still true when the task runs (§ 5.4 step 4)?  Active, not renewed,
+    started (a From date moved past today gives no "starts on" text), the To date still the
+    payload's (an edited date is the next scan's), and not ended."""
+    return (bool(active) and not renewed and from_date <= today and to_date == expected_to_date
+            and to_date >= today)
+
+
+def contract_facts(contract, today, base_url):
+    """The one dict every contract alert text is built from (§ 5.4).  ``contract``: id, title,
+    contract_number, contract_type, vendor_name, site_code, from_date, to_date.  Only fields every
+    site role may read (contract:read_basic, D8): no call-out number, no cost note, no price."""
+    path = CONTRACT_PATH.format(id=contract["id"])
+    label = contract_status(contract["from_date"], contract["to_date"], today)["label"]
+    return {
+        "contract_id": contract["id"],
+        "title": _cut(contract["title"], DESCRIPTION_CUT),
+        "contract_number": contract["contract_number"],
+        "type_word": TYPE_SHORT[contract["contract_type"]],
+        "vendor_name": contract["vendor_name"],
+        "site_code": contract["site_code"],
+        "from_date": contract["from_date"],
+        "to_date": contract["to_date"],
+        "status_label": label,
+        # The label as words after a name: "ends in 60 days", "ends today" (push and email both read it)
+        "ends_words": label[0].lower() + label[1:],
+        "path": path,
+        "url": f"{base_url}{path}",
+    }
+
+
+def contract_text(facts):
+    """-> ``(title, body)``, e.g. ("Contract ends in 60 days · SMTW", "Atlas Copco AMC 2026–27 ·
+    Atlas Copco — ends on 31-03-2027. Renew it, or let it end.").  The body names the vendor even
+    when the title does: the title is free text (BR1-10)."""
+    title = f"Contract {facts['ends_words']} · {facts['site_code']}"
+    body = (f"{facts['title']} · {facts['vendor_name']} — ends on {facts['to_date']:%d-%m-%Y}. "
+            "Renew it, or let it end.")
+    return title, body
+
+
+def contract_message(facts):
+    """The reminder as a channel sends it: quiet (D6: planned work, no machine down), a tag per
+    contract, so the second reminder replaces the first on the phone."""
+    title, body = contract_text(facts)
+    return {"title": title, "body": body, "path": facts["path"], "tag": f"contract-{facts['contract_id']}",
+            "quiet": True}
+
+
 def _what_line(role, place):
     """One membership's line, built from AUDIENCE so the page and the fan-out cannot disagree."""
     kinds = [label for kind, label in ((BREAKDOWN, "Breakdowns"), (DEFECT, "defects")) if role in AUDIENCE[kind]]
@@ -370,8 +462,10 @@ def you_get(memberships):
     all_units, unit_codes}]``.  One line per membership whose role is in a push audience, e.g.
     "Breakdowns and defects at SMTW, escalations" (all units) or "Breakdowns at SMTW.MCC1,
     SMTW.MCC2", then "Improvements ready to verify at SMTW" when the role holds improvement:verify
-    (S074), then "Closed tickets at SMTW, by email" when the role gets *ticket closed* (S032);
-    then "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
+    (S074), then "Contracts ending at SMTW" when the role holds contract:read (S084, the site code
+    even for a membership without units), then "Closed tickets at SMTW, by email" when the role
+    gets *ticket closed* (S032), then "Contracts ending at SMTW, by email" when the role holds
+    contract:read_senior (S084); then "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
     lines (S074 § 5.8) when a membership with a place holds improvement:read (the owner's alerts)
     or improvement:edit (who may lead gets the overdue alerts of the improvements they lead).
     The improvement lines follow config_rbac through compute_permissions.  Empty: nothing to get
@@ -383,17 +477,30 @@ def you_get(memberships):
             place = membership["site_code"]
         else:
             place = ", ".join(f"{membership['site_code']}.{code}" for code in sorted(membership["unit_codes"]))
-        if not place:
-            continue
         keys = compute_permissions([membership["role"]])
+        # S084 § 5.7: a contract belongs to a site, so its lines name the site code, also for a
+        # membership without units, whose other lines are skipped below
+        site = membership["site_code"]
+        contract_push = CONTRACT_AUDIENCE_KEY[PUSH] in keys
+        contract_email = CONTRACT_AUDIENCE_KEY[EMAIL] in keys
+        if not place:
+            if contract_push:
+                lines.append(f"Contracts ending at {site}")
+            if contract_email:
+                lines.append(f"Contracts ending at {site}, by email")
+            continue
         keys_with_place.update(keys)
         line = _what_line(membership["role"], place)
         if line:
             lines.append(line)
         if VERIFY_KEY in keys:
             lines.append(f"Improvements ready to verify at {place}")
+        if contract_push:
+            lines.append(f"Contracts ending at {site}")
         if membership["role"] in AUDIENCE[CLOSED]:
             lines.append(f"Closed tickets at {place}, by email")
+        if contract_email:
+            lines.append(f"Contracts ending at {site}, by email")
     if any(m["role"] in ASSIGNABLE_ROLES for m in memberships):
         lines.append("Jobs assigned to you")
     if READ_KEY in keys_with_place:

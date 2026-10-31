@@ -1514,6 +1514,17 @@ _MIGRATIONS = [
             CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
                    + (action_id IS NOT NULL) + (procedure_id IS NOT NULL) + (contract_id IS NOT NULL) = 1)""",
     ]),
+    # S084 — contract reminders (docs/steps/S084-contract-reminders/1-brief.md § 4.1, R02.5): the To date each
+    # reminder was queued for, so the daily contract_reminder_scan sends each once per To date (as v40's markers).
+    # NULL = never sent; a changed To date differs from both, so the reminders are sent again.  No index: tens of
+    # contracts, read once a day.  No precondition: two nullable columns, no existing value changes, and
+    # production holds no contract yet (v43 ships in the same release).  ADD COLUMN IF NOT EXISTS makes a re-run
+    # safe.  Rollback: a release before v46 never reads the columns and has no scan.
+    (46, "Contract reminders sent once (S084)", [
+        """ALTER TABLE contracts
+            ADD COLUMN IF NOT EXISTS first_reminder_for DATE NULL AFTER to_date,
+            ADD COLUMN IF NOT EXISTS second_reminder_for DATE NULL AFTER first_reminder_for""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

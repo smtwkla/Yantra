@@ -22,14 +22,27 @@ and the marker UPDATEs are on rows already held.  Several (6b) rows are held at 
 id order; every route holds at most one (6b) while it waits, so no cycle.  improvement_alert
 reads plain, as ticket_alert.  This module never imports improvements.py (improvements.py
 imports it, as tickets.py does).
+
+Contracts (S084, R02.5).  Worker side only: the daily contract_reminder_scan queues one
+contract_alert per reminder due (60 and 15 days before the To date), and contract_alert sends it
+by push to the holders of contract:read and by email to the holders of contract:read_senior at
+the contract's site (people_with_role_at_site); the tap opens CONTRACT_PATH.  The scan reads the
+candidates plain once (contract_scan_candidates, only to narrow the work).  The daily
+contract_reminder_scan (S084, alerts.lock_contract_for_scan) then locks several contract rows
+FOR UPDATE in id order, decides from the locked row, and writes only their reminder columns and
+task_queue rows; every route holds at most one contract row, taken first, so no cycle.  The
+renewal read (contract_renewed) is plain on purpose: a locking read's gap lock on ix_contracts_renewal_of could block R02.4's
+renewal insert while the scan waits on the old contract that insert holds.  contract_alert reads
+plain.  This module never imports contracts.py.
 """
 
 from datetime import timedelta
 
 from access_core import roles_holding
 from alerts_core import (
-    ACTION_GIVEN, ACTION_OVERDUE, AUDIENCE, IMPROVEMENT_AUDIENCE_KEY, PAYLOAD_DATE, PAYLOAD_TIME, display_name,
-    escalation_minutes, excluded_people, first_name, improvement_facts, ticket_facts,
+    ACTION_GIVEN, ACTION_OVERDUE, AUDIENCE, CONTRACT_AUDIENCE_KEY, CONTRACT_ENDING, EMAIL, FIRST,
+    FIRST_REMINDER_DAYS, IMPROVEMENT_AUDIENCE_KEY, PAYLOAD_DATE, PAYLOAD_TIME, SECOND, SECOND_REMINDER_DAYS,
+    display_name, escalation_minutes, excluded_people, first_name, improvement_facts, ticket_facts,
 )
 from db_helpers import marks
 from improvements_core import ACTION_OPEN, IMPROVEMENT_OPEN_STATES, WATCHING
@@ -41,6 +54,8 @@ TICKET_ALERT = "ticket_alert"
 TICKET_ESCALATE = "ticket_escalate"
 IMPROVEMENT_ALERT = "improvement_alert"
 IMPROVEMENT_SCAN = "improvement_alert_scan"
+CONTRACT_ALERT = "contract_alert"
+CONTRACT_SCAN = "contract_reminder_scan"
 PUSH_SEND = "push_send"
 # A send is internal and idempotent, so it may retry (base pattern); a push resent after a
 # timeout shows twice at worst
@@ -158,13 +173,30 @@ def people_at_unit(cur, site_id, unit_ids, roles, only_ids=None, exclude_ids=(),
     site, or a person_units row), only among ``only_ids`` when given, less ``exclude_ids`` -> their
     ids in id order.  The join to push_subscriptions that follows already needs a login;
     ``with_email`` keeps only those with an address (S032 § 5.2)."""
-    if not roles or not unit_ids or (only_ids is not None and not only_ids):
+    if not unit_ids:
+        return []
+    return _people_with_role(cur, site_id, roles, unit_ids, only_ids, exclude_ids, with_email)
+
+
+def people_with_role_at_site(cur, site_id, roles, with_email=False):
+    """The active people with a membership at ``site_id`` whose role is in ``roles``, whatever
+    units they work in -> their ids in id order (S084 § 5.6: a contract belongs to a site, and its
+    keys are checked at the site).  Not tickets.people_at_site, the people picker."""
+    return _people_with_role(cur, site_id, roles, None, None, (), with_email)
+
+
+def _people_with_role(cur, site_id, roles, unit_ids, only_ids, exclude_ids, with_email):
+    """The one recipient query of people_at_unit and people_with_role_at_site; ``unit_ids`` None
+    leaves out the unit condition."""
+    if not roles or (only_ids is not None and not only_ids):
         return []
     sql = ("SELECT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id AND ms.site_id = %s"
-           f" WHERE p.active = 1 AND ms.role IN ({marks(roles)})"
-           " AND (ms.all_units = 1 OR EXISTS (SELECT 1 FROM person_units pu WHERE pu.person_id = p.id"
-           f" AND pu.unit_id IN ({marks(unit_ids)})))")
-    params = [site_id, *roles, *unit_ids]
+           f" WHERE p.active = 1 AND ms.role IN ({marks(roles)})")
+    params = [site_id, *roles]
+    if unit_ids is not None:
+        sql += (" AND (ms.all_units = 1 OR EXISTS (SELECT 1 FROM person_units pu WHERE pu.person_id = p.id"
+                f" AND pu.unit_id IN ({marks(unit_ids)})))")
+        params.extend(unit_ids)
     if with_email:
         sql += " AND p.email IS NOT NULL"
     if only_ids is not None:
@@ -386,3 +418,81 @@ def mark_overdue_alerted(cur, action_id, due_date):
 def mark_ready_alerted(cur, improvement_id, watch_end):
     """The ready alert was queued for this watch end (v40); no updated_*.  The row is held (6b)."""
     cur.execute("UPDATE improvements SET ready_alert_for = %s WHERE id = %s", (watch_end, improvement_id))
+
+
+# ---------------------------------------------------------------------------
+# Contracts (S084) — worker side
+# ---------------------------------------------------------------------------
+
+# Renewed (S084 § 5.2, D5): another active contract names this one as the contract it renews.  A
+# renewal set inactive (entered by mistake; never deleted) does not silence the old contract.
+_RENEWED = "EXISTS (SELECT 1 FROM contracts r WHERE r.renewal_of_id = {id} AND r.active = 1)"
+
+# Only contract:read_basic fields (D8): never callout_number, cost_note or a price, so no text can
+# show them
+_ALERT_CONTRACT = (
+    "SELECT c.id, c.title, c.contract_number, c.contract_type, c.from_date, c.to_date, c.active, c.site_id,"
+    " s.code AS site_code, v.name AS vendor_name, " + _RENEWED.format(id="c.id") + " AS renewed"
+    " FROM contracts c JOIN sites s ON s.id = c.site_id JOIN vendors v ON v.id = c.vendor_id WHERE c.id = %s"
+)
+
+
+def enqueue_contract_alert(cur, contract_id, to_date):
+    """One contract_alert task (S084 § 5.4), in the scan's transaction.  The To date travels as text
+    (PAYLOAD_DATE); the payload carries no person, no address and no price."""
+    return enqueue(cur, CONTRACT_ALERT, {"kind": CONTRACT_ENDING, "contract_id": contract_id,
+                                         "to_date": to_date.strftime(PAYLOAD_DATE)})
+
+
+def contract_scan_candidates(cur, today):
+    """The scan's one plain read (S084 § 5.3 step 2): the active, started contracts ending within
+    FIRST_REMINDER_DAYS whose second reminder is not sent for this To date, less those whose first
+    is sent for it and that have more than SECOND_REMINDER_DAYS left (nothing due there till the
+    second) -> their ids in id order.  It only narrows the work: the decision comes from the locked
+    row."""
+    until = today + timedelta(days=FIRST_REMINDER_DAYS)
+    second_from = today + timedelta(days=SECOND_REMINDER_DAYS)
+    cur.execute("SELECT id FROM contracts WHERE active = 1 AND from_date <= %s AND to_date BETWEEN %s AND %s"
+                " AND (second_reminder_for IS NULL OR second_reminder_for <> to_date)"
+                " AND (first_reminder_for IS NULL OR first_reminder_for <> to_date OR to_date <= %s)"
+                " ORDER BY id", (today, today, until, second_from))
+    return [row["id"] for row in cur.fetchall()]
+
+
+def lock_contract_for_scan(cur, contract_id):
+    """The contract row FOR UPDATE, one row per statement, in the scan's id order -> the row, or
+    None when it is gone (never: a contract is not deleted)."""
+    cur.execute("SELECT id, active, from_date, to_date, first_reminder_for, second_reminder_for FROM contracts"
+                " WHERE id = %s FOR UPDATE", (contract_id,))
+    return cur.fetchone()
+
+
+def contract_renewed(cur, contract_id):
+    """§ 5.2's rule, read plain (no gap lock R02.4's renewal insert could wait on; the alert task
+    reads it again before it sends)."""
+    cur.execute("SELECT " + _RENEWED.format(id="%s") + " AS renewed", (contract_id,))
+    return bool(cur.fetchone()["renewed"])
+
+
+def mark_contract_reminded(cur, contract_id, which, to_date):
+    """The reminder ``which`` (FIRST or SECOND) was queued for this To date (v46).  No updated_*: a
+    reminder is not a change of the contract.  The row is held (lock_contract_for_scan)."""
+    column = {FIRST: "first_reminder_for", SECOND: "second_reminder_for"}[which]
+    cur.execute(f"UPDATE contracts SET {column} = %s WHERE id = %s", (to_date, contract_id))
+
+
+def read_alert_contract(cur, contract_id):
+    """The contract, its site, vendor and whether it is renewed, read plain -> the row, or None."""
+    cur.execute(_ALERT_CONTRACT, (contract_id,))
+    row = cur.fetchone()
+    if row is not None:
+        row["renewed"] = bool(row["renewed"])
+    return row
+
+
+def contract_recipients(cur, contract, channel):
+    """S084 § 5.6: the holders of the channel's key (CONTRACT_AUDIENCE_KEY) at the contract's site,
+    whatever their units; for email only those with an address.  Every one of them may open the
+    contract (contract:read_basic is held by every site role)."""
+    return people_with_role_at_site(cur, contract["site_id"], roles_holding(CONTRACT_AUDIENCE_KEY[channel]),
+                                    with_email=(channel == EMAIL))

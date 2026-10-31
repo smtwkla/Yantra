@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs (S080 being coded); S079–S084 coded before S085 (staleness check before coding)
+Baseline: refs/steps/S084 (2232cc6; d216f48 + S079–S084, S084 in code review), checked by staleness review s1
 Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor; BR1-01 and BR1-02 flagged for KLA at gate B)
 From: R02.4
 ```
@@ -86,10 +86,16 @@ its working-tree code are marked **(from S080, as coded)**; the staleness review
   `_machine_lines(cur, contract, flags)` and the detail's `machines` (`lifecycle`, `site_code`,
   `at_contract_site`); `contracts_core.event_text(contract)`; `test_contract_equipment_api.py`; the
   contracts.py bullet of equipment.py's LOCK ORDER.
-- (from S083): `contracts.lock_contract_for_change`, not used (it reads `id, site_id` only and checks
-  `contract:read_senior`).
+- (from S081, as coded): `_lock_contract(cur, contract_id, key=EDIT)` (`SELECT * … FOR UPDATE` → 404
+  without `contract:read_basic` → `require_perm_at(key)` 403), used by § 5.8 steps 1–2 (BS1-01).
+- (from S082, as coded): the one detail builder `_detail(cur, row, flags, today)`, called by
+  `get_contract` and `_answer`; `_CONTRACT_SELECT` is `_CONTRACT_COLUMNS + _CONTRACT_FROM`, and
+  `_CARD_SELECT` reuses `_CONTRACT_COLUMNS` (BS1-02).
+- (from S083): `contracts.lock_contract_for_change`, not used (it adds a `contract:read_senior`
+  check on top of `_lock_contract`).
 - (from S084): v46 (`first_reminder_for`, `second_reminder_for`); `alerts.contract_renewed(cur,
-  contract_id)`; the scan's lock sentences in contracts.py, equipment.py and alerts.py;
+  contract_id)` and its SQL piece `alerts._RENEWED` (an active renewal only); the scan's lock
+  sentences in contracts.py, equipment.py and alerts.py;
   `backend/tests/test_contract_alerts.py`.
 
 ### Backend
@@ -100,8 +106,9 @@ its working-tree code are marked **(from S080, as coded)**; the staleness review
   to_date)`, `renewal_lines(machines)`, the private `_add_months(day, months)`, the messages of § 5.5.
 - `backend/contracts.py`: the route `renew_contract` (§ 6); the private `_renewal_links(cur, row)` and
   `_renewal_offer(row, machines, flags, site_active)` (§ 6.1); `UNIQUE_KEY_ERRORS` gains
-  `uq_contracts_renewal_of`; the LOCK ORDER note (§ 5.8). Imports `SCRAPPED`
-  (`backend/equipment_core.py:19`) and `write_events` (`backend/equipment.py`).
+  `uq_contracts_renewal_of`; the LOCK ORDER note (§ 5.8); the § 6.1 gains in `_detail`, so the
+  detail and every write answer carry them; `s.active AS site_active` in `_CONTRACT_COLUMNS`
+  (`_contract_out` drops it). `SCRAPPED` and `write_events` are already imported (BS1-04).
 - `backend/equipment.py`, `backend/alerts.py`: docstrings only (§ 5.8).
 
 ### Frontend
@@ -112,8 +119,8 @@ its working-tree code are marked **(from S080, as coded)**; the staleness review
   behaviour.
 - `frontend/src/views/contracts/ContractRenewDialog.vue` (new): `FormModal.vue` through `useFormModal`
   (§ 5.7).
-- `frontend/src/views/ContractView.vue`: the button, the chain lines, the dialog, the reload on a new
-  `:id` (§ 5.7).
+- `frontend/src/views/ContractView.vue`: the button, the chain lines, the dialog (§ 5.7). The reload
+  on a new `:id` already exists (`watch(route.params.id)`, S081; BS1-03).
 - `frontend/src/utils/contractLabels.js`: `renewalForm(contract)`, `renewalNotice(renewal, canReadCost)`,
   `chainText(link)`.
 
@@ -364,9 +371,10 @@ The database runs REPEATABLE READ. The body is validated first (`clean_body`, pu
 one `transaction`, whose first statement is the old contract's lock, so every plain read after it
 sees the rows as they were when the lock was granted:
 
-1. `SELECT * FROM contracts WHERE id = %s FOR UPDATE` (the **old** contract) → 404 when missing.
-2. Plain: `contract:read_basic` at its site → 404; `require_perm_at(EDIT, site)` → 403; `active` from
-   the locked row → 409.
+1. `_lock_contract(cur, contract_id)` (S081; key `EDIT`): `SELECT * FROM contracts WHERE id = %s
+   FOR UPDATE` (the **old** contract) → 404 when missing.
+2. Inside `_lock_contract`: `contract:read_basic` at its site → 404; `require_perm_at(EDIT, site)` →
+   403. Then plain: `active` from the locked row → 409.
 3. `SELECT id, code, active FROM sites WHERE id = %s LOCK IN SHARE MODE` → `active = 0`: 409.
 4. Plain: `SELECT id, title FROM contracts WHERE renewal_of_id = %s` → a row: 409 naming it. Every
    renewal of this contract locks it first (step 1), so one committed before the lock was granted is
@@ -432,8 +440,9 @@ background task is added.
 - `renewal_of`: `{id, title, from_date, to_date, active}` of the contract it renews, or `null`.
 - `renewed_by`: the same for its renewal (at most one), or `null`.
 - `can_renew`: the user holds `contract:edit` at the site, the contract and its site are active, and
-  `renewed_by` is `null`. The site's `active` comes with the detail's row (`_CONTRACT_SELECT` gains
-  `s.active AS site_active`; `_contract_out` drops it from the answer).
+  `renewed_by` is `null`. The site's `active` comes with the detail's row (`_CONTRACT_COLUMNS`
+  gains `s.active AS site_active`; `_contract_out` drops it from the answer). These gains are built
+  in `_detail`, so `get_contract` and every write answer (`_answer`) carry them (BS1-02).
 - `renewal` (only when `can_renew`): `{from_date, to_date, machines: [{equipment_id, code}], skipped:
   [{equipment_id, code, reason}]}`, from `renewal_period` (`null` dates past 2099) and `renewal_lines`
   over the detail's `machines`.
@@ -546,9 +555,9 @@ gives the starting state):
 - `backend/tests/test_contracts_api.py`, `test_contract_equipment_api.py`: a test that compares a whole
   detail to a fixed key set gains `renewal_of`, `renewed_by`, `can_renew` and, for an editor,
   `renewal`.
-- `backend/tests/test_contract_alerts.py` (S084): its *Renewed* tests insert renewals through
-  `db_rows`; a test with an active and an inactive renewal of **one** contract uses two contracts (or
-  flips `active` on one row).
+- `backend/tests/test_contract_alerts.py` (S084): checked (s1): `TestRenewed` makes one renewal per
+  contract, so no S084 test changes and no kept-database row breaks v47 (BS1-06). No test compares a
+  whole detail key set.
 - `test_migration_v43.py` … `test_migration_v46.py`: each slices its own range; green
   (`test_a_fresh_database_gets_v43` still finds `ix_contracts_renewal_of` at v43).
 - `backend/tests/test_modules.py` (`LATEST_VERSION` 47), `test_schema_docs_shell.py`: green once
@@ -625,7 +634,7 @@ None: a button, a dialog and a page, which a browser engine judges.
   renewals of one contract would differ.
 - **Q4. *Edit* on the contract page?** Small once `ContractFields.vue` exists, and the user lands on
   the new page after a renewal. Not in R02.4; left out; proposed as a follow-up. Not defining.
-- **A1. The S080–S084 names** are as § 3 states; the staleness review checks `_contract_out`,
+- **A1. The S080–S084 names** are as § 3 states (checked in staleness review s1, 31-10-2026); it checked `_contract_out`,
   `_answer`, `_drop_gated`, `_check_rules`, `check_active_vendor`, `_machine_lines`, `contractBody`,
   the dialog in `ContractsPanel.vue`, `ContractView.vue`'s load, the LOCK ORDER notes of S080–S084,
   `alerts.contract_renewed`, and the migration number (v47 after S084's v46).
@@ -652,3 +661,13 @@ None.
 | BR1-02 minor | Accepted (a): v47 kept, taken as recommended under the delegation and flagged for KLA at gate B; the editors' way-out line under "Renewed by: … (inactive)" and its browser test; the split quote at renewal in E2. § 5.5, § 5.7, E2, § 8.4, § 9 Q2. |
 | BR1-03 minor | Accepted (a): `ensureVendors()` on open and `storedVendor` from the detail; the `siteCode` prop; `EMPTY_CONTRACT_FORM` in `contractLabels.js`. § 5.7. |
 | BR1-04…BR1-09 nits | Accepted: BR1-04 the 403 case (§ 8.2); BR1-05 lines sorted by `equipment_id` (§ 5.8); BR1-06 `creating` ignored (§ 5.4); BR1-07 the leap-day start stated as not whole months (§ 8.2); BR1-08 the `notes.json` line and index (§ 3); BR1-09 the manager's notice text (§ 5.7). |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 31-10-2026
+
+Sections changed: header, § 3, § 5.8, § 6.1, § 8.3, § 9 A1.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 (minor) § 5.8 inlines what `_lock_contract` does | Accepted: § 3 names `_lock_contract(cur, contract_id, key=EDIT)`; § 5.8 steps 1–2 call it. |
+| BS1-02 (minor) the detail has one builder `_detail`; `_CONTRACT_SELECT` is split | Accepted: the § 6.1 gains are built in `_detail` (detail and every write answer); `site_active` goes into `_CONTRACT_COLUMNS` (§ 3, § 6.1). |
+| BS1-03 … BS1-07 (nits) | Accepted: the `:id` reload already exists (§ 3 Frontend); `SCRAPPED` and `write_events` already imported (§ 3); `lock_contract_for_change` described as built on `_lock_contract` (§ 3); S084's `TestRenewed` needs no change (§ 8.3); `alerts._RENEWED` named beside `contract_renewed` (§ 3). The `ix_contracts_renewal_of` mentions to update (alerts.py, notes.json) are found by § 4.1's `git grep`. BS1-06 and BS1-07 depend on S084 as coded now; the coder re-checks them after S084's code review. |

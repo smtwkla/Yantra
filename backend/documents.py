@@ -57,8 +57,8 @@ locks.  It never holds two owners' locks, so it cannot join a cycle with equipme
 model → class), masters.py (manufacturer → model → class → type), tickets.py (node → counter →
 ticket), improvements.py ((6b) → (6c)), procedures.py ((6) or (6d), then shared locks only) or
 contracts.py (the contract row first, then a line, the vendor or the node; a document write waits
-on the contract row only, behind a writer that finishes).  The owner lock also serialises a title
-edit with a remove (S006 § 5.8).
+on the contract row only, behind a writer that finishes, or the reminder scan, S084).  The owner
+lock also serialises a title edit with a remove (S006 § 5.8).
 
 Files are served only through these routes, after the access check (ISO 27001 A.8.3).
 A removed document keeps its row and its file (ISO 55001 controlled information) but is

@@ -52,7 +52,10 @@ existing contract, so every plain read comes after it.
 No deadlock cycle:
 - The contract row: only this module's functions lock it, always first in their transaction (the PUT, the three
   line writes, and documents.py's writes through lock_contract_for_change); nothing holds another lock and then
-  waits on it.
+  waits on it.  The reminder scan (S084) is the one path that holds several, in id order: the daily
+  contract_reminder_scan (alerts.lock_contract_for_scan) locks several contract rows FOR UPDATE in id order, then
+  writes only their reminder columns and task_queue rows; every route holds at most one contract row, taken
+  first, so no cycle.
 - The contract_equipment row: only this module locks it, after its contract; no other module reads it with a lock.
 - The node (1): taken shared only, after the contract.  equipment.py's writes (move, scrap, edit), meters.py,
   item_properties.py, documents.py and tickets.py's raise hold (1) exclusive and never wait on a contract or a
@@ -159,6 +162,9 @@ def _contract_out(row, flags, today):
     renewal_of_id is not sent (R02.4)."""
     item = row_to_dict(row)
     del item["renewal_of_id"]
+    # The reminder markers are the daily scan's (S084), not the contract's
+    del item["first_reminder_for"]
+    del item["second_reminder_for"]
     item["status"] = contract_status(row["from_date"], row["to_date"], today)
     item.update(flags)
     if not flags["can_read_callout"]:

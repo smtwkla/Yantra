@@ -13,6 +13,8 @@ SCHEDULE = [
     ("purge_access_log", "02:30"),
     # S074: overdue countermeasures and ended watches, at the start of the working day (§ 9 Q1)
     ("improvement_alert_scan", "08:00"),
+    # S084: contracts ending in 60 or 15 days, at the same hour, so every daily alert comes at one time
+    ("contract_reminder_scan", "08:00"),
 ]
 
 # The Background tasks card calls a task overdue when its next run is this far in the past

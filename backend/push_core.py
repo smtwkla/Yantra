@@ -41,6 +41,9 @@ ALERT_TTL_SECONDS = 3600
 # S074 D7: an improvement alert is about planned work, sent quietly (Urgency low, which the push
 # service may hold until the phone charges or joins Wi-Fi), so it waits a day, not an hour
 IMPROVEMENT_TTL_SECONDS = 86400
+# S084 D6: a contract reminder is quiet planned work too, and sent once, so a phone off for an hour
+# must still get it.  Its own name, so a change to the improvements' TTL does not move it by accident.
+CONTRACT_TTL_SECONDS = IMPROVEMENT_TTL_SECONDS
 TEST_TTL_SECONDS = 300
 
 BROWSER_CANNOT = ("This browser cannot get notifications. Use Chrome on Android, or open Yantra from the "

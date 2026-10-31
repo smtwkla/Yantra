@@ -5,9 +5,12 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from contracts_core import ENDING_SOON_DAYS
 from alerts_core import (
-    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, DEFECT, ESCALATION,
-    IMPROVEMENT_KINDS, KINDS, TICKET_KINDS, VERIFY_READY, Alert, alert_text, close_alert, display_name,
+    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, CONTRACT_AUDIENCE_KEY,
+    CONTRACT_ENDING, CONTRACT_KINDS, DEFECT, ESCALATION, FIRST, FIRST_REMINDER_DAYS, SECOND, SECOND_REMINDER_DAYS,
+    IMPROVEMENT_KINDS, KINDS, TICKET_KINDS, VERIFY_READY, Alert, alert_text, close_alert, contract_facts,
+    contract_message, contract_reminder_due, contract_text, display_name, should_send_contract,
     escalation_minutes, excluded_people, given_alert, improvement_facts, improvement_message, improvement_text,
     message, overdue_alert_due, raise_alert, ready_alert_due, regrade_alert, send_back_alert, should_escalate,
     should_send, should_send_improvement, message_for_test, ticket_facts, you_get,
@@ -61,10 +64,21 @@ class TestChannels:
             assert CHANNELS[kind] == ("push",)
 
     def test_every_kind_has_channels_and_the_improvement_kinds_are_push_only(self):
-        assert KINDS == TICKET_KINDS + IMPROVEMENT_KINDS
+        assert KINDS == TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS
         assert set(CHANNELS) == set(KINDS)
         for kind in IMPROVEMENT_KINDS:
             assert CHANNELS[kind] == ("push",)
+
+    def test_the_contract_reminder_by_push_and_email(self):
+        """S084 § 3: push to who reads the contract, email to who reads its price."""
+        assert CONTRACT_KINDS == (CONTRACT_ENDING,)
+        assert CHANNELS[CONTRACT_ENDING] == ("push", "email")
+        assert CONTRACT_AUDIENCE_KEY == {"push": "contract:read", "email": "contract:read_senior"}
+
+    def test_the_reminder_days(self):
+        """S084 § 5.1: the first reminder starts with S080's *Ends in N days* badge."""
+        assert FIRST_REMINDER_DAYS == ENDING_SOON_DAYS == 60
+        assert SECOND_REMINDER_DAYS == 15
 
 
 class TestWhatEnqueues:
@@ -217,7 +231,7 @@ class TestYouGet:
     def test_engineer_all_units(self):
         assert you_get([_membership("SMTW", "maint_engineer")]) == [
             "Breakdowns and defects at SMTW, escalations", "Improvements ready to verify at SMTW",
-            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Contracts ending at SMTW", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_supervisor_at_two_units(self):
         assert you_get([_membership("SMTW", "maint_supervisor", ["MCC2", "MCC1"])]) == [
@@ -227,14 +241,23 @@ class TestYouGet:
         """S032: each manager membership adds its closed-ticket email line; S074: and its verify line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
             "Breakdowns at BRICKS, escalations", "Improvements ready to verify at BRICKS",
-            "Closed tickets at BRICKS, by email",
-            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Closed tickets at SMTW, by email",
+            "Contracts ending at BRICKS", "Closed tickets at BRICKS, by email", "Contracts ending at BRICKS, by email",
+            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Contracts ending at SMTW",
+            "Closed tickets at SMTW, by email", "Contracts ending at SMTW, by email",
             "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_manager_at_one_unit(self):
+        """S084 § 5.7: the contract lines name the site, not the unit."""
         assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
             "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to verify at SMTW.MCC2",
-            "Closed tickets at SMTW.MCC2, by email", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Contracts ending at SMTW", "Closed tickets at SMTW.MCC2, by email", "Contracts ending at SMTW, by email",
+            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+
+    def test_a_manager_without_units_gets_the_contract_lines(self):
+        """S084 § 5.7, BR1-07: the reminders reach a site member whatever their units; no
+        countermeasure lines come from a membership without units."""
+        assert you_get([_membership("SMTW", "maint_manager", [])]) == [
+            "Contracts ending at SMTW", "Contracts ending at SMTW, by email", "Jobs assigned to you"]
 
     def test_engineer_gets_no_email_line(self):
         assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
@@ -438,3 +461,132 @@ class TestImprovementTexts:
         assert given["tag"] == overdue["tag"] == "improvement-action-5"
         assert ready["tag"] == "improvement-12"
         assert given["quiet"] is overdue["quiet"] is ready["quiet"] is True
+
+
+# ---------------------------------------------------------------------------
+# Contracts (S084 § 5.1, § 5.4, § 8.1)
+# ---------------------------------------------------------------------------
+
+C_TODAY = date(2027, 1, 30)
+C_FROM = date(2026, 4, 1)
+C_TO = date(2027, 3, 31)          # 60 days after C_TODAY
+DAY = timedelta(days=1)
+
+
+def _due(to_date=C_TO, first_for=None, second_for=None, active=True, renewed=False, from_date=C_FROM):
+    return contract_reminder_due(active, renewed, from_date, to_date, first_for, second_for, C_TODAY)
+
+
+class TestContractReminderDue:
+
+    def test_60_days_never_sent(self):
+        assert _due() == FIRST
+
+    def test_61_days(self):
+        assert _due(to_date=C_TO + DAY) is None
+
+    def test_first_sent_for_this_date(self):
+        assert _due(first_for=C_TO) is None
+
+    def test_first_sent_for_an_older_date(self):
+        assert _due(first_for=C_TO - timedelta(days=30)) == FIRST
+
+    def test_15_days_nothing_sent(self):
+        assert _due(to_date=C_TODAY + timedelta(days=15)) == SECOND
+
+    def test_15_days_first_sent(self):
+        to_date = C_TODAY + timedelta(days=15)
+        assert _due(to_date=to_date, first_for=to_date) == SECOND
+
+    def test_16_days_first_sent(self):
+        to_date = C_TODAY + timedelta(days=16)
+        assert _due(to_date=to_date, first_for=to_date) is None
+
+    def test_ends_today_second_not_sent(self):
+        assert _due(to_date=C_TODAY) == SECOND
+
+    def test_ended_yesterday(self):
+        assert _due(to_date=C_TODAY - DAY, from_date=C_TODAY - timedelta(days=100)) is None
+
+    def test_not_started(self):
+        assert _due(to_date=C_TODAY + timedelta(days=30), from_date=C_TODAY + DAY) is None
+
+    def test_inactive(self):
+        assert _due(active=False) is None
+
+    def test_renewed(self):
+        assert _due(renewed=True) is None
+
+    def test_second_sent_for_this_date(self):
+        to_date = C_TODAY + timedelta(days=10)
+        assert _due(to_date=to_date, second_for=to_date) is None
+
+    def test_second_sent_for_an_older_date(self):
+        to_date = C_TODAY + timedelta(days=10)
+        assert _due(to_date=to_date, second_for=to_date + timedelta(days=30)) == SECOND
+
+
+class TestShouldSendContract:
+
+    def _send(self, active=True, renewed=False, from_date=C_FROM, to_date=C_TO, expected=C_TO):
+        return should_send_contract(active, renewed, from_date, to_date, expected, C_TODAY)
+
+    def test_as_queued(self):
+        assert self._send() is True
+
+    def test_no_longer_true(self):
+        assert self._send(active=False) is False
+        assert self._send(renewed=True) is False
+        assert self._send(from_date=C_TODAY + DAY, to_date=C_TO) is False
+        assert self._send(to_date=C_TO + timedelta(days=30)) is False
+        assert self._send(to_date=C_TODAY - DAY, expected=C_TODAY - DAY) is False
+
+    def test_ends_today(self):
+        assert self._send(to_date=C_TODAY, expected=C_TODAY) is True
+
+
+def _contract(**overrides):
+    contract = {"id": 12, "title": "Atlas Copco AMC 2026–27", "contract_number": "TEST/AMC/0001",
+                "contract_type": "amc", "vendor_name": "Atlas Copco", "site_code": "SMTW", "from_date": C_FROM,
+                "to_date": C_TO}
+    contract.update(overrides)
+    return contract
+
+
+def _contract_facts(today=C_TODAY, **overrides):
+    return contract_facts(_contract(**overrides), today, "https://vel-yantra.mspv.app")
+
+
+class TestContractTexts:
+
+    def test_60_days(self):
+        assert contract_text(_contract_facts()) == (
+            "Contract ends in 60 days · SMTW",
+            "Atlas Copco AMC 2026–27 · Atlas Copco — ends on 31-03-2027. Renew it, or let it end.")
+
+    def test_ends_today(self):
+        assert contract_text(_contract_facts(today=C_TO))[0] == "Contract ends today · SMTW"
+
+    def test_one_day(self):
+        assert contract_text(_contract_facts(today=C_TO - DAY))[0] == "Contract ends in 1 day · SMTW"
+
+    def test_the_title_cut_at_80(self):
+        assert _contract_facts(title="x" * 100)["title"] == "x" * 80
+
+    def test_the_type_word(self):
+        assert _contract_facts()["type_word"] == "AMC"
+        assert _contract_facts(contract_type="on_call")["type_word"] == "On call"
+
+    def test_message_path_tag_and_quiet(self):
+        assert contract_message(_contract_facts()) == {
+            "title": "Contract ends in 60 days · SMTW",
+            "body": "Atlas Copco AMC 2026–27 · Atlas Copco — ends on 31-03-2027. Renew it, or let it end.",
+            "path": "/contracts/12", "tag": "contract-12", "quiet": True}
+
+    def test_the_url(self):
+        assert _contract_facts()["url"] == "https://vel-yantra.mspv.app/contracts/12"
+
+    def test_no_callout_number_or_cost_note(self):
+        """D8: even a row that holds them gives facts without them."""
+        facts = _contract_facts(callout_number="1800-000", cost_note="9809")
+        assert "callout_number" not in facts and "cost_note" not in facts

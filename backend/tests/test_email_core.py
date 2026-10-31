@@ -3,13 +3,15 @@ Backend, test_email_core.py)."""
 
 import smtplib
 import ssl
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 
+from alerts_core import contract_facts
 from email_core import (
-    clean_address, closed_email, duration_text, email_for_test, one_line, smtp_outcome, valid_address,
+    clean_address, closed_email, contract_ending_email, duration_text, email_for_test, one_line, smtp_outcome,
+    valid_address,
 )
 
 RAISED = datetime(2026, 10, 20, 9, 12)
@@ -130,6 +132,50 @@ class TestClosedEmail:
         subject, body = email_for_test()
         assert subject == "Yantra test email"
         assert body.startswith("This is a test email from Yantra.")
+
+
+# S084 § 5.4: the contract reminder's email
+C_TODAY = date(2027, 1, 30)
+C_TO = date(2027, 3, 31)
+
+
+def _contract_facts(today=C_TODAY, **overrides):
+    contract = {"id": 12, "title": "Atlas Copco AMC 2026–27", "contract_number": "TEST/AMC/0001",
+                "contract_type": "amc", "vendor_name": "Test Vendor", "site_code": "SMTW",
+                "from_date": date(2026, 4, 1), "to_date": C_TO, **overrides}
+    return contract_facts(contract, today, "https://vel-yantra.mspv.app")
+
+
+class TestContractEndingEmail:
+
+    def test_subject_and_body(self):
+        subject, body = contract_ending_email(_contract_facts())
+        assert subject == "Contract ends on 31-03-2027: Atlas Copco AMC 2026–27 (SMTW)"
+        assert body == (
+            "Atlas Copco AMC 2026–27 ends in 60 days, on 31-03-2027.\n"
+            "\n"
+            "Vendor:           Test Vendor\n"
+            "Type:             AMC\n"
+            "Contract number:  TEST/AMC/0001\n"
+            "Site:             SMTW\n"
+            "Period:           01-04-2026 to 31-03-2027\n"
+            "\n"
+            "Decide before the end date: renew it with the vendor, or let it end.\n"
+            "\n"
+            "Open the contract: https://vel-yantra.mspv.app/contracts/12\n")
+
+    def test_no_contract_number_no_line(self):
+        _subject, body = contract_ending_email(_contract_facts(contract_number=None))
+        assert "Contract number" not in body
+
+    def test_ends_today(self):
+        _subject, body = contract_ending_email(_contract_facts(today=C_TO))
+        assert body.startswith("Atlas Copco AMC 2026–27 ends today, on 31-03-2027.\n")
+
+    def test_a_title_with_a_line_break_keeps_the_subject_on_one_line(self):
+        subject, _body = contract_ending_email(_contract_facts(title="Atlas Copco\r\nAMC"))
+        assert "\n" not in subject and "\r" not in subject
+        assert subject == "Contract ends on 31-03-2027: Atlas Copco AMC (SMTW)"
 
 
 class TestHelpers:

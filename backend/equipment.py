@@ -70,9 +70,12 @@ A write with a model never locks a type: it comes from the model, whose type nev
   contract_equipment row FOR UPDATE (a price change or a removal), the vendor row LOCK IN SHARE MODE (a
   vendor change), or the node (1) LOCK IN SHARE MODE (a machine added), and the foreign-key shared locks
   of its inserts; a contract create takes the site and the vendor LOCK IN SHARE MODE and locks no
-  contract row; it inserts equipment_events lines.  Only contracts.py's functions lock contracts and
-  contract_equipment rows (documents.py calls lock_contract_for_change, S083), and they take nothing
-  exclusive outside them, so they add no lock cycle.
+  contract row; it inserts equipment_events lines.  Only contracts.py's functions and the reminder scan
+  (alerts.lock_contract_for_scan, S084) lock contracts rows, and only contracts.py's functions
+  contract_equipment rows (documents.py calls lock_contract_for_change, S083); they take nothing
+  exclusive outside them, so they add no lock cycle.  The scan locks several contract rows in id
+  order and writes only their reminder columns and task_queue rows; every route holds at most one
+  contract row, taken first.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

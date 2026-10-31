@@ -153,6 +153,12 @@ class TestRolesHolding:
     def test_improvement_verify(self):
         assert roles_holding("improvement:verify") == ("maint_manager", "maint_engineer")
 
+    def test_the_contract_reminder_keys(self):
+        """S084 § 5.6: the push goes to the holders of contract:read, the email to those of
+        contract:read_senior."""
+        assert roles_holding("contract:read") == ("maint_manager", "maint_engineer")
+        assert roles_holding("contract:read_senior") == ("maint_manager",)
+
     def test_a_wildcard_key_gives_every_site_role(self):
         assert roles_holding("equipment:read") == config_rbac.SITE_ROLES
 

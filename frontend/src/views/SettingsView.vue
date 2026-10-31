@@ -208,6 +208,7 @@ const networksChanged = computed(() => network.value !== null && networksInput.v
 const TASK_LABELS = {
   purge_access_log: "Delete access-log entries older than 365 days",
   improvement_alert_scan: "Send the morning alerts: overdue countermeasures and improvements ready to verify",
+  contract_reminder_scan: "Send the contract reminders: contracts ending in 60 or 15 days",
 };
 // The task's last status in words (S064 UX-27); an unknown value shows as it is
 const TASK_STATUS_WORDS = { done: "Done", failed: "Failed", pending: "Waiting", running: "Running" };

@@ -179,6 +179,24 @@ def closed_email(facts):
     return subject, "\n".join(lines)
 
 
+def contract_ending_email(facts):
+    """*Contract ending* (S084 § 5.4) -> ``(subject, body)``, plain text.  ``facts``:
+    alerts_core.contract_facts (contract:read_basic fields only, D8: an email may be forwarded, so
+    never the price, the cost note or the call-out number).  No contract number, no line."""
+    to_date = facts["to_date"].strftime("%d-%m-%Y")
+    subject = one_line(f"Contract ends on {to_date}: {facts['title']} ({facts['site_code']})")
+    lines = [f"{one_line(facts['title'])} {facts['ends_words']}, on {to_date}.", ""]
+    lines.append(_field("Vendor", facts["vendor_name"]))
+    lines.append(_field("Type", facts["type_word"]))
+    if facts["contract_number"]:
+        lines.append(_field("Contract number", facts["contract_number"]))
+    lines.append(_field("Site", facts["site_code"]))
+    lines.append(_field("Period", f"{facts['from_date']:%d-%m-%Y} to {to_date}"))
+    lines += ["", "Decide before the end date: renew it with the vendor, or let it end.", "",
+              f"Open the contract: {facts['url']}", ""]
+    return subject, "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # What an SMTP failure means (§ 5.5)
 # ---------------------------------------------------------------------------
