@@ -1,11 +1,12 @@
-"""access_log, task_queue, the internal_networks default (S013 § 4) — built by v10, now by v20
-(S025: v1–v13 squashed).  The shape tests check today's schema; the re-run tests remove
-db_version 20 and run init_db again: the setting's INSERT IGNORE keeps a stored value.
+"""access_log, task_queue, the internal_networks default (S013 § 4) — built by v10, then by v20
+(S025: v1–v13 squashed), now by v41 (S088: v20–v41 squashed).  A test of today's schema on the
+test DB.  The re-runs of the squashed entry (a stored value kept, a missing setting written) are
+test_migration_squash_v41.py's: on the kept test DB a deleted db_version row is now refused
+(S088 § 5.2).
 """
 
 import config
-from local_db import get_local_db, init_db
-from network_core import DEFAULT_INTERNAL_NETWORKS
+from local_db import get_local_db
 
 
 def _run(sql, params=()):
@@ -24,10 +25,6 @@ def _columns(table):
         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s", (table,))}
 
 
-def _setting():
-    return _run("SELECT setting_value FROM app_settings WHERE setting_key = 'internal_networks'")[0]["setting_value"]
-
-
 def test_tables_and_the_default():
     log = _columns("access_log")
     assert log["outcome"][0] == "enum('ok','auth_failed','denied_network','denied_perm')"
@@ -44,25 +41,3 @@ def test_tables_and_the_default():
     # The log has no foreign keys: it keeps its rows when people or logins change
     assert not _run("SELECT 1 FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() "
                     "AND TABLE_NAME = 'access_log' AND REFERENCED_TABLE_NAME IS NOT NULL")
-
-
-def test_rerun_changes_nothing_and_keeps_a_stored_value():
-    _run("UPDATE app_settings SET setting_value = '10.24.0.0/16' WHERE setting_key = 'internal_networks'")
-    try:
-        before = (_columns("access_log"), _columns("task_queue"))
-        for _ in range(2):
-            _run("DELETE FROM db_version WHERE version = 20")
-            init_db(config.DB_CONFIG)
-        assert (_columns("access_log"), _columns("task_queue")) == before
-        assert _run("SELECT version FROM db_version WHERE version = 20")
-        assert _setting() == "10.24.0.0/16"
-    finally:
-        _run("UPDATE app_settings SET setting_value = %s WHERE setting_key = 'internal_networks'",
-             (DEFAULT_INTERNAL_NETWORKS,))
-
-
-def test_a_missing_setting_is_written_on_rerun():
-    _run("DELETE FROM app_settings WHERE setting_key = 'internal_networks'")
-    _run("DELETE FROM db_version WHERE version = 20")
-    init_db(config.DB_CONFIG)
-    assert _setting() == DEFAULT_INTERNAL_NETWORKS

@@ -52,7 +52,7 @@ watch(searchText, scheduleSearch);
 
 <template>
   <div>
-    <label class="form-label" for="equipment-search">Which equipment?</label>
+    <label class="form-label" for="equipment-search">Equipment</label>
     <input
       id="equipment-search"
       v-model="searchText"

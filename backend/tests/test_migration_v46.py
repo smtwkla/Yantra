@@ -5,12 +5,12 @@ keeps it, both markers NULL; a re-run changes nothing.  Needs the dev MariaDB co
 """
 
 import local_db
-from tests.test_migration_v20 import _migrate, _recreate, _run, _schema
+from tests.migration_helpers import _migrate, _recreate, _run, _schema
 from tests.test_migration_v43 import _a_v42_database_with_a_site_and_a_vendor, _add_contract
 
 V45 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 46)]
 V46 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 47)]
-VERSIONS = list(range(20, 47))
+VERSIONS = [41, *range(42, 47)]
 
 
 def _versions():

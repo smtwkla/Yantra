@@ -9,13 +9,13 @@ import pymysql
 import pytest
 
 import local_db
-from tests.test_migration_v20 import _migrate, _run, _schema
+from tests.migration_helpers import _migrate, _run, _schema
 from tests.test_migration_v36 import _foreign_keys, _keys
 from tests.test_migration_v43 import _a_v42_database_with_a_site_and_a_vendor, _add_contract
 
 V46 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 47)]
 V47 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 48)]
-VERSIONS = list(range(20, 48))
+VERSIONS = [41, *range(42, 48)]
 
 ER_DUP_ENTRY = 1062
 

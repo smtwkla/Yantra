@@ -10,12 +10,12 @@ import pymysql
 import pytest
 
 import local_db
-from tests.test_migration_v20 import _migrate, _recreate, _run, _schema
+from tests.migration_helpers import _migrate, _recreate, _run, _schema
 from tests.test_migration_v36 import _foreign_keys, _keys
 
 V41 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 42)]
 V42 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 43)]
-VERSIONS = list(range(20, 43))
+VERSIONS = [41, *range(42, 43)]
 
 ER_CONSTRAINT_FAILED = 4025
 ER_DUP_ENTRY = 1062

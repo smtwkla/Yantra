@@ -1,6 +1,6 @@
 """Ticket work — cause, action, not a fault, repeat link on tickets; the ticket_assignees and
-ticket_labour tables (S018 § 4) — built by v13, now by v20 (S025: v1–v13 squashed; v20's
-re-run is test_migration_v20.py's).  Tests of today's schema.  Needs the dev MariaDB container.
+ticket_labour tables (S018 § 4) — built by v13, then by v20 (S025), now by v41 (S088: v20–v41 squashed;
+its re-run is test_migration_squash_v41.py's).  Tests of today's schema.  Needs the dev MariaDB container.
 """
 
 import pymysql

@@ -93,6 +93,8 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S084 | [Contract reminders](S084-contract-reminders/1-brief.md) — R02.5: push and email 60 and 15 days before a contract ends, not once renewed (full track) | R02.5 | Committed 100cd87; rows 61 and 62 pending | 31-10-2026 |
 | S085 | [Contract renewal](S085-contract-renewal/1-brief.md) — R02.4: *Renew* makes the next contract with the same terms and machines; the chain is kept (full track) | R02.4 | Done (committed fa3b17b, adopted 31-10-2026) | 31-10-2026 |
 | S086 | [Breakdown calls on the contract](S086-contract-breakdown-calls/1-brief.md) — R02.6: the vendor's tickets on the covered machines in the period, derived through the linked Team records; the contract line on the ticket page (full track) | R02.6 | Done (committed f0343d0, adopted 31-10-2026) | 31-10-2026 |
+| S087 | [Contracts across sites](S087-contracts-across-sites/1-brief.md) — a contract covers machines of any site: the site leaves the contract; v42–v47 squashed into v50, the four contract keys become company-wide, reminders, renewal, calls and the screens follow (full track) | KLA 31-10-2026 | Approved 31-10-2026 | 31-10-2026 |
+| S088 | [Squash migrations v20–v41](S088-migrations-squash-v41/1-brief.md) — the released v20–v41 become one entry numbered v41 (production at v41 skips it); old texts frozen in a fixture; a precondition refuses a database between v20 and v40; coded before S087 (full track) | KLA 31-10-2026 | In code review | 31-10-2026 |
 ## Queued (not yet briefed)
 
 Ideas agreed as worth doing, in no fixed order. A queued item gets its step ID

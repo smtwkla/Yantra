@@ -1,12 +1,13 @@
 """Failure modes, causes and maintenance actions, with the ISO 14224 seed rows (S016 § 4) —
-built by v11, now by v20 (S025: v1–v13 squashed; the created_by tag 'migration-v11' kept).
-On the test DB: db_version 20 is removed and init_db runs twice; every statement is a no-op
-on re-run, and an engineer's edit of a seed row is kept.  Seed rows are counted by
-created_by, so rows other tests add never change the counts.
+built by v11, then by v20 (S025: v1–v13 squashed), now by v41 (S088: v20–v41 squashed; the
+created_by tag 'migration-v11' kept).  Tests of today's schema on the test DB.  Seed rows are
+counted by created_by, so rows other tests add never change the counts.  The re-run that keeps an
+engineer's edit of a seed row is test_migration_squash_v41.py's: on the kept test DB a deleted
+db_version row is now refused (S088 § 5.2).
 """
 
 import config
-from local_db import get_local_db, init_db
+from local_db import get_local_db
 from tests.conftest import SEED_CREATOR
 
 
@@ -38,13 +39,6 @@ def _unique_keys(table):
 
 def _seed_count(table):
     return _run(f"SELECT COUNT(*) AS n FROM {table} WHERE created_by = %s", (SEED_CREATOR,))[0]["n"]
-
-
-def _seed_rows(table):
-    return _run(f"SELECT code, label, active FROM {table} WHERE created_by = %s ORDER BY code", (SEED_CREATOR,))
-
-
-_TABLES = ("failure_modes", "failure_causes", "maintenance_actions")
 
 
 def test_tables_and_their_unique_keys():
@@ -84,16 +78,3 @@ def test_seed_rows():
                    (SEED_CREATOR,))
     assert [r["code"] for r in actions] == [str(n) for n in range(1, 13)]
 
-
-def test_rerun_changes_nothing_and_keeps_an_edited_seed_row():
-    _run("UPDATE failure_modes SET label = 'Noisy', active = 0 WHERE code = 'NOI'")
-    try:
-        before = {table: (_columns(table), _seed_rows(table)) for table in _TABLES}
-        for _ in range(2):
-            _run("DELETE FROM db_version WHERE version = 20")
-            init_db(config.DB_CONFIG)
-        assert {table: (_columns(table), _seed_rows(table)) for table in _TABLES} == before
-        assert _run("SELECT version FROM db_version WHERE version = 20")
-        assert _run("SELECT label, active FROM failure_modes WHERE code = 'NOI'")[0] == {"label": "Noisy", "active": 0}
-    finally:
-        _run("UPDATE failure_modes SET label = 'Abnormal noise', active = 1 WHERE code = 'NOI'")

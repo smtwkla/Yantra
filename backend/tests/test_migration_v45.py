@@ -10,7 +10,7 @@ import pymysql
 import pytest
 
 import local_db
-from tests.test_migration_v20 import _migrate, _recreate, _run, _schema
+from tests.migration_helpers import _migrate, _recreate, _run, _schema
 from tests.test_migration_v22 import _fill_one_ticket
 from tests.test_migration_v36 import _foreign_keys, _keys, _one_improvement
 from tests.test_migration_v38 import _add_action, _add_document, _documents_of_three_owners, _owner_check_clause
@@ -18,7 +18,7 @@ from tests.test_migration_v41 import _add_lesson
 
 V44 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 45)]
 V45 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 46)]
-VERSIONS = list(range(20, 46))
+VERSIONS = [41, *range(42, 46)]
 
 ER_CONSTRAINT_FAILED = 4025
 

@@ -2,7 +2,7 @@
 workers, and two runs at once (a release's tests while an agent tests), never share data.
 
     vel_yantra_test_<run>_<worker>      the suite's database (conftest.py)
-    vel_yantra_upgrade_<run>_<worker>   the migration upgrade tests' (test_migration_v2*.py)
+    vel_yantra_upgrade_<run>_<worker>   the migration upgrade tests' (test_migration_*.py)
     vel_yantra_test_<run>_schemadocs    tooling\schema-docs.bat's, built and dropped each run (S078)
 
 <run> is YANTRA_TEST_RUN (default "dev"; tooling/release-tests.bat sets "release"); <worker> is

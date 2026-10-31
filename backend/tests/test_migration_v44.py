@@ -10,13 +10,13 @@ import pymysql
 import pytest
 
 import local_db
-from tests.test_migration_v20 import _migrate, _recreate, _run, _schema
+from tests.migration_helpers import _migrate, _recreate, _run, _schema
 from tests.test_migration_v22 import _fill_one_ticket
 from tests.test_migration_v36 import _foreign_keys, _keys
 
 V43 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 44)]
 V44 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 45)]
-VERSIONS = list(range(20, 45))
+VERSIONS = [41, *range(42, 45)]
 
 OLD_KINDS = ("created", "moved_unit", "moved_parent", "lifecycle", "criticality", "class", "type", "model",
              "meter_added", "meter_removed", "meter_limits", "property")

@@ -745,6 +745,7 @@ firm" and § 4.3's "a contractor record in Team").
 
 ## Log
 
+- 31-10-2026 — **Departure, S087** (KLA): a contract is no longer at one site (Q1.5 a reversed): machines of any site, the four contract keys company-wide (so D5 and D10's "of the contract's site" no longer hold), reminders to the people at the machines' sites. v42–v47 are squashed into v50 with the change; S088 squashes v20–v41 first.
 - 30-10-2026 — **Gate R for the re-plan** (KLA): Q9.1 a, Q9.2 a plus a phone on the vendor (its read rule in R02.9's brief), Q9.3 a, Q9.4 a, Q9.5 a. Plan.MD § 2 item 9, § 4.3 *Performer* and the Team line updated. KLA: R02.9 and R02.1–R02.6 to be built on 30-10-2026, run as R05.
 - 30-10-2026 — **Re-plan: the vendor master** (KLA, 30-10-2026; back to gate R). New item
   **R02.9 Vendor master** (`vendors` table shared by all sites, a *Vendors* tab in Masters, an

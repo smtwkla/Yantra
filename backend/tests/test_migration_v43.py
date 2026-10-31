@@ -10,12 +10,12 @@ import pymysql
 import pytest
 
 import local_db
-from tests.test_migration_v20 import _migrate, _recreate, _run, _schema
+from tests.migration_helpers import _migrate, _recreate, _run, _schema
 from tests.test_migration_v36 import _foreign_keys, _keys
 
 V42 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 43)]
 V43 = [m for m in local_db._MIGRATIONS if m[0] in range(20, 44)]
-VERSIONS = list(range(20, 44))
+VERSIONS = [41, *range(42, 44)]
 
 ER_CONSTRAINT_FAILED = 4025
 ER_NO_REFERENCED_ROW = 1452

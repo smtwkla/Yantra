@@ -295,7 +295,7 @@ test("S081: the engineer adds a machine to a contract; the page lists it and the
   await expectDialogFits(page);
   const dialog = await openDialog(page);
   await expect(dialog.locator(".modal-footer")).toContainText("Choose a machine");
-  await dialog.getByLabel("Which equipment?").fill(machine.name);
+  await dialog.getByLabel("Equipment", { exact: true }).fill(machine.name);
   await dialog.locator(".list-group-item", { hasText: machine.name }).click();
   await expect(dialog.getByTestId("picked-machine")).toContainText(`${machine.code} — ${machine.name}`);
   await saveDialog(page, "Add machine");
@@ -329,7 +329,7 @@ test("S081: the manager enters a price per machine and sees the total; the engin
   await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
   await expectDialogFits(page);
   const engineerDialog = await openDialog(page);
-  await expect(engineerDialog.getByLabel("Which equipment?")).toBeVisible();
+  await expect(engineerDialog.getByLabel("Equipment", { exact: true })).toBeVisible();
   await expect(engineerDialog.getByLabel("Price (₹, before GST)")).toHaveCount(0);
 });
 
@@ -341,7 +341,7 @@ test("S081: a machine of another site is not offered in Add machine", async ({ p
   await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
-  await dialog.getByLabel("Which equipment?").fill(bricks.name);
+  await dialog.getByLabel("Equipment", { exact: true }).fill(bricks.name);
   await expect(dialog.getByText("No machine of SMTW matches.")).toBeVisible();
   await expect(dialog.locator(".list-group-item", { hasText: bricks.name })).toHaveCount(0);
 });

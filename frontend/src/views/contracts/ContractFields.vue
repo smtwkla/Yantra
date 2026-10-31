@@ -137,12 +137,12 @@ const inactiveVendorLine = computed(() => {
     <div v-else-if="fieldError('breakdown_calls_per_year')" class="col-12">
       <div class="invalid-feedback d-block">{{ fieldError("breakdown_calls_per_year") }}</div>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12">
       <label class="form-label" :for="id('covered')">Covered</label>
       <textarea :id="id('covered')" v-model="form.covered_text" rows="2" class="form-control" :class="{ 'is-invalid': fieldError('covered_text') }" maxlength="1000"></textarea>
       <div v-if="fieldError('covered_text')" class="invalid-feedback d-block">{{ fieldError("covered_text") }}</div>
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12">
       <label class="form-label" :for="id('not-covered')">Not covered</label>
       <textarea :id="id('not-covered')" v-model="form.not_covered_text" rows="2" class="form-control" :class="{ 'is-invalid': fieldError('not_covered_text') }" maxlength="1000"></textarea>
       <div v-if="fieldError('not_covered_text')" class="invalid-feedback d-block">{{ fieldError("not_covered_text") }}</div>

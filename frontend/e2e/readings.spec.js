@@ -937,7 +937,7 @@ test("S051: Enter more readings starts the next round with Now ticked and the ti
 // S050: the meter reading register, a Register tab on Readings and Open register on the Meters card
 const registerRows = (page) => page.getByTestId("register-row");
 const registerHeaders = (page) => page.getByTestId("register-frame").locator("thead th");
-const picker = (page) => page.getByLabel("Which equipment?");
+const picker = (page) => page.getByLabel("Equipment", { exact: true });
 const tabButton = (page, name) => page.getByRole("button", { name, exact: true });
 const chooser = (page) => page.getByRole("button", { name: /^Meters: / });
 

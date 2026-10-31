@@ -1,5 +1,5 @@
 """Manufacturers, equipment models, equipment.model_id NOT NULL, model documents (S012 § 4) —
-built by v9, now by v20 (S025: v1–v13 squashed; v20's re-run is test_migration_v20.py's).
+built by v9, then by v20 (S025), now by v41 (S088: v20–v41 squashed; its re-run is test_migration_squash_v41.py's).
 Since v28 (S033) model_id is NULLable and a CHECK requires it on equipment and components.
 Tests of today's schema.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
 """

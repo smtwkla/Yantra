@@ -59,7 +59,7 @@ const screens = () => [
   {
     path: "/readings", title: "Readings", who: EVERYONE,
     shows: (page, key) => {
-      if (["storekeeper", "it_admin"].includes(key)) return page.getByLabel("Which equipment?");
+      if (["storekeeper", "it_admin"].includes(key)) return page.getByLabel("Equipment", { exact: true });
       return key === "manager"
         ? page.getByLabel("Site", { exact: true })
         : page.getByTestId("sheet-heading").filter({ hasText: "SMTW — " });

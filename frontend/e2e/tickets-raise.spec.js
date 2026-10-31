@@ -55,7 +55,7 @@ test("S017: raise from the Tickets list naming a person with no login; the open 
   });
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();
-  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByLabel("Equipment", { exact: true }).fill(seed.extruder.name);
   await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
 
   // The machine's open tickets are listed before Save: a warning, not a block
@@ -77,18 +77,18 @@ test("S017: raise from the Tickets list naming a person with no login; the open 
 test("S050: Change on the raise form brings back the earlier search text and its matches (CR1-01)", async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();
-  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByLabel("Equipment", { exact: true }).fill(seed.extruder.name);
   await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
-  await expect(page.getByLabel("Which equipment?")).toBeHidden();
+  await expect(page.getByLabel("Equipment", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Change", exact: true }).click();
-  await expect(page.getByLabel("Which equipment?")).toHaveValue(seed.extruder.name);
+  await expect(page.getByLabel("Equipment", { exact: true })).toHaveValue(seed.extruder.name);
   await expect(page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) })).toBeVisible();
 });
 
 test("S017: with no symptom and no description, the description is asked for", async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();
-  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByLabel("Equipment", { exact: true }).fill(seed.extruder.name);
   await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
   await page.getByRole("button", { name: /Running, reduced/ }).click();
   await saveButton(page).click();
@@ -98,7 +98,7 @@ test("S017: with no symptom and no description, the description is asked for", a
 test("S026: Save with nothing chosen scrolls the raise form to the first message", { tag: "@device" }, async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();
-  await page.getByLabel("Which equipment?").fill(seed.extruder.name);
+  await page.getByLabel("Equipment", { exact: true }).fill(seed.extruder.name);
   await page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) }).click();
   await expect(page.getByLabel(/What is wrong\?/)).toBeVisible();
   await saveButton(page).click();

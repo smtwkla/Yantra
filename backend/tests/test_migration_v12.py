@@ -1,5 +1,5 @@
 """Tickets, ticket events, and ticket photos as a third owner of equipment_documents (S017 § 4)
-— built by v12, now by v20 (S025: v1–v13 squashed; v20's re-run is test_migration_v20.py's).
+— built by v12, then by v20 (S025), now by v41 (S088: v20–v41 squashed; its re-run is test_migration_squash_v41.py's).
 Tests of today's schema.  Needs the dev MariaDB container.
 """
 
