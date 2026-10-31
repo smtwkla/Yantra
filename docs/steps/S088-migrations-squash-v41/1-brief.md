@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 31-10-2026
 Track: full
 Baseline: 26810aa + uncommitted edits outside a step (`EquipmentPicker.vue` label, `ContractFields.vue` layout, four e2e specs, the `.claude/CLAUDE.md` timing note), from review r1
-Status: In code review 31-10-2026 (coder Opus, run s088c1); approved 31-10-2026 by KLA (all recommended answers, § 9); was: Gate A 31-10-2026 (review r1: 0 blocker, 0 major, 5 minor, 7 nits; all accepted)
+Status: Done (committed f5bbb38, adopted 31-10-2026; no device check); was: Gate B 31-10-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1, tests only); approved 31-10-2026 by KLA (all recommended answers, § 9); was: Gate A 31-10-2026 (review r1: 0 blocker, 0 major, 5 minor, 7 nits; all accepted)
 ```
 
 # S088 — Squash migrations v20–v41

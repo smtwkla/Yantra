@@ -324,7 +324,8 @@ def contract_reminder_scan(conn, payload, should_stop):
 
 def contract_alert(conn, payload, should_stop):
     """One contract reminder -> one push_send per device of the holders of contract:read at the
-    contract's site, and one email_send per holder of contract:read_senior there with an address
+    sites of the contract's machines (every site with no machine, S087 § 5.6), and one email_send per
+    holder of contract:read_senior there with an address
     (§ 5.4), in this transaction (all or nothing, so a retry never doubles them).  Sent only while
     still true (should_send_contract, from the row as it is now); a channel not set up on the
     server is skipped."""

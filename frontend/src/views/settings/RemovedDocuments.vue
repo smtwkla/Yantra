@@ -15,8 +15,8 @@
  * when its improvement is closed or dropped, as on a closed ticket.
  * Since S077 a row can be a one-point lesson's photo: "Lesson OPL-007", its machine's code and its unit;
  * a lesson has no state rule, so Restore is never disabled for one.
- * Since S083 a row can be a contract's document or photo: "Contract <title>", its number and its site (a contract
- * has no unit); listed only where contract:read_senior is held too, and never disabled (no state rule).
+ * Since S083 a row can be a contract's document or photo: "Contract <title>" and its number (a contract has no
+ * site, S087); listed only to holders of contract:read_senior, and never disabled (no state rule).
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -210,7 +210,7 @@ onMounted(load);
                 </td>
                 <td v-else-if="item.owner === 'contract'" class="text-break">
                   Contract {{ item.name }}
-                  <div class="small text-secondary">{{ item.code ? `${item.code} · ${item.unit}` : item.unit }}</div>
+                  <div v-if="item.code" class="small text-secondary">{{ item.code }}</div>
                 </td>
                 <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>

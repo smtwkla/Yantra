@@ -4,8 +4,7 @@
  * § 1.3, BR1-04): up to 20 matches of GET /api/equipment?level=all&q=, each "code — name" with its
  * full path. Emits @pick with the node's id and the list item; the screen decides what a pick does
  * (Raise ticket opens the form, the readings register shows the node's readings, the contract's
- * Add machine shows the machine it will add). `siteId` keeps the search to one site (S081: a
- * contract covers machines of its own site); `emptyText` says what an empty search means there.
+ * Add machine shows the machine it will add).
  */
 import { ref, watch } from "vue";
 import { apiGet } from "../api";
@@ -14,8 +13,10 @@ import { useDebounced } from "../composables/useDebounced";
 const PICKER_SIZE = 20;
 
 const props = defineProps({
+  // Search only this site (S087 A1: `site_id` on the list); null = every site of the user
   siteId: { type: Number, default: null },
-  emptyText: { type: String, default: "No equipment found at your units." },
+  // The input is off until the screen has what it needs (the contract's Add machine waits for a site)
+  disabled: { type: Boolean, default: false },
 });
 const emit = defineEmits(["pick"]);
 
@@ -60,10 +61,11 @@ watch(searchText, scheduleSearch);
       type="search"
       placeholder="Code or name"
       autocomplete="off"
+      :disabled="disabled"
     />
     <div v-if="searching" class="text-secondary small">Searching…</div>
     <div v-if="searchError" class="alert alert-danger py-2">{{ searchError }}</div>
-    <div v-else-if="results && results.items.length === 0" class="text-secondary">{{ emptyText }}</div>
+    <div v-else-if="results && results.items.length === 0" class="text-secondary">No equipment found at your units.</div>
     <div v-else-if="results" class="list-group">
       <button
         v-for="e in results.items"

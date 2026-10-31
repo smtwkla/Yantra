@@ -58,14 +58,12 @@ function textOrNull(value) {
 }
 
 /**
- * The dialog's form → the request body (S080 § 5.7).  ``site`` is the chosen site's row of the list's
- * ``sites`` ({can_read_callout, can_read_cost}): the call-out number and the cost note are left out unless
- * its flag allows them, so a save by an editor without the key never touches them.  Calls per year is null
- * while its tick is off.
+ * The dialog's form → the request body (S080 § 5.7).  ``flags`` ({can_read_callout, can_read_cost}) are the
+ * reader's, company-wide (S087): the call-out number and the cost note are left out unless its flag allows them,
+ * so a save by an editor without the key never touches them.  Calls per year is null while its tick is off.
  */
-export function contractBody(form, site) {
+export function contractBody(form, flags) {
   const body = {
-    site_id: form.site_id,
     vendor_id: form.vendor_id,
     contract_type: form.contract_type,
     title: form.title,
@@ -76,12 +74,17 @@ export function contractBody(form, site) {
   for (const field of NUMBERS) body[field] = numberOrNull(form[field]);
   for (const field of TICKS) body[field] = Boolean(form[field]);
   if (!body.covers_breakdown_calls) body.breakdown_calls_per_year = null;
-  if (site?.can_read_callout) body.callout_number = textOrNull(form.callout_number);
-  if (site?.can_read_cost) body.cost_note = textOrNull(form.cost_note);
+  if (flags?.can_read_callout) body.callout_number = textOrNull(form.callout_number);
+  if (flags?.can_read_cost) body.cost_note = textOrNull(form.cost_note);
   return body;
 }
 
-// The dialog's empty form (S080 § 5.7), apart from the site and the type: one copy for add, edit and renew (S085)
+/** A contract's sites (its machines' sites, S087): ["BRICKS", "SMTW"] → "BRICKS, SMTW"; none → "—". */
+export function siteCodesText(codes) {
+  return codes?.length ? codes.join(", ") : "—";
+}
+
+// The dialog's empty form (S080 § 5.7), apart from the type: one copy for add, edit and renew (S085)
 export const EMPTY_CONTRACT_FORM = Object.freeze({
   vendor_id: null, title: "", contract_number: "", from_date: "", to_date: "", covers_labour: false,
   covers_parts: false, covers_consumables: false, covers_breakdown_calls: false, breakdown_calls_per_year: "",
@@ -92,7 +95,7 @@ export const EMPTY_CONTRACT_FORM = Object.freeze({
 /** A contract from the API → the dialog's form: a tick as a boolean, an empty value as "" (a field the reader may
  * not see, absent from the answer, is "" too and is never sent). */
 export function contractForm(contract) {
-  const form = { site_id: contract.site_id, contract_type: contract.contract_type };
+  const form = { contract_type: contract.contract_type };
   for (const field of Object.keys(EMPTY_CONTRACT_FORM)) {
     const value = contract[field];
     form[field] = typeof EMPTY_CONTRACT_FORM[field] === "boolean" ? Boolean(value) : (value ?? "");
@@ -118,7 +121,7 @@ export function renewalForm(contract) {
 
 /** The renew dialog's notice: what is copied and what is not. ``renewal`` is the detail's offer
  * ({machines, skipped}); a reader of prices enters them, others are told who does. */
-export function renewalNotice(renewal, canReadCost, siteCode) {
+export function renewalNotice(renewal, canReadCost) {
   const codes = (lines) => lines.map((line) => line.code).join(", ");
   const skippedText = (lines) => lines.map((line) => `${line.code} (${line.reason})`).join(", ");
   const { machines, skipped } = renewal;
@@ -137,7 +140,7 @@ export function renewalNotice(renewal, canReadCost, siteCode) {
   if (machines.length) {
     sentences.push(canReadCost
       ? "Prices start empty: enter them on the new contract."
-      : `Prices start empty: the managers of ${siteCode} enter them on the new contract.`);
+      : "Prices start empty: the managers enter them on the new contract.");
   }
   sentences.push("Documents stay on this contract.");
   return sentences.join(" ");
@@ -303,14 +306,15 @@ export function callsUsedLine(used) {
   return `${used.count} of ${used.agreed} calls used this period.`;
 }
 
-/** The card's warning (contracts_core.vendor_warning) as the floor reads it, or null. */
-export function vendorWarningText(warning, vendorName, siteCode) {
+/** The card's warning (contracts_core.vendor_warning) as the floor reads it, or null.  ``siteCodes``: the
+ * answer's ``warning_sites``, the sites of the contract's machines where no linked record may be assigned. */
+export function vendorWarningText(warning, vendorName, siteCodes) {
   if (warning === "no_linked") {
     return `No Team record is linked to ${vendorName}. Link the vendor's technician, or a record such as`
       + ` '${vendorName} service', in Masters › Team.`;
   }
   if (warning === "no_assignable") {
-    return `No Team record of ${vendorName} can be assigned at ${siteCode}. Give one a Technician role there in`
+    return `No Team record of ${vendorName} can be assigned at ${siteCodes.join(", ")}. Give one a Technician role there in`
       + " Masters › Team.";
   }
   return null;

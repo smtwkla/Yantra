@@ -36,13 +36,11 @@ STATUS_FILTERS = ("not_ended", "in_force", "ending", "upcoming", "ended", "all")
 DEFAULT_STATUS = "not_ended"
 
 VENDOR_MISSING = "Choose a vendor. The list holds the active vendors of Masters › Vendors."
-SITE_KEPT = "A contract keeps its site. Deactivate it, then add the contract at the other site."
-SITE_INACTIVE = "Choose an active site."
 TO_BEFORE_FROM = "Enter a To date on or after the From date."
 FROM_AFTER_TO = "Enter a From date on or before the To date."
 CALLS_WITHOUT_TICK = "Tick Breakdown calls to enter calls per year."
 
-REQUIRED = ("site_id", "vendor_id", "contract_type", "title", "from_date", "to_date")
+REQUIRED = ("vendor_id", "contract_type", "title", "from_date", "to_date")
 
 
 def _iso_date(value):
@@ -96,7 +94,6 @@ def _parse_contract_type(raw):
     return raw
 
 
-_parse_site_id = id_parser("Site")
 _parse_vendor_id_plain = id_parser("Vendor")
 
 
@@ -112,7 +109,6 @@ def _parse_vendor_id(raw):
 # field -> (parser, required when creating).  validate_contract gives an absent required field the value None
 # on a POST, so its own parser's "Enter …" / "Choose …" text shows; the table therefore marks nothing required.
 _CONTRACT_FIELDS = {
-    "site_id": (_parse_site_id, False),
     "vendor_id": (_parse_vendor_id, False),
     "contract_type": (_parse_contract_type, False),
     "title": (_parse_title, False),
@@ -138,7 +134,7 @@ _CONTRACT_FIELDS = {
     "active": (flag_parser("Active"), False),
 }
 
-# The fields only some readers see and write (§ 5.4): field -> the key needed at the contract's site
+# The fields only some readers see and write (§ 5.4): field -> the key needed (global since S087)
 GATED_FIELDS = {"callout_number": "contract:read", "cost_note": "contract:read_senior"}
 
 # The same for a machine line (S081 § 5.4, BS1-02): its price follows the cost key
@@ -148,7 +144,8 @@ LINE_GATED_FIELDS = {"price": "contract:read_senior"}
 def validate_contract(body, creating):
     """The body -> ``(clean, errors)`` for clean_body (§ 5.1).  On a POST every required field must be there (an
     absent one is parsed as None, so its own text shows) and ``active`` is ignored (a new contract is active); on a
-    PUT an absent field stays as it is.  Unknown fields (``renewal_of_id`` included) are ignored.  Breakdown calls
+    PUT an absent field stays as it is.  Unknown fields (``renewal_of_id`` included, and ``site_id``: a contract
+    has no site since S087, so an old tab's sends nothing wrong) are ignored.  Breakdown calls
     unticked with no number sent clears the stored number (the shell writes NULL)."""
     data = dict(body)
     if creating:
@@ -314,17 +311,31 @@ def card_items(rows, node, today):
             for r in [*not_ended, *ended]]
 
 
-def covered_sql(coverage, site_ids, today):
+def covered_sql(coverage, today):
     """The Contract filter (§ 5.4) -> ``(sql, params)`` for the equipment list's WHERE.  Under contract: the row's
     node (``e``), its parent or its grandparent (``p.parent_id``, NODE_JOINS' parent alias) is on a line of an
-    active contract in force on ``today`` at one of ``site_ids`` (where the reader holds contract:read_basic).  Not
-    under contract: the opposite.  No site: nothing is under contract, with no empty ``IN ()``."""
-    if not site_ids:
-        return ("0 = 1", []) if coverage == "under" else ("1 = 1", [])
+    active contract in force on ``today``.  Not under contract: the opposite.  No key check: contract:read_basic is
+    held by every role, company-wide (S087)."""
     exists = ("EXISTS (SELECT 1 FROM contract_equipment ce JOIN contracts ct ON ct.id = ce.contract_id"
               " WHERE ce.equipment_id IN (e.id, e.parent_id, p.parent_id) AND ct.active = 1"
-              f" AND ct.from_date <= %s AND ct.to_date >= %s AND ct.site_id IN ({', '.join(['%s'] * len(site_ids))}))")
-    return (exists if coverage == "under" else f"NOT {exists}"), [today, today, *site_ids]
+              " AND ct.from_date <= %s AND ct.to_date >= %s)")
+    return (exists if coverage == "under" else f"NOT {exists}"), [today, today]
+
+
+# A contract's sites (S087 § 5.2): a line's node -> its root equipment's unit -> the unit's site, the path of
+# equipment.NODE_JOINS (COALESCE(gp.unit_id, p.unit_id, e.unit_id)).  Current, not at add: a moved machine counts
+# at its new site.  Not NODE_JOINS itself: it also joins equipment_classes as ``c``, the alias of contracts.  The one
+# copy, shared by contracts.py and alerts.py (which never imports contracts.py).  Follows ``FROM contract_equipment
+# ce``; gives ``s`` (the site) and ``u`` (the unit).
+LINE_SITE_JOINS = (" JOIN equipment e ON e.id = ce.equipment_id"
+                   " LEFT JOIN equipment p ON p.id = e.parent_id"
+                   " LEFT JOIN equipment gp ON gp.id = p.parent_id"
+                   " JOIN units u ON u.id = COALESCE(gp.unit_id, p.unit_id, e.unit_id)"
+                   " JOIN sites s ON s.id = u.site_id")
+
+# The sites of one contract's lines (param: the contract id) -> rows ``{id, code}``, by code; plain read
+LINE_SITES_SQL = ("SELECT DISTINCT s.id, s.code FROM contract_equipment ce" + LINE_SITE_JOINS
+                  + " WHERE ce.contract_id = %s ORDER BY s.code")
 
 
 # ---------------------------------------------------------------------------
@@ -337,26 +348,9 @@ RENEWAL_RACE = "This contract is already renewed. Reload the page to see the ren
 SKIP_SCRAPPED = "scrapped"
 
 
-def renew_site_inactive(site_code):
-    """§ 5.5: the old contract's site is inactive."""
-    return f"{site_code} is inactive. Set it active in Masters › Sites, then renew the contract."
-
-
 def already_renewed(title):
     """§ 5.5: the contract has a renewal, active or not."""
     return f"This contract is already renewed: {title}. Open that contract to change it."
-
-
-def validate_renewal(body, creating):
-    """A renewal's body -> ``(clean, errors)`` for clean_body (§ 5.4, E10).  ``creating`` is taken only for
-    clean_body's call shape and ignored: a renewal is always a create.  The site is the old contract's, set by the
-    route, so a ``site_id`` sent is removed and validate_contract's "Choose a site." is dropped; ``active`` and
-    ``renewal_of_id`` are ignored, as on a create."""
-    data = dict(body)
-    data.pop("site_id", None)
-    clean, errors = validate_contract(data, True)
-    clean.pop("site_id", None)
-    return clean, [e for e in errors if e["field"] != "site_id"]
 
 
 def _add_months(day, months):
@@ -382,20 +376,15 @@ def renewal_period(from_date, to_date):
 
 
 def renewal_lines(machines):
-    """The old contract's lines -> ``(copied, skipped)`` (§ 5.3, E5).  Each line has ``equipment_id``, ``code``,
-    ``lifecycle``, ``at_contract_site`` and ``site_code``.  Copied: not scrapped and still at the contract's site, as
-    an add requires (S081 § 5.2 rules 3 and 4); the renewer's units are not asked.  Skipped, with the reason:
-    "scrapped" (it wins), or "now at <site>"."""
+    """The old contract's lines -> ``(copied, skipped)`` (§ 5.3, E5; S087 § 5.5).  Each line has ``equipment_id``,
+    ``code`` and ``lifecycle``.  Copied: every line not scrapped, at any site, also in an inactive unit or site (S087
+    F6); the renewer's units are not asked.  Skipped: a scrapped machine, with the reason "scrapped"."""
     copied, skipped = [], []
     for line in machines:
         if line["lifecycle"] == SCRAPPED:
-            reason = SKIP_SCRAPPED
-        elif not line["at_contract_site"]:
-            reason = f"now at {line['site_code']}"
+            skipped.append({"equipment_id": line["equipment_id"], "code": line["code"], "reason": SKIP_SCRAPPED})
         else:
             copied.append({"equipment_id": line["equipment_id"], "code": line["code"]})
-            continue
-        skipped.append({"equipment_id": line["equipment_id"], "code": line["code"], "reason": reason})
     return copied, skipped
 
 
@@ -436,7 +425,8 @@ def calls_total(calls):
 
 
 def calls_used(count, per_year, from_date, to_date, complete):
-    """"3 of 4 calls used" (§ 5.3, C3) -> None when the reader does not see the whole site (``complete`` false) or
+    """"3 of 4 calls used" (§ 5.3, C3) -> None when the reader does not see every unit of the lines' sites
+    (``complete`` false, S087 § 5.7) or
     no number is agreed; else ``{count, agreed, over, per_year_only}``, ``per_year_only`` when the period is longer
     than CALLS_USED_MAX_DAYS (both end days count), so the count is not compared with one year's number."""
     if not complete or per_year is None:
@@ -445,11 +435,12 @@ def calls_used(count, per_year, from_date, to_date, complete):
     return {"count": count, "agreed": per_year, "over": count > per_year, "per_year_only": days > CALLS_USED_MAX_DAYS}
 
 
-def vendor_warning(linked_count, assignable_count):
-    """The card's warning (§ 5.4): no active Team record linked to the vendor; or none that may be assigned at the
-    contract's site (a Technician, Engineer or Manager role there); else None."""
+def vendor_warning(linked_count, assignable_by_site):
+    """The card's warning (§ 5.4; S087 § 5.7) -> None, ``(NO_LINKED, [])`` when no active Team record is linked to the
+    vendor, or ``(NO_ASSIGNABLE, codes)`` with the sorted codes of the lines' sites where none of them may be
+    assigned (a Technician, Engineer or Manager role there).  ``assignable_by_site``: ``{site code: count}`` over the
+    contract's line sites; empty for a contract with no line, so only NO_LINKED can show."""
     if linked_count == 0:
-        return NO_LINKED
-    if assignable_count == 0:
-        return NO_ASSIGNABLE
-    return None
+        return NO_LINKED, []
+    missing = sorted(code for code, count in assignable_by_site.items() if count == 0)
+    return (NO_ASSIGNABLE, missing) if missing else None

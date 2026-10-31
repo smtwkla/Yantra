@@ -3,11 +3,12 @@ dev MariaDB container.
 
 The daily scan (contract_reminder_scan) queues one contract_alert per reminder due and marks it (v46);
 contract_alert sends it by push to the holders of contract:read and by email to the holders of contract:read_senior
-at the contract's site.  The handlers run here on a connection of their own, in a transaction as the worker runs
+at the sites of the contract's machines (S087; every site for a contract with no machine).  The handlers run here on a connection of their own, in a transaction as the worker runs
 them (test_alerts.run); the worker itself runs only where draining every task is the point, with both senders
 faked, so no test reaches a push service or a mail server (no_real_push, smtp_test_values).
 
-Each test makes its own site and contract (through S080's API, as IT admin), then sets the dates relative to the
+Each test makes its own site and contract with a machine there (through the API, as IT admin), then sets the dates
+relative to the
 database's CURDATE() with db_rows, so the kept worker database is the starting state.  The scan reads every
 contract of the database: a test asserts only on its own contract's tasks and rows, and the all-or-nothing test
 runs one scan first so only its own rows are candidates.
@@ -49,19 +50,29 @@ def vendor(make_vendor):
 
 
 @pytest.fixture
-def contract(admin, site, vendor, uniq, db_rows):
-    """contract(days_left=60, site=the site, **fields) -> a new contract (the API's answer) ending ``days_left``
-    days after the database's today, started 300 days before it."""
+def contract(admin, site, vendor, uniq, db_rows, machine_at):
+    """contract(days_left=60, at=[the site], **fields) -> a new contract (the API's answer) ending ``days_left``
+    days after the database's today, started 300 days before it, with one machine at each site of ``at`` (S087: a
+    contract's sites are its machines'; ``at=[]`` makes one with no machine)."""
     def make(days_left=60, at=None, **fields):
-        body = {"site_id": (at or site)["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "contract_number": "TEST/AMC/0001",
                 "from_date": "2026-01-01", "to_date": "2026-12-31", **fields}
         res = admin.post(CONTRACTS, json=body)
         assert res.status_code == 201, res.get_json()
         made = res.get_json()
+        for at_site in ([site] if at is None else at):
+            res = admin.post(f"{CONTRACTS}/{made['id']}/equipment", json={"equipment_id": machine_at(at_site)["id"]})
+            assert res.status_code == 201, res.get_json()
         set_dates(db_rows, made, days_left)
         return made
     return make
+
+
+@pytest.fixture
+def machine_at(make_equipment, make_unit):
+    """machine_at(site) -> a new machine in a new unit of the site."""
+    return lambda at: make_equipment(unit=make_unit(site=at))
 
 
 def set_dates(db_rows, contract, days_left, started_days_ago=300):
@@ -71,8 +82,8 @@ def set_dates(db_rows, contract, days_left, started_days_ago=300):
 
 @pytest.fixture
 def people(user_at_sites, site, make_site, add_device, db_rows):
-    """The people around the contract's site, each with one device: an engineer, a manager with an address, a
-    manager without, a technician, a manager of another site -> {name: (person, device)}."""
+    """The people around the site of the contract's machine, each with one device: an engineer, a manager with an
+    address, a manager without, a technician, a manager of another site -> {name: (person, device)}."""
     other = make_site()
     spec = {"engineer": (site, "maint_engineer"), "manager": (site, "maint_manager"),
             "manager_no_email": (site, "maint_manager"), "technician": (site, "maint_technician"),
@@ -141,7 +152,7 @@ class TestNotInTheApi:
         assert markers(db_rows, made)["first_reminder_for"] is not None
         one = admin.get(f"{CONTRACTS}/{made['id']}").get_json()
         assert "first_reminder_for" not in one and "second_reminder_for" not in one
-        listed = admin.get(f"{CONTRACTS}?site_id={site['id']}&status=all").get_json()["items"]
+        listed = admin.get(f"{CONTRACTS}?site_id={site['id']}&status=all").get_json()["items"]   # its machine's site
         (row,) = [c for c in listed if c["id"] == made["id"]]
         assert "first_reminder_for" not in row and "second_reminder_for" not in row
 
@@ -211,7 +222,7 @@ class TestScan:
 class TestRenewed:
 
     def _renewal(self, admin, site, vendor, made, db_rows, active):
-        res = admin.post(CONTRACTS, json={"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        res = admin.post(CONTRACTS, json={"vendor_id": vendor["id"], "contract_type": "amc",
                                           "title": "AMC renewal", "from_date": "2026-01-01", "to_date": "2026-12-31"})
         assert res.status_code == 201, res.get_json()
         renewal = res.get_json()
@@ -288,7 +299,7 @@ class TestAllOrNothing:
 
 class TestHandler:
 
-    def test_push_to_engineers_and_managers_of_the_site(self, contract, people, site, db_rows):
+    def test_push_to_engineers_and_managers_of_the_machine_s_site(self, contract, people, site, db_rows):
         made = contract(60)
         scan()
         drain(db_rows, made["id"])
@@ -344,6 +355,54 @@ class TestHandler:
         drain(db_rows, made["id"])
         assert push_sends(db_rows, made["id"]) == []
         assert email_sends(db_rows, [people[name][0]["id"] for name in people]) == []
+
+    def test_push_to_the_holders_at_each_machine_site(self, contract, user_at_sites, make_site, add_device, db_rows):
+        """S087 § 5.6: lines at A and B -> the engineers and managers of both, each once (one holding roles at both
+        sites too); not those of a third site."""
+        a, b, c = make_site(), make_site(), make_site()
+        spec = {"engineer_a": [(a, "maint_engineer", "all")], "manager_b": [(b, "maint_manager", "all")],
+                "both": [(a, "maint_engineer", "all"), (b, "maint_manager", "all")],
+                "technician_a": [(a, "maint_technician", "all")], "manager_c": [(c, "maint_manager", "all")]}
+        devices = {}
+        for name, memberships in spec.items():
+            _client, person = user_at_sites(memberships)
+            devices[name] = add_device(person)
+        made = contract(60, at=[a, b])
+        scan()
+        drain(db_rows, made["id"])
+        sent = push_sends(db_rows, made["id"])
+        assert sorted(s["subscription_id"] for s in sent) == sorted(
+            devices[name] for name in ("engineer_a", "manager_b", "both"))
+        assert {s["title"] for s in sent} == {f"Contract ends in 60 days · {', '.join(sorted([a['code'], b['code']]))}"}
+
+    def test_email_to_the_managers_at_each_machine_site(self, contract, user_at_sites, make_site, db_rows):
+        a, b, c = make_site(), make_site(), make_site()
+        managers = {}
+        for name, at in (("a", a), ("b", b), ("c", c)):
+            _client, person = user_at_sites([(at, "maint_manager", "all")])
+            db_rows("UPDATE people SET email = %s WHERE id = %s", (f"m{name}-{person['id']}@example.test", person["id"]))
+            managers[name] = person["id"]
+        made = contract(60, at=[a, b])
+        scan()
+        drain(db_rows, made["id"])
+        mails = email_sends(db_rows, list(managers.values()))
+        assert sorted(m["person_id"] for m in mails) == sorted([managers["a"], managers["b"]])
+        sites = ", ".join(sorted([a["code"], b["code"]]))
+        assert all(m["subject"].endswith(f"({sites})") and f"Sites:            {sites}" in m["body"] for m in mails)
+
+    def test_no_line_reaches_every_site(self, contract, people, db_rows):
+        """S087 Q2 a: a contract with no machine goes to the holders at every site, so it is never lost; its texts
+        name no site."""
+        made = contract(60, at=[])
+        scan()
+        drain(db_rows, made["id"])
+        sent = push_sends(db_rows, made["id"])
+        devices = {s["subscription_id"] for s in sent}
+        assert {people[name][1] for name in ("engineer", "manager", "manager_no_email", "other_manager")} <= devices
+        assert people["technician"][1] not in devices
+        assert {s["title"] for s in sent} == {"Contract ends in 60 days"}
+        mailed = {m["person_id"] for m in email_sends(db_rows, [people[n][0]["id"] for n in people])}
+        assert mailed == {people["manager"][0]["id"], people["other_manager"][0]["id"]}
 
     def test_push_off_email_only(self, contract, people, db_rows, push_off):
         made = contract(60)

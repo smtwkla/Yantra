@@ -10,8 +10,8 @@
  * question in its row (as the Meters card). The terms are edited in Masters › Contracts (B9).
  *
  * The contract's documents and photos (docs/steps/S083-contract-documents/1-brief.md § 5.7): the shared Documents
- * and Photos cards after the machines, only for a reader with can_read_documents (contract:read_senior at the
- * site: a quote or a signed contract shows the price); their buttons follow can_edit_documents. Others see nothing
+ * and Photos cards after the machines, only for a reader with can_read_documents (contract:read_senior held
+ * anywhere, S087: a quote or a signed contract shows the price); their buttons follow can_edit_documents. Others see nothing
  * of them, as of the price.
  *
  * The renewal (docs/steps/S085-contract-renewal/1-brief.md § 5.7): *Renew contract* shows only when the detail's
@@ -33,6 +33,7 @@ import {
   formatRupees,
   overlapText,
   responseText,
+  siteCodesText,
   statusBadgeClass,
 } from "../utils/contractLabels";
 import { formatDate } from "../utils/datetime";
@@ -137,7 +138,7 @@ function onRenewed(detail) {
   <div class="py-3">
     <div v-if="loading && !contract" class="text-secondary">Loading…</div>
     <div v-else-if="notFound" class="alert alert-warning">
-      Contract not found, or not at your sites.
+      Contract not found.
       <router-link to="/equipment" class="alert-link ms-1">Open the equipment list</router-link>
     </div>
     <div v-if="loadError" class="alert alert-danger d-flex justify-content-between align-items-center">
@@ -156,7 +157,7 @@ function onRenewed(detail) {
         </button>
       </div>
       <div class="text-secondary" :class="contract.renewal_of || contract.renewed_by ? 'mb-1' : 'mb-3'">
-        {{ vendorText }} · {{ contract.site_code }}
+        {{ vendorText }}<template v-if="contract.site_codes?.length"> · {{ siteCodesText(contract.site_codes) }}</template>
       </div>
       <div v-if="contract.renewal_of || contract.renewed_by" class="small mb-3" data-testid="contract-chain">
         <div v-if="contract.renewal_of">
@@ -236,7 +237,6 @@ function onRenewed(detail) {
               </div>
               <LifecycleBadge v-if="line.lifecycle !== 'in_service'" :lifecycle="line.lifecycle" />
             </div>
-            <div v-if="!line.at_contract_site" class="small text-warning-emphasis">Now at {{ line.site_code }}.</div>
             <div v-for="o in line.overlaps" :key="`${o.contract_id}-${o.on_code}`" class="small text-warning-emphasis" data-testid="overlap">
               <i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ overlapText(o) }}
             </div>
@@ -263,7 +263,7 @@ function onRenewed(detail) {
 
       <!-- S083 § 5.7: the signed contract, its annexures and the quotes, for contract:read_senior holders only -->
       <template v-if="contract.can_read_documents">
-        <p class="small text-secondary mb-2">Only the managers of {{ contract.site_code }} see these documents and photos.</p>
+        <p class="small text-secondary mb-2">Only the managers see these documents and photos.</p>
         <DocumentsCards :key="contract.id" :base-path="docsPath" :can-edit="contract.can_edit_documents" />
       </template>
 

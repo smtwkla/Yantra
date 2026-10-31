@@ -5,7 +5,7 @@
  * form (useFormModal) and passes it in as ``v-model:form``; the fields write into it. The call-out number and the
  * cost note show only with their flags, so a field the reader may not see is never in the dialog.
  *
- * Modes: "create" picks the site from ``sites``; "edit" and "renew" show ``siteCode`` as text (the site is fixed).
+ * Modes: "create", "edit" and "renew". A contract has no site (S087): its sites are its machines' sites.
  * The vendors offered are the active ones, with ``storedVendor`` first when it is inactive, so the contract still
  * saves; in renew mode a line under the field says so.
  */
@@ -16,8 +16,6 @@ const form = defineModel("form", { type: Object, required: true });
 const props = defineProps({
   fieldError: { type: Function, required: true },
   mode: { type: String, required: true, validator: (value) => ["create", "edit", "renew"].includes(value) },
-  sites: { type: Array, default: () => [] }, // the sites a contract may be added at (create)
-  siteCode: { type: String, default: "" },
   vendors: { type: Array, default: () => [] },
   storedVendor: { type: Object, default: null }, // {id, name, active}
   canReadCallout: { type: Boolean, default: false },
@@ -47,15 +45,6 @@ const inactiveVendorLine = computed(() => {
 
 <template>
   <div class="row g-3">
-    <div class="col-12 col-md-6">
-      <label class="form-label" :for="id('site')">Site</label>
-      <select v-if="mode === 'create'" :id="id('site')" v-model="form.site_id" class="form-select" :class="{ 'is-invalid': fieldError('site_id') }">
-        <option :value="null" disabled>Choose a site</option>
-        <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
-      </select>
-      <div v-else :id="id('site')" class="form-control-plaintext">{{ siteCode }}</div>
-      <div v-if="fieldError('site_id')" class="invalid-feedback d-block">{{ fieldError("site_id") }}</div>
-    </div>
     <div class="col-12 col-md-6">
       <label class="form-label" :for="id('type')">Type</label>
       <select :id="id('type')" v-model="form.contract_type" class="form-select" :class="{ 'is-invalid': fieldError('contract_type') }">
@@ -169,7 +158,7 @@ const inactiveVendorLine = computed(() => {
       <input :id="id('cost')" v-model="form.cost_note" class="form-control" :class="{ 'is-invalid': fieldError('cost_note') }" maxlength="255" />
       <div v-if="fieldError('cost_note')" class="invalid-feedback d-block">{{ fieldError("cost_note") }}</div>
       <div v-if="mode === 'renew'" class="form-text">Enter this period's cost note. Last period's note stays on the old contract.</div>
-      <div v-else class="form-text">Only the managers of this site see this note.</div>
+      <div v-else class="form-text">Only the managers see this note.</div>
     </div>
     <div class="col-12">
       <label class="form-label" :for="id('notes')">Notes</label>

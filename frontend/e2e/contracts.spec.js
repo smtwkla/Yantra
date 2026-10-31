@@ -14,7 +14,10 @@
 // inactive vendor, a scrapped machine and an inactive renewal.  Breakdown calls (S086): the vendor's tickets on
 // the contract page with their downtime and the wait on the vendor, the calls used, the two warnings, the rows by
 // the reader's units, the contract line and Do not repair on the ticket page, and the vendor in the people picker;
-// each test makes its own Team records of its own vendor and never links a seed person.
+// each test makes its own Team records of its own vendor and never links a seed person.  Contracts across sites
+// (S087): a contract has no site; its sites are its machines' sites (the page header, the Sites column, the Site
+// filter), and the contract keys are company-wide, so an engineer of SMTW edits a contract whose machine is at
+// BRICKS.  The manager holds SMTW and BRICKS, the engineer SMTW only (seed_e2e.PEOPLE).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,11 +62,10 @@ async function siteId(code) {
   return sites.items.find((s) => s.code === code).id;
 }
 
-/** A contract by API as `key` (the manager by default, at SMTW unless site_id is given). */
+/** A contract by API as `key` (the manager by default); it has no site (S087) and no machine yet. */
 async function contractByApi(vendor, title, fields = {}, key = "manager") {
   return callAs(key, "post", "/api/contracts", {
-    site_id: fields.site_id ?? (await siteId("SMTW")), vendor_id: vendor.id, contract_type: "amc", title,
-    from_date: day(-30), to_date: day(300), ...fields,
+    vendor_id: vendor.id, contract_type: "amc", title, from_date: day(-30), to_date: day(300), ...fields,
   });
 }
 
@@ -76,7 +78,7 @@ async function openContracts(page, key) {
 
 const row = (page, title) => page.locator("table tbody tr").filter({ hasText: title });
 
-/** Open Add contract and fill the required fields (the engineer's one site is preselected). */
+/** Open Add contract and fill the required fields. */
 async function fillNewContract(page, vendor, title, { from = day(-10), to = day(355) } = {}) {
   await page.getByRole("button", { name: "Add contract" }).click();
   await expectDialogFits(page);
@@ -95,6 +97,8 @@ test("S080: the engineer adds a contract and sees it In force in Masters › Con
   const title = `E2E AMC ${tag}`;
   await openContracts(page, "engineer");
   const dialog = await fillNewContract(page, vendor, "");
+  // S087: a contract has no site, so the dialog asks for none
+  await expect(dialog.getByLabel("Site", { exact: true })).toHaveCount(0);
   await dialog.locator(".modal-footer button[type=submit]").click();
   await expectFieldMessage(dialog, "Enter a title.");
   await dialog.getByLabel("Title").fill(title);
@@ -134,7 +138,7 @@ test("S080: the engineer sees the call-out number field and no cost note; the ma
   await page.getByRole("button", { name: "Add contract" }).click();
   await expectDialogFits(page);
   dialog = await openDialog(page);
-  await dialog.getByLabel("Site").selectOption(String(await siteId("SMTW")));
+  await expect(dialog.getByLabel("Site", { exact: true })).toHaveCount(0);
   await expect(dialog.getByLabel("Call-out number")).toBeVisible();
   await expect(dialog.getByText("Managers only")).toBeVisible();
   await expect(dialog.getByLabel("Cost note")).toBeVisible();
@@ -148,7 +152,7 @@ test("S080: IT admin adds a contract without the call-out number or the cost not
   await page.getByRole("button", { name: "Add contract" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
-  await dialog.getByLabel("Site").selectOption(String(await siteId("SMTW")));
+  await expect(dialog.getByLabel("Site", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("Vendor", { exact: true }).selectOption({ label: vendor.name });
   await dialog.getByLabel("Title").fill(title);
   await dialog.getByLabel("From").fill(day(-10));
@@ -218,39 +222,52 @@ test("S080: a deactivated contract leaves the list, and Show inactive brings it 
   await expect(row(page, contract.title)).toContainText("Inactive");
 });
 
-test("S080: the engineer does not see another site's contract; the manager sees Edit on both", async ({ page }, testInfo) => {
+test("S087: the engineer of SMTW sees and edits a contract whose machine is at BRICKS", async ({ page }, testInfo) => {
   const tag = propertyTag(testInfo);
   const vendor = await vendorByApi(`E2E Vendor ${tag}`);
-  const bricks = await contractByApi(vendor, `E2E BRICKS ${tag}`, { site_id: await siteId("BRICKS") });
-  const smtw = await contractByApi(vendor, `E2E SMTW ${tag}`);
-  await openContracts(page, "engineer");
-  await expect(row(page, smtw.title)).toBeVisible();
-  await expect(row(page, bricks.title)).toHaveCount(0);
+  const contract = await contractByApi(vendor, `E2E BRICKS ${tag}`, { callout_number: CALLOUT });
+  await lineByApi(contract, await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER"));
 
-  await openContracts(page, "manager");
-  await expect(row(page, smtw.title).getByTitle("Edit")).toBeVisible();
-  await expect(row(page, bricks.title).getByTitle("Edit")).toBeVisible();
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(page.locator(".text-secondary", { hasText: `${vendor.name} · BRICKS` }).first()).toBeVisible();
+  await expect(page.getByText(CALLOUT)).toBeVisible();
+
+  await openContracts(page, "engineer");
+  await expect(row(page, contract.title)).toContainText("BRICKS");
+  await row(page, contract.title).getByTitle("Edit").click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByLabel("Call-out number")).toHaveValue(CALLOUT);
+  await dialog.getByLabel("Title").fill(`${contract.title} edited`);
+  await saveDialog(page, "Save");
+  await expect(row(page, `${contract.title} edited`)).toBeVisible();
 });
 
 test("S080: the Contracts list fits a phone with no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
   const tag = propertyTag(testInfo);
   const vendor = await vendorByApi(`E2E Vendor ${tag}`);
-  const titles = [];
+  const contracts = [];
   for (const [n, to] of [[1, 20], [2, 200], [3, 300]]) {
-    titles.push((await contractByApi(vendor, `E2E phone ${n} ${tag}`, { from_date: day(-30), to_date: day(to) })).title);
+    contracts.push(await contractByApi(vendor, `E2E phone ${n} ${tag}`, { from_date: day(-30), to_date: day(to) }));
   }
+  const titles = contracts.map((c) => c.title);
+  // S087: the first contract's machine gives it its site
+  await lineByApi(contracts[0], await machineByApi(`E2E compressor ${tag}`));
   await openContracts(page, "engineer");
   for (const title of titles) await expect(row(page, title)).toBeVisible();
   await expectNoSidewaysScroll(page);
   const isPhone = page.viewportSize().width < 768;
   const first = row(page, titles[0]);
   if (isPhone) {
-    await expect(page.locator("table thead th", { hasText: "Site" })).toBeHidden();
+    await expect(page.locator("table thead th", { hasText: "Sites" })).toBeHidden();
     await expect(page.locator("table thead th", { hasText: "From" })).toBeHidden();
     await expect(first.locator("td").nth(1).locator(".d-md-none")).toHaveText(`AMC · ${vendor.name} · SMTW`);
+    await expect(row(page, titles[1]).locator("td").nth(1).locator(".d-md-none")).toHaveText(`AMC · ${vendor.name}`);
   } else {
-    await expect(page.locator("table thead th", { hasText: "Site" })).toBeVisible();
+    await expect(page.locator("table thead th", { hasText: "Sites" })).toBeVisible();
     await expect(first.locator("td").nth(3)).toHaveText("SMTW");
+    await expect(row(page, titles[1]).locator("td").nth(3)).toHaveText("—");
   }
 });
 
@@ -282,6 +299,9 @@ async function contractWithMachine(testInfo, { onIt = true, price = null } = {})
   return { tag, vendor, contract, machine };
 }
 
+/** S087 A1: Add machine asks for the site first; a single site is chosen already, and choosing it again is harmless. */
+const chooseSite = (dialog, code) => dialog.getByLabel("Site", { exact: true }).selectOption({ label: code });
+
 const machinesCard = (page) => page.getByTestId("contract-machines");
 const machineLine = (page, machine) => machinesCard(page).getByTestId("contract-machine").filter({ hasText: machine.code });
 const historyText = (contract) => `${contract.title} (AMC, ${shown(day(-30))} to ${shown(day(300))})`;
@@ -295,6 +315,7 @@ test("S081: the engineer adds a machine to a contract; the page lists it and the
   await expectDialogFits(page);
   const dialog = await openDialog(page);
   await expect(dialog.locator(".modal-footer")).toContainText("Choose a machine");
+  await chooseSite(dialog, "SMTW");
   await dialog.getByLabel("Equipment", { exact: true }).fill(machine.name);
   await dialog.locator(".list-group-item", { hasText: machine.name }).click();
   await expect(dialog.getByTestId("picked-machine")).toContainText(`${machine.code} — ${machine.name}`);
@@ -329,21 +350,101 @@ test("S081: the manager enters a price per machine and sees the total; the engin
   await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
   await expectDialogFits(page);
   const engineerDialog = await openDialog(page);
+  await expect(engineerDialog.getByLabel("Site", { exact: true })).toBeVisible();
   await expect(engineerDialog.getByLabel("Equipment", { exact: true })).toBeVisible();
   await expect(engineerDialog.getByLabel("Price (₹, before GST)")).toHaveCount(0);
 });
 
-test("S081: a machine of another site is not offered in Add machine", async ({ page }, testInfo) => {
+test("S087: the engineer's Add machine does not offer a machine outside their units", async ({ page }, testInfo) => {
   const { tag, contract } = await contractWithMachine(testInfo, { onIt: false });
   const bricks = await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER");
-  // The manager holds both sites, so only the contract's site keeps the BRICKS machine out
+  // The engineer holds SMTW only; the contract has no site, so only the engineer's units keep BRICKS out
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  // S087 A1: the engineer's one site is chosen already, and BRICKS is not offered
+  await expect(dialog.getByLabel("Site", { exact: true })).toHaveValue(/\d+/);
+  await expect(dialog.getByLabel("Site", { exact: true }).locator("option", { hasText: "BRICKS" })).toHaveCount(0);
+  await dialog.getByLabel("Equipment", { exact: true }).fill(bricks.name);
+  await expect(dialog.getByText("No equipment found at your units.")).toBeVisible();
+  await expect(dialog.locator(".list-group-item", { hasText: bricks.name })).toHaveCount(0);
+});
+
+test("S087 A1: Add machine asks for the site first; the search is off until a site is chosen and lists only that site", async ({ page }, testInfo) => {
+  const { tag, contract, machine } = await contractWithMachine(testInfo, { onIt: false });
+  // The tag is in both names, so this search text would match both machines without the site
+  const bricks = await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER");
   await asPerson(page, "manager", `/contracts/${contract.id}`);
   await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
   await expectDialogFits(page);
   const dialog = await openDialog(page);
-  await dialog.getByLabel("Equipment", { exact: true }).fill(bricks.name);
-  await expect(dialog.getByText("No machine of SMTW matches.")).toBeVisible();
+  const search = dialog.getByLabel("Equipment", { exact: true });
+  await expect(dialog.getByTestId("site-hint")).toHaveText("Choose a site first.");
+  await expect(search).toBeDisabled();
+  await chooseSite(dialog, "BRICKS");
+  await expect(search).toBeEnabled();
+  await search.fill(tag);
+  await expect(dialog.locator(".list-group-item", { hasText: bricks.name })).toHaveCount(1);
+  await expect(dialog.locator(".list-group-item", { hasText: machine.name })).toHaveCount(0);
+  // Changing the site clears a picked machine and the search
+  await dialog.locator(".list-group-item", { hasText: bricks.name }).click();
+  await expect(dialog.getByTestId("picked-machine")).toContainText(bricks.name);
+  await chooseSite(dialog, "SMTW");
+  await expect(dialog.getByTestId("picked-machine")).toHaveCount(0);
+  await expect(dialog.getByLabel("Equipment", { exact: true })).toHaveValue("");
+  await dialog.getByLabel("Equipment", { exact: true }).fill(tag);
+  await expect(dialog.locator(".list-group-item", { hasText: machine.name })).toHaveCount(1);
   await expect(dialog.locator(".list-group-item", { hasText: bricks.name })).toHaveCount(0);
+});
+
+test("S087: the manager adds machines of SMTW and BRICKS to one contract; the page and the list show BRICKS, SMTW", async ({ page }, testInfo) => {
+  const { tag, vendor, contract, machine } = await contractWithMachine(testInfo, { onIt: false });
+  const bricks = await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER");
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  for (const node of [machine, bricks]) {
+    await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+    await expectDialogFits(page);
+    const dialog = await openDialog(page);
+    await chooseSite(dialog, node === bricks ? "BRICKS" : "SMTW");
+    await dialog.getByLabel("Equipment", { exact: true }).fill(node.name);
+    await dialog.locator(".list-group-item", { hasText: node.name }).click();
+    await expect(dialog.getByTestId("picked-machine")).toContainText(`${node.code} — ${node.name}`);
+    await saveDialog(page, "Add machine");
+    await expect(machineLine(page, node)).toContainText(`${node.code} — ${node.name}`);
+  }
+  await expect(machineLine(page, machine)).toContainText("SMTW");
+  await expect(machineLine(page, bricks)).toContainText("BRICKS");
+  await expect(machinesCard(page).locator(".card-header")).toContainText("Machines covered (2)");
+  await expect(page.locator(".text-secondary", { hasText: `${vendor.name} · BRICKS, SMTW` }).first()).toBeVisible();
+
+  await openContracts(page, "manager");
+  await expect(row(page, contract.title)).toContainText("BRICKS, SMTW");
+});
+
+test("S087: the Site filter lists the contracts with a machine at that site", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const smtw = await contractByApi(vendor, `E2E SMTW ${tag}`);
+  await lineByApi(smtw, await machineByApi(`E2E compressor ${tag}`));
+  const bricks = await contractByApi(vendor, `E2E BRICKS ${tag}`);
+  await lineByApi(bricks, await machineByApi(`E2E BRICKS pump ${tag}`, "BRICKS.FILTER"));
+  const empty = await contractByApi(vendor, `E2E no machine ${tag}`);
+
+  await openContracts(page, "manager");
+  const site = page.getByLabel("Site", { exact: true });
+  await expect(site).toHaveValue("");
+  for (const c of [smtw, bricks, empty]) await expect(row(page, c.title)).toBeVisible();
+
+  await site.selectOption({ label: "BRICKS" });
+  await expect(row(page, bricks.title)).toBeVisible();
+  await expect(row(page, smtw.title)).toHaveCount(0);
+  await expect(row(page, empty.title)).toHaveCount(0);
+
+  await site.selectOption({ label: "SMTW" });
+  await expect(row(page, smtw.title)).toBeVisible();
+  await expect(row(page, bricks.title)).toHaveCount(0);
+  await expect(row(page, empty.title)).toHaveCount(0);
 });
 
 test("S081: Remove asks first; the machine leaves the contract page and its history shows the line", async ({ page }, testInfo) => {
@@ -563,17 +664,17 @@ test("S082: the Under contract card with its warning fits a phone with no sidewa
 
 // ---------------------------------------------------------------------------
 // The contract's documents (S083, R02.3): the signed contract, its annexures and the quotes on the contract page,
-// for the site's managers only (contract:read_senior).  Each test makes its own contract, so its Documents card
-// holds only its own files.
+// for the managers only (contract:read_senior, company-wide since S087).  Each test makes its own contract, so its
+// Documents card holds only its own files.
 // ---------------------------------------------------------------------------
 
 const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
-const SIGNED_LINE = "Only the managers of SMTW see these documents and photos.";
+const SIGNED_LINE = "Only the managers see these documents and photos.";
 
 const documentsCard = (page) =>
   page.locator(".card", { has: page.locator(".card-header", { hasText: /^\s*Documents/ }) });
 
-/** A contract at SMTW by API, named with the test's tag. */
+/** A contract by API (no machine), named with the test's tag. */
 async function contractForDocuments(testInfo, label) {
   const tag = propertyTag(testInfo);
   const vendor = await vendorByApi(`E2E Vendor ${label} ${tag}`);
@@ -625,7 +726,7 @@ test("S083: a manager removes a contract document and restores it from Settings"
   await page.getByRole("searchbox", { name: "Search removed documents" }).fill(contract.title);
   const removed = page.locator("tr", { hasText: "Fuji AMC quote" });
   await expect(removed).toContainText(`Contract ${contract.title}`);
-  await expect(removed).toContainText("SMTW");
+  await expect(removed).not.toContainText("SMTW"); // S087: a contract has no site
   await removed.getByRole("button", { name: "Restore" }).click();
   await expect(page.getByText("Restored 'Fuji AMC quote'.")).toBeVisible();
   await expect(removed).toHaveCount(0);
@@ -656,7 +757,7 @@ const WAY_OUT = "To renew this contract again, set that renewal active in Master
 const chain = (page) => page.getByTestId("contract-chain");
 const renewButton = (page) => page.getByRole("button", { name: "Renew contract" });
 
-/** The tag's vendor, an AMC at SMTW from 300 days ago to 65 days ahead, and `machines` machines on it. */
+/** The tag's vendor, an AMC from 300 days ago to 65 days ahead, and `machines` SMTW machines on it. */
 async function contractToRenew(testInfo, { machines = 0, price = null } = {}) {
   const tag = propertyTag(testInfo);
   const vendor = await vendorByApi(`E2E Vendor ${tag}`);
@@ -698,7 +799,7 @@ test("S085: the engineer renews a contract; the new contract opens with its term
   await expect(dialog.getByLabel("To", { exact: true })).toHaveValue(offer.to_date);
   const codes = machines.map((m) => m.code).sort().join(", ");
   await expect(dialog.getByTestId("renewal-notice")).toContainText(`2 machines are copied: ${codes}.`);
-  await expect(dialog.getByTestId("renewal-notice")).toContainText("Prices start empty: the managers of SMTW enter them on the new contract.");
+  await expect(dialog.getByTestId("renewal-notice")).toContainText("Prices start empty: the managers enter them on the new contract.");
   const newTitle = contract.title.replace("2026–27", "2027–28");
   await dialog.getByLabel("Title").fill(newTitle);
   await saveDialog(page, "Renew contract");
@@ -753,7 +854,8 @@ test("S085: an inactive vendor is refused on renewal beside the Vendor field", a
   await expectFieldMessage(dialog, refusal);
   await vendorField.selectOption({ label: other.name });
   await saveDialog(page, "Renew contract");
-  await expect(page.locator(".text-secondary", { hasText: `${other.name} · SMTW` }).first()).toBeVisible();
+  // S087: a contract with no machine has no site, so the line under the title is the vendor alone
+  await expect(page.locator(".text-secondary", { hasText: other.name }).first()).toHaveText(other.name);
   await expect(chain(page)).toContainText(`Renews: ${contract.title}`);
 });
 
@@ -836,7 +938,7 @@ async function callByApi(node, person, tag, { minutesAgo = 60, base = thisMinute
   return ticket;
 }
 
-/** The tag's vendor, a contract at SMTW with `fields` covering one new machine in `unitCode`, and a Team record. */
+/** The tag's vendor, a contract with `fields` covering one new machine in `unitCode`, and a Team record. */
 async function callsSetUp(testInfo, { fields = {}, unitCode = "SMTW.MCC1", role = "maint_technician" } = {}) {
   const tag = propertyTag(testInfo);
   const vendor = await vendorByApi(`E2E Vendor ${tag}`);
@@ -944,6 +1046,8 @@ test("S086: the contract page warns when no Team record is linked to the vendor"
   await expect(warning).toHaveText(`No Team record is linked to ${vendor.name}. Link the vendor's technician, or a`
     + ` record such as '${vendor.name} service', in Masters › Team.`);
   const person = await teamRecordByApi(vendor, `E2E vendor tech ${tag}`, "maint_operator");
+  // S087: the sites the warning names are the machines' sites, so the contract needs an SMTW machine first
+  await lineByApi(contract, await machineByApi(`E2E compressor ${tag}`));
   await openCallsAs(page, "engineer", contract);
   await expect(warning).toHaveText(`No Team record of ${vendor.name} can be assigned at SMTW. Give one a Technician`
     + " role there in Masters › Team.");

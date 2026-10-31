@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 31-10-2026
 Track: full
-Baseline: 26810aa (HEAD: S079–S086 committed 31-10-2026, plus the status commit); depends on S088 (squash of v20–v41, coded first): the baseline moves to S088's commit when it is coded
-Status: Approved 31-10-2026 by KLA (all recommended answers, § 9); was: Gate A 31-10-2026 (review r1: 4 minor, 9 nits; r2: 2 nits; r3: 1 minor, 6 nits; all accepted; 0 blocker, 0 major)
+Baseline: f5bbb38 (HEAD: S088 committed 31-10-2026), checked by staleness review s1
+Status: Done (committed at adoption, 31-10-2026; no device check; A1 approved by the request of KLA, reviewed r3, 3 nits fixed); was: Gate B 31-10-2026 (code review r1: 1 blocker (a test-order fault from S084), 2 nits; fixed in fix round 1 and by the orchestrator; verify review r2: no blocker or major); approved 31-10-2026 by KLA (all recommended answers, § 9); was: Gate A 31-10-2026 (review r1: 4 minor, 9 nits; r2: 2 nits; r3: 1 minor, 6 nits; all accepted; 0 blocker, 0 major)
 ```
 
 # S087 — Contracts across sites
@@ -74,8 +74,11 @@ and names functions beside the lines. Names marked **(new)** do not exist yet.
 
 ### Backend (11 files)
 
-- `backend/local_db.py`: v42–v47 (`local_db.py:1387-1538`) are replaced by one entry **v50** after
-  S088's v41 (§ 4.1), with its comment; no `_PRECONDITIONS` entry (§ 4.2). `LATEST_VERSION` 50.
+- `backend/local_db.py`: v42–v47 (`local_db.py:1140-1281`) are replaced by one entry **v50** after
+  S088's v41 (§ 4.1), with its comment; no `_PRECONDITIONS` entry (`:1307`; § 4.2).
+  `LATEST_VERSION` follows the last entry (`_MIGRATIONS[-1][0]`), so it becomes 50 with no edit. The
+  header comment S088 wrote (`local_db.py:52-70`) keeps "then the later versions run" and "New
+  migrations continue after the last entry"; any line of it that names v42–v47 names v50.
 - `backend/config_rbac.py`: the four keys leave `SITE_SCOPED` (`config_rbac.py:231-235`); the comment
   at `config_rbac.py:157-162` says "Global (S087): a contract has no site". Holders unchanged.
 - `backend/auth_utils.py`: `sites_holding` (`auth_utils.py:451-456`) is removed: its four callers
@@ -154,7 +157,7 @@ and names functions beside the lines. Names marked **(new)** do not exist yet.
 `TicketContractLine.vue` does not change: it reads no site, and its `canRead` uses the ticket's site
 permissions, which hold `contract:read_basic` for every site role (§ 5.4).
 
-### Tests (19 files written, 6 removed)
+### Tests (20 files written, 6 removed)
 
 - `backend/tests/fixtures/migrations_v47.py` **(new)**: the frozen texts of v42–v47 (§ 4.1).
 - `backend/tests/test_migration_v50.py` **(new)** (§ 8.1); `test_migration_v42.py` …
@@ -203,17 +206,20 @@ permissions, which hold `contract:read_basic` for every site role (§ 5.4).
   - § SMTW-Review, the new point of § 8.6.
   - **Version mentions** (`(v46; the To date reminded for …)` in *Notifications*, `(v47)` in
     *Contract renewal (S085)*): **kept as they are**, the least churn and the same rule as S088's
-    `(v40; …)`: they name the step's original migration. *Migrations (S025)* (as S088 leaves it) gains
-    one sentence: "v42–v47 (S079–S085, never released) and S087's change were squashed into **v50**
-    (S087, 31-10-2026); a note that names v42–v47 names the step's original migration, whose text is
-    in `backend/tests/fixtures/migrations_v47.py`." § SMTW-Review *Migrations* gets the same fact if
-    S088 lists its squash there. `docs/schema/notes.json`'s version tags (`v43`, `v44`, `v46`, `v47`)
+    `(v40; …)`: they name the step's original migration. The bullet **Migrations (S025, S088)**
+    becomes **Migrations (S025, S088, S087)** and gains one sentence: "v42–v47 (S079–S085, never
+    released) and S087's change were squashed into **v50** (S087, 31-10-2026); a note that names
+    v42–v47 names the step's original migration."; its "The old texts live only in
+    `backend/tests/fixtures/migrations_v41.py` (frozen; it starts at v20)" becomes "The old texts live
+    in `backend/tests/fixtures/migrations_v41.py` (v20–v41) and `backend/tests/fixtures/migrations_v47.py`
+    (v42–v47), frozen". § SMTW-Review *Migrations* (which lists S088's squash: "`_MIGRATIONS` starts at
+    v41 …") gains "v42–v47 squashed into v50 (S087), their texts in `migrations_v47.py`". `docs/schema/notes.json`'s version tags (`v43`, `v44`, `v46`, `v47`)
     stay under the same rule; only the lines this step rewrites name v50.
 - `docs/steps/device-checks.md`: no row (§ 8.5).
 - `docs/roadmap/R02-amc-contracts.md`: not edited by the coder; the orchestrator records in R02's log
   that Q1.5 is reversed by S087 (and that D5's and D10's "of the contract's site" no longer hold).
 
-**File count:** 40 code and test files written (11 backend, 10 frontend, 19 test files) and 6 test files removed, 3 docs plus the
+**File count:** 41 code and test files written (11 backend, 10 frontend, 20 test files) and 6 test files removed, 3 docs plus the
 generated schema docs. Over the ~25 guide: § 9 Q5 proposes a split line.
 
 ## 4. Data model
@@ -222,11 +228,11 @@ generated schema docs. Over the ~25 guide: § 9 Q5 proposes a split line.
 
 S088 (coded **before** S087) squashes the released v20–v41 into one entry v41. S087 then replaces
 v42–v47 (S079–S085, never released) and its own planned change with **one entry, v50**, that holds
-the final R02 schema. `LATEST_VERSION` becomes 50. **Why 50:** a squashed entry is numbered above the
+the final R02 schema. `LATEST_VERSION` follows the last entry, so it is 50. **Why 50:** a squashed entry is numbered above the
 highest version any database has recorded (SMTW-WebApp-Base § Local DB Migration Pattern › Migration
 squashing); dev and test databases hold up to v47; v48 would also qualify, and v50 is the number
 KLA named (F12). The runner applies every version not in `db_version` (`local_db.init_db`,
-`local_db.py:1735`), so the gap v42–v49 is allowed and the old v42–v47 rows of a dev database stay
+`local_db.py:1412`), so the gap v42–v49 is allowed and the old v42–v47 rows of a dev database stay
 as history.
 
 **What v42–v47 did** (`backend/local_db.py`, the six entries before `LATEST_VERSION`):
@@ -276,13 +282,12 @@ as history.
   `alerts.contract_scan_candidates`). Tens of rows: one key is enough.
 - **The old texts** of v42–v47 move, frozen and never edited, to
   `backend/tests/fixtures/migrations_v47.py` **(new)** (`MIGRATIONS_V42_V47`, the six tuples as they
-  stand today, with their comments), as `fixtures/migrations_v13.py` holds v1–v13 and S088's fixture
-  holds v20–v41. The upgrade tests build v47's shape from it (§ 8.1).
+  stand today, with their comments), as S088's `fixtures/migrations_v41.py` holds v20–v41. The upgrade tests build v47's shape from it (§ 8.1).
 - **Behaviour of `DROP FOREIGN KEY IF EXISTS`, `DROP INDEX IF EXISTS` and `DROP COLUMN IF EXISTS`**
   on a table without them: a Note (1091), no error. Checked on MariaDB 11.4 in brief review round 3.
   `DROP INDEX IF EXISTS` is v47's form and `DROP CONSTRAINT IF EXISTS` v45's; `DROP FOREIGN KEY IF
-  EXISTS` and `DROP COLUMN IF EXISTS` are new to `_MIGRATIONS` (the second is in the v13 fixture
-  only). § 8.1's tests keep the record.
+  EXISTS` and `DROP COLUMN IF EXISTS` are in neither `_MIGRATIONS` nor `migrations_v41.py`;
+  `DROP COLUMN IF EXISTS` was last used in v1–v13 (git history). § 8.1's tests keep the record.
 
 ### 4.2 Production, dev databases and preconditions
 
@@ -611,11 +616,14 @@ the server ignores meanwhile.
 
 ### 8.1 Migration (`backend/tests/test_migration_v50.py`, new)
 
-Built on the upgrade database and the helpers S088 leaves (*to verify* after S088):
-`tests/migration_helpers.py` (`UPGRADE_CONFIG`, `_recreate`, `_run`, `_migrate`, `_rows`, `_schema`,
-`_versions`; S088 § 3) and `tests/test_migration_v36.py` (`_keys`, `_foreign_keys` stay there; S088
-§ 7 D7). `V41` = S088's squashed entry;
-`V50` = `_MIGRATIONS` (v41 and v50); the v47 shape = `V41` then `MIGRATIONS_V42_V47` from the fixture.
+Built on the upgrade database and S088's helpers: `tests/migration_helpers.py` (`UPGRADE_CONFIG`,
+`_recreate`, `_run`, `_migrate`, `_rows`, `_schema`, `_versions`, and `SQUASHED`, the v41 entry,
+imported as `test_migration_v36.py` and the squash test do) and `tests/test_migration_v36.py`
+(`_keys`, `_foreign_keys`). `V50` = `_MIGRATIONS` (v41 and v50). **The v47 shape** is built in this
+order: `_recreate()`, `_migrate(SQUASHED)`, then `_migrate(MIGRATIONS_V42_V47)` (or one list
+`[*SQUASHED, *MIGRATIONS_V42_V47]`); never the v42–v47 fixture on an empty database. S088's one-call
+rule is about its own fixture; S087's holds no v41, and `_v41_squash_check` is keyed on 41 only, so
+it is not consulted once 41 is recorded (`init_db`, `local_db.py:1412-1416`).
 The schema comparison reads `information_schema` (columns with their order and types, keys, foreign
 keys, CHECKs), as `_schema()` does.
 - `test_a_fresh_database_gets_v50` (the fresh path, (a)): `contracts` has no `site_id`; `_keys` has
@@ -649,7 +657,9 @@ keys, CHECKs), as `_schema()` does.
   - from `test_migration_v45.py`: the owner CHECK refusals;
   - from `test_migration_v47.py`: `test_a_second_renewal_of_one_contract_is_refused`,
     `test_many_contracts_renew_nothing` (many NULLs pass the unique key).
-- `test_a_half_applied_v50_converges` **(new)**, on the pattern of `test_migration_v45.py:99-109`:
+- `test_a_half_applied_v50_converges` **(new)**, on the pattern of
+  `test_migration_squash_v41.py::test_a_half_applied_v41_re_runs` (delete the `db_version` row, run
+  again, compare `_schema()`), plus the CHECK dropped by hand as the old v45 test did:
   v50 applied; the owner CHECK dropped by hand and the `db_version` row 50 deleted; v50 run again:
   `_schema()` equals the fresh build's, and the CHECK clause names `contract_id`. This covers the
   window between step 8's drop and add (and, by the same re-run, a stop inside step 5), which
@@ -754,6 +764,13 @@ that assert a site rule, a site field or a site text break:
   `test_it_admin_may_not_restore_or_purge` (`:534`; the line at `:539`): IT admin still refused, but its last line's
   `case.elsewhere` (a manager of another site) now gets 200 on restore, not 404.
 - `test_equipment_api.py`: `TestContractFilter::test_no_read_basic_at_the_contract_s_site` (flips).
+- `test_migration_squash_v41.py` (S088): `test_production_s_v41_gets_v42_to_v47` breaks (it asserts
+  `_versions() == [*range(20, 48)]`). **Kept, redirected:** renamed `test_production_s_v41_gets_v50`;
+  asserts `_versions() == [*range(20, 42), 50]`, the v41 description kept, every row kept, the schema
+  equal to a fresh `[v41, v50]` build; its docstring follows. It is the strongest production test: a
+  database built from the released v20–v41 texts with a ticket, an improvement and a lesson. § 8.1's
+  `test_production_at_v41_gets_the_fresh_schema` stays as the targeted check of what v50 adds. The
+  file's other five tests pass unchanged.
 - `test_modules.py` (`LATEST_VERSION` 50), `test_schema_docs_shell.py`: green once `tooling\schema-docs.bat
   write` has run. `conftest.py` `_TABLES`: no new table.
 - `frontend/tests/contractLabels.test.js`: `contractBody` tests (no `site_id`), "contractForm fills
@@ -839,7 +856,7 @@ None: a field gone, a column and texts, which a browser engine judges.
 - **Q4. Remove a machine: any editor (recommended, unchanged S081)** — or only one inside the
   remover's units? (a) Unchanged: the history line records who removed it. (b) The SMTW engineer
   could no longer take a moved-away machine off; a unit check on a write S081 kept simple.
-- **Q5. One step or two?** 40 code and test files, 6 removed (§ 3). **Recommended: one step.** The API's shape
+- **Q5. One step or two?** 41 code and test files, 6 removed (§ 3). **Recommended: one step.** The API's shape
   (the list's flags, `site_codes`, no `site_id`) and the screens change together; a split needs a
   temporary shape. **The split line, if the orchestrator prefers it:** S087 = migration, keys,
   backend routes, alerts, documents and all backend tests, with the list still sending per-site flags
@@ -860,10 +877,11 @@ None: a field gone, a column and texts, which a browser engine judges.
 - **A4. MariaDB's `DROP FOREIGN KEY IF EXISTS`, `DROP INDEX IF EXISTS` and `DROP COLUMN IF EXISTS`**
   give a Note, no error, on a table without them: checked on MariaDB 11.4 in brief review round 3
   (§ 4.1); § 8.1's tests keep the record.
-- **A5. S088 is coded and committed first.** S087's coder starts from it: `_MIGRATIONS` then holds
-  v41 (squashed) and v50; the migration test helpers are where S088 left them; S088's fixture
-  (v20–v41) builds the v41 shape if its tests need one. If S088 is not done, S087 waits (the orchestrator
-  re-checks this brief against S088's commit in a staleness review).
+- **A5. S087 is coded on the working tree with S088 in it** (S088 coded, at gate B, snapshot
+  `refs/steps/S088`, f5bbb38, uncommitted; Baseline above). S088 is committed before S087's gate B
+  snapshot, so S088's commit lands first and S087's diff is its own. `_MIGRATIONS` holds v41
+  (squashed) and v50; the helpers are in `tests/migration_helpers.py`; S088's fixture
+  `migrations_v41.py` (v20–v41) holds the released texts.
 - **Plan and roadmap departure** (recorded): Plan.MD § 2 item 9's "one site per contract" and R02
   Q1.5 (a) are reversed; D5 and D10's "of the contract's site" no longer hold; the orchestrator
   records them in R02's log at gate A.
@@ -873,7 +891,24 @@ None: a field gone, a column and texts, which a browser engine judges.
 
 ## 10. Amendments
 
-None.
+### A1 — Add machine asks for the site first (KLA, 31-10-2026; approved by the request)
+
+KLA: "In Add machine, before Equipment code is input, ask the user to select the site. It will help
+narrow down the list for the equipment box."
+
+- **What:** the *Add machine* dialog (`ContractMachineDialog.vue`) shows a **Site** select above the
+  equipment search. Its options are the active sites where the adder has a unit (the adder's units,
+  as `accessible_unit_ids` gives them; all active sites for a user with every unit). With one site,
+  it is chosen already. The search (`EquipmentPicker`) stays disabled with the hint "Choose a site
+  first." until a site is chosen, and then searches only that site (`site_id` on
+  `GET /api/equipment`, the filter that exists). Changing the site clears the search and any machine
+  picked.
+- **Departure from F10:** `EquipmentPicker`'s `siteId` prop comes back (S087 removed it as unused);
+  `emptyText` stays removed unless the coder needs it for "No machine of SMTW matches.".
+- **No API change:** the route's rules are unchanged (any site, inside the adder's units). The site is
+  a filter of the screen only and is not sent with the line.
+- **Tests:** an e2e test (contracts spec): open *Add machine*, the search is disabled, choose a site,
+  search, only that site's machines are listed; the existing Add machine tests choose the site first.
 
 ## Review log
 
@@ -908,3 +943,11 @@ dependency), § 1 item 1, § 2 (ISO 9001 line), § 3 (Backend `local_db.py`, Tes
 |---|---|
 | BR3-01 minor | Accepted (a): § 8.1 lists the constraint and data tests moved from `test_migration_v42.py`, `_v43.py`, `_v44.py`, `_v45.py`, `_v47.py` to `test_migration_v50.py` on the fresh build, with an `_add_contract` without `site_id`, and adds `test_a_half_applied_v50_converges` on the `test_migration_v45.py:99-109` pattern. |
 | BR3-02…BR3-07 nits | Accepted: step 5 is seven statements (BR3-02, § 4.1); the `IF EXISTS` forms stated exactly, checked in round 3 (BR3-03, § 4.1, § 9 A4); the `"migration"` line in the schema diff (BR3-04, § 8.1); S088's helper module named (BR3-05, § 8.1); row (c)'s version ranges (BR3-06, § 4.2); BR3-07 (`INDEX.md`) is the orchestrator's, no brief change. |
+
+### Staleness s1 — 2-brief-review-s1.md (Fable), answered 31-10-2026
+
+| Finding | Answer |
+|---|---|
+| BS1-01 minor | Accepted (a): `test_migration_squash_v41.py::test_production_s_v41_gets_v42_to_v47` kept, renamed `test_production_s_v41_gets_v50` and redirected (§ 8.3); § 3's count is 20 test files written, 41 code and test files (§ 3, § 9 Q5). |
+| BS1-02 minor | Accepted (b): Baseline `26810aa + uncommitted S088 (refs/steps/S088, f5bbb38)`; A5 reworded: S087 is coded on the working tree with S088 in it, and S088 is committed before S087's gate B snapshot (header, § 9 A5). |
+| BS1-03…BS1-08 nits | Accepted: `local_db.py` anchors and S088's header comment (BS1-03, § 3, § 4.1); the v13 fixture sentences (BS1-04, § 4.1); `SQUASHED` and the build order of the v47 shape (BS1-05, § 8.1); the half-applied test's pattern anchored to `test_a_half_applied_v41_re_runs` (BS1-06, § 8.1); the *Migrations (S025, S088)* bullet and § SMTW-Review *Migrations* lines (BS1-07, § 3 Docs); `LATEST_VERSION` follows the last entry (BS1-08, § 3). |

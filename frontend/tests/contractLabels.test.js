@@ -1,11 +1,11 @@
 /**
  * Tests for utils/contractLabels.js (S080): the type and status labels, and the dialog's body, which leaves
- * the call-out number and the cost note out unless the chosen site's flags allow them.  S081: the rupees, the
+ * the call-out number and the cost note out unless the reader's flags allow them.  S081: the rupees, the
  * coverage lines, the response time, the overlap line and the machine dialog's body, which never sends a price
  * for an editor without the key.  S082: the Under contract card's headline, call line, tel: link and via line, and
  * the list's Contract filter choices.  S085: the dialog's form from a contract, the renewal's form, its notice and
  * the chain line.  S086: the breakdown calls' lines (one call's figures, the total, the calls used), the vendor
- * warning and the ticket's contract line.
+ * warning and the ticket's contract line.  S087: a contract has no site; siteCodesText names its machines' sites.
  */
 
 import { describe, expect, it } from "vitest";
@@ -33,6 +33,7 @@ import {
   renewalNotice,
   responseText,
   showsDoNotRepair,
+  siteCodesText,
   statusBadgeClass,
   telHref,
   ticketContractLine,
@@ -41,7 +42,7 @@ import {
 } from "../src/utils/contractLabels";
 
 const FORM = {
-  site_id: 1, vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27", contract_number: "  ",
+  vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27", contract_number: "  ",
   from_date: "2026-04-01", to_date: "2027-03-31", covers_labour: true, covers_parts: false,
   covers_consumables: false, covers_breakdown_calls: false, breakdown_calls_per_year: 4, covered_text: " Labour ",
   not_covered_text: "", pm_visits_per_year: "4", response_hours: "", only_vendor_repairs: true,
@@ -71,7 +72,7 @@ describe("contractBody", () => {
   it("turns empty texts into null, numbers into numbers and clears calls without the tick", () => {
     const body = contractBody(FORM, { can_read_callout: false, can_read_cost: false });
     expect(body).toEqual({
-      site_id: 1, vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27",
+      vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27",
       from_date: "2026-04-01", to_date: "2027-03-31", contract_number: null, covered_text: "Labour",
       not_covered_text: null, notes: null, pm_visits_per_year: 4, response_hours: null,
       breakdown_calls_per_year: null, covers_labour: true, covers_parts: false, covers_consumables: false,
@@ -223,7 +224,7 @@ describe("the Under contract card (S082)", () => {
 describe("the renewal (S085)", () => {
   // A detail as the API sends it to an engineer: no cost note, a call-out number, ticks as 0/1
   const DETAIL = {
-    id: 7, site_id: 1, site_code: "SMTW", vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27",
+    id: 7, site_codes: ["SMTW"], vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27",
     contract_number: "AC/17", from_date: "2026-04-01", to_date: "2027-03-31", covers_labour: 1, covers_parts: 0,
     covers_consumables: 0, covers_breakdown_calls: 1, breakdown_calls_per_year: 4, covered_text: null,
     not_covered_text: "Filters", pm_visits_per_year: 4, response_hours: null, only_vendor_repairs: 1,
@@ -233,7 +234,7 @@ describe("the renewal (S085)", () => {
 
   it("contractForm fills every field of the empty form", () => {
     const form = contractForm(DETAIL);
-    expect(Object.keys(form).sort()).toEqual(["contract_type", "site_id", ...Object.keys(EMPTY_CONTRACT_FORM)].sort());
+    expect(Object.keys(form).sort()).toEqual(["contract_type", ...Object.keys(EMPTY_CONTRACT_FORM)].sort());
     expect(form.covers_labour).toBe(true);
     expect(form.covers_parts).toBe(false);
     expect(form.covered_text).toBe("");
@@ -247,7 +248,7 @@ describe("the renewal (S085)", () => {
     expect(form.cost_note).toBe("");
     expect(form.title).toBe("Atlas Copco AMC 2026–27");
     expect(form.callout_number).toBe("+91 00000 00000");
-    expect(form.site_id).toBe(1);
+    expect("site_id" in form).toBe(false);
     const late = renewalForm({ ...DETAIL, renewal: { from_date: null, to_date: null, machines: [], skipped: [] } });
     expect([late.from_date, late.to_date]).toEqual(["", ""]);
     const { callout_number: _gone, ...noCallout } = DETAIL;
@@ -257,30 +258,26 @@ describe("the renewal (S085)", () => {
   it("renewalNotice names the machines copied and skipped", () => {
     const renewal = {
       machines: [{ equipment_id: 1, code: "CMP001" }, { equipment_id: 2, code: "CMP002" }],
-      skipped: [
-        { equipment_id: 4, code: "CMP004", reason: "scrapped" },
-        { equipment_id: 5, code: "CMP005", reason: "now at BRICKS" },
-      ],
+      skipped: [{ equipment_id: 4, code: "CMP004", reason: "scrapped" }],
     };
-    expect(renewalNotice({ ...renewal, skipped: [] }, false, "SMTW")).toBe(
+    expect(renewalNotice({ ...renewal, skipped: [] }, false)).toBe(
       "The new contract starts the day after this one ends. 2 machines are copied: CMP001, CMP002. Prices start" +
-        " empty: the managers of SMTW enter them on the new contract. Documents stay on this contract."
+        " empty: the managers enter them on the new contract. Documents stay on this contract."
     );
-    expect(renewalNotice(renewal, true, "SMTW")).toBe(
+    expect(renewalNotice(renewal, true)).toBe(
       "The new contract starts the day after this one ends. 2 machines are copied: CMP001, CMP002. Not copied:" +
-        " CMP004 (scrapped), CMP005 (now at BRICKS). Prices start empty: enter them on the new contract. Documents" +
-        " stay on this contract."
+        " CMP004 (scrapped). Prices start empty: enter them on the new contract. Documents stay on this contract."
     );
-    expect(renewalNotice({ machines: [renewal.machines[0]], skipped: [] }, true, "SMTW")).toContain(
+    expect(renewalNotice({ machines: [renewal.machines[0]], skipped: [] }, true)).toContain(
       "1 machine is copied: CMP001."
     );
-    expect(renewalNotice({ machines: [], skipped: [] }, false, "SMTW")).toBe(
+    expect(renewalNotice({ machines: [], skipped: [] }, false)).toBe(
       "The new contract starts the day after this one ends. This contract has no machines; the new one starts with" +
         " none. Documents stay on this contract."
     );
-    expect(renewalNotice({ machines: [], skipped: renewal.skipped }, false, "SMTW")).toBe(
-      "The new contract starts the day after this one ends. No machine is copied: CMP004 (scrapped)," +
-        " CMP005 (now at BRICKS). Documents stay on this contract."
+    expect(renewalNotice({ machines: [], skipped: renewal.skipped }, false)).toBe(
+      "The new contract starts the day after this one ends. No machine is copied: CMP004 (scrapped)." +
+        " Documents stay on this contract."
     );
   });
 
@@ -332,15 +329,26 @@ describe("breakdown calls and the ticket's contract line (S086)", () => {
     expect(callsUsedLine(null)).toBeNull();
   });
 
-  it("vendorWarningText names the vendor, the site and what to do", () => {
-    expect(vendorWarningText("no_linked", "Atlas Copco", "SMTW")).toBe(
+  it("vendorWarningText names the vendor, the sites and what to do", () => {
+    expect(vendorWarningText("no_linked", "Atlas Copco", [])).toBe(
       "No Team record is linked to Atlas Copco. Link the vendor's technician, or a record such as 'Atlas Copco" +
         " service', in Masters › Team.",
     );
-    expect(vendorWarningText("no_assignable", "Atlas Copco", "SMTW")).toBe(
+    expect(vendorWarningText("no_assignable", "Atlas Copco", ["SMTW"])).toBe(
       "No Team record of Atlas Copco can be assigned at SMTW. Give one a Technician role there in Masters › Team.",
     );
-    expect(vendorWarningText(null, "Atlas Copco", "SMTW")).toBeNull();
+    expect(vendorWarningText("no_assignable", "VP Power", ["BRICKS", "SMTW-KP"])).toBe(
+      "No Team record of VP Power can be assigned at BRICKS, SMTW-KP. Give one a Technician role there in"
+        + " Masters › Team.",
+    );
+    expect(vendorWarningText(null, "Atlas Copco", [])).toBeNull();
+  });
+
+  it("siteCodesText names the machines' sites, or a dash for none (S087)", () => {
+    expect(siteCodesText(["BRICKS", "SMTW"])).toBe("BRICKS, SMTW");
+    expect(siteCodesText(["SMTW"])).toBe("SMTW");
+    expect(siteCodesText([])).toBe("—");
+    expect(siteCodesText(undefined)).toBe("—");
   });
 
   it("ticketContractLine adds the response time and the breakdown calls to S082's headline", () => {

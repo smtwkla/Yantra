@@ -6,13 +6,14 @@
  * open it ("Do not repair", D9).
  *
  * It loads its own list (`GET /api/contracts/for-equipment/<node_id>`), as LessonsCard loads the
- * lessons, and only when the node's site permissions hold contract:read_basic. With no contract it
- * shows nothing, except to a contract:edit holder at the node's site, who sees "No contract on this
- * machine." The call-out number comes only to contract:read holders (the backend leaves it out for
+ * lessons, and only for a holder of contract:read_basic. With no contract it shows nothing, except to
+ * a contract:edit holder, who sees "No contract on this machine." The contract keys are company-wide
+ * (S087), so both checks read the user's permissions, not the node's site's. The call-out number comes only to contract:read holders (the backend leaves it out for
  * others); the rules of the text are in utils/contractLabels.js.
  */
 import { computed, ref, watch } from "vue";
 import { apiGet } from "../../api";
+import { userPermissions } from "../../stores/auth";
 import {
   DO_NOT_REPAIR, callLine, cardHeadline, coverageLines, isEnded, responseText, showsDoNotRepair, statusBadgeClass, telHref,
   viaText,
@@ -26,8 +27,8 @@ const items = ref(null); // null while loading or not asked
 const loadError = ref("");
 let loadSeq = 0;
 
-const canRead = computed(() => (props.node.permissions ?? []).includes("contract:read_basic"));
-const canEdit = computed(() => (props.node.permissions ?? []).includes("contract:edit"));
+const canRead = computed(() => userPermissions.value.includes("contract:read_basic"));
+const canEdit = computed(() => userPermissions.value.includes("contract:edit"));
 
 const visible = computed(() => {
   if (!canRead.value) return false;

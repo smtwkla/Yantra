@@ -2,7 +2,9 @@
 status from the dates and the Status filter; S081's machine line, its price and the history text (S081 § 5.1,
 § 5.3); S082's card items and the list's Contract filter (S082 § 5.1, § 5.4); S085's renewal: the proposed period,
 the machines copied and skipped, the body and the refusals' texts (S085 § 5.2-§ 5.5); S086's breakdown calls: one
-call's figures, the total, the calls used and the vendor warning (S086 § 5.2-§ 5.4).  No database.  Phone values are
+call's figures, the total, the calls used and the vendor warning (S086 § 5.2-§ 5.4); S087: no site field, the
+Contract filter without a site, the renewal copying every line not scrapped, the warning per site and the line-sites
+SQL (S087 § 8.2).  No database.  Phone values are
 obviously fake, never a real number."""
 
 from datetime import date, datetime, timedelta
@@ -12,17 +14,17 @@ import pytest
 
 from contracts_core import (
     CALLS_USED_MAX_DAYS, CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS,
-    FROM_AFTER_TO, LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE,
+    FROM_AFTER_TO, LINE_GATED_FIELDS, LINE_SITE_JOINS, LINE_SITES_SQL, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE,
     STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed,
     breakdown_calls_error, call_figures, calls_total, calls_used, card_items, contract_status, covered_sql,
-    event_text, newest_end_first, parse_price, period_error, renew_site_inactive, renewal_lines, renewal_period,
-    status_bounds, validate_contract, validate_line, validate_renewal, vendor_warning,
+    event_text, newest_end_first, parse_price, period_error, renewal_lines, renewal_period,
+    status_bounds, validate_contract, validate_line, vendor_warning,
 )
 from masters_core import PHONE_RULE
 from tickets_core import ticket_times
 
 TODAY = date(2026, 10, 30)
-VALID = {"site_id": 1, "vendor_id": 2, "contract_type": "amc", "title": "Atlas Copco AMC 2026–27",
+VALID = {"vendor_id": 2, "contract_type": "amc", "title": "Atlas Copco AMC 2026–27",
          "from_date": "2026-04-01", "to_date": "2027-03-31"}
 
 
@@ -52,7 +54,6 @@ class TestFields:
 
     def test_every_required_field_missing_on_a_post_says_what_to_do(self):
         assert _errors({}) == [
-            {"field": "site_id", "message": "Choose a site."},
             {"field": "vendor_id", "message": VENDOR_MISSING},
             {"field": "contract_type", "message": "Choose a type."},
             {"field": "title", "message": "Enter a title."},
@@ -77,8 +78,6 @@ class TestFields:
         assert _error_of("contract_type", "lease") == "Choose a type."
 
     def test_ids_are_whole_numbers(self):
-        assert _error_of("site_id", True) == "Choose a site."
-        assert _error_of("site_id", "1") == "Choose a site."
         assert _error_of("vendor_id", 0) == VENDOR_MISSING
         assert _clean("vendor_id", 7) == 7
 
@@ -337,18 +336,13 @@ class TestCardItems:
 
 class TestCoveredSql:
 
-    @pytest.mark.parametrize("site_ids", [[7], [7, 8, 9]])
-    def test_under_and_not_under(self, site_ids):
-        marks_ = ", ".join(["%s"] * len(site_ids))
+    def test_under_and_not_under(self):
         exists = ("EXISTS (SELECT 1 FROM contract_equipment ce JOIN contracts ct ON ct.id = ce.contract_id"
                   " WHERE ce.equipment_id IN (e.id, e.parent_id, p.parent_id) AND ct.active = 1"
-                  f" AND ct.from_date <= %s AND ct.to_date >= %s AND ct.site_id IN ({marks_}))")
-        assert covered_sql("under", site_ids, TODAY) == (exists, [TODAY, TODAY, *site_ids])
-        assert covered_sql("not_under", site_ids, TODAY) == (f"NOT {exists}", [TODAY, TODAY, *site_ids])
-
-    def test_no_site(self):
-        assert covered_sql("under", [], TODAY) == ("0 = 1", [])
-        assert covered_sql("not_under", [], TODAY) == ("1 = 1", [])
+                  " AND ct.from_date <= %s AND ct.to_date >= %s)")
+        assert covered_sql("under", TODAY) == (exists, [TODAY, TODAY])
+        assert covered_sql("not_under", TODAY) == (f"NOT {exists}", [TODAY, TODAY])
+        assert " IN (%s" not in exists and "site_id" not in exists
 
     def test_the_filters(self):
         assert COVERAGE_FILTERS == ("under", "not_under")
@@ -394,38 +388,25 @@ class TestRenewal:
         assert _add_months(_d("15-11-2027"), 3) == _d("15-02-2028")
 
     def test_renewal_lines(self):
-        def line(equipment_id, code, lifecycle="in_service", at_site=True, site_code="SMTW"):
-            return {"equipment_id": equipment_id, "code": code, "lifecycle": lifecycle,
-                    "at_contract_site": at_site, "site_code": site_code}
+        """S087 § 5.5: only a scrapped machine is skipped; a line at another site is copied (F6)."""
+        def line(equipment_id, code, lifecycle="in_service"):
+            return {"equipment_id": equipment_id, "code": code, "lifecycle": lifecycle}
         copied, skipped = renewal_lines([
             line(1, "CMP001"), line(2, "CMP002", "standby"), line(3, "CMP003", "out_of_use"),
-            line(4, "CMP004", "scrapped"), line(5, "CMP005", at_site=False, site_code="BRICKS"),
-            line(6, "CMP006", "scrapped", at_site=False, site_code="BRICKS"),
+            line(4, "CMP004", "scrapped"), {**line(5, "CMP005"), "site_code": "BRICKS"},
         ])
         assert copied == [{"equipment_id": 1, "code": "CMP001"}, {"equipment_id": 2, "code": "CMP002"},
-                          {"equipment_id": 3, "code": "CMP003"}]
-        assert skipped == [{"equipment_id": 4, "code": "CMP004", "reason": "scrapped"},
-                           {"equipment_id": 5, "code": "CMP005", "reason": "now at BRICKS"},
-                           {"equipment_id": 6, "code": "CMP006", "reason": "scrapped"}]
+                          {"equipment_id": 3, "code": "CMP003"}, {"equipment_id": 5, "code": "CMP005"}]
+        assert skipped == [{"equipment_id": 4, "code": "CMP004", "reason": "scrapped"}]
         assert renewal_lines([]) == ([], [])
 
-    def test_validate_renewal(self):
-        body = {key: value for key, value in VALID.items() if key != "site_id"}
-        clean, errors = validate_renewal(body, False)   # creating is ignored: always a create
-        assert errors == [] and "site_id" not in clean and clean["title"] == VALID["title"]
-        clean, errors = validate_renewal({**body, "site_id": 99}, True)
-        assert errors == [] and "site_id" not in clean
-        assert validate_renewal({**body, "title": ""}, True)[1] == [{"field": "title", "message": "Enter a title."}]
-        clean, errors = validate_renewal({**body, "active": 0, "renewal_of_id": 5}, True)
-        assert errors == [] and "active" not in clean and "renewal_of_id" not in clean
-        # A create's required fields stay required
-        assert [e["field"] for e in validate_renewal({}, True)[1]] == [
-            "vendor_id", "contract_type", "title", "from_date", "to_date"]
+    def test_a_renewal_body_ignores_the_site_and_the_chain(self):
+        """The renewal is validated as a create (S087: validate_renewal removed with its one job, the site)."""
+        clean, errors = validate_contract({**VALID, "site_id": 99, "active": 0, "renewal_of_id": 5}, True)
+        assert errors == [] and not {"site_id", "active", "renewal_of_id"} & set(clean)
 
     def test_the_messages(self):
         assert RENEW_INACTIVE == "This contract is inactive. Set it active in Masters › Contracts, then renew it."
-        assert renew_site_inactive("SMTW") == (
-            "SMTW is inactive. Set it active in Masters › Sites, then renew the contract.")
         assert already_renewed("Atlas Copco AMC 2027–28") == (
             "This contract is already renewed: Atlas Copco AMC 2027–28. Open that contract to change it.")
         assert RENEWAL_RACE == "This contract is already renewed. Reload the page to see the renewal."
@@ -502,7 +483,22 @@ class TestBreakdownCalls:
         assert calls_used(1, 1, leap_from, leap_from, True) == {"count": 1, "agreed": 1, "over": False,
                                                                 "per_year_only": False}
 
-    def test_vendor_warning(self):
-        assert vendor_warning(0, 0) == "no_linked"
-        assert vendor_warning(2, 0) == "no_assignable"
-        assert vendor_warning(2, 1) is None
+    def test_vendor_warning_per_site(self):
+        """S087 § 5.7: no linked record; the sites of the lines with no assignable one, sorted; else None."""
+        assert vendor_warning(0, {"SMTW": 0}) == ("no_linked", [])
+        assert vendor_warning(2, {"SMTW": 1, "SMTW-KP": 0, "BRICKS": 0}) == ("no_assignable", ["BRICKS", "SMTW-KP"])
+        assert vendor_warning(2, {"SMTW": 1, "BRICKS": 3}) is None
+        # No line, no site: only no_linked can show
+        assert vendor_warning(0, {}) == ("no_linked", [])
+        assert vendor_warning(2, {}) is None
+
+
+class TestLineSites:
+
+    def test_line_sites_sql_names_no_classes_alias(self):
+        """Not NODE_JOINS: its equipment_classes alias ``c`` would meet contracts ``c`` (S087 § 5.2)."""
+        for sql in (LINE_SITE_JOINS, LINE_SITES_SQL):
+            assert " c " not in sql and "equipment_classes" not in sql
+        assert "COALESCE(gp.unit_id, p.unit_id, e.unit_id)" in LINE_SITE_JOINS
+        assert LINE_SITES_SQL.startswith("SELECT DISTINCT s.id, s.code FROM contract_equipment ce")
+        assert LINE_SITES_SQL.endswith(" WHERE ce.contract_id = %s ORDER BY s.code")

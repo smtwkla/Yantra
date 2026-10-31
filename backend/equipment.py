@@ -69,14 +69,14 @@ A write with a model never locks a type: it comes from the model, whose type nev
 - contracts.py (S080, S081) locks one contracts row FOR UPDATE first in its transaction; then a
   contract_equipment row FOR UPDATE (a price change or a removal), the vendor row LOCK IN SHARE MODE (a
   vendor change), or the node (1) LOCK IN SHARE MODE (a machine added), and the foreign-key shared locks
-  of its inserts; a contract create takes the site and the vendor LOCK IN SHARE MODE and locks no
+  of its inserts; a contract create takes the vendor LOCK IN SHARE MODE and locks no
   contract row; it inserts equipment_events lines.  Only contracts.py's functions and the reminder scan
   (alerts.lock_contract_for_scan, S084) lock contracts rows, and only contracts.py's functions
   contract_equipment rows (documents.py calls lock_contract_for_change, S083); they take nothing
   exclusive outside them, so they add no lock cycle.  The scan locks several contract rows in id
   order and writes only their reminder columns and task_queue rows; every route holds at most one
   existing contract row (the renewal also inserts one), taken first.  The renewal (S085) locks the
-  old contract FOR UPDATE first, then the site, the vendor and the covered nodes (1) LOCK IN SHARE
+  old contract FOR UPDATE first, then the vendor and the covered nodes (1) LOCK IN SHARE
   MODE, the nodes in id order; it inserts the new contract and its lines, so it never waits on a
   second existing contract row.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
@@ -153,7 +153,7 @@ from api_common import (
 )
 import asset_list_core
 from asset_list_core import build_asset_list
-from auth_utils import permissions_at_site, require_perm, require_perm_at, sites_holding, user_unit_ids
+from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
 # The pure contracts rules only: contracts.py imports this module (S082 B10)
 from contracts_core import COVERAGE_FILTERS, covered_sql
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
@@ -665,10 +665,9 @@ def list_equipment():
             conditions.append(condition)
             params.extend(condition_params)
         # Not in _list_filters: the printed asset list ignores it, as it ignores tickets (S082 B12).  A contract
-        # counts only at a site where contract:read_basic is held (S082 § 5.4).
+        # counts wherever it is: contract:read_basic is global and held by every role (S087 § 5.4).
         if coverage is not None:
-            site_ids = [site["id"] for site in sites_holding(cur, "contract:read_basic")]
-            condition, condition_params = covered_sql(coverage, site_ids, datetime.now(IST).date())
+            condition, condition_params = covered_sql(coverage, datetime.now(IST).date())
             conditions.append(condition)
             params.extend(condition_params)
         light_sql, light_params = _ticket_light_column(ticket_unit_ids)

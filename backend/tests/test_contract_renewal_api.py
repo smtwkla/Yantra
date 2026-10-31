@@ -1,7 +1,7 @@
 """Contract renewal (S085 § 5, § 6, § 8.2) — the API, against the test DB.  Needs the dev MariaDB container
 (tooling/dev/dev-db-up.bat).  Each test makes its own site, unit, vendor, contract and machines, so nothing it reads
-belongs to another test.  A renewal is a new contract at the old one's site with renewal_of_id the old one (one per
-contract, v47); it copies the terms sent and the in-service machines of the site, never a price, the cost note or a
+belongs to another test.  A renewal is a new contract with renewal_of_id the old one (one per contract, v47); it
+copies the terms sent and every machine not scrapped, at any site (S087 § 5.5), never a price, the cost note or a
 document, and never changes the old contract.  Phone values are obviously fake, never a real number."""
 
 from datetime import datetime, timedelta
@@ -11,13 +11,13 @@ import pytest
 import alerts
 import config
 from api_common import UNIQUE_KEY_ERRORS
+from auth_utils import FORBIDDEN_TEXT
 from contracts_core import renewal_period
 from equipment import IST
 from local_db import get_local_db
 
 CONTRACTS = "/api/contracts"
 EQUIPMENT = "/api/equipment"
-SITES = "/api/masters/sites"
 TODAY = datetime.now(IST).date()
 CALLOUT = "+91 00000 00000"
 OTHER_CALLOUT = "+91 00000 00001"
@@ -61,10 +61,10 @@ def vendor(make_vendor):
 
 @pytest.fixture
 def add_contract(manager, vendor, site, uniq):
-    """add_contract(**fields) -> a contract at ``site`` made by the manager (201), with a call-out number and a cost
-    note, from 300 days ago to 65 days ahead."""
+    """add_contract(**fields) -> a contract made by the manager (201), with a call-out number and a cost note, from
+    300 days ago to 65 days ahead."""
     def make(**overrides):
-        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "contract_number": "AC/2026/17", "covers_labour": 1,
                 "covers_parts": 1, "covers_breakdown_calls": 1, "breakdown_calls_per_year": 4,
                 "covered_text": "Air end, motor", "not_covered_text": "Filters", "pm_visits_per_year": 4,
@@ -147,7 +147,7 @@ def _dmy(day):
 
 class TestRenew:
 
-    def test_engineer_renews_a_contract(self, site_engineer, site, old, db_rows):
+    def test_engineer_renews_a_contract(self, site_engineer, old, db_rows):
         before = _row(db_rows, old["id"])
         new = _renewed(site_engineer, old)
         row = _row(db_rows, new["id"])
@@ -155,7 +155,8 @@ class TestRenew:
             expected = f"{old['title']} next" if key == "title" else old[key]
             assert row[key] == expected, key
         assert (row["from_date"], row["to_date"]) == (NEW_FROM, NEW_TO)
-        assert (row["site_id"], row["renewal_of_id"], row["active"]) == (site["id"], old["id"], 1)
+        assert "site_id" not in row
+        assert (row["renewal_of_id"], row["active"]) == (old["id"], 1)
         assert (row["first_reminder_for"], row["second_reminder_for"]) == (None, None)
         assert row["created_by"] == site_engineer._headers["X-Test-User"]
         assert (row["updated_at"], row["updated_by"]) == (None, None)
@@ -182,8 +183,9 @@ class TestRenew:
         assert [line["price"] for line in _lines(db_rows, new["id"])] == [None]
         assert (new["price_total"], new["priced_count"], new["machine_count"]) == (None, 0, 1)
 
-    def test_renewal_skips_scrapped_and_moved_machines(self, admin, site_engineer, old, unit, make_equipment,
-                                                       make_site, make_unit, db_rows):
+    def test_renewal_skips_scrapped_and_copies_moved_machines(self, admin, site_engineer, site, old, unit,
+                                                              make_equipment, make_site, make_unit, db_rows):
+        """S087 § 5.5, F6: only a scrapped machine is skipped; one moved to another site is copied."""
         kept, scrapped, moved = (make_equipment(unit=unit) for _ in range(3))
         for node in (kept, scrapped, moved):
             _add_line(site_engineer, old, node)
@@ -192,14 +194,13 @@ class TestRenew:
         assert admin.put(f"{EQUIPMENT}/{moved['id']}",
                          json={"unit_id": make_unit(site=other)["id"]}).status_code == 200
         offer = _detail(site_engineer, old)["renewal"]
-        assert offer["machines"] == [{"equipment_id": kept["id"], "code": kept["code"]}]
+        assert sorted(offer["machines"], key=lambda m: m["equipment_id"]) == [
+            {"equipment_id": kept["id"], "code": kept["code"]}, {"equipment_id": moved["id"], "code": moved["code"]}]
         new = _renewed(site_engineer, old)
-        assert sorted(new["skipped"], key=lambda s: s["equipment_id"]) == sorted([
-            {"equipment_id": scrapped["id"], "code": scrapped["code"], "reason": "scrapped"},
-            {"equipment_id": moved["id"], "code": moved["code"], "reason": f"now at {other['code']}"},
-        ], key=lambda s: s["equipment_id"])
-        assert [line["equipment_id"] for line in _lines(db_rows, new["id"])] == [kept["id"]]
-        assert len(_events(db_rows, scrapped)) == 1 and len(_events(db_rows, moved)) == 1   # only the old add
+        assert new["skipped"] == [{"equipment_id": scrapped["id"], "code": scrapped["code"], "reason": "scrapped"}]
+        assert [line["equipment_id"] for line in _lines(db_rows, new["id"])] == [kept["id"], moved["id"]]
+        assert new["site_codes"] == sorted([site["code"], other["code"]])
+        assert len(_events(db_rows, scrapped)) == 1 and len(_events(db_rows, moved)) == 2
 
     def test_renewal_copies_lines_outside_the_renewers_units(self, user_at_sites, manager, site, old, unit,
                                                              make_unit, make_equipment, db_rows):
@@ -251,13 +252,6 @@ class TestRenew:
         assert _refusal(_renew(site_engineer, old)) == (409, {
             "error": "This contract is inactive. Set it active in Masters › Contracts, then renew it."})
 
-    def test_an_inactive_site_is_refused(self, admin, site_engineer, site, old):
-        # The site has no unit, so Masters lets it go inactive with its contract
-        res = admin.put(f"{SITES}/{site['id']}", json={"active": 0})
-        assert res.status_code == 200, res.get_json()
-        assert _refusal(_renew(site_engineer, old)) == (409, {
-            "error": f"{site['code']} is inactive. Set it active in Masters › Sites, then renew the contract."})
-
     def test_a_second_renewal_is_refused(self, site_engineer, old):
         first = _renewed(site_engineer, old)
         refused = (409, {"error": f"This contract is already renewed: {first['title']}. Open that contract to change"
@@ -266,25 +260,27 @@ class TestRenew:
         _set_contract(site_engineer, first, active=0)
         assert _refusal(_renew(site_engineer, old)) == refused
 
-    def test_the_body_is_checked(self, site_engineer, site, old, make_site, add_contract, db_rows):
+    def test_the_body_is_checked(self, site_engineer, old, make_site, add_contract, db_rows):
         assert _refusal(_renew(site_engineer, old, to_date=(NEW_FROM - timedelta(days=1)).isoformat())) == (
             400, {"error": "Enter a To date on or after the From date.", "field": "to_date"})
         assert _refusal(_renew(site_engineer, old, title="")) == (400, {"error": "Enter a title.", "field": "title"})
         other = add_contract()
         new = _renewed(site_engineer, old, site_id=make_site()["id"], renewal_of_id=other["id"], active=0)
         row = _row(db_rows, new["id"])
-        assert (row["site_id"], row["renewal_of_id"], row["active"]) == (site["id"], old["id"], 1)
+        # A site_id sent is ignored (S087 § 5.5): a contract has none
+        assert "site_id" not in row
+        assert (row["renewal_of_id"], row["active"]) == (old["id"], 1)
 
     @pytest.mark.parametrize("role", ["maint_operator", "maint_technician", "maint_supervisor", "maint_storekeeper"])
     def test_renew_needs_edit(self, role_client, role, old):
         assert _renew(role_client(role), old).status_code == 403
 
-    def test_renew_needs_edit_at_the_site(self, user_at_sites, make_site, site, site_engineer, old):
-        b = make_site()
-        stranger, _ = user_at_sites([(b, "maint_engineer", "all")])
-        assert _refusal(_renew(stranger, old)) == (404, {"error": "Not found"})
-        operator_here, _ = user_at_sites([(b, "maint_engineer", "all"), (site, "maint_operator", "all")])
-        assert _refusal(_renew(operator_here, old)) == (403, {"error": f"You can't do this at {site['code']}"})
+    def test_renew_needs_edit_anywhere(self, user_at_sites, make_site, site, site_engineer, old):
+        """S087 § 5.1: contract:edit is global: an engineer of another site renews; an operator here does not."""
+        operator_here, _ = user_at_sites([(site, "maint_operator", "all")])
+        assert _refusal(_renew(operator_here, old)) == (403, {"error": FORBIDDEN_TEXT})
+        stranger, _ = user_at_sites([(make_site(), "maint_engineer", "all")])
+        assert _renew(stranger, old).status_code == 201
         assert site_engineer.post(f"{CONTRACTS}/999999999/renew", json=_body(old)).status_code == 404
 
 
@@ -318,13 +314,10 @@ class TestDetail:
         renewed = _detail(site_engineer, old)
         assert renewed["can_renew"] is False and "renewal" not in renewed
 
-    def test_no_renewal_offered_when_inactive(self, admin, site_engineer, site, add_contract):
+    def test_no_renewal_offered_when_inactive(self, site_engineer, add_contract):
         inactive = add_contract()
         _set_contract(site_engineer, inactive, active=0)
         assert _detail(site_engineer, inactive)["can_renew"] is False
-        active = add_contract()
-        assert admin.put(f"{SITES}/{site['id']}", json={"active": 0}).status_code == 200
-        assert _detail(site_engineer, active)["can_renew"] is False
 
     def test_the_offer_has_no_dates_past_2099(self, site_engineer, add_contract):
         late = add_contract(from_date="2099-01-01", to_date="2099-12-31")

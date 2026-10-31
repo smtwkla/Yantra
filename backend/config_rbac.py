@@ -155,11 +155,12 @@ PERMISSIONS = {
     "procedure:edit": ("maint_engineer",),
 
     # Vendor contracts (S080, R02.1): three read levels (CLAUDE-COMMON § RBAC Pattern, ISO 27001
-    # A.5.15).  The terms (every field but the call-out number and the cost note) for every role
-    # at the site, as equipment:read (D5); the call-out number for engineers and managers (D10);
-    # the cost note for managers only (D5; later the prices and documents, R02.2, R02.3).  Added
-    # and edited by the engineer (so the manager) and IT admin (Q1.3 a); IT admin reads neither
-    # gated field (S080 D5).  Checked at the contract's site (contracts.py).
+    # A.5.15).  The terms (every field but the call-out number and the cost note) for every role,
+    # as equipment:read (D5); the call-out number for engineers and managers (D10); the cost note,
+    # the prices and the documents for managers only (D5, R02.2, R02.3).  Added and edited by the
+    # engineer (so the manager) and IT admin (Q1.3 a); IT admin reads neither gated field (S080
+    # D5).  Global (S087): a contract has no site, so the four keys are checked by the union
+    # (has_perm, check_perm), not at a site; a manager of any site reads every price.
     "contract:read_basic": ("*",),
     "contract:read": ("maint_engineer",),
     "contract:read_senior": ("maint_manager",),
@@ -228,9 +229,4 @@ SITE_SCOPED = frozenset({
     "report:read",
     # S075: at the lesson's machine's site; held at any site for a class lesson (procedures.py)
     "procedure:edit",
-    # S080: at the contract's site
-    "contract:read_basic",
-    "contract:read",
-    "contract:read_senior",
-    "contract:edit",
 })

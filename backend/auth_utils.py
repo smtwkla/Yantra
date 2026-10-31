@@ -448,14 +448,6 @@ def has_perm_at(perm_key, site_id):
     return access_core.has_key_at(perm_key, user["roles"], current_memberships(), site_id)
 
 
-def sites_holding(cur, key):
-    """The sites where the user holds the site-scoped ``key`` (plain read), ordered by code:
-    ``[{id, code, name, active}, …]`` (S080's rule, here since S082 so equipment.py can use it
-    without importing contracts.py, which imports equipment.py)."""
-    cur.execute("SELECT id, code, name, active FROM sites ORDER BY code")
-    return [row for row in cur.fetchall() if has_perm_at(key, row["id"])]
-
-
 def require_perm_at(perm_key, site_id, field=None):
     """Raise a 403 naming the site unless the user holds the key there.  The site code
     comes from a plain read of sites, never from a locking read."""

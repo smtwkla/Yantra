@@ -56,7 +56,7 @@ class TestConfig:
         assert len(body["public_key"]) == 87
         assert body["you_get"] == [
             f"Breakdowns and defects at {site['code']}, escalations", f"Improvements ready to verify at {site['code']}",
-            f"Contracts ending at {site['code']}",    # S084
+            f"Contracts ending for machines at {site['code']}",    # S084, S087
             "Jobs assigned to you", "Countermeasures given to you, and when they are overdue",
             "Overdue countermeasures of improvements you lead"]
 

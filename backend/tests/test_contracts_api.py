@@ -1,14 +1,17 @@
-"""Vendor contracts (S080 § 5, § 6, § 8.2) — the API, against the test DB.  Needs the dev MariaDB container
-(tooling/dev/dev-db-up.bat).  Each test makes its own sites and vendors, so a list filtered by its site holds only
-its own contracts.  The call-out number is obviously fake, never a real number (D10)."""
+"""Vendor contracts (S080 § 5, § 6, § 8.2; S087 § 8.2, § 8.3) — the API, against the test DB.  Needs the dev MariaDB
+container (tooling/dev/dev-db-up.bat).  Each test makes its own sites, machines and vendors; a contract has no site
+(S087), so ``add`` puts each contract on the test's machine, and a list filtered by the test's site (the contracts
+with a machine there) holds only its own contracts.  The four contract keys are global (S087 § 5.1).  The call-out
+number is obviously fake, never a real number (D10)."""
 
 from datetime import datetime, timedelta
 
 import pytest
 
 import contracts
+from auth_utils import FORBIDDEN_TEXT
 from config_rbac import LOGIN_ROLE
-from contracts_core import CALLS_WITHOUT_TICK, FROM_AFTER_TO, SITE_KEPT, TO_BEFORE_FROM, VENDOR_MISSING
+from contracts_core import CALLS_WITHOUT_TICK, FROM_AFTER_TO, TO_BEFORE_FROM, VENDOR_MISSING
 from equipment import IST
 
 CONTRACTS = "/api/contracts"
@@ -38,20 +41,44 @@ def vendor(make_vendor):
 
 
 @pytest.fixture
-def body(site, vendor, uniq):
+def body(vendor, uniq):
     def make(**overrides):
-        return {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        return {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": _day(-30), "to_date": _day(300), **overrides}
     return make
 
 
 @pytest.fixture
-def add(manager, body):
-    """add(client=manager, **fields) -> a contract made through the API (201)."""
-    def make(client=None, **overrides):
+def machine_at(make_equipment, make_unit):
+    """machine_at(site) -> a machine in a new unit of ``site``."""
+    return lambda site: make_equipment(unit=make_unit(site=site))
+
+
+@pytest.fixture
+def machine(machine_at, site):
+    return machine_at(site)
+
+
+def _put_on(admin, contract, node, price=None):
+    """The node on the contract, by ``admin`` (IT admin: every unit; keycloak_admin to keep a price) -> the
+    detail."""
+    payload = {"equipment_id": node["id"]} if price is None else {"equipment_id": node["id"], "price": price}
+    res = admin.post(f"{CONTRACTS}/{contract['id']}/equipment", json=payload)
+    assert res.status_code == 201, res.get_json()
+    return res.get_json()
+
+
+@pytest.fixture
+def add(manager, admin, body, machine):
+    """add(client=manager, on=machine, **fields) -> a contract made through the API (201), with a line on ``on``
+    (the test's machine at its site; None for no line)."""
+    def make(client=None, on=machine, **overrides):
         res = (client or manager).post(CONTRACTS, json=body(**overrides))
         assert res.status_code == 201, res.get_json()
-        return res.get_json()
+        contract = res.get_json()
+        if on is not None:
+            _put_on(admin, contract, on)
+        return contract
     return make
 
 
@@ -110,20 +137,24 @@ class TestCreate:
     def test_roles_without_edit_get_403(self, role_client, role, body):
         assert role_client(role).post(CONTRACTS, json=body()).status_code == 403
 
-    def test_an_engineer_of_a_creating_at_b_is_refused_naming_b(self, user_at_sites, make_site, body):
-        a, b = make_site(), make_site()
-        client, _ = user_at_sites([(a, "maint_engineer", "all"), (b, "maint_operator", "all")])
-        assert client.post(CONTRACTS, json=body(site_id=a["id"])).status_code == 201
-        assert _refusal(client.post(CONTRACTS, json=body(site_id=b["id"]))) == (
-            403, {"error": f"You can't do this at {b['code']}", "field": "site_id"})
-
-    def test_an_unknown_or_inactive_site_is_refused(self, manager, admin, make_site, body):
-        assert _refusal(manager.post(CONTRACTS, json=body(site_id=999999))) == (
-            400, {"error": "Choose a site.", "field": "site_id"})
+    def test_a_site_id_sent_is_ignored(self, manager, admin, make_site, body, db_rows):
+        """S087 § 5.5, F5: an old tab's site_id is an unknown field, on a POST and a PUT; no site is stored."""
         closed = make_site()
         assert admin.put(f"{SITES}/{closed['id']}", json={"active": False}).status_code == 200
-        assert _refusal(manager.post(CONTRACTS, json=body(site_id=closed["id"]))) == (
-            400, {"error": "Choose an active site.", "field": "site_id"})
+        for site_id in (999999, closed["id"]):
+            res = manager.post(CONTRACTS, json=body(site_id=site_id))
+            assert res.status_code == 201, res.get_json()
+            item = res.get_json()
+            assert "site_id" not in item and "site_code" not in item and item["site_codes"] == []
+        assert "site_id" not in _stored(db_rows, item["id"])
+        res = manager.put(f"{CONTRACTS}/{item['id']}", json={"site_id": 999999, "title": "Same contract"})
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["title"] == "Same contract"
+
+    def test_the_403_text_is_the_global_one(self, role_client, body):
+        """S087 § 5.1: a contract check names no site."""
+        assert _refusal(role_client("maint_operator").post(CONTRACTS, json=body())) == (
+            403, {"error": FORBIDDEN_TEXT})
 
     def test_an_unknown_inactive_or_missing_vendor_is_refused(self, manager, engineer, make_vendor, body):
         assert _refusal(manager.post(CONTRACTS, json=body(vendor_id=999999))) == (
@@ -184,13 +215,6 @@ class TestChange:
         row = _stored(db_rows, contract["id"])
         assert (row["covers_breakdown_calls"], row["breakdown_calls_per_year"]) == (0, None)
 
-    def test_the_site_is_kept(self, manager, add, make_site):
-        contract = add()
-        url = f"{CONTRACTS}/{contract['id']}"
-        assert manager.put(url, json={"site_id": contract["site_id"], "title": "Same site"}).status_code == 200
-        assert _refusal(manager.put(url, json={"site_id": make_site()["id"]})) == (
-            400, {"error": SITE_KEPT, "field": "site_id"})
-
     def test_the_vendor_change(self, manager, engineer, add, make_vendor):
         contract = add()
         url = f"{CONTRACTS}/{contract['id']}"
@@ -225,15 +249,23 @@ class TestChange:
         assert admin.put(f"{CONTRACTS}/{contract['id']}", json={"callout_number": "+91 11111 11111"}).status_code == 200
         assert _stored(db_rows, contract["id"])["callout_number"] == CALLOUT
 
-    def test_another_sites_engineer(self, user_at_sites, make_site, add):
-        a, b = make_site(), make_site()
-        contract = add(site_id=a["id"])
-        stranger, _ = user_at_sites([(b, "maint_engineer", "all")])
-        assert _refusal(stranger.put(f"{CONTRACTS}/{contract['id']}", json={"title": "x"})) == (
-            404, {"error": "Not found"})
-        reader, _ = user_at_sites([(b, "maint_engineer", "all"), (a, "maint_operator", "all")])
-        assert _refusal(reader.put(f"{CONTRACTS}/{contract['id']}", json={"title": "x"})) == (
-            403, {"error": f"You can't do this at {a['code']}"})
+    def test_an_engineer_of_one_site_reads_and_edits_every_contract(self, user_at_sites, make_site, site, add):
+        """S087 § 5.1, F1: an engineer of B reads the call-out number of, and edits, a contract whose machines are
+        all at A."""
+        contract = add(callout_number=CALLOUT)
+        other, _ = user_at_sites([(make_site(), "maint_engineer", "all")])
+        url = f"{CONTRACTS}/{contract['id']}"
+        detail = other.get(url).get_json()
+        assert detail["callout_number"] == CALLOUT and detail["site_codes"] == [site["code"]]
+        assert (detail["can_edit"], detail["can_read_callout"], detail["can_read_cost"]) == (True, True, False)
+        res = other.put(url, json={"title": "Edited at B"})
+        assert res.status_code == 200, res.get_json()
+        assert res.get_json()["title"] == "Edited at B"
+
+    def test_an_operator_of_the_machines_site_may_not_edit(self, user_at_sites, site, add):
+        operator, _ = user_at_sites([(site, "maint_operator", "all")])
+        assert _refusal(operator.put(f"{CONTRACTS}/{add()['id']}", json={"title": "x"})) == (
+            403, {"error": FORBIDDEN_TEXT})
 
     def test_a_missing_id_is_404(self, manager):
         assert manager.put(f"{CONTRACTS}/999999", json={"title": "x"}).status_code == 404
@@ -241,16 +273,54 @@ class TestChange:
 
 class TestRead:
 
-    def test_the_list_holds_only_the_sites_held(self, user_at_sites, make_site, admin, add):
+    def test_an_engineer_of_one_site_lists_every_contract(self, user_at_sites, make_site, machine_at, admin, add):
+        """S087 § 5.10: the list is company-wide; was "the list holds only the sites held"."""
         a, b = make_site(), make_site()
-        in_a, in_b = add(site_id=a["id"]), add(site_id=b["id"])
+        in_a, in_b = add(on=machine_at(a)), add(on=machine_at(b))
         at_a, _ = user_at_sites([(a, "maint_engineer", "all")])
-        both, _ = user_at_sites([(a, "maint_manager", "all"), (b, "maint_manager", "all")])
-        assert in_a["id"] in _ids(at_a, "") and in_b["id"] not in _ids(at_a, "")
-        assert _ids(at_a, f"site_id={b['id']}") == []
-        for client in (admin, both):
+        for client in (at_a, admin):
             listed = _ids(client, "")
             assert in_a["id"] in listed and in_b["id"] in listed
+
+    def test_the_site_filter_follows_the_machines(self, manager, make_site, machine_at, add):
+        """S087 § 5.10, F7: site_id keeps the contracts with a machine at that site; one with no line shows only
+        unfiltered; an unknown site gives an empty list."""
+        a, b = make_site(), make_site()
+        at_a, no_line = add(on=machine_at(a)), add(on=None)
+        assert _ids(manager, f"site_id={a['id']}") == [at_a["id"]]
+        assert _ids(manager, f"site_id={b['id']}") == []
+        assert {at_a["id"], no_line["id"]} <= set(_ids(manager, ""))
+        assert _ids(manager, "site_id=999999") == []
+
+    def test_a_contract_with_machines_of_two_sites(self, user_at_sites, make_site, machine_at, body):
+        """S087 § 5.2: the manager of both adds a machine of each; the sites are the machines' sites, by code."""
+        a, b = make_site(), make_site()
+        both, _ = user_at_sites([(a, "maint_manager", "all"), (b, "maint_manager", "all")])
+        res = both.post(CONTRACTS, json=body())
+        assert res.status_code == 201, res.get_json()
+        contract = res.get_json()
+        assert contract["site_codes"] == []
+        for site in (b, a):
+            res = both.post(f"{CONTRACTS}/{contract['id']}/equipment", json={"equipment_id": machine_at(site)["id"]})
+            assert res.status_code == 201, res.get_json()
+        detail = both.get(f"{CONTRACTS}/{contract['id']}").get_json()
+        codes = sorted([a["code"], b["code"]])
+        assert detail["site_codes"] == codes
+        assert sorted(line["site_code"] for line in detail["machines"]) == codes
+        assert all("at_contract_site" not in line for line in detail["machines"])
+        assert "site_id" not in detail and "site_code" not in detail and "site_active" not in detail
+        item = next(c for c in _listed(both, f"site_id={a['id']}")["items"] if c["id"] == contract["id"])
+        assert item["site_codes"] == codes and "site_id" not in item
+
+    def test_a_manager_of_one_site_reads_every_price(self, user_at_sites, make_site, machine, keycloak_admin, add):
+        """S087 § 5.1, F1 (KLA accepted it): a manager of B reads the price total and cost note of an A-only
+        contract."""
+        contract = add(on=None, cost_note="Rs 1,20,000")
+        _put_on(keycloak_admin, contract, machine, price="9809")   # IT admin's price would be dropped
+        other, _ = user_at_sites([(make_site(), "maint_manager", "all")])
+        detail = other.get(f"{CONTRACTS}/{contract['id']}").get_json()
+        assert (detail["cost_note"], detail["price_total"], detail["priced_count"]) == ("Rs 1,20,000", "9809.00", 1)
+        assert detail["machines"][0]["price"] == "9809.00"
 
     def test_filters(self, manager, add, make_vendor, site):
         other = make_vendor()
@@ -290,12 +360,22 @@ class TestRead:
         answer = _listed(manager, f"site_id={site['id']}")
         assert (len(answer["items"]), answer["total"]) == (2, 3)
 
-    def test_sites_and_their_flags_per_role(self, role_client, admin, engineer, manager, site):
+    def test_the_list_flags_are_global(self, role_client, admin, engineer, manager, user_at_sites, make_site,
+                                       site):
+        """S087 § 5.10: top-level can_add, can_read_callout, can_read_cost per role; ``sites`` every site, inactive
+        ones too, without flags."""
+        closed = make_site()
+        assert admin.put(f"{SITES}/{closed['id']}", json={"active": False}).status_code == 200
+        one_site_engineer, _ = user_at_sites([(make_site(), "maint_engineer", "all")])
+
         def flags(client):
             answer = _listed(client, f"site_id={site['id']}")
-            row = next(s for s in answer["sites"] if s["id"] == site["id"])
-            return row["can_add"], row["can_read_callout"], row["can_read_cost"]
+            listed = {s["id"]: s for s in answer["sites"]}
+            assert listed[site["id"]] == {"id": site["id"], "code": site["code"], "name": site["name"], "active": 1}
+            assert listed[closed["id"]]["active"] == 0
+            return answer["can_add"], answer["can_read_callout"], answer["can_read_cost"]
         assert flags(engineer) == (True, True, False)
+        assert flags(one_site_engineer) == (True, True, False)
         assert flags(manager) == (True, True, True)
         assert flags(admin) == (True, False, False)
         assert flags(role_client("maint_operator")) == (False, False, False)
@@ -306,7 +386,7 @@ class TestRead:
         assert manager.get(f"{CONTRACTS}?status=soon").status_code == 400
         assert manager.get(f"{CONTRACTS}?contract_type=lease").status_code == 400
 
-    def test_the_detail(self, role_client, engineer, manager, user_at_sites, make_site, add):
+    def test_the_detail(self, role_client, engineer, manager, user_at_sites, make_site, site, add):
         contract = add(callout_number=CALLOUT, cost_note="Rs 1")
         url = f"{CONTRACTS}/{contract['id']}"
         operator = role_client("maint_operator").get(url).get_json()
@@ -315,9 +395,11 @@ class TestRead:
         assert as_engineer["callout_number"] == CALLOUT and "cost_note" not in as_engineer
         as_manager = manager.get(url).get_json()
         assert (as_manager["callout_number"], as_manager["cost_note"]) == (CALLOUT, "Rs 1")
-        stranger, _ = user_at_sites([(make_site(), "maint_manager", "all")])
-        assert _refusal(stranger.get(url)) == (404, {"error": "Not found"})
-        assert manager.get(f"{CONTRACTS}/999999").status_code == 404
+        assert as_manager["site_codes"] == [site["code"]] and "site_code" not in as_manager
+        # S087: the 404 means missing; a reader of another site reads it
+        other_site, _ = user_at_sites([(make_site(), "maint_manager", "all")])
+        assert other_site.get(url).status_code == 200
+        assert _refusal(manager.get(f"{CONTRACTS}/999999")) == (404, {"error": "Not found"})
 
     def test_the_list_without_a_slash_is_not_a_redirect(self, manager):
         assert manager.get(CONTRACTS).status_code == 200

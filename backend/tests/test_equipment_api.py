@@ -1401,7 +1401,7 @@ class TestTicketLight:
 
 class TestContractFilter:
     """S082 § 5.4: ?contract=under|not_under — the node, its parent or its grandparent on a line of an active
-    contract in force today, at a site where the reader holds contract:read_basic."""
+    contract in force today; S087 § 5.4: any contract, with no contract key check (read_basic is global)."""
 
     @pytest.fixture
     def covered(self, admin, make_site, make_unit, make_vendor, make_equipment, uniq):
@@ -1414,7 +1414,7 @@ class TestContractFilter:
 
         def contract(from_offset=-30, to_offset=300):
             res = admin.post("/api/contracts", json={
-                "site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+                "vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": (today + timedelta(days=from_offset)).isoformat(),
                 "to_date": (today + timedelta(days=to_offset)).isoformat()})
             assert res.status_code == 201, res.get_json()
@@ -1455,11 +1455,12 @@ class TestContractFilter:
         technician, _ = user_at_sites([(covered["site"], "maint_technician", "all")])
         assert self._listed(technician, covered, contract="under") == {"m1"}
 
-    def test_no_read_basic_at_the_contract_s_site(self, monkeypatch, user_at_sites, covered):
+    def test_the_filter_checks_no_contract_key(self, monkeypatch, user_at_sites, covered):
+        """S087 § 5.4 (was: no read_basic at the contract's site hides it): the filter asks no contract key."""
         technician, _ = user_at_sites([(covered["site"], "maint_technician", "all")])
         monkeypatch.setitem(config_rbac.PERMISSIONS, "contract:read_basic", ("maint_engineer",))
-        assert self._listed(technician, covered, contract="under") == set()
-        assert self._listed(technician, covered, contract="not_under") == {"m1", "m2", "m3"}
+        assert self._listed(technician, covered, contract="under") == {"m1"}
+        assert self._listed(technician, covered, contract="not_under") == {"m2", "m3"}
 
     @pytest.mark.parametrize("value", ["maybe", ""])
     def test_a_bad_value_is_400(self, admin, value):

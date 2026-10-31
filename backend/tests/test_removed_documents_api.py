@@ -478,8 +478,9 @@ class TestLessonRows:
 
 
 class TestContractRows:
-    """S083 § 5.5: a contract's removed documents in the same list, only at the sites where both
-    equipment:purge_documents and contract:read_senior are held (IT admin sees none)."""
+    """S083 § 5.5, S087 § 5.9: a contract's removed documents in the same list, to every holder of
+    contract:read_senior (the route needs equipment:purge_documents somewhere); IT admin sees none.  A contract has
+    no site, so its row has no unit."""
 
     @pytest.fixture
     def case(self, admin, user_at_sites, make_site, make_vendor, uniq):
@@ -490,7 +491,7 @@ class TestContractRows:
 
         def removed_doc(**extra):
             res = admin.post("/api/contracts", json={
-                "site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+                "vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"Fuji AMC {uniq.vendor_name()}", "contract_number": number,
                 "from_date": "2026-04-01", "to_date": "2027-03-31", **extra})
             assert res.status_code == 201, res.get_json()
@@ -502,13 +503,13 @@ class TestContractRows:
 
         return SimpleNamespace(site=site, here=here, elsewhere=elsewhere, removed_doc=removed_doc, number=number)
 
-    def test_listed_with_the_title_number_and_site(self, case):
+    def test_listed_with_the_title_and_number_and_no_site(self, case):
         contract, url, doc = case.removed_doc()
         page = listing(case.here, q=contract["title"])
         assert ids(page) == [doc["id"]]
         item = page["items"][0]
         assert (item["owner"], item["name"], item["code"], item["unit"], item["state"], item["path"]) == (
-            "contract", contract["title"], case.number, case.site["code"], None, url)
+            "contract", contract["title"], case.number, None, None, url)
         assert (item["equipment_id"], item["full_path"], item["title"]) == (None, None, "Fuji AMC quote")
 
     def test_q_matches_the_title_and_the_number(self, case):
@@ -517,11 +518,13 @@ class TestContractRows:
         assert doc["id"] in ids(listing(case.here, q=case.number))
         assert doc["id"] in ids(listing(case.here, q="AMC14082369550"))
 
-    def test_only_the_sites_manager_sees_them(self, case, role_client):
-        contract, _url, doc = case.removed_doc()
-        assert ids(listing(case.elsewhere, q=contract["title"])) == []
+    def test_a_manager_of_any_site_sees_and_restores_them(self, case, role_client):
+        contract, url, doc = case.removed_doc()
+        assert ids(listing(case.elsewhere, q=contract["title"])) == [doc["id"]]
         assert ids(listing(role_client("it_admin"), q=contract["title"])) == []
         assert all(item["owner"] != "contract" for item in listing(role_client("it_admin"), per_page=100)["items"])
+        res = case.elsewhere.post(f"{url}/{doc['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, doc["id"])
 
     def test_restore_and_purge_by_the_manager(self, case):
         contract, url, doc = case.removed_doc()
@@ -536,4 +539,4 @@ class TestContractRows:
         it_admin = role_client("it_admin")
         assert it_admin.post(f"{url}/{doc['id']}/restore").status_code == 403
         assert it_admin.post(f"{url}/{doc['id']}/purge").status_code == 403
-        assert case.elsewhere.post(f"{url}/{doc['id']}/restore").status_code == 404
+        assert case.elsewhere.post(f"{url}/{doc['id']}/restore").status_code == 200   # S087: any site's manager

@@ -1,7 +1,8 @@
 """The contract's breakdown calls (S086 § 5.1-§ 5.5, § 6, § 8.2) — GET /api/contracts/<id>/calls, against the
 test DB.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).  Each test makes its own site, units, vendor,
 contract and machines, so no other test's ticket is a call of its contract.  The vendor's people are Team records
-made by IT admin and linked to the vendor (S079); their tickets are raised by IT admin, who may back-date them."""
+made by IT admin and linked to the vendor (S079); their tickets are raised by IT admin, who may back-date them.
+S087: a contract has no site; ``complete`` and the warning's sites follow the sites of the contract's machines."""
 
 from datetime import datetime, timedelta
 
@@ -15,8 +16,8 @@ CONTRACTS = "/api/contracts"
 TODAY = datetime.now(IST).date()
 NOW = datetime.now(IST).replace(tzinfo=None)
 
-# The answer's keys (§ 6): no price, cost note or call-out number
-ANSWER_KEYS = {"calls", "total", "complete", "used", "warning", "vendor_name", "site_code"}
+# The answer's keys (§ 6; S087 § 5.7): no price, cost note or call-out number
+ANSWER_KEYS = {"calls", "total", "complete", "used", "warning", "warning_sites", "vendor_name", "site_codes"}
 CALL_KEYS = {"id", "serial", "state", "intensity", "is_breakdown", "overdue", "not_a_fault", "occurred_at",
              "back_in_service_at", "machine", "component", "downtime_minutes", "vendor_waiting_minutes",
              "vendor_people"}
@@ -58,9 +59,9 @@ def vendor(make_vendor):
 
 @pytest.fixture
 def add_contract(manager_here, site, vendor, uniq):
-    """add_contract(**fields) -> an AMC at ``site`` with ``vendor`` (201), in force from 30 days ago."""
+    """add_contract(**fields) -> an AMC with ``vendor`` (201), in force from 30 days ago."""
     def make(**overrides):
-        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": _day(-30), "to_date": _day(300), **overrides}
         res = manager_here.post(CONTRACTS, json=body)
         assert res.status_code == 201, res.get_json()
@@ -370,10 +371,34 @@ class TestAccess:
         assert storekeeper.get(f"{CONTRACTS}/{contract['id']}").status_code == 200
         assert storekeeper.get(f"{CONTRACTS}/{contract['id']}/calls").status_code == 403
 
-    def test_a_contract_of_another_site_is_404(self, user_at_sites, make_site, add_contract):
+    def test_a_manager_of_another_site_reads_the_card(self, user_at_sites, make_site, add_contract, cover, machine,
+                                                      vendor_person, call, site):
+        """S087 § 5.1: read_basic is global; the rows still follow the ticket predicate (none of their units)."""
         contract = add_contract()
+        cover(contract, machine)
+        call(machine, vendor_person())
         elsewhere = user_at_sites([(make_site(), "maint_manager", "all")])[0]
-        assert elsewhere.get(f"{CONTRACTS}/{contract['id']}/calls").status_code == 404
+        answer = calls_of(elsewhere, contract)
+        assert (answer["calls"], answer["complete"], answer["site_codes"]) == ([], False, [site["code"]])
+
+    def test_complete_needs_every_site_of_the_lines(self, admin, user_at_sites, make_site, make_unit, make_equipment,
+                                                    manager_here, add_contract, cover, machine, site, vendor_person,
+                                                    call):
+        """S087 § 5.7, F4: ``complete`` (and so "N of M calls used") only for a reader of every active unit of each
+        site of the contract's machines."""
+        site_b = make_site()
+        machine_b = make_equipment(unit=make_unit(site=site_b))
+        contract = add_contract(covers_breakdown_calls=True, breakdown_calls_per_year=4)
+        cover(contract, machine)
+        res = admin.post(f"{CONTRACTS}/{contract['id']}/equipment", json={"equipment_id": machine_b["id"]})
+        assert res.status_code == 201, res.get_json()
+        call(machine, vendor_person())
+        answer = calls_of(manager_here, contract)
+        assert (answer["complete"], answer["used"], answer["total"]["count"]) == (False, None, 1)
+        assert answer["site_codes"] == sorted([site["code"], site_b["code"]])
+        both = user_at_sites([(site, "maint_manager", "all"), (site_b, "maint_manager", "all")])[0]
+        answer = calls_of(both, contract)
+        assert answer["complete"] is True and answer["used"]["count"] == 1
 
     def test_unknown_is_404(self, manager_here):
         assert manager_here.get(f"{CONTRACTS}/999999999/calls").status_code == 404
@@ -394,15 +419,41 @@ class TestAccess:
 
 class TestWarnings:
 
-    def test_warnings(self, admin, manager_here, add_contract, vendor_person, make_vendor, give_site_role, site):
+    def test_warnings(self, admin, manager_here, add_contract, cover, machine, vendor_person, make_vendor,
+                      give_site_role, site):
         contract = add_contract()
-        assert calls_of(manager_here, contract)["warning"] == "no_linked"
+
+        def warning():
+            answer = calls_of(manager_here, contract)
+            return answer["warning"], answer["warning_sites"]
+
+        # No machine: only no_linked can show (S087 § 5.7)
+        assert warning() == ("no_linked", [])
         person = vendor_person("maint_operator")
-        assert calls_of(manager_here, contract)["warning"] == "no_assignable"
+        assert warning() == (None, [])
+        cover(contract, machine)
+        assert warning() == ("no_assignable", [site["code"]])
         give_site_role(person, site, "maint_technician")
-        assert calls_of(manager_here, contract)["warning"] is None
+        assert warning() == (None, [])
         assert admin.put(f"{MASTERS}/people/{person['id']}", json={"active": False}).status_code == 200
-        assert calls_of(manager_here, contract)["warning"] == "no_linked"
+        assert warning() == ("no_linked", [])
+
+    def test_warning_names_the_sites_without_an_assignable_person(self, admin, manager_here, add_contract, cover,
+                                                                  machine, make_site, make_unit, make_equipment,
+                                                                  vendor_person, give_site_role):
+        """S087 § 5.7: per site of the contract's machines, the sites where no linked person may be assigned."""
+        site_b = make_site()
+        machine_b = make_equipment(unit=make_unit(site=site_b))
+        contract = add_contract()
+        cover(contract, machine)
+        res = admin.post(f"{CONTRACTS}/{contract['id']}/equipment", json={"equipment_id": machine_b["id"]})
+        assert res.status_code == 201, res.get_json()
+        person = vendor_person()   # a technician at the first site only
+        answer = calls_of(manager_here, contract)
+        assert (answer["warning"], answer["warning_sites"]) == ("no_assignable", [site_b["code"]])
+        give_site_role(person, site_b, "maint_technician")
+        answer = calls_of(manager_here, contract)
+        assert (answer["warning"], answer["warning_sites"]) == (None, [])
 
     def test_no_warning_on_an_ended_or_inactive_contract(self, manager_here, add_contract):
         ended = add_contract(from_date=_day(-400), to_date=_day(-40))

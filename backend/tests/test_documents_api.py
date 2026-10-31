@@ -547,15 +547,14 @@ class TestOwnerCheckConstraint:
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]
 
-    def test_a_lesson_and_a_contract_together_are_refused(self, make_equipment, make_site, make_vendor, db_rows,
-                                                          uniq):
+    def test_a_lesson_and_a_contract_together_are_refused(self, make_equipment, make_vendor, db_rows, uniq):
         """S083 § 8.2: the sixth owner counts in the same CHECK."""
         node = make_equipment()
         db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by) VALUES (%s, %s, 'x', 'x', 'test')",
                 (f"OPL-CHK6-{node['id']}", node["id"]))
         lesson_id = db_rows("SELECT MAX(id) AS id FROM procedures")[0]["id"]
-        db_rows("INSERT INTO contracts (site_id, vendor_id, contract_type, title, from_date, to_date, created_by)"
-                " VALUES (%s, %s, 'amc', 'x', CURDATE(), CURDATE(), 'test')", (make_site()["id"], make_vendor()["id"]))
+        db_rows("INSERT INTO contracts (vendor_id, contract_type, title, from_date, to_date, created_by)"
+                " VALUES (%s, 'amc', 'x', CURDATE(), CURDATE(), 'test')", (make_vendor()["id"],))
         contract_id = db_rows("SELECT MAX(id) AS id FROM contracts")[0]["id"]
         with pytest.raises(pymysql.err.OperationalError) as caught:
             db_rows("INSERT INTO equipment_documents (procedure_id, contract_id, kind, title, original_name, stored_name,"
@@ -991,8 +990,8 @@ class TestLessonDocuments:
 
 
 # ---------------------------------------------------------------------------
-# A contract's documents (S083 § 5, § 8.2): the sixth owner, every route behind contract:read_senior at the
-# contract's site; written with contract:edit and read_senior there
+# A contract's documents (S083 § 5, § 8.2): the sixth owner, every route behind contract:read_senior (global,
+# S087); written with contract:edit and read_senior
 # ---------------------------------------------------------------------------
 
 def contract_docs_url(contract):
@@ -1005,13 +1004,13 @@ def contract_pdf(client, contract, **kwargs):
 
 @pytest.fixture
 def contract_case(admin, make_site, make_vendor, user_at_sites, role_client, uniq):
-    """A contract at a site, made by IT admin -> a namespace: site, other_site, contract, new_contract(**fields),
+    """A contract made by IT admin (no site, S087) -> a namespace: site, other_site, contract, new_contract(**fields),
     and clients: manager, engineer, operator (at the site), elsewhere (a manager of the other site), it_admin."""
     site, other_site, vendor = make_site(), make_site(), make_vendor()
     today = now_ist().date()
 
     def new_contract(**fields):
-        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": (today - timedelta(days=30)).isoformat(),
                 "to_date": (today + timedelta(days=300)).isoformat(), **fields}
         res = admin.post("/api/contracts", json=body)
@@ -1062,25 +1061,23 @@ class TestContractDocuments:
             assert upload_to(client, url).status_code == 403
         assert owner_files("contract", case.contract["id"]) == before
 
-    def test_a_manager_of_another_site_gets_404(self, contract_case):
+    def test_a_manager_of_another_site_reads_them(self, contract_case):
+        """S087 § 5.9: contract:read_senior is global, so a manager of any site reads and adds a contract's paper."""
         case = contract_case
         url = contract_docs_url(case.contract)
         pdf = contract_pdf(case.manager, case.contract)
-        before = owner_files("contract", case.contract["id"])
-        assert case.elsewhere.get(url).status_code == 404
-        assert case.elsewhere.get(f"{url}/{pdf['id']}/file").status_code == 404
-        assert upload_to(case.elsewhere, url).status_code == 404
-        assert owner_files("contract", case.contract["id"]) == before
+        assert [d["id"] for d in listed_at(case.elsewhere, url)["items"]] == [pdf["id"]]
+        res = case.elsewhere.get(f"{url}/{pdf['id']}/file")
+        assert (res.status_code, res.data) == (200, PDF)
+        assert upload_to(case.elsewhere, url).status_code == 201
 
-    def test_an_engineer_here_who_is_manager_elsewhere_is_refused_here(self, contract_case, user_at_sites):
+    def test_an_engineer_here_who_is_manager_elsewhere_is_allowed(self, contract_case, user_at_sites):
+        # S087: read_senior held at the other site is read_senior; there is no contract site to refuse at
         case = contract_case
-        # passes _owner_key (read_senior held at the other site), refused at the contract's site
         client, _ = user_at_sites([(case.site, "maint_engineer", "all"), (case.other_site, "maint_manager", "all")])
         url = contract_docs_url(case.contract)
-        res = client.get(url)
-        assert (res.status_code, res.get_json()["error"]) == (403, f"You can't do this at {case.site['code']}")
-        assert upload_to(client, url).status_code == 403
-        assert owner_files("contract", case.contract["id"]) == []
+        assert client.get(url).status_code == 200
+        assert upload_to(client, url).status_code == 201
 
     def test_retitle_and_remove(self, contract_case):
         case = contract_case

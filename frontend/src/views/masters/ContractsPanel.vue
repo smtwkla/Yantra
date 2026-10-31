@@ -1,14 +1,14 @@
 <script setup>
 /**
  * Contracts — the register of vendor contracts (docs/steps/S080-contract-register; R02.1; ISO 55001 § 8.3,
- * ISO 9001 § 8.4).  One record per contract at one site: the vendor (Masters › Vendors), type, period, what is
- * covered, PM visits, response time.  The status comes from the dates (the API sends it).  The call-out number
- * and the cost note come only to the readers who may see them (the API leaves them out otherwise), and the
- * dialog sends them only for the chosen site's flags.  Never deleted: a contract entered by mistake is
- * deactivated.  S081: each title opens the contract page (its machines and prices), and the managers see the
- * contract's cost before GST, the sum of its machines' prices (a column shown when some site lets the user read
- * it; the API leaves the total out elsewhere).  S085: the dialog's fields live in ContractFields.vue, shared with
- * the renewal on the contract page.
+ * ISO 9001 § 8.4).  One record per contract, company-wide (S087): the vendor (Masters › Vendors), type, period,
+ * what is covered, PM visits, response time; its sites are its machines' sites (the Sites column, and the Site
+ * filter lists the contracts with a machine at that site).  The status comes from the dates (the API sends it).
+ * The call-out number and the cost note come only to the readers who may see them (the API leaves them out
+ * otherwise), and the dialog sends them only with the list's flags.  Never deleted: a contract entered by mistake
+ * is deactivated.  S081: each title opens the contract page (its machines and prices), and the managers see the
+ * contract's cost before GST, the sum of its machines' prices (a column shown to readers of prices).  S085: the
+ * dialog's fields live in ContractFields.vue, shared with the renewal on the contract page.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { apiGet } from "../../api";
@@ -24,6 +24,7 @@ import {
   contractForm,
   contractTypeLabel,
   formatRupees,
+  siteCodesText,
   statusBadgeClass,
 } from "../../utils/contractLabels";
 import { formatDate } from "../../utils/datetime";
@@ -34,6 +35,8 @@ const DEFAULT_STATUS = "not_ended";
 const items = ref(null);
 const total = ref(0);
 const sites = ref([]);
+// The reader's flags, company-wide (S087): Add contract, and the gated fields of the dialog
+const flags = ref({ can_add: false, can_read_callout: false, can_read_cost: false });
 const loadError = ref("");
 const siteFilter = ref("");
 const typeFilter = ref("");
@@ -41,9 +44,8 @@ const statusFilter = ref(DEFAULT_STATUS);
 const vendorFilter = ref("");
 const showInactive = ref(false);
 
-const addableSites = computed(() => sites.value.filter((s) => s.can_add));
-const canAdd = computed(() => addableSites.value.length > 0);
-const showCost = computed(() => sites.value.some((s) => s.can_read_cost));
+const canAdd = computed(() => flags.value.can_add);
+const showCost = computed(() => flags.value.can_read_cost);
 const filtersAtDefault = computed(
   () => !siteFilter.value && !typeFilter.value && !vendorFilter.value && statusFilter.value === DEFAULT_STATUS
 );
@@ -52,9 +54,11 @@ function vendorName(v) {
   return v.active ? v.name : `${v.name} (inactive)`;
 }
 
-/** Type, vendor and site code, the small line under the title on a phone (as VendorsPanel's details). */
+/** Type, vendor and the machines' sites, the small line under the title on a phone (as VendorsPanel's details);
+ * the sites left out when the contract has no machine. */
 function phoneLine(c) {
-  return [contractTypeLabel(c.contract_type), c.vendor_active ? c.vendor_name : `${c.vendor_name} (inactive)`, c.site_code]
+  const sitesPart = c.site_codes?.length ? siteCodesText(c.site_codes) : "";
+  return [contractTypeLabel(c.contract_type), c.vendor_active ? c.vendor_name : `${c.vendor_name} (inactive)`, sitesPart]
     .filter(Boolean)
     .join(" · ");
 }
@@ -78,6 +82,11 @@ async function reload() {
     items.value = answer.items;
     total.value = answer.total;
     sites.value = answer.sites;
+    flags.value = {
+      can_add: Boolean(answer.can_add),
+      can_read_callout: Boolean(answer.can_read_callout),
+      can_read_cost: Boolean(answer.can_read_cost),
+    };
   } catch (err) {
     if (request === latestRequest) loadError.value = err.message;
   }
@@ -90,20 +99,12 @@ const {
   fieldError, modalError, openCreate, openEdit, save, changeActive,
 } = useMasterForm({
   path: "/api/contracts",
-  // No seed: the one site the user may add at is preselected, else none
-  blank: () => ({
-    ...EMPTY_CONTRACT_FORM,
-    site_id: addableSites.value.length === 1 ? addableSites.value[0].id : null,
-    contract_type: "amc",
-  }),
+  blank: () => ({ ...EMPTY_CONTRACT_FORM, contract_type: "amc" }),
   fromRecord: contractForm,
-  toBody: (f) => contractBody(f, chosenSite.value),
+  toBody: (f) => contractBody(f, flags.value),
   label: (c) => c.title,
   reload,
 });
-
-// The site the dialog is about: its flags decide the call-out number and cost note fields
-const chosenSite = computed(() => sites.value.find((s) => s.id === form.value.site_id) ?? null);
 
 // On edit, the contract's vendor: ContractFields lists it first when it is inactive, so the contract still saves
 const storedVendor = computed(() =>
@@ -131,7 +132,7 @@ onMounted(reload);
       <div class="d-flex flex-wrap gap-2 mb-3">
         <select v-model="siteFilter" class="form-select form-select-sm w-auto" aria-label="Site">
           <option value="">All sites</option>
-          <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.code }}</option>
+          <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.active ? s.code : `${s.code} (inactive)` }}</option>
         </select>
         <select v-model="typeFilter" class="form-select form-select-sm w-auto" aria-label="Type">
           <option value="">All types</option>
@@ -162,7 +163,7 @@ onMounted(reload);
                 <th class="d-none d-md-table-cell">Type</th>
                 <th>Contract</th>
                 <th class="d-none d-md-table-cell">Vendor</th>
-                <th class="d-none d-md-table-cell">Site</th>
+                <th class="d-none d-md-table-cell">Sites</th>
                 <th class="d-none d-md-table-cell">From</th>
                 <th class="d-none d-md-table-cell">To</th>
                 <th v-if="showCost" class="d-none d-md-table-cell text-end">Cost before GST</th>
@@ -181,7 +182,7 @@ onMounted(reload);
                 <td class="d-none d-md-table-cell">
                   {{ c.vendor_name }}<span v-if="!c.vendor_active" class="text-secondary"> (inactive)</span>
                 </td>
-                <td class="d-none d-md-table-cell">{{ c.site_code }}</td>
+                <td class="d-none d-md-table-cell">{{ siteCodesText(c.site_codes) }}</td>
                 <td class="d-none d-md-table-cell text-nowrap">{{ formatDate(c.from_date) }}</td>
                 <td class="d-none d-md-table-cell text-nowrap">{{ formatDate(c.to_date) }}</td>
                 <td v-if="showCost" class="d-none d-md-table-cell text-end text-nowrap">
@@ -228,12 +229,10 @@ onMounted(reload);
       v-model:form="form"
       :field-error="fieldError"
       :mode="editingId === null ? 'create' : 'edit'"
-      :sites="addableSites"
-      :site-code="chosenSite?.code ?? ''"
       :vendors="vendors ?? []"
       :stored-vendor="storedVendor"
-      :can-read-callout="Boolean(chosenSite?.can_read_callout)"
-      :can-read-cost="Boolean(chosenSite?.can_read_cost)"
+      :can-read-callout="flags.can_read_callout"
+      :can-read-cost="flags.can_read_cost"
     />
   </FormModal>
 </template>

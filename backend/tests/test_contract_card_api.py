@@ -2,7 +2,8 @@
 against the test DB.  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).  Each test makes its own site,
 unit, vendor, contract and machine, so no other test's contract shows.  The readers are user_at_sites clients at
 the test's site: an X-Test-Role engineer holds no unit, and load_node_for_user answers 404 for it (BS1-02).
-Phone values are obviously fake."""
+Phone values are obviously fake.  S087: a contract has no site, so the card shows every contract on the node,
+wherever the contract's other machines stand."""
 
 from datetime import datetime, timedelta
 
@@ -57,11 +58,11 @@ def manager_here(reader):
 
 @pytest.fixture
 def add_contract(manager_here, make_vendor, site, uniq):
-    """add_contract(**fields) -> a contract at ``site`` (201), by default an AMC in force with a call-out number."""
+    """add_contract(**fields) -> a contract (201), by default an AMC in force with a call-out number."""
     vendor = make_vendor()
 
     def make(**overrides):
-        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": _day(-30), "to_date": _day(300),
                 "callout_number": CALLOUT, **overrides}
         res = manager_here.post(CONTRACTS, json=body)
@@ -176,17 +177,34 @@ class TestWhichContracts:
         assert res.status_code == 200, res.get_json()
         assert _card(engineer_here, machine) == []
 
-    def test_a_contract_at_a_site_the_reader_holds_no_role_at(self, admin, user_at_sites, make_site, make_unit,
-                                                              add_contract, cover, machine):
-        """A machine of B moved to A keeps its line on B's contract (S081 § 9 Q5): A's technician does not see it."""
+    def test_a_moved_machine_keeps_its_contract_on_the_card(self, admin, user_at_sites, make_site, make_unit,
+                                                            add_contract, cover, machine):
+        """A machine of B moved to A keeps its line (S081 § 9 Q5); since S087 A's technician sees the contract on it:
+        read_basic is global."""
         contract = add_contract()
         cover(contract, machine)
         site_a = make_site()
         assert admin.put(f"{EQUIPMENT}/{machine['id']}", json={"unit_id": make_unit(site=site_a)["id"]}).status_code \
             == 200
         technician_a, _ = user_at_sites([(site_a, "maint_technician", "all")])
-        assert _card(technician_a, machine) == []
+        assert _ids(technician_a, machine) == [contract["id"]]
         assert _ids(admin, machine) == [contract["id"]]
+
+    def test_a_contract_with_machines_elsewhere_shows_on_this_machine(self, user_at_sites, make_site, make_unit,
+                                                                      make_equipment, add_contract, cover, machine):
+        """S087 § 5.4: one contract over machines of two sites; the technician of the second site, who holds no role
+        at the first, sees it on their machine."""
+        site_b = make_site()
+        machine_b = make_equipment(unit=make_unit(site=site_b))
+        contract = add_contract()
+        cover(contract, machine)
+        technician_b, _ = user_at_sites([(site_b, "maint_technician", "all")])
+        # B's manager adds B's machine to the contract (inside their units)
+        manager_b, _ = user_at_sites([(site_b, "maint_manager", "all")])
+        res = manager_b.post(f"{CONTRACTS}/{contract['id']}/equipment", json={"equipment_id": machine_b["id"]})
+        assert res.status_code == 201, res.get_json()
+        [item] = _card(technician_b, machine_b)
+        assert (item["contract_id"], item["via"]) == (contract["id"], None)
 
 
 class TestRefusals:

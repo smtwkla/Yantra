@@ -131,7 +131,9 @@ class TestRoleSources:
         assert holders("contract:read") == {"maint_engineer", "maint_manager"}
         assert holders("contract:read_senior") == {"maint_manager"}
         assert holders("contract:edit") == {"maint_engineer", "maint_manager", "it_admin"}
-        assert {"contract:read_basic", "contract:read", "contract:read_senior", "contract:edit"} <= SITE_SCOPED
+        # S087 § 5.1: a contract has no site, so its four keys are global
+        assert {"contract:read_basic", "contract:read", "contract:read_senior", "contract:edit"}.isdisjoint(
+            SITE_SCOPED)
         assert holders("contract:read_senior") <= holders("contract:read") <= holders("contract:read_basic")
 
     def test_improvement_verify_and_note(self):

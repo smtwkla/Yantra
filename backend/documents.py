@@ -35,10 +35,11 @@ procedure:edit, at the machine's site for a machine lesson and held at any site 
 lesson; restored and purged by equipment:purge_documents on the same rule.  No state rule: a
 retired lesson's photos may change.
 A contract's photos and documents (contracts.py's functions) are behind contract:read_senior
-at the contract's site on every route (S083 D5: a quote or a signed contract shows the price):
-read with it (404 without contract:read_basic there, 403 without read_senior), added, retitled
-and removed with contract:edit and read_senior there, restored and purged with
-equipment:purge_documents and read_senior there, so IT admin sees none.  No state rule: an
+on every route (S083 D5: a quote or a signed contract shows the price; global since S087, a
+contract has no site): read with it (404 for a missing contract, 403 without read_senior),
+added, retitled and removed with contract:edit and read_senior, restored and purged with
+equipment:purge_documents (held at any site, as for a model's) and read_senior, so IT admin
+sees none.  No state rule: an
 ended or inactive contract takes and loses documents.
 
 Upload order (S006 § 5.6): every check and the thumbnail first, then the files are
@@ -65,7 +66,7 @@ A removed document keeps its row and its file (ISO 55001 controlled information)
 no longer listed or served.  A removed document can be restored or deleted for good by
 equipment:purge_documents (S008), node, model, ticket, countermeasure and lesson documents alike
 (S012 § 5.6, S017 § 5.5, S070 § 5.8, S075 § 5.8); a contract's only with contract:read_senior
-at its site as well (S083 E2).
+as well (S083 E2, S087).
 """
 
 import logging
@@ -80,7 +81,7 @@ from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
-from auth_utils import check_perm, require_perm, sites_holding
+from auth_utils import check_perm, has_perm, require_perm
 from config import MB
 from contracts import lock_contract_for_change, read_contract, read_contract_for_change
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, transaction, update_row
@@ -213,8 +214,8 @@ OWNERS = {
     "procedure": Owner("procedure_id", "/api/procedures/{}/documents", "lesson",
                        read_procedure, read_procedure_for_change, lock_procedure_for_change,
                        lock_procedure_for_change, "equipment:read", "procedure:edit", "equipment:purge_documents"),
-    # A contract's paper (S083 § 5.1): contracts.py's functions check contract:read_senior at the
-    # contract's site on every route, also restore and purge.  No state rule, so one lock function
+    # A contract's paper (S083 § 5.1): contracts.py's functions check contract:read_senior (global,
+    # S087) on every route, also restore and purge.  No state rule, so one lock function
     # serves change and purge.
     "contract": Owner("contract_id", "/api/contracts/{}/documents", "contract",
                       read_contract, read_contract_for_change, lock_contract_for_change,
@@ -565,14 +566,14 @@ _REMOVED_PROCEDURE_BRANCH = (
     " FROM equipment_documents d JOIN procedures pr ON pr.id = d.procedure_id"
     " JOIN equipment e ON e.id = pr.equipment_id" + NODE_JOINS
 )
-# A contract's (S083 § 5.5): name its title, code its number, unit its site's code (a contract has
-# no unit); no state (a contract has no state rule)
+# A contract's (S083 § 5.5): name its title, code its number; no unit and no site (S087: a contract has
+# neither, as a model); no state (a contract has no state rule)
 _REMOVED_CONTRACT_BRANCH = (
     f"SELECT {_REMOVED_DOC_COLUMNS}, 'contract' AS owner, c.id AS owner_id, NULL AS equipment_id,"
-    " c.contract_number AS code, c.title AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code,"
+    " c.contract_number AS code, c.title AS name, NULL AS level, NULL AS lifecycle, NULL AS site_code,"
     " NULL AS unit_code, NULL AS p_code, NULL AS gp_code, NULL AS mf_name, NULL AS m_designation,"
     " NULL AS owner_state, NULL AS action_kind, NULL AS improvement_state"
-    " FROM equipment_documents d JOIN contracts c ON c.id = d.contract_id JOIN sites s ON s.id = c.site_id"
+    " FROM equipment_documents d JOIN contracts c ON c.id = d.contract_id"
 )
 
 # Columns the item is built from, not shown as they are
@@ -589,15 +590,14 @@ def _removed_item(row):
     one refuses restore), its ``action_kind`` and ``improvement_open`` (S072 A1: a closed or
     dropped improvement refuses restore too), for a lesson (S075) its serial as ``name``, its
     machine's ``code`` and unit, and ``state`` None, for a contract (S083) its title as ``name``,
-    its number as ``code``, its site's code as ``unit`` and ``state`` None."""
+    its number as ``code``, and ``unit`` and ``state`` None (S087)."""
     item = row_to_dict({key: value for key, value in row.items() if key not in _JOIN_COLUMNS})
     item["path"] = OWNERS[row["owner"]].path.format(row["owner_id"])
     if row["owner"] == "model":
         item["name"] = model_label(row["mf_name"], row["m_designation"])
         item["unit"] = item["full_path"] = None
     elif row["owner"] == "contract":
-        item["unit"] = row["site_code"]
-        item["full_path"] = item["state"] = None
+        item["unit"] = item["full_path"] = item["state"] = None
     elif row["owner"] in ("ticket", "action", "procedure"):
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = None
@@ -629,8 +629,8 @@ def _removed_branches(cur, kind, q):
     own unit, a countermeasure by its improvement's) and left out when there are none — not the
     whole list; the model branch at every site; the lesson branch (S075 § 5.8) never left out: a
     class lesson's rows at every site (as a model's), a machine lesson's in those units; the
-    contract branch (S083 § 5.5) at the sites where both equipment:purge_documents and
-    contract:read_senior are held, left out when there are none."""
+    contract branch (S083 § 5.5) with no scope when contract:read_senior is held (S087 § 5.9: the
+    route already needs equipment:purge_documents somewhere), left out otherwise."""
     common, common_params = ["d.removed_at IS NOT NULL"], []
     if kind:
         common.append("d.kind = %s")
@@ -666,11 +666,9 @@ def _removed_branches(cur, kind, q):
         conditions.append(scope)
     branches.append((f"{_REMOVED_PROCEDURE_BRANCH} WHERE {' AND '.join(conditions)}", params))
 
-    site_ids = ({s["id"] for s in sites_holding(cur, "equipment:purge_documents")}
-                & {s["id"] for s in sites_holding(cur, "contract:read_senior")})
-    if site_ids:
+    if has_perm("contract:read_senior"):
         branches.append(_scoped_branch(_REMOVED_CONTRACT_BRANCH, "CONCAT_WS(' ', c.title, c.contract_number)",
-                                       "c.site_id", common, common_params, pattern, site_ids))
+                                       None, common, common_params, pattern, None))
     return branches
 
 

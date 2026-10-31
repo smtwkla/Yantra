@@ -28,7 +28,7 @@ const flags = computed(() => ({
 }));
 
 // useFormModal calls blank() once with no seed at set-up; the page opens the dialog with the contract as the seed
-const blank = (seed) => (seed ? renewalForm(seed) : { ...EMPTY_CONTRACT_FORM, site_id: null, contract_type: "amc" });
+const blank = (seed) => (seed ? renewalForm(seed) : { ...EMPTY_CONTRACT_FORM, contract_type: "amc" });
 
 const renewedDetail = ref(null); // the new contract, handed to the page once the dialog has faded out
 
@@ -50,9 +50,7 @@ const storedVendor = computed(() => ({
 }));
 const loadError = ref("");
 const topError = computed(() => modalError.value || loadError.value);
-const notice = computed(() =>
-  renewalNotice(props.contract.renewal, props.contract.can_read_cost, props.contract.site_code)
-);
+const notice = computed(() => renewalNotice(props.contract.renewal, props.contract.can_read_cost));
 
 async function open() {
   renewedDetail.value = null;
@@ -91,7 +89,6 @@ defineExpose({ open });
       v-model:form="form"
       :field-error="fieldError"
       mode="renew"
-      :site-code="contract.site_code"
       :vendors="vendors ?? []"
       :stored-vendor="storedVendor"
       :can-read-callout="Boolean(contract.can_read_callout)"

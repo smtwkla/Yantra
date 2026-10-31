@@ -141,7 +141,7 @@ C_TO = date(2027, 3, 31)
 
 def _contract_facts(today=C_TODAY, **overrides):
     contract = {"id": 12, "title": "Atlas Copco AMC 2026–27", "contract_number": "TEST/AMC/0001",
-                "contract_type": "amc", "vendor_name": "Test Vendor", "site_code": "SMTW",
+                "contract_type": "amc", "vendor_name": "Test Vendor", "site_codes": ["SMTW"],
                 "from_date": date(2026, 4, 1), "to_date": C_TO, **overrides}
     return contract_facts(contract, today, "https://vel-yantra.mspv.app")
 
@@ -149,20 +149,26 @@ def _contract_facts(today=C_TODAY, **overrides):
 class TestContractEndingEmail:
 
     def test_subject_and_body(self):
-        subject, body = contract_ending_email(_contract_facts())
-        assert subject == "Contract ends on 31-03-2027: Atlas Copco AMC 2026–27 (SMTW)"
+        subject, body = contract_ending_email(_contract_facts(site_codes=["BRICKS", "SMTW"]))
+        assert subject == "Contract ends on 31-03-2027: Atlas Copco AMC 2026–27 (BRICKS, SMTW)"
         assert body == (
             "Atlas Copco AMC 2026–27 ends in 60 days, on 31-03-2027.\n"
             "\n"
             "Vendor:           Test Vendor\n"
             "Type:             AMC\n"
             "Contract number:  TEST/AMC/0001\n"
-            "Site:             SMTW\n"
+            "Sites:            BRICKS, SMTW\n"
             "Period:           01-04-2026 to 31-03-2027\n"
             "\n"
             "Decide before the end date: renew it with the vendor, or let it end.\n"
             "\n"
             "Open the contract: https://vel-yantra.mspv.app/contracts/12\n")
+
+    def test_no_machine_no_sites(self):
+        """S087 § 5.6: a contract with no machine has no site: no brackets, no Sites line."""
+        subject, body = contract_ending_email(_contract_facts(site_codes=[]))
+        assert subject == "Contract ends on 31-03-2027: Atlas Copco AMC 2026–27"
+        assert "Site" not in body
 
     def test_no_contract_number_no_line(self):
         _subject, body = contract_ending_email(_contract_facts(contract_number=None))

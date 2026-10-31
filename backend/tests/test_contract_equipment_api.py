@@ -1,12 +1,13 @@
 """The machines a contract covers (S081 § 5, § 6, § 8.2) — the API, against the test DB.  Needs the dev MariaDB
 container (tooling/dev/dev-db-up.bat).  Each test makes its own site, unit, vendor and contract, so nothing it reads
 belongs to another test.  The price follows contract:read_senior (the manager; admin by the bypass); the machine's
-history never holds it."""
+history never holds it.  S087: a contract has no site; a machine of any site inside the adder's units is added."""
 
 from datetime import datetime, timedelta
 
 import pytest
 
+from auth_utils import FORBIDDEN_TEXT
 from contracts_core import PRICE_FORMAT
 from equipment import IST
 
@@ -60,11 +61,11 @@ def machine(make_equipment, unit):
 
 @pytest.fixture
 def add_contract(manager, make_vendor, site, uniq):
-    """add_contract(**fields) -> a contract at ``site`` made by the manager (201): an AMC in force."""
+    """add_contract(**fields) -> a contract made by the manager (201): an AMC in force."""
     vendor = make_vendor()
 
     def make(**overrides):
-        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+        body = {"vendor_id": vendor["id"], "contract_type": "amc",
                 "title": f"AMC {uniq.vendor_name()}", "from_date": _day(-30), "to_date": _day(300), **overrides}
         res = manager.post(CONTRACTS, json=body)
         assert res.status_code == 201, res.get_json()
@@ -118,7 +119,8 @@ class TestAdd:
         assert (line["code"], line["name"], line["level"], line["lifecycle"]) == (
             machine["code"], machine["name"], "equipment", "in_service")
         assert line["full_path"] == machine["full_path"]
-        assert (line["at_contract_site"], line["can_open"], line["overlaps"]) == (True, True, [])
+        assert (line["can_open"], line["overlaps"]) == (True, [])
+        assert "at_contract_site" not in line
         assert line["created_by"] == engineer_login
         assert "price" not in line
         for key in COST_KEYS:
@@ -152,13 +154,24 @@ class TestAdd:
         assert _refusal(_add(site_engineer, contract, machine)) == (
             409, {"error": "This machine is already on the contract.", "field": "equipment_id"})
 
-    def test_a_node_of_another_site_names_the_contract_s_site(self, user_at_sites, make_site, make_unit, contract,
-                                                              site, make_equipment):
+    def test_a_machine_of_another_site_is_added(self, user_at_sites, make_site, make_unit, contract, site, machine,
+                                                make_equipment):
+        """S087 § 5.4: any site, inside the adder's units; the contract's sites follow its lines."""
         other_site = make_site()
         other = make_equipment(unit=make_unit(site=other_site))
         both, _ = user_at_sites([(site, "maint_engineer", "all"), (other_site, "maint_engineer", "all")])
-        assert _refusal(_add(both, contract, other)) == (
-            400, {"error": f"Choose a machine of {site['code']}, the contract's site.", "field": "equipment_id"})
+        detail = _added(both, contract, other)
+        assert _line(detail, other)["site_code"] == other_site["code"]
+        assert detail["site_codes"] == [other_site["code"]]
+        detail = _added(both, contract, machine)
+        assert detail["site_codes"] == sorted([site["code"], other_site["code"]])
+
+    def test_a_node_outside_the_adders_units_is_refused(self, site_engineer, make_site, make_unit, contract,
+                                                        make_equipment):
+        """S087 § 5.4: an engineer of A only does not add a machine of B: outside their units."""
+        elsewhere = make_equipment(unit=make_unit(site=make_site()))
+        assert _refusal(_add(site_engineer, contract, elsewhere)) == (
+            400, {"error": "Choose a machine.", "field": "equipment_id"})
 
     def test_a_scrapped_node_is_409(self, admin, site_engineer, contract, machine):
         assert admin.put(f"{EQUIPMENT}/{machine['id']}", json={"lifecycle": "scrapped"}).status_code == 200
@@ -186,10 +199,12 @@ class TestAdd:
     def test_an_engineer_of_another_site(self, user_at_sites, make_site, site, contract, machine):
         b = make_site()
         stranger, _ = user_at_sites([(b, "maint_engineer", "all")])
-        assert _refusal(_add(stranger, contract, machine)) == (404, {"error": "Not found"})
+        # S087: contract:edit is global; the machine is outside the stranger's units
+        assert _refusal(_add(stranger, contract, machine)) == (
+            400, {"error": "Choose a machine.", "field": "equipment_id"})
+        # An engineer elsewhere and an operator here: edit is global and the machine is inside their units
         operator_here, _ = user_at_sites([(b, "maint_engineer", "all"), (site, "maint_operator", "all")])
-        assert _refusal(_add(operator_here, contract, machine)) == (
-            403, {"error": f"You can't do this at {site['code']}"})
+        assert _add(operator_here, contract, machine).status_code == 201
 
     def test_a_missing_contract_is_404(self, site_engineer, machine):
         assert site_engineer.post(_lines(999999), json={"equipment_id": machine["id"]}).status_code == 404
@@ -224,10 +239,10 @@ class TestPrice:
         assert _events(db_rows, machine, "contract_removed") == []   # a price change writes no history line
 
     @pytest.mark.parametrize("who", ["site_engineer", "admin"])
-    def test_without_the_cost_key_is_403_naming_the_site(self, request, who, site_engineer, site, contract, machine):
+    def test_without_the_cost_key_is_403(self, request, who, site_engineer, contract, machine):
         _added(site_engineer, contract, machine)
         res = request.getfixturevalue(who).put(f"{_lines(contract['id'])}/{machine['id']}", json={"price": "1"})
-        assert _refusal(res) == (403, {"error": f"You can't do this at {site['code']}"})
+        assert _refusal(res) == (403, {"error": FORBIDDEN_TEXT})
 
     def test_a_node_not_on_the_contract_is_404(self, manager, contract, machine):
         res = manager.put(f"{_lines(contract['id'])}/{machine['id']}", json={"price": "1"})
@@ -299,13 +314,17 @@ class TestDetail:
         line = _line(limited.get(f"{CONTRACTS}/{contract['id']}").get_json(), machine)
         assert line["can_open"] is False   # listed all the same (B7)
 
-    def test_a_moved_machine_is_marked(self, admin, site_engineer, contract, machine, make_site, make_unit):
+    def test_a_moved_machine_counts_at_its_new_site(self, admin, site_engineer, contract, machine, make_site,
+                                                    make_unit):
+        """S087 § 5.2: the contract's sites are its machines' current sites."""
         _added(site_engineer, contract, machine)
         other = make_site()
         assert admin.put(f"{EQUIPMENT}/{machine['id']}",
                          json={"unit_id": make_unit(site=other)["id"]}).status_code == 200
-        line = _line(site_engineer.get(f"{CONTRACTS}/{contract['id']}").get_json(), machine)
-        assert (line["at_contract_site"], line["site_code"]) == (False, other["code"])
+        detail = site_engineer.get(f"{CONTRACTS}/{contract['id']}").get_json()
+        line = _line(detail, machine)
+        assert (line["site_code"], detail["site_codes"]) == (other["code"], [other["code"]])
+        assert "at_contract_site" not in line
 
     def test_overlaps(self, site_engineer, add_contract, unit, machine, make_equipment):
         part = make_equipment(parent=machine)
@@ -338,21 +357,17 @@ class TestDetail:
         assert _line(site_engineer.get(f"{CONTRACTS}/{ended['id']}").get_json(), machine)["overlaps"] == []
         assert _line(site_engineer.get(f"{CONTRACTS}/{inactive['id']}").get_json(), machine)["overlaps"] == []
 
-    def test_overlaps_at_a_site_the_reader_does_not_hold_stay_hidden(self, admin, site_engineer, add_contract,
-                                                                     machine, make_site, make_unit, uniq):
+    def test_overlaps_with_a_contract_entered_elsewhere_show(self, admin, site_engineer, add_contract, machine,
+                                                             make_equipment, make_site, make_unit):
+        """S087 § 5.3: read_basic is global, so every other active contract on the node shows, also one whose
+        other machines stand at a site the reader holds no role at."""
         main = add_contract()
         _added(site_engineer, main, machine)
-        other = make_site()
-        # The machine stands at the other site while its line on that site's contract is added, then returns
-        assert admin.put(f"{EQUIPMENT}/{machine['id']}",
-                         json={"unit_id": make_unit(site=other)["id"]}).status_code == 200
-        elsewhere = add_contract(site_id=other["id"])
+        elsewhere = add_contract()
+        _added(admin, elsewhere, make_equipment(unit=make_unit(site=make_site())))
         _added(admin, elsewhere, machine)
-        assert admin.put(f"{EQUIPMENT}/{machine['id']}", json={"unit_id": machine["unit_id"]}).status_code == 200
-        assert _line(admin.get(f"{CONTRACTS}/{main['id']}").get_json(), machine)["overlaps"][0][
-            "contract_id"] == elsewhere["id"]   # the admin holds both sites
         seen = _line(site_engineer.get(f"{CONTRACTS}/{main['id']}").get_json(), machine)["overlaps"]
-        assert seen == []
+        assert [o["contract_id"] for o in seen] == [elsewhere["id"]]
 
     def test_a_period_that_only_touches_on_one_day_overlaps(self, site_engineer, add_contract, machine):
         main = add_contract(from_date=_day(0), to_date=_day(300))

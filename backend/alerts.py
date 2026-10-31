@@ -26,7 +26,8 @@ imports it, as tickets.py does).
 Contracts (S084, R02.5).  Worker side only: the daily contract_reminder_scan queues one
 contract_alert per reminder due (60 and 15 days before the To date), and contract_alert sends it
 by push to the holders of contract:read and by email to the holders of contract:read_senior at
-the contract's site (people_with_role_at_site); the tap opens CONTRACT_PATH.  The scan reads the
+the sites of the contract's machines (S087: contracts_core.LINE_SITES_SQL; every site for a
+contract with no machine), through people_with_role_at_sites; the tap opens CONTRACT_PATH.  The scan reads the
 candidates plain once (contract_scan_candidates, only to narrow the work).  The daily
 contract_reminder_scan (S084, alerts.lock_contract_for_scan) then locks several contract rows
 FOR UPDATE in id order, decides from the locked row, and writes only their reminder columns and
@@ -34,7 +35,8 @@ task_queue rows; every route holds at most one existing contract row (the renewa
 one), taken first, so no cycle.  The renewal read (contract_renewed) is plain on purpose: a
 locking read's gap lock on uq_contracts_renewal_of (v47, S085) could block the renewal's insert
 while the scan waits on the old contract that insert holds.  contract_alert reads
-plain.  This module never imports contracts.py.
+plain.  This module never imports contracts.py; it imports the pure contracts_core for the one copy
+of the line-sites query (S087 § 5.2).
 """
 
 from datetime import timedelta
@@ -45,6 +47,7 @@ from alerts_core import (
     FIRST_REMINDER_DAYS, IMPROVEMENT_AUDIENCE_KEY, PAYLOAD_DATE, PAYLOAD_TIME, SECOND, SECOND_REMINDER_DAYS,
     display_name, escalation_minutes, excluded_people, first_name, improvement_facts, ticket_facts,
 )
+from contracts_core import LINE_SITES_SQL
 from db_helpers import marks
 from improvements_core import ACTION_OPEN, IMPROVEMENT_OPEN_STATES, WATCHING
 from settings import escalation_minutes as escalation_settings, label_base_url
@@ -176,24 +179,25 @@ def people_at_unit(cur, site_id, unit_ids, roles, only_ids=None, exclude_ids=(),
     ``with_email`` keeps only those with an address (S032 § 5.2)."""
     if not unit_ids:
         return []
-    return _people_with_role(cur, site_id, roles, unit_ids, only_ids, exclude_ids, with_email)
+    return _people_with_role(cur, [site_id], roles, unit_ids, only_ids, exclude_ids, with_email)
 
 
-def people_with_role_at_site(cur, site_id, roles, with_email=False):
-    """The active people with a membership at ``site_id`` whose role is in ``roles``, whatever
-    units they work in -> their ids in id order (S084 § 5.6: a contract belongs to a site, and its
-    keys are checked at the site).  Not tickets.people_at_site, the people picker."""
-    return _people_with_role(cur, site_id, roles, None, None, (), with_email)
+def people_with_role_at_sites(cur, site_ids, roles, with_email=False):
+    """The active people with a membership at one of ``site_ids`` whose role there is in ``roles``,
+    whatever units they work in -> their ids in id order, each once (S084 § 5.6, S087 § 5.6: a
+    contract's reminders go to the sites of its machines).  Not tickets.people_at_site, the people
+    picker."""
+    return _people_with_role(cur, site_ids, roles, None, None, (), with_email)
 
 
-def _people_with_role(cur, site_id, roles, unit_ids, only_ids, exclude_ids, with_email):
-    """The one recipient query of people_at_unit and people_with_role_at_site; ``unit_ids`` None
-    leaves out the unit condition."""
-    if not roles or (only_ids is not None and not only_ids):
+def _people_with_role(cur, site_ids, roles, unit_ids, only_ids, exclude_ids, with_email):
+    """The one recipient query of people_at_unit and people_with_role_at_sites; ``unit_ids`` None
+    leaves out the unit condition.  No site: nobody, with no empty ``IN ()``."""
+    if not site_ids or not roles or (only_ids is not None and not only_ids):
         return []
-    sql = ("SELECT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id AND ms.site_id = %s"
-           f" WHERE p.active = 1 AND ms.role IN ({marks(roles)})")
-    params = [site_id, *roles]
+    sql = ("SELECT DISTINCT p.id FROM people p JOIN memberships ms ON ms.person_id = p.id"
+           f" AND ms.site_id IN ({marks(site_ids)}) WHERE p.active = 1 AND ms.role IN ({marks(roles)})")
+    params = [*site_ids, *roles]
     if unit_ids is not None:
         sql += (" AND (ms.all_units = 1 OR EXISTS (SELECT 1 FROM person_units pu WHERE pu.person_id = p.id"
                 f" AND pu.unit_id IN ({marks(unit_ids)})))")
@@ -432,9 +436,9 @@ _RENEWED = "EXISTS (SELECT 1 FROM contracts r WHERE r.renewal_of_id = {id} AND r
 # Only contract:read_basic fields (D8): never callout_number, cost_note or a price, so no text can
 # show them
 _ALERT_CONTRACT = (
-    "SELECT c.id, c.title, c.contract_number, c.contract_type, c.from_date, c.to_date, c.active, c.site_id,"
-    " s.code AS site_code, v.name AS vendor_name, " + _RENEWED.format(id="c.id") + " AS renewed"
-    " FROM contracts c JOIN sites s ON s.id = c.site_id JOIN vendors v ON v.id = c.vendor_id WHERE c.id = %s"
+    "SELECT c.id, c.title, c.contract_number, c.contract_type, c.from_date, c.to_date, c.active,"
+    " v.name AS vendor_name, " + _RENEWED.format(id="c.id") + " AS renewed"
+    " FROM contracts c JOIN vendors v ON v.id = c.vendor_id WHERE c.id = %s"
 )
 
 
@@ -483,17 +487,28 @@ def mark_contract_reminded(cur, contract_id, which, to_date):
 
 
 def read_alert_contract(cur, contract_id):
-    """The contract, its site, vendor and whether it is renewed, read plain -> the row, or None."""
+    """The contract, its vendor, whether it is renewed and its sites (S087 § 5.2: its machines' current sites,
+    ``site_ids`` and ``site_codes`` by code, empty with no machine), read plain -> the row, or None."""
     cur.execute(_ALERT_CONTRACT, (contract_id,))
     row = cur.fetchone()
     if row is not None:
         row["renewed"] = bool(row["renewed"])
+        cur.execute(LINE_SITES_SQL, (contract_id,))
+        sites = cur.fetchall()
+        row["site_ids"] = [site["id"] for site in sites]
+        row["site_codes"] = [site["code"] for site in sites]
     return row
 
 
 def contract_recipients(cur, contract, channel):
-    """S084 § 5.6: the holders of the channel's key (CONTRACT_AUDIENCE_KEY) at the contract's site,
-    whatever their units; for email only those with an address.  Every one of them may open the
-    contract (contract:read_basic is held by every site role)."""
-    return people_with_role_at_site(cur, contract["site_id"], roles_holding(CONTRACT_AUDIENCE_KEY[channel]),
-                                    with_email=(channel == EMAIL))
+    """S084 § 5.6, S087 § 5.6: the holders of the channel's key (CONTRACT_AUDIENCE_KEY) at each site of
+    the contract's machines (``site_ids``, read_alert_contract), in one query, each person once,
+    whatever their units; for email only those with an address.  A contract with no machine goes to
+    the holders at every site (inactive ones too), so a reminder is never lost (S087 Q2 a).  Every one
+    of them may open the contract (contract:read_basic is global and held by every site role)."""
+    site_ids = contract["site_ids"]
+    if not site_ids:
+        cur.execute("SELECT id FROM sites ORDER BY id")
+        site_ids = [row["id"] for row in cur.fetchall()]
+    return people_with_role_at_sites(cur, site_ids, roles_holding(CONTRACT_AUDIENCE_KEY[channel]),
+                                     with_email=(channel == EMAIL))

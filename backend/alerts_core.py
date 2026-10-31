@@ -81,7 +81,8 @@ CHANNELS = {
 # too.  ACTION_GIVEN and ACTION_OVERDUE keep only the owner (and the lead) among the holders.
 IMPROVEMENT_AUDIENCE_KEY = {ACTION_GIVEN: READ_KEY, ACTION_OVERDUE: READ_KEY, VERIFY_READY: VERIFY_KEY}
 
-# S084 § 5.6, D1: a contract reminder goes to the holders of a key at the contract's site, by key
+# S084 § 5.6, D1: a contract reminder goes to the holders of a key at the sites of the contract's
+# machines (S087 § 5.6; every site for a contract with no machine), by key
 # as IMPROVEMENT_AUDIENCE_KEY, one key per channel because the audiences differ: the push to who
 # reads the contract (engineers and managers, R02 D10), the email to who reads its price (the
 # managers: renewing is a buying decision, R02 D5).
@@ -407,7 +408,8 @@ def should_send_contract(active, renewed, from_date, to_date, expected_to_date, 
 
 def contract_facts(contract, today, base_url):
     """The one dict every contract alert text is built from (§ 5.4).  ``contract``: id, title,
-    contract_number, contract_type, vendor_name, site_code, from_date, to_date.  Only fields every
+    contract_number, contract_type, vendor_name, site_codes (sorted, [] with no machine, S087),
+    from_date, to_date.  Only fields every
     site role may read (contract:read_basic, D8): no call-out number, no cost note, no price."""
     path = CONTRACT_PATH.format(id=contract["id"])
     label = contract_status(contract["from_date"], contract["to_date"], today)["label"]
@@ -417,7 +419,7 @@ def contract_facts(contract, today, base_url):
         "contract_number": contract["contract_number"],
         "type_word": TYPE_SHORT[contract["contract_type"]],
         "vendor_name": contract["vendor_name"],
-        "site_code": contract["site_code"],
+        "site_codes": list(contract["site_codes"]),
         "from_date": contract["from_date"],
         "to_date": contract["to_date"],
         # The label as words after a name: "ends in 60 days", "ends today" (push and email both read it)
@@ -428,10 +430,13 @@ def contract_facts(contract, today, base_url):
 
 
 def contract_text(facts):
-    """-> ``(title, body)``, e.g. ("Contract ends in 60 days · SMTW", "Atlas Copco AMC 2026–27 ·
-    Atlas Copco — ends on 31-03-2027. Renew it, or let it end.").  The body names the vendor even
-    when the title does: the title is free text (BR1-10)."""
-    title = f"Contract {facts['ends_words']} · {facts['site_code']}"
+    """-> ``(title, body)``, e.g. ("Contract ends in 60 days · BRICKS, SMTW", "Atlas Copco AMC 2026–27 ·
+    Atlas Copco — ends on 31-03-2027. Renew it, or let it end.").  The title names the sites of the
+    contract's machines (S087 § 5.6), none with no machine.  The body names the vendor even when the
+    title does: the title is free text (BR1-10)."""
+    title = f"Contract {facts['ends_words']}"
+    if facts["site_codes"]:
+        title += f" · {', '.join(facts['site_codes'])}"
     body = (f"{facts['title']} · {facts['vendor_name']} — ends on {facts['to_date']:%d-%m-%Y}. "
             "Renew it, or let it end.")
     return title, body
@@ -461,10 +466,10 @@ def you_get(memberships):
     all_units, unit_codes}]``.  One line per membership whose role is in a push audience, e.g.
     "Breakdowns and defects at SMTW, escalations" (all units) or "Breakdowns at SMTW.MCC1,
     SMTW.MCC2", then "Improvements ready to verify at SMTW" when the role holds improvement:verify
-    (S074), then "Contracts ending at SMTW" when the role holds contract:read (S084, the site code
-    even for a membership without units), then "Closed tickets at SMTW, by email" when the role
-    gets *ticket closed* (S032), then "Contracts ending at SMTW, by email" when the role holds
-    contract:read_senior (S084); then "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
+    (S074), then "Contracts ending for machines at SMTW" when the role holds contract:read (S084,
+    S087: the reminders follow the machines' sites; the site code even for a membership without
+    units), then "Closed tickets at SMTW, by email" when the role gets *ticket closed* (S032), then
+    "Contracts ending for machines at SMTW, by email" when the role holds contract:read_senior; then "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
     lines (S074 § 5.8) when a membership with a place holds improvement:read (the owner's alerts)
     or improvement:edit (who may lead gets the overdue alerts of the improvements they lead).
     The improvement lines follow config_rbac through compute_permissions.  Empty: nothing to get
@@ -477,16 +482,16 @@ def you_get(memberships):
         else:
             place = ", ".join(f"{membership['site_code']}.{code}" for code in sorted(membership["unit_codes"]))
         keys = compute_permissions([membership["role"]])
-        # S084 § 5.7: a contract belongs to a site, so its lines name the site code, also for a
-        # membership without units, whose other lines are skipped below
+        # S084 § 5.7, S087 § 5.6: a reminder follows the sites of the contract's machines, so its lines
+        # name the site code, also for a membership without units, whose other lines are skipped below
         site = membership["site_code"]
         contract_push = CONTRACT_AUDIENCE_KEY[PUSH] in keys
         contract_email = CONTRACT_AUDIENCE_KEY[EMAIL] in keys
         if not place:
             if contract_push:
-                lines.append(f"Contracts ending at {site}")
+                lines.append(f"Contracts ending for machines at {site}")
             if contract_email:
-                lines.append(f"Contracts ending at {site}, by email")
+                lines.append(f"Contracts ending for machines at {site}, by email")
             continue
         keys_with_place.update(keys)
         line = _what_line(membership["role"], place)
@@ -495,11 +500,11 @@ def you_get(memberships):
         if VERIFY_KEY in keys:
             lines.append(f"Improvements ready to verify at {place}")
         if contract_push:
-            lines.append(f"Contracts ending at {site}")
+            lines.append(f"Contracts ending for machines at {site}")
         if membership["role"] in AUDIENCE[CLOSED]:
             lines.append(f"Closed tickets at {place}, by email")
         if contract_email:
-            lines.append(f"Contracts ending at {site}, by email")
+            lines.append(f"Contracts ending for machines at {site}, by email")
     if any(m["role"] in ASSIGNABLE_ROLES for m in memberships):
         lines.append("Jobs assigned to you")
     if READ_KEY in keys_with_place:

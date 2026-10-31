@@ -353,11 +353,13 @@ class TestFanOut:
 
     def test_push_kinds_queue_push_only_even_for_people_with_an_address(self, plant, db_rows):
         """S032 § 5.1: breakdown, defect, escalation and assigned stay push only."""
-        db_rows("UPDATE people SET email = CONCAT('p', id, '@example.test') WHERE id IN (%s, %s)",
-                (person_id(plant, "manager"), person_id(plant, "engineer")))
+        with_address = (person_id(plant, "manager"), person_id(plant, "engineer"))
+        db_rows("UPDATE people SET email = CONCAT('p', id, '@example.test') WHERE id IN (%s, %s)", with_address)
         ticket = raise_on(plant)
         assert self._drain_first_alert(plant, db_rows, ticket)
-        assert db_rows("SELECT id FROM task_queue WHERE task_type = 'email_send'") == ()
+        # Only this plant's people: another test on the same worker may leave email_send rows of its own.
+        assert db_rows("SELECT id FROM task_queue WHERE task_type = 'email_send'"
+                       " AND JSON_EXTRACT(payload, '$.person_id') IN (%s, %s)", with_address) == ()
 
     def test_push_off_finds_no_channel(self, plant, db_rows, push_off):
         ticket = raise_on(plant)

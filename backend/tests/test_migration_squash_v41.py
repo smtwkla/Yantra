@@ -4,7 +4,7 @@ tests/db_names.py), dropped and created by these tests.
 - equivalence: on an empty database the squashed v41 builds the schema and the seed rows that
   v20–v41 built (the frozen fixture tests/fixtures/migrations_v41.py);
 - production's path: a database built by v20–v41, with rows, skips the squashed v41 and gets
-  v42 on, every row kept, the same schema as a fresh database;
+  v50, every row kept, the same schema as a fresh database;
 - the precondition: a database at v40, or at v13, is refused with nothing applied;
 - re-runs: a half-applied v41 completes; a re-run keeps edited rows and restores a missing setting.
 
@@ -93,8 +93,8 @@ def test_v41_builds_what_v20_to_v41_built(reference):
     assert _versions() == [41]
 
 
-def test_production_s_v41_gets_v42_to_v47():
-    """Production's path: v41 recorded through v20–v41, so the squashed v41 never runs there."""
+def test_production_s_v41_gets_v50():
+    """Production's path: v41 recorded through v20–v41, so the squashed v41 never runs there; v50 follows."""
     _recreate()
     _migrate(OLD)
     _fill_one_ticket()
@@ -105,7 +105,7 @@ def test_production_s_v41_gets_v42_to_v47():
     before = _all_rows(columns=columns)
 
     _migrate(CURRENT)
-    assert _versions() == [*range(20, 48)]
+    assert _versions() == [*range(20, 42), 50]
     assert _run("SELECT description FROM db_version WHERE version = 41")[0]["description"] == old_description
     assert old_description == "One-point lessons and their photos (S075)"
     assert _all_rows(columns=columns) == before

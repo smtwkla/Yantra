@@ -231,7 +231,7 @@ class TestYouGet:
     def test_engineer_all_units(self):
         assert you_get([_membership("SMTW", "maint_engineer")]) == [
             "Breakdowns and defects at SMTW, escalations", "Improvements ready to verify at SMTW",
-            "Contracts ending at SMTW", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Contracts ending for machines at SMTW", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_supervisor_at_two_units(self):
         assert you_get([_membership("SMTW", "maint_supervisor", ["MCC2", "MCC1"])]) == [
@@ -241,23 +241,23 @@ class TestYouGet:
         """S032: each manager membership adds its closed-ticket email line; S074: and its verify line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
             "Breakdowns at BRICKS, escalations", "Improvements ready to verify at BRICKS",
-            "Contracts ending at BRICKS", "Closed tickets at BRICKS, by email", "Contracts ending at BRICKS, by email",
-            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Contracts ending at SMTW",
-            "Closed tickets at SMTW, by email", "Contracts ending at SMTW, by email",
+            "Contracts ending for machines at BRICKS", "Closed tickets at BRICKS, by email", "Contracts ending for machines at BRICKS, by email",
+            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Contracts ending for machines at SMTW",
+            "Closed tickets at SMTW, by email", "Contracts ending for machines at SMTW, by email",
             "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_manager_at_one_unit(self):
         """S084 § 5.7: the contract lines name the site, not the unit."""
         assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
             "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to verify at SMTW.MCC2",
-            "Contracts ending at SMTW", "Closed tickets at SMTW.MCC2, by email", "Contracts ending at SMTW, by email",
+            "Contracts ending for machines at SMTW", "Closed tickets at SMTW.MCC2, by email", "Contracts ending for machines at SMTW, by email",
             "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_a_manager_without_units_gets_the_contract_lines(self):
         """S084 § 5.7, BR1-07: the reminders reach a site member whatever their units; no
         countermeasure lines come from a membership without units."""
         assert you_get([_membership("SMTW", "maint_manager", [])]) == [
-            "Contracts ending at SMTW", "Contracts ending at SMTW, by email", "Jobs assigned to you"]
+            "Contracts ending for machines at SMTW", "Contracts ending for machines at SMTW, by email", "Jobs assigned to you"]
 
     def test_engineer_gets_no_email_line(self):
         assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
@@ -547,7 +547,7 @@ class TestShouldSendContract:
 
 def _contract(**overrides):
     contract = {"id": 12, "title": "Atlas Copco AMC 2026–27", "contract_number": "TEST/AMC/0001",
-                "contract_type": "amc", "vendor_name": "Atlas Copco", "site_code": "SMTW", "from_date": C_FROM,
+                "contract_type": "amc", "vendor_name": "Atlas Copco", "site_codes": ["SMTW"], "from_date": C_FROM,
                 "to_date": C_TO}
     contract.update(overrides)
     return contract
@@ -569,6 +569,12 @@ class TestContractTexts:
 
     def test_one_day(self):
         assert contract_text(_contract_facts(today=C_TO - DAY))[0] == "Contract ends in 1 day · SMTW"
+
+    def test_the_title_names_the_machine_sites(self):
+        """S087 § 5.6: the sites of the contract's machines, by code; none with no machine."""
+        assert contract_text(_contract_facts(site_codes=["BRICKS", "SMTW"]))[0] == (
+            "Contract ends in 60 days · BRICKS, SMTW")
+        assert contract_text(_contract_facts(site_codes=[]))[0] == "Contract ends in 60 days"
 
     def test_the_title_cut_at_80(self):
         assert _contract_facts(title="x" * 100)["title"] == "x" * 80

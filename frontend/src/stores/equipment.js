@@ -41,6 +41,16 @@ export function filterableUnits(allUnits, mine) {
 }
 
 /**
+ * The sites where the user has a unit (S087 A1, the contract's Add machine): active sites with a unit the
+ * user reads (for all-units access: any unit of the site, active or not, as `filterableUnits` gives), as
+ * {id, code, name}.
+ */
+export function unitSites(allUnits, allSites, mine) {
+  const siteIds = new Set(filterableUnits(allUnits, mine).map((u) => u.site_id));
+  return (allSites ?? []).filter((s) => s.active && siteIds.has(s.id)).map(({ id, code, name }) => ({ id, code, name }));
+}
+
+/**
  * The sites the readings sheet offers (S040 BR1-01, BR2-01): active sites with an active unit
  * where the user logs readings (every such unit when reading_unit_ids is null), as {id, code, name}.
  */

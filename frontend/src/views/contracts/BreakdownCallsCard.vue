@@ -8,8 +8,9 @@
  *
  * It loads its own list (`GET /api/contracts/<id>/calls`), as the Under contract card loads its own, and only for a
  * holder of ticket:read: others see no card. The rows are only the tickets the reader could open, so every serial
- * opens; "N of M calls used" comes only when the reader sees the whole site (the API's `complete`). The warning
- * says when no Team record of the vendor is linked, or none can be assigned at the site.
+ * opens; "N of M calls used" comes only when the reader sees every unit of the sites of the contract's machines (the
+ * API's `complete`, S087). The warning says when no Team record of the vendor is linked, or none can be assigned at
+ * some of those sites (`warning_sites`).
  */
 import { computed, ref, watch } from "vue";
 import { apiGet } from "../../api";
@@ -30,7 +31,7 @@ let loadSeq = 0;
 const canRead = computed(() => userPermissions.value.includes("ticket:read"));
 
 const warning = computed(() => answer.value
-  && vendorWarningText(answer.value.warning, answer.value.vendor_name, answer.value.site_code));
+  && vendorWarningText(answer.value.warning, answer.value.vendor_name, answer.value.warning_sites));
 const usedLine = computed(() => answer.value && callsUsedLine(answer.value.used));
 
 // Each call with its texts worked out once
