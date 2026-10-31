@@ -2,15 +2,16 @@
 node or, since S012, on an equipment model (docs/steps/S012-equipment-models; the owner
 design of the dropped S009), and since S017 photos on a ticket (docs/steps/S017-raise-tickets),
 since S018 its documents too (docs/steps/S018-work-tickets, user decision 5), since S070 on
-a countermeasure of an improvement (docs/steps/S070-improvement-countermeasures, § 5.8), and
-since S075 on a one-point lesson (docs/steps/S075-one-point-lessons, § 5.8).
+a countermeasure of an improvement (docs/steps/S070-improvement-countermeasures, § 5.8),
+since S075 on a one-point lesson (docs/steps/S075-one-point-lessons, § 5.8), and since S083
+on a vendor contract (docs/steps/S083-contract-documents, § 5).
 
 Thin shell: documents_core holds the rules (file type from the first bytes, titles,
 names, thumbnails); file_store does the file I/O; this module checks access and the
 scrapped rule, orders the writes and serves files.
 
-Owners (OWNERS below): a document belongs to exactly one node, model, ticket, countermeasure or
-lesson (the owner CHECK, v9, v12, v38 and v41).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
+Owners (OWNERS below): a document belongs to exactly one node, model, ticket, countermeasure,
+lesson or contract (the owner CHECK, v9, v12, v38, v41 and v45).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
 are stacked route decorators whose ``defaults`` name the owner.  Each owner carries its keys
 as data (S017 § 5.5); every owner takes every kind (S018 removed the ticket's photos-only rule): the route checks the owner's key held at any site
 (check_perm), then the owner's read or lock function checks it at the record's site.  Node documents follow the
@@ -33,6 +34,12 @@ class lesson's at every site, as a model's.  They are added, retitled and remove
 procedure:edit, at the machine's site for a machine lesson and held at any site for a class
 lesson; restored and purged by equipment:purge_documents on the same rule.  No state rule: a
 retired lesson's photos may change.
+A contract's photos and documents (contracts.py's functions) are behind contract:read_senior
+at the contract's site on every route (S083 D5: a quote or a signed contract shows the price):
+read with it (404 without contract:read_basic there, 403 without read_senior), added, retitled
+and removed with contract:edit and read_senior there, restored and purged with
+equipment:purge_documents and read_senior there, so IT admin sees none.  No state rule: an
+ended or inactive contract takes and loses documents.
 
 Upload order (S006 § 5.6): every check and the thumbnail first, then the files are
 written with no transaction open, then a short transaction locks the owner and inserts.
@@ -43,18 +50,22 @@ Locks: a document write takes exactly one owner lock — the node row (lock (1) 
 equipment.py's order, re-checking scrapped, access and the site key from the locked row),
 the model row (4), the ticket row (7, tickets.py's order) or, for a countermeasure, its
 improvement (6b) then the countermeasure (6c) in that order (improvements.py's order, after a
-plain read of the countermeasure's improvement_id), or, for a lesson, its procedures row (6d,
-procedures.py's order) — and then only equipment_documents rows, which nothing else locks.  It
-never holds two owners' locks, so it cannot join a cycle with equipment.py (node → … → model →
-class), masters.py (manufacturer → model → class → type), tickets.py (node → counter → ticket),
-improvements.py ((6b) → (6c)) or procedures.py ((6) or (6d), then shared locks only).  The owner lock also
-serialises a title edit with a remove (S006 § 5.8).
+plain read of the countermeasure's improvement_id), for a lesson, its procedures row (6d,
+procedures.py's order), or, for a contract, its contracts row (contracts.py's own lock, through
+lock_contract_for_change, S083) — and then only equipment_documents rows, which nothing else
+locks.  It never holds two owners' locks, so it cannot join a cycle with equipment.py (node → … →
+model → class), masters.py (manufacturer → model → class → type), tickets.py (node → counter →
+ticket), improvements.py ((6b) → (6c)), procedures.py ((6) or (6d), then shared locks only) or
+contracts.py (the contract row first, then a line, the vendor or the node; a document write waits
+on the contract row only, behind a writer that finishes).  The owner lock also serialises a title
+edit with a remove (S006 § 5.8).
 
 Files are served only through these routes, after the access check (ISO 27001 A.8.3).
 A removed document keeps its row and its file (ISO 55001 controlled information) but is
 no longer listed or served.  A removed document can be restored or deleted for good by
 equipment:purge_documents (S008), node, model, ticket, countermeasure and lesson documents alike
-(S012 § 5.6, S017 § 5.5, S070 § 5.8, S075 § 5.8).
+(S012 § 5.6, S017 § 5.5, S070 § 5.8, S075 § 5.8); a contract's only with contract:read_senior
+at its site as well (S083 E2).
 """
 
 import logging
@@ -69,11 +80,12 @@ from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
-from auth_utils import check_perm, require_perm
+from auth_utils import check_perm, require_perm, sites_holding
 from config import MB
+from contracts import lock_contract_for_change, read_contract, read_contract_for_change
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, transaction, update_row
 from documents_core import (
-    KINDS, SIGNATURE_BYTES, THUMB_EXTENSION, TYPE_REFUSED, FILE_TYPES, PhotoTooLarge, clean_original_name,
+    HEADER_WINDOW, KINDS, THUMB_EXTENSION, TYPE_REFUSED, FILE_TYPES, PhotoTooLarge, clean_original_name,
     detect_file_type, kind_accepts, make_thumbnail, safe_download_name, stored_name, thumb_name,
     validate_document, validate_title,
 )
@@ -201,6 +213,13 @@ OWNERS = {
     "procedure": Owner("procedure_id", "/api/procedures/{}/documents", "lesson",
                        read_procedure, read_procedure_for_change, lock_procedure_for_change,
                        lock_procedure_for_change, "equipment:read", "procedure:edit", "equipment:purge_documents"),
+    # A contract's paper (S083 § 5.1): contracts.py's functions check contract:read_senior at the
+    # contract's site on every route, also restore and purge.  No state rule, so one lock function
+    # serves change and purge.
+    "contract": Owner("contract_id", "/api/contracts/{}/documents", "contract",
+                      read_contract, read_contract_for_change, lock_contract_for_change,
+                      lock_contract_for_change, "contract:read_senior", "contract:edit",
+                      "equipment:purge_documents"),
 }
 
 # The collection prefixes, one stacked route decorator each.  The countermeasure's cannot meet
@@ -211,11 +230,15 @@ _TICKET_DOCS = "/tickets/<int:owner_id>/documents"
 _ACTION_DOCS = "/improvements/actions/<int:owner_id>/documents"
 # procedures_bp's own routes are / and /<int:procedure_id>, none ending in /documents (S075 § 5.8)
 _PROCEDURE_DOCS = "/procedures/<int:owner_id>/documents"
+# contracts_bp's routes are /, /<int:contract_id>, its /equipment lines and /for-equipment/<int:node_id>, none
+# ending in /documents (S083 § 5.1)
+_CONTRACT_DOCS = "/contracts/<int:owner_id>/documents"
 _FOR_NODE = {"defaults": {"owner": "equipment"}}
 _FOR_MODEL = {"defaults": {"owner": "model"}}
 _FOR_TICKET = {"defaults": {"owner": "ticket"}}
 _FOR_ACTION = {"defaults": {"owner": "action"}}
 _FOR_PROCEDURE = {"defaults": {"owner": "procedure"}}
+_FOR_CONTRACT = {"defaults": {"owner": "contract"}}
 
 
 def _owner_key(owner, which):
@@ -273,6 +296,7 @@ def _inherited(cur, node):
 @documents_bp.route(_TICKET_DOCS, strict_slashes=False, **_FOR_TICKET)
 @documents_bp.route(_ACTION_DOCS, strict_slashes=False, **_FOR_ACTION)
 @documents_bp.route(_PROCEDURE_DOCS, strict_slashes=False, **_FOR_PROCEDURE)
+@documents_bp.route(_CONTRACT_DOCS, strict_slashes=False, **_FOR_CONTRACT)
 def list_documents(owner, owner_id):
     _owner_key(owner, "read_key")
     with get_db().cursor() as cur:
@@ -303,7 +327,7 @@ def _read_upload(limit_mb):
         raise too_large
     if not data:
         raise ApiError("The file is empty", 400, "file")
-    detected = detect_file_type(data[:SIGNATURE_BYTES])
+    detected = detect_file_type(data[:HEADER_WINDOW])   # a PDF may start with blank lines (S083 § 5.6)
     if detected is None or not kind_accepts(clean["kind"], detected[0]):
         raise ApiError(TYPE_REFUSED, 400, "file")
     original_name = clean_original_name(upload.filename, clean["title"])
@@ -338,6 +362,7 @@ def _write_files(owner, owner_id, name, data, thumb):
 @documents_bp.route(_TICKET_DOCS, methods=["POST"], strict_slashes=False, **_FOR_TICKET)
 @documents_bp.route(_ACTION_DOCS, methods=["POST"], strict_slashes=False, **_FOR_ACTION)
 @documents_bp.route(_PROCEDURE_DOCS, methods=["POST"], strict_slashes=False, **_FOR_PROCEDURE)
+@documents_bp.route(_CONTRACT_DOCS, methods=["POST"], strict_slashes=False, **_FOR_CONTRACT)
 def upload_document(owner, owner_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -417,6 +442,7 @@ def _serve(owner, owner_id, doc_id, thumbnail):
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/file", **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/file", **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>/file", **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>/file", **_FOR_CONTRACT)
 def get_document_file(owner, owner_id, doc_id):
     return _serve(owner, owner_id, doc_id, thumbnail=False)
 
@@ -426,6 +452,7 @@ def get_document_file(owner, owner_id, doc_id):
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/thumb", **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/thumb", **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>/thumb", **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>/thumb", **_FOR_CONTRACT)
 def get_document_thumb(owner, owner_id, doc_id):
     return _serve(owner, owner_id, doc_id, thumbnail=True)
 
@@ -445,6 +472,7 @@ def _validate_title_body(body, _creating):
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>", methods=["PUT"], **_FOR_CONTRACT)
 def update_document_title(owner, owner_id, doc_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -466,6 +494,7 @@ def update_document_title(owner, owner_id, doc_id):
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>", methods=["DELETE"], **_FOR_CONTRACT)
 def remove_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "write_key")
     conn = get_db()
@@ -536,6 +565,15 @@ _REMOVED_PROCEDURE_BRANCH = (
     " FROM equipment_documents d JOIN procedures pr ON pr.id = d.procedure_id"
     " JOIN equipment e ON e.id = pr.equipment_id" + NODE_JOINS
 )
+# A contract's (S083 § 5.5): name its title, code its number, unit its site's code (a contract has
+# no unit); no state (a contract has no state rule)
+_REMOVED_CONTRACT_BRANCH = (
+    f"SELECT {_REMOVED_DOC_COLUMNS}, 'contract' AS owner, c.id AS owner_id, NULL AS equipment_id,"
+    " c.contract_number AS code, c.title AS name, NULL AS level, NULL AS lifecycle, s.code AS site_code,"
+    " NULL AS unit_code, NULL AS p_code, NULL AS gp_code, NULL AS mf_name, NULL AS m_designation,"
+    " NULL AS owner_state, NULL AS action_kind, NULL AS improvement_state"
+    " FROM equipment_documents d JOIN contracts c ON c.id = d.contract_id JOIN sites s ON s.id = c.site_id"
+)
 
 # Columns the item is built from, not shown as they are
 _JOIN_COLUMNS = ("owner_id", "site_code", "unit_code", "p_code", "gp_code", "mf_name", "m_designation",
@@ -550,12 +588,16 @@ def _removed_item(row):
     countermeasure its improvement's serial as ``name``, its unit, its ``state`` (a cancelled
     one refuses restore), its ``action_kind`` and ``improvement_open`` (S072 A1: a closed or
     dropped improvement refuses restore too), for a lesson (S075) its serial as ``name``, its
-    machine's ``code`` and unit, and ``state`` None."""
+    machine's ``code`` and unit, and ``state`` None, for a contract (S083) its title as ``name``,
+    its number as ``code``, its site's code as ``unit`` and ``state`` None."""
     item = row_to_dict({key: value for key, value in row.items() if key not in _JOIN_COLUMNS})
     item["path"] = OWNERS[row["owner"]].path.format(row["owner_id"])
     if row["owner"] == "model":
         item["name"] = model_label(row["mf_name"], row["m_designation"])
         item["unit"] = item["full_path"] = None
+    elif row["owner"] == "contract":
+        item["unit"] = row["site_code"]
+        item["full_path"] = item["state"] = None
     elif row["owner"] in ("ticket", "action", "procedure"):
         item["unit"] = f"{row['site_code']}.{row['unit_code']}"
         item["full_path"] = None
@@ -586,7 +628,9 @@ def _removed_branches(cur, kind, q):
     branches scoped to the units where equipment:purge_documents is held (S011; a ticket by its
     own unit, a countermeasure by its improvement's) and left out when there are none — not the
     whole list; the model branch at every site; the lesson branch (S075 § 5.8) never left out: a
-    class lesson's rows at every site (as a model's), a machine lesson's in those units."""
+    class lesson's rows at every site (as a model's), a machine lesson's in those units; the
+    contract branch (S083 § 5.5) at the sites where both equipment:purge_documents and
+    contract:read_senior are held, left out when there are none."""
     common, common_params = ["d.removed_at IS NOT NULL"], []
     if kind:
         common.append("d.kind = %s")
@@ -621,6 +665,12 @@ def _removed_branches(cur, kind, q):
             params.extend(sorted(unit_ids))
         conditions.append(scope)
     branches.append((f"{_REMOVED_PROCEDURE_BRANCH} WHERE {' AND '.join(conditions)}", params))
+
+    site_ids = ({s["id"] for s in sites_holding(cur, "equipment:purge_documents")}
+                & {s["id"] for s in sites_holding(cur, "contract:read_senior")})
+    if site_ids:
+        branches.append(_scoped_branch(_REMOVED_CONTRACT_BRANCH, "CONCAT_WS(' ', c.title, c.contract_number)",
+                                       "c.site_id", common, common_params, pattern, site_ids))
     return branches
 
 
@@ -648,6 +698,7 @@ def list_removed_documents():
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>/restore", methods=["POST"], **_FOR_CONTRACT)
 def restore_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "purge_key")
     column = OWNERS[owner].column
@@ -697,6 +748,7 @@ def _remove_stored_files(owner, owner_id, doc):
 @documents_bp.route(f"{_TICKET_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_TICKET)
 @documents_bp.route(f"{_ACTION_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_ACTION)
 @documents_bp.route(f"{_PROCEDURE_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_PROCEDURE)
+@documents_bp.route(f"{_CONTRACT_DOCS}/<int:doc_id>/purge", methods=["POST"], **_FOR_CONTRACT)
 def purge_document(owner, owner_id, doc_id):
     key = _owner_key(owner, "purge_key")
     column = OWNERS[owner].column

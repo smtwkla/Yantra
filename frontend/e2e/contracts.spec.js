@@ -8,7 +8,12 @@
 // today (IST), far from the 60-day edge.  The call-out number is obviously fake (D10).  Under contract on the
 // machine (S082): the card on the equipment page (Do not repair, the call-out number as a tel: link by role, the
 // machine's contract on its part, an ended contract, the empty card, the place before Open tickets) and the list's
-// Contract filter; each test makes its own machines, so other tests' contracts never show on its card.
+// Contract filter; each test makes its own machines, so other tests' contracts never show on its card.  The
+// contract's documents (S083): a manager adds a PDF, removes it and restores it from Settings; an engineer sees
+// no Documents card.
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { equipmentRow, openFilters } from "./support/equipmentList.js";
@@ -550,4 +555,87 @@ test("S082: the Under contract card with its warning fits a phone with no sidewa
   await openNodeAs(page, "technician", machine);
   await expect(cardItem(page, contract).getByRole("alert")).toHaveText(DO_NOT_REPAIR);
   await expectNoSidewaysScroll(page);
+});
+
+// ---------------------------------------------------------------------------
+// The contract's documents (S083, R02.3): the signed contract, its annexures and the quotes on the contract page,
+// for the site's managers only (contract:read_senior).  Each test makes its own contract, so its Documents card
+// holds only its own files.
+// ---------------------------------------------------------------------------
+
+const MANUAL = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "test-manual.pdf");
+const SIGNED_LINE = "Only the managers of SMTW see these documents and photos.";
+
+const documentsCard = (page) =>
+  page.locator(".card", { has: page.locator(".card-header", { hasText: /^\s*Documents/ }) });
+
+/** A contract at SMTW by API, named with the test's tag. */
+async function contractForDocuments(testInfo, label) {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${label} ${tag}`);
+  return contractByApi(vendor, `E2E AMC ${label} ${tag}`);
+}
+
+/** The test PDF uploaded to the contract by API as the manager -> the document. */
+async function contractPdfByApi(contract, title) {
+  const api = await apiAs("manager");
+  try {
+    const res = await api.post(`/api/contracts/${contract.id}/documents`, {
+      multipart: { kind: "document", title, file: { name: "test-manual.pdf", mimeType: "application/pdf", buffer: fs.readFileSync(MANUAL) } },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
+test("S083: a manager adds the signed contract as a PDF and sees it in Documents", async ({ page }, testInfo) => {
+  const contract = await contractForDocuments(testInfo, "signed");
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  await expect(page.getByText(SIGNED_LINE)).toBeVisible();
+  await expect(documentsCard(page)).toContainText("No documents yet.");
+  await page.getByRole("button", { name: "Add document" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("File").setInputFiles(MANUAL);
+  await dialog.getByLabel("Title").fill("Signed contract");
+  await saveDialog(page, "Upload");
+  await expect(documentsCard(page)).toContainText("Signed contract");
+  await expect(documentsCard(page)).toContainText("test-manual.pdf");
+});
+
+test("S083: a manager removes a contract document and restores it from Settings", async ({ page }, testInfo) => {
+  const contract = await contractForDocuments(testInfo, "restore");
+  await contractPdfByApi(contract, "Fuji AMC quote");
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  const documents = documentsCard(page);
+  await expect(documents).toContainText("Fuji AMC quote");
+  await documents.getByRole("button", { name: "More actions" }).click();
+  await documents.getByRole("button", { name: "Remove" }).click();
+  await expect(documents.getByText("Remove this document?")).toBeVisible();
+  await documents.getByRole("button", { name: "Yes", exact: true }).click();
+  await expect(documents).toContainText("No documents yet.");
+
+  await page.goto("/settings");
+  await page.getByRole("searchbox", { name: "Search removed documents" }).fill(contract.title);
+  const removed = page.locator("tr", { hasText: "Fuji AMC quote" });
+  await expect(removed).toContainText(`Contract ${contract.title}`);
+  await expect(removed).toContainText("SMTW");
+  await removed.getByRole("button", { name: "Restore" }).click();
+  await expect(page.getByText("Restored 'Fuji AMC quote'.")).toBeVisible();
+  await expect(removed).toHaveCount(0);
+
+  await page.goto(`/contracts/${contract.id}`);
+  await expect(documentsCard(page)).toContainText("Fuji AMC quote");
+});
+
+test("S083: an engineer sees no Documents card on the contract page", async ({ page }, testInfo) => {
+  const contract = await contractForDocuments(testInfo, "engineer");
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(machinesCard(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add document" })).toHaveCount(0);
+  await expect(page.locator(".card-header", { hasText: /^\s*Documents/ })).toHaveCount(0);
+  await expect(page.getByText(SIGNED_LINE)).toHaveCount(0);
 });

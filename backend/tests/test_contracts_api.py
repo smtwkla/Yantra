@@ -322,6 +322,24 @@ class TestRead:
     def test_the_list_without_a_slash_is_not_a_redirect(self, manager):
         assert manager.get(CONTRACTS).status_code == 200
 
+    def test_the_document_flags_follow_the_keys(self, role_client, admin, keycloak_admin, engineer, manager, site,
+                                                add):
+        """S083 § 6.1: documents are read with contract:read_senior, written with contract:edit and read_senior."""
+        contract = add()
+        assert (contract["can_read_documents"], contract["can_edit_documents"]) == (True, True)
+
+        def flags(client):
+            detail = client.get(f"{CONTRACTS}/{contract['id']}").get_json()
+            item = next(c for c in _listed(client, f"site_id={site['id']}")["items"] if c["id"] == contract["id"])
+            assert (item["can_read_documents"], item["can_edit_documents"]) == (
+                detail["can_read_documents"], detail["can_edit_documents"])
+            return detail["can_read_documents"], detail["can_edit_documents"]
+        assert flags(manager) == (True, True)
+        assert flags(engineer) == (False, False)
+        assert flags(admin) == (False, False)
+        assert flags(keycloak_admin) == (True, True)
+        assert flags(role_client("maint_operator")) == (False, False)
+
 
 class TestRoles:
 

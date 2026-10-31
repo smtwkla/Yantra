@@ -1,10 +1,11 @@
 """Documents and photos on equipment — the API, against the test DB and a temporary
 DATA_DIR (conftest.py).  Needs the dev MariaDB container (tooling/dev/dev-db-up.bat).
 Node documents (S006); model documents and the node's inherited group (S012); ticket photos and
-documents (S017, S018); a countermeasure's (S070) at the end."""
+documents (S017, S018); a countermeasure's (S070), a lesson's (S075) and a contract's (S083) at the end."""
 
 import errno
 import os
+from datetime import timedelta
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -90,6 +91,14 @@ class TestUploadAndServe:
         res = upload(admin, node, kind="photo", data=jpeg_with_size(8000, 8000), filename="huge.jpg")
         assert refusal(res) == (400, "file", "Photo too large (64 megapixels). Take it at a lower resolution.")
         assert folder_files(node) == []
+
+    def test_a_pdf_with_blank_lines_before_its_header_is_stored_as_it_is(self, admin, node):
+        """S083 § 5.6: the Fuji quote starts with six line feeds; the stored file keeps its bytes."""
+        data = b"\n" * 6 + PDF
+        doc = uploaded(admin, node, data=data, filename="AMC14082369550_12606 (1).pdf")
+        assert (doc["content_type"], doc["size_bytes"]) == ("application/pdf", len(data))
+        res = admin.get(f"{docs_url(node)}/{doc['id']}/file")
+        assert (res.status_code, res.data, res.headers["Content-Type"]) == (200, data, "application/pdf")
 
 
 class TestUploadRefusals:
@@ -538,6 +547,23 @@ class TestOwnerCheckConstraint:
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]
 
+    def test_a_lesson_and_a_contract_together_are_refused(self, make_equipment, make_site, make_vendor, db_rows,
+                                                          uniq):
+        """S083 § 8.2: the sixth owner counts in the same CHECK."""
+        node = make_equipment()
+        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by) VALUES (%s, %s, 'x', 'x', 'test')",
+                (f"OPL-CHK6-{node['id']}", node["id"]))
+        lesson_id = db_rows("SELECT MAX(id) AS id FROM procedures")[0]["id"]
+        db_rows("INSERT INTO contracts (site_id, vendor_id, contract_type, title, from_date, to_date, created_by)"
+                " VALUES (%s, %s, 'amc', 'x', CURDATE(), CURDATE(), 'test')", (make_site()["id"], make_vendor()["id"]))
+        contract_id = db_rows("SELECT MAX(id) AS id FROM contracts")[0]["id"]
+        with pytest.raises(pymysql.err.OperationalError) as caught:
+            db_rows("INSERT INTO equipment_documents (procedure_id, contract_id, kind, title, original_name, stored_name,"
+                    " content_type, size_bytes, created_by) VALUES (%s, %s, 'document', 'x', 'x.pdf', %s,"
+                    " 'application/pdf', 1, 'test')", (lesson_id, contract_id, f"chk-{uniq.username()}.pdf"))
+        assert caught.value.args[0] == 4025
+        assert "chk_equipment_documents_owner" in caught.value.args[1]
+
 
 # ---------------------------------------------------------------------------
 # Ticket photos (S017 § 5.5): the third owner, keys ticket:read / ticket:raise; documents too since S018
@@ -962,3 +988,138 @@ class TestLessonDocuments:
         assert lessons.engineer.get(f"{url}/{photo['id']}/file").status_code == 404
         assert lessons.engineer.delete(f"{url}/{photo['id']}").status_code == 404
         assert lessons.engineer.get(lesson_docs_url({"id": 999999999})).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A contract's documents (S083 § 5, § 8.2): the sixth owner, every route behind contract:read_senior at the
+# contract's site; written with contract:edit and read_senior there
+# ---------------------------------------------------------------------------
+
+def contract_docs_url(contract):
+    return f"/api/contracts/{contract['id']}/documents"
+
+
+def contract_pdf(client, contract, **kwargs):
+    return uploaded_to(client, contract_docs_url(contract), title="Signed contract", filename="signed.pdf", **kwargs)
+
+
+@pytest.fixture
+def contract_case(admin, make_site, make_vendor, user_at_sites, role_client, uniq):
+    """A contract at a site, made by IT admin -> a namespace: site, other_site, contract, new_contract(**fields),
+    and clients: manager, engineer, operator (at the site), elsewhere (a manager of the other site), it_admin."""
+    site, other_site, vendor = make_site(), make_site(), make_vendor()
+    today = now_ist().date()
+
+    def new_contract(**fields):
+        body = {"site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+                "title": f"AMC {uniq.vendor_name()}", "from_date": (today - timedelta(days=30)).isoformat(),
+                "to_date": (today + timedelta(days=300)).isoformat(), **fields}
+        res = admin.post("/api/contracts", json=body)
+        assert res.status_code == 201, res.get_json()
+        return res.get_json()
+
+    def at_site(role):
+        return user_at_sites([(site, role, "all")])[0]
+
+    return SimpleNamespace(
+        site=site, other_site=other_site, contract=new_contract(), new_contract=new_contract,
+        manager=at_site("maint_manager"), engineer=at_site("maint_engineer"), operator=at_site("maint_operator"),
+        elsewhere=user_at_sites([(other_site, "maint_manager", "all")])[0], it_admin=role_client("it_admin"))
+
+
+class TestContractDocuments:
+
+    def test_the_manager_uploads_lists_and_opens(self, contract_case, db_rows):
+        case = contract_case
+        url = contract_docs_url(case.contract)
+        pdf = contract_pdf(case.manager, case.contract)
+        photo = uploaded_to(case.manager, url, kind="photo", title="Signed page 2", data=JPEG, filename="IMG_7.jpg")
+        stored = db_rows("SELECT stored_name, contract_id, equipment_id, model_id, ticket_id, action_id, procedure_id"
+                         " FROM equipment_documents WHERE id = %s", (pdf["id"],))[0]
+        assert stored["contract_id"] == case.contract["id"]
+        assert [stored[c] for c in ("equipment_id", "model_id", "ticket_id", "action_id", "procedure_id")] == [
+            None] * 5
+        assert stored["stored_name"] in owner_files("contract", case.contract["id"])
+        assert file_store.owner_folder("contract", case.contract["id"]).endswith(
+            os.path.join("contracts", str(case.contract["id"])))
+        page = listed_at(case.manager, url)
+        assert [d["id"] for d in page["items"]] == [photo["id"], pdf["id"]] and "inherited" not in page
+        res = case.manager.get(f"{url}/{pdf['id']}/file")
+        assert (res.status_code, res.data) == (200, PDF)
+        assert res.headers["X-Content-Type-Options"] == "nosniff"
+        assert "private" in res.headers["Cache-Control"] and "public" not in res.headers["Cache-Control"]
+        assert photo["has_thumb"] is True
+        assert case.manager.get(f"{url}/{photo['id']}/thumb").status_code == 200
+
+    def test_an_engineer_it_admin_and_an_operator_neither_read_nor_write(self, contract_case):
+        case = contract_case
+        url = contract_docs_url(case.contract)
+        pdf = contract_pdf(case.manager, case.contract)
+        before = owner_files("contract", case.contract["id"])
+        for client in (case.engineer, case.it_admin, case.operator):
+            assert client.get(url).status_code == 403
+            assert client.get(f"{url}/{pdf['id']}/file").status_code == 403
+            assert upload_to(client, url).status_code == 403
+        assert owner_files("contract", case.contract["id"]) == before
+
+    def test_a_manager_of_another_site_gets_404(self, contract_case):
+        case = contract_case
+        url = contract_docs_url(case.contract)
+        pdf = contract_pdf(case.manager, case.contract)
+        before = owner_files("contract", case.contract["id"])
+        assert case.elsewhere.get(url).status_code == 404
+        assert case.elsewhere.get(f"{url}/{pdf['id']}/file").status_code == 404
+        assert upload_to(case.elsewhere, url).status_code == 404
+        assert owner_files("contract", case.contract["id"]) == before
+
+    def test_an_engineer_here_who_is_manager_elsewhere_is_refused_here(self, contract_case, user_at_sites):
+        case = contract_case
+        # passes _owner_key (read_senior held at the other site), refused at the contract's site
+        client, _ = user_at_sites([(case.site, "maint_engineer", "all"), (case.other_site, "maint_manager", "all")])
+        url = contract_docs_url(case.contract)
+        res = client.get(url)
+        assert (res.status_code, res.get_json()["error"]) == (403, f"You can't do this at {case.site['code']}")
+        assert upload_to(client, url).status_code == 403
+        assert owner_files("contract", case.contract["id"]) == []
+
+    def test_retitle_and_remove(self, contract_case):
+        case = contract_case
+        url = contract_docs_url(case.contract)
+        pdf = contract_pdf(case.manager, case.contract)
+        assert case.engineer.put(f"{url}/{pdf['id']}", json={"title": "x"}).status_code == 403
+        assert case.engineer.delete(f"{url}/{pdf['id']}").status_code == 403
+        res = case.manager.put(f"{url}/{pdf['id']}", json={"title": "Signed contract 2026-27"})
+        assert (res.status_code, res.get_json()["title"]) == (200, "Signed contract 2026-27")
+        assert case.manager.delete(f"{url}/{pdf['id']}").status_code == 204
+        assert case.manager.delete(f"{url}/{pdf['id']}").status_code == 404
+        assert listed_at(case.manager, url)["items"] == []
+
+    def test_an_inactive_and_an_ended_contract_take_documents(self, contract_case):
+        case = contract_case
+        today = now_ist().date()
+        ended = case.new_contract(from_date=(today - timedelta(days=400)).isoformat(),
+                                  to_date=(today - timedelta(days=30)).isoformat())
+        inactive = case.new_contract()
+        res = case.manager.put(f"/api/contracts/{inactive['id']}", json={"active": False})
+        assert res.status_code == 200, res.get_json()
+        for contract in (ended, inactive):
+            assert contract_pdf(case.manager, contract)["kind"] == "document"
+
+    def test_a_document_of_another_contract_and_an_unknown_contract_are_404(self, contract_case):
+        case = contract_case
+        pdf = contract_pdf(case.manager, case.contract)
+        url = contract_docs_url(case.new_contract())
+        assert case.manager.get(f"{url}/{pdf['id']}/file").status_code == 404
+        assert case.manager.delete(f"{url}/{pdf['id']}").status_code == 404
+        assert case.manager.get(contract_docs_url({"id": 999999999})).status_code == 404
+
+    def test_admin_reads_and_writes(self, contract_case, keycloak_admin):
+        case = contract_case
+        url = contract_docs_url(case.contract)
+        pdf = contract_pdf(keycloak_admin, case.contract)
+        assert [d["id"] for d in listed_at(keycloak_admin, url)["items"]] == [pdf["id"]]
+        assert keycloak_admin.get(f"{url}/{pdf['id']}/file").status_code == 200
+        assert keycloak_admin.delete(f"{url}/{pdf['id']}").status_code == 204
+
+    def test_the_database_down_is_503(self, contract_case, db_down):
+        assert contract_case.manager.get(contract_docs_url(contract_case.contract)).status_code == 503

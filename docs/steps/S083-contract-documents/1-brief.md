@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079–S082 coded before S083 (staleness check before coding)
-Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor accepted)
+Baseline: refs/steps/S082 (185d524; d216f48 + S079, S080, S081, S082), checked by staleness review s1
+Status: Gate B 31-10-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1; verify review r2 running); implementing 31-10-2026 (staleness s1: 0 blocker, 0 major, 3 minor accepted); approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor accepted)
 From: R02.3
 ```
 
@@ -81,9 +81,11 @@ S079–S082 are coded before S083. In the files they change this brief anchors b
 (README § Anchors by name). Names marked **(from S080)**, **(from S081)** or **(from S082)** do not
 exist at the baseline; they are as those briefs state them:
 - (from S080): the table `contracts` (`site_id`, `title`, `contract_number`, `active`);
-  `backend/contracts.py` with `contracts_bp`, `_contract_out(row, flags)`, `_fetch_contract` and its
-  LOCK ORDER note; the keys `contract:read_basic`, `contract:read_senior`, `contract:edit` in
-  `SITE_SCOPED`; the flags `can_edit`, `can_read_cost`; `backend/tests/test_contracts_api.py`;
+  `backend/contracts.py` with `contracts_bp`, `_contract_out(row, flags, today)`, the plain read
+  `_contract_row(cur, contract_id)`, S081's write lock `_lock_contract(cur, contract_id)`, its LOCK
+  ORDER note and its ACCESS docstring paragraph; the keys `contract:read_basic`,
+  `contract:read_senior`, `contract:edit` in `SITE_SCOPED`; the flags dict `_SiteFlags.at(site_id)`
+  builds once per site (`can_edit`, `can_read_callout`, `can_read_cost`); `backend/tests/test_contracts_api.py`;
   `frontend/e2e/contracts.spec.js` with its in-spec set-up helpers; the fixture `make_vendor` (from
   S079, `backend/tests/conftest.py`).
 - (from S081): `frontend/src/views/ContractView.vue`, the route `/contracts/:id`, migration v44, the
@@ -96,9 +98,11 @@ exist at the baseline; they are as those briefs state them:
 - `backend/local_db.py`: migration **v45** at the end of `_MIGRATIONS` (§ 4.1). No `_PRECONDITIONS`
   entry.
 - `backend/contracts.py` (from S080; S083 adds): the documents owner's three functions
-  `read_contract`, `read_contract_for_change`, `lock_contract_for_change` (§ 5.1), and the two flags
-  `can_read_documents`, `can_edit_documents` in the flags `_contract_out` writes (§ 6.1). The LOCK
-  ORDER note gains the documents path (§ 5.4). contracts.py never imports documents.py.
+  `read_contract`, `read_contract_for_change`, `lock_contract_for_change` (§ 5.1; the lock built on
+  S081's `_lock_contract`, which gains a `key` parameter), and the two flags `can_read_documents`,
+  `can_edit_documents` in the dict `_SiteFlags.at` returns (§ 6.1). The LOCK ORDER note gains the
+  documents path (§ 5.4); the ACCESS docstring paragraph gains the documents rule. contracts.py
+  never imports documents.py.
 - `backend/documents.py`: `OWNERS["contract"]`; a sixth stacked route decorator `_CONTRACT_DOCS` /
   `_FOR_CONTRACT` on the eight documents routes (`list_documents`, `upload_document`,
   `get_document_file`, `get_document_thumb`, `update_document_title`, `remove_document`,
@@ -148,7 +152,8 @@ exist at the baseline; they are as those briefs state them:
   (S083, `contracts/<id>/`; read with `contract:read_senior` at its site, written with
   `contract:edit` and `contract:read_senior` there, restored and erased by
   `equipment:purge_documents` with `contract:read_senior` there); § SMTW-Review, S080's point
-  *Contract fields by key* gains "and its documents (S083)".
+  *Contract fields by key*: the sentence "R02.3's documents join this rule." is replaced by the
+  documents rule (S083).
 - `docs/steps/device-checks.md`: one row (§ 8.5).
 - `docs/Keycloak.md`: no change (no role changes).
 
@@ -180,7 +185,7 @@ ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_docum
   (S080: inactive instead).
 - **`ix_equipment_documents_contract (contract_id, removed_at)`** serves the list
   (`contract_id = ? AND removed_at IS NULL`), as the action and procedure keys do.
-- **No precondition** (`_PRECONDITIONS`, `backend/local_db.py:1511`, holds 20, 25 and 34): a nullable
+- **No precondition** (`_PRECONDITIONS`, `backend/local_db.py:1589`, holds 20, 25 and 34): a nullable
   column, a key, a foreign key no row uses yet, and a CHECK every existing row meets (fact: v41's
   CHECK holds today, so each row has exactly one of the five owners). Nothing is converted or
   dropped. The foreign-key add and the CHECK scan the documents rows; production holds node, model
@@ -223,9 +228,14 @@ ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_docum
     id = %s` (plain) → 404 when missing; `_contract_access(cur, row, None)`; returns the row.
   - `read_contract_for_change(cur, contract_id, key)`: the same read; `_contract_access(cur, row,
     key)`. A refused upload reads and writes no file (S006 § 5.6).
-  - `lock_contract_for_change(cur, contract_id, key)`: `SELECT id, site_id FROM contracts WHERE id =
-    %s FOR UPDATE` → 404; `_contract_access(cur, locked, key)`. It serves change and purge: no state
-    rule (§ 5.3), as the model's and the lesson's.
+  - `lock_contract_for_change(cur, contract_id, key)`: built on S081's `_lock_contract`, which gains
+    a `key` parameter (`_lock_contract(cur, contract_id, key=EDIT)`; the line writes keep calling it
+    as now). `locked = _lock_contract(cur, contract_id, key)` (`SELECT … FOR UPDATE` → 404 without
+    `contract:read_basic` at the site → `require_perm_at(key, site_id)` 403), then
+    `require_perm_at("contract:read_senior", locked["site_id"])` 403. The two 403s come in the
+    other order than on the plain path; both answer the same message, so no screen or test can
+    tell (BS1-03). It serves change and purge: no state rule (§ 5.3), as the model's and the
+    lesson's. `_contract_access` serves only the two plain reads.
 - `read_senior` is checked in every function, so it holds for **every** route of this owner, also
   restore and purge, whose `key` is `equipment:purge_documents`.
 - **The site never changes** (S080 § 5.1), so a plain read of `site_id` and the locked one agree; the
@@ -318,7 +328,10 @@ UPDATE through `lock_contract_for_change`, first in its transaction, then touche
 `equipment_documents` rows"; in equipment.py's documents.py bullet, "… a lesson's procedures row
 (6d), or a contract row (contracts.py, S083); never two owners'"; in S081's contracts.py bullet,
 "Only contracts.py's functions lock contracts rows (documents.py calls `lock_contract_for_change`)";
-and the documents.py docstring's *Locks* paragraph.
+in contracts.py's first bullet, "(the PUT, the three line writes, and documents.py's writes through
+`lock_contract_for_change`)"; in contracts.py's node (1) bullet, "documents.py's node path holds (1)
+exclusive and waits on no contract row; its contract path (S083) holds the contract row and no (1)"
+(BS1-02); and the documents.py docstring's *Locks* paragraph.
 
 ### 5.5 The removed list
 
@@ -416,8 +429,12 @@ Under `documents_bp` (`/api`), ids `<int:…>`; the same routes, bodies and answ
 
 Two flags, in every answer that holds a contract (`_contract_out`: list, detail, `POST`, `PUT`):
 `can_read_documents` = `has_perm_at("contract:read_senior", site_id)`; `can_edit_documents` =
-`can_read_documents and has_perm_at("contract:edit", site_id)`. Computed once per site, as S080's
-flags. They are not gated (always present).
+`can_read_documents and has_perm_at("contract:edit", site_id)`. Computed once per site: they are
+added to the dict `_SiteFlags.at(site_id)` returns, so every `_contract_out` answer carries them.
+They are not gated (always present). The S082 card route (`contracts_for_equipment`) cuts its items
+to `_CARD_KEYS`, so the flags never reach the card, and `test_contract_card_api.py`'s exact-item
+assert stays green; the list's `sites` array (`can_add`, `can_read_callout`, `can_read_cost` per
+site) does not gain them (BS1-05).
 
 ## 7. Design decisions
 
@@ -507,7 +524,8 @@ detail).
 ### 8.3 Existing tests that break or run again
 
 - `backend/tests/test_contracts_api.py` (from S080): any test that compares an item's whole key set
-  gains `can_read_documents` and `can_edit_documents`. *To check when coding*: S080 is not coded yet.
+  gains `can_read_documents` and `can_edit_documents`. Checked (s1): it asserts the flags as tuples
+  of named keys (lines 84, 98, 105), never a whole key set, so nothing breaks.
 - `backend/tests/test_removed_documents_api.py`: `TestList::test_the_unit_scope_is_enforced_fail_closed`
   runs again and stays green: its `nobody` is an engineer, who holds no `contract:read_senior`, so the
   contract branch is left out and the last line (`item["owner"] in ("model", "procedure")`) holds.
@@ -575,10 +593,9 @@ is already checked on real phones (rows 5, 46, 51, 56).
   `contract:read_basic` holder sees no documents", which holds for `contract:read` holders too. *What
   exists* names only v38 as having widened the CHECK; v41 did too (`backend/local_db.py`, the v41
   entry).
-- **Assumption:** `auth_utils.sites_holding` exists as S082 states; if S082 lands without the move,
-  documents.py imports `contracts._sites_holding` instead (the staleness check decides).
-- **Assumption:** S080's `_contract_out` builds the flags in one place, so the two new flags reach
-  every answer from there (S080 § 5.4).
+- **Checked (s1):** `auth_utils.sites_holding` exists as S082 states; documents.py imports it.
+- **Checked (s1):** S080 builds the flags in one place, `_SiteFlags.at`, so the two new flags reach
+  every `_contract_out` answer from there.
 - **Assumption:** S081's page has no documents placeholder (S081 B8), so S083 adds the cards, not
   replaces one.
 - **E1 (write needs `contract:edit` and `contract:read_senior`):** taken as recommended by the
@@ -605,3 +622,12 @@ None.
 | BR1-02 (minor) the line for users who may not read the documents | Accepted (a): a non-holder sees nothing (§ 5.7); the third e2e test asserts only no *Documents* card and no `"Add document"`. |
 | BR1-03 (minor) the device row: no iPhone, a camera check already done | Accepted (a): one row, Android and iPhone both open the Fuji PDF on the dev server; the camera half dropped (§ 8.5). |
 | BR1-04 … BR1-10 (nits) | Accepted as recommended: one whitespace set (`\f` dropped, now refused); `SIGNATURE_BYTES` leaves documents.py's imports; `read_contract` selects `id, site_id`; "the manager's way"; the contract branch through `_scoped_branch`; S084's scan lock in § 5.4 and the staleness list; S082's `/for-equipment/<int:node_id>` named. The ISO 27001 numbers A.5.15, A.8.3, A.8.10 confirmed; their "to verify" dropped. |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 31-10-2026
+
+| Finding | Answer |
+|---|---|
+| BS1-01 (minor) S080's planned names, not the coded ones | Accepted: § 3 names `_contract_row`, `_lock_contract`, `_contract_out(row, flags, today)` and `_SiteFlags.at` with its three flags; § 3 Backend and § 6.1 add the two flags to the dict `_SiteFlags.at` returns; § 9's `_sites_holding` fallback replaced by "checked". |
+| BS1-02 (minor) S081's lock-note sentences become false | Accepted: § 5.4's "The coder writes" list gains the first bullet's documents path and the node (1) bullet's two-path sentence. |
+| BS1-03 (minor) `lock_contract_for_change` duplicates `_lock_contract` | Accepted (a): `_lock_contract` gains a `key` parameter; `lock_contract_for_change` is it plus the `read_senior` check (§ 5.1); `_contract_access` serves the plain reads only. |
+| BS1-04 … BS1-09 (nits) | Accepted: `_PRECONDITIONS` anchor `:1589`; § 6.1 names the card route's `_CARD_KEYS` and the `sites` array; § 8.3's first bullet now checked; the ACCESS docstring paragraph in § 3 Backend; the CLAUDE.md sentence replaced, not appended; BS1-09 needs no change (`make_vendor`'s caller does not matter for `contract_case`). |

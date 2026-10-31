@@ -20,7 +20,11 @@ GATED_FIELDS or LINE_GATED_FIELDS), so their save leaves it as it was (ISO 27001
 other field: it needs contract:read_senior too, else 403 (S081 B3).  The Under contract card (S082,
 /for-equipment/<node_id>) reads the node through load_node_for_user (404 outside the reader's units), keeps each
 contract only at a site where contract:read_basic is held, and cuts _contract_out's answer to _CARD_KEYS: never a
-price, a total or a cost note, for any reader.
+price, a total or a cost note, for any reader.  The contract's documents and photos (S083, documents.py's
+OWNERS["contract"] calling read_contract, read_contract_for_change and lock_contract_for_change below) are read
+with contract:read_senior at the contract's site (D5: a quote or a signed contract shows the price), written with
+contract:edit and contract:read_senior there, restored and erased with equipment:purge_documents and
+contract:read_senior there; the flags can_read_documents and can_edit_documents say so to the page.
 
 LOCK ORDER (S080 § 5.6, S081 § 5.5).  The database runs REPEATABLE READ; each write decides from its locking reads,
 and access checks are plain reads.  Per write this module takes at most one exclusive contract lock and one
@@ -41,14 +45,19 @@ existing contract, so every plain read comes after it.
   the contract_equipment row FOR UPDATE (404) → update_row → the answer.
 - Remove a machine: the contracts row FOR UPDATE (404) → plain: 404, contract:edit 403 → the contract_equipment
   row FOR UPDATE (404) → the delete → the history line (a shared foreign-key lock on the node) → the answer.
+- Documents (S083): documents.py locks the contract row FOR UPDATE through lock_contract_for_change, first in its
+  transaction, then touches only equipment_documents rows (plain: 404, the write or purge key 403,
+  contract:read_senior 403).
 - Reads: plain, no lock.
 No deadlock cycle:
-- The contract row: only this module locks it, always first in its transaction (the PUT and the three line
-  writes); nothing holds another lock and then waits on it.
+- The contract row: only this module's functions lock it, always first in their transaction (the PUT, the three
+  line writes, and documents.py's writes through lock_contract_for_change); nothing holds another lock and then
+  waits on it.
 - The contract_equipment row: only this module locks it, after its contract; no other module reads it with a lock.
 - The node (1): taken shared only, after the contract.  equipment.py's writes (move, scrap, edit), meters.py,
   item_properties.py, documents.py and tickets.py's raise hold (1) exclusive and never wait on a contract or a
-  line row, so an add waiting on (1) waits behind a writer that finishes.  A scrap waiting for an add's shared
+  line row, so an add waiting on (1) waits behind a writer that finishes.  documents.py's node path holds (1)
+  exclusive and waits on no contract row; its contract path (S083) holds the contract row and no (1).  A scrap waiting for an add's shared
   lock gets it after the add commits; a scrapped node keeps its line.
 - equipment_events rows are inserted, never locked by anyone.
 - The vendor row: masters.py's vendor update locks only its own row and waits on nothing after it; a person write
@@ -133,10 +142,14 @@ class _SiteFlags:
 
     def at(self, site_id):
         if site_id not in self._flags:
+            can_edit, can_read_cost = has_perm_at(EDIT, site_id), has_perm_at(READ_COST, site_id)
             self._flags[site_id] = {
-                "can_edit": has_perm_at(EDIT, site_id),
+                "can_edit": can_edit,
                 "can_read_callout": has_perm_at(READ_CALLOUT, site_id),
-                "can_read_cost": has_perm_at(READ_COST, site_id),
+                "can_read_cost": can_read_cost,
+                # The contract's documents (S083 § 6.1): read with read_senior, written with edit and read_senior
+                "can_read_documents": can_read_cost,
+                "can_edit_documents": can_read_cost and can_edit,
             }
         return self._flags[site_id]
 
@@ -424,14 +437,14 @@ def change_contract(contract_id):
 # The machines a contract covers (S081 § 5, § 6; LOCK ORDER above)
 # ---------------------------------------------------------------------------
 
-def _lock_contract(cur, contract_id):
-    """Every line write's first statement: the contract FOR UPDATE, then read_basic at its site (404) and
-    contract:edit there (403) -> the locked row."""
+def _lock_contract(cur, contract_id, key=EDIT):
+    """Every line write's and document write's first statement: the contract FOR UPDATE, then read_basic at its
+    site (404) and ``key`` there (403; contract:edit for the line writes) -> the locked row."""
     cur.execute("SELECT * FROM contracts WHERE id = %s FOR UPDATE", (contract_id,))
     locked = cur.fetchone()
     if locked is None or not has_perm_at(READ_BASIC, locked["site_id"]):
         raise ApiError("Not found", 404)
-    require_perm_at(EDIT, locked["site_id"])
+    require_perm_at(key, locked["site_id"])
     return locked
 
 
@@ -515,3 +528,48 @@ def remove_machine(contract_id, equipment_id):
         write_events(cur, equipment_id, [("contract_removed", event_text(locked), None)])
         answer = _answer(cur, contract_id)
     return jsonify(answer)
+
+
+# ---------------------------------------------------------------------------
+# The contract as a documents owner (S083 § 5.1; documents.py's OWNERS["contract"]).  Every document is behind
+# contract:read_senior at the contract's site (D5), on every route, also restore and purge.  No state rule (§ 5.3).
+# ---------------------------------------------------------------------------
+
+def _contract_access(row, key):
+    """The plain reads' checks at the contract's site: read_basic 404, read_senior 403, then ``key`` 403 when
+    given."""
+    if row is None or not has_perm_at(READ_BASIC, row["site_id"]):
+        raise ApiError("Not found", 404)
+    require_perm_at(READ_COST, row["site_id"])
+    if key is not None:
+        require_perm_at(key, row["site_id"])
+
+
+def _contract_site(cur, contract_id):
+    cur.execute("SELECT id, site_id FROM contracts WHERE id = %s", (contract_id,))
+    return cur.fetchone()
+
+
+def read_contract(cur, contract_id, _key=None):
+    """documents.py's ``read`` (list, file, thumb): a plain read -> the row ``{id, site_id}``; 404 when missing or
+    outside the reader's sites, 403 without contract:read_senior at the contract's site."""
+    row = _contract_site(cur, contract_id)
+    _contract_access(row, None)
+    return row
+
+
+def read_contract_for_change(cur, contract_id, key):
+    """documents.py's ``read_for_change``: a write's early refusals from a plain read (404, 403, and ``key`` 403),
+    so a refused upload reads and writes no file (S006 § 5.6).  The decisions that count are
+    lock_contract_for_change's."""
+    row = _contract_site(cur, contract_id)
+    _contract_access(row, key)
+    return row
+
+
+def lock_contract_for_change(cur, contract_id, key):
+    """documents.py's ``lock_for_change`` and ``lock_for_purge`` (upload, retitle, remove, restore, purge), in the
+    write transaction: the contract FOR UPDATE through _lock_contract (404, ``key`` 403), then contract:read_senior
+    at its site (403).  No state rule, so one function serves change and purge."""
+    locked = _lock_contract(cur, contract_id, key)
+    require_perm_at(READ_COST, locked["site_id"])

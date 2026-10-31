@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from documents_core import (
-    TYPE_REFUSED, PhotoTooLarge, clean_original_name, detect_file_type, kind_accepts, make_thumbnail,
+    HEADER_WINDOW, TYPE_REFUSED, PhotoTooLarge, clean_original_name, detect_file_type, kind_accepts, make_thumbnail,
     safe_download_name, stored_name, thumb_name, validate_document, validate_title,
 )
 from tests.documents_helpers import image_bytes, jpeg_with_size
@@ -44,6 +44,17 @@ class TestDetectFileType:
     @pytest.mark.parametrize("head", [b"Just some text\n", EXE_HEAD, HEIC_HEAD, b"", None,
                                       b"RIFF\x24\x00\x00\x00WAVEfmt "])
     def test_anything_else_is_none(self, head):
+        assert detect_file_type(head) is None
+
+    # S083 § 5.6: the Fuji quote starts with six line feeds; PDF readers look within the first 1024 bytes
+    @pytest.mark.parametrize("head", [b"\n" * 6 + PDF_HEAD, b" \r\n\t" + PDF_HEAD, b"\n" * 1019 + b"%PDF-"])
+    def test_blank_lines_before_a_pdf_header_are_accepted(self, head):
+        assert detect_file_type(head) == ("pdf", "application/pdf")
+
+    @pytest.mark.parametrize("head", [b"\f" + PDF_HEAD, b"<html>" + PDF_HEAD, b"\x00" + PDF_HEAD,
+                                      (b"\n" * 1020 + b"%PDF-1.7")[:HEADER_WINDOW], b"\n" * 1020 + b"%PDF-1.7",
+                                      b"\n" + JPEG_HEAD, b" " + PNG_HEAD])
+    def test_other_bytes_before_a_header_are_refused(self, head):
         assert detect_file_type(head) is None
 
 

@@ -8,11 +8,17 @@
  * total are absent for a reader without their key, and the buttons follow the detail's flags, so none ends in a
  * refusal. Each write answers with the whole detail, which replaces the page's copy. A machine is removed after a
  * question in its row (as the Meters card). The terms are edited in Masters › Contracts (B9).
+ *
+ * The contract's documents and photos (docs/steps/S083-contract-documents/1-brief.md § 5.7): the shared Documents
+ * and Photos cards after the machines, only for a reader with can_read_documents (contract:read_senior at the
+ * site: a quote or a signed contract shows the price); their buttons follow can_edit_documents. Others see nothing
+ * of them, as of the price.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { apiDelete, apiGet } from "../api";
 import LifecycleBadge from "../components/LifecycleBadge.vue";
+import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import {
   contractTypeLabel,
   coverageLines,
@@ -73,6 +79,7 @@ const updatedText = computed(() => {
 });
 const canAdd = computed(() => contract.value.can_edit && Boolean(contract.value.active));
 const canEditPrice = computed(() => contract.value.can_edit && contract.value.can_read_cost);
+const docsPath = computed(() => `/api/contracts/${contract.value.id}/documents`);
 const totalText = computed(() => {
   const c = contract.value;
   if (!c.priced_count) return "No prices entered yet.";
@@ -216,6 +223,12 @@ function onSaved(detail) {
           {{ totalText }}
         </div>
       </div>
+
+      <!-- S083 § 5.7: the signed contract, its annexures and the quotes, for contract:read_senior holders only -->
+      <template v-if="contract.can_read_documents">
+        <p class="small text-secondary mb-2">Only the managers of {{ contract.site_code }} see these documents and photos.</p>
+        <DocumentsCards :key="contract.id" :base-path="docsPath" :can-edit="contract.can_edit_documents" />
+      </template>
 
       <ContractMachineDialog
         :key="contract.id"

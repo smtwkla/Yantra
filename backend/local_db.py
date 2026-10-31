@@ -1495,6 +1495,25 @@ _MIGRATIONS = [
                  'meter_added','meter_removed','meter_limits','property','contract_added','contract_removed')
             NOT NULL""",
     ]),
+    # S083 — a contract's documents and photos (docs/steps/S083-contract-documents/1-brief.md § 4.1, R02.3): the
+    # sixth owner of the documents store.  The owner CHECK is dropped and added again with its name, as v38 and v41
+    # did; every existing row has one of the five owners and contract_id NULL, so it meets the new CHECK.  No
+    # precondition: a nullable column, a key, a foreign key no row uses yet and a CHECK every row meets; nothing is
+    # converted or dropped.  IF NOT EXISTS on the column, the key, the foreign key and the CHECK make a half-applied
+    # v45 (the CHECK dropped, not added) re-run.  The foreign key has no ON DELETE: a contract is never deleted.
+    # Rollback: a release before v45 never reads contract_id (its queries name their columns and its removed-list
+    # branches join their own owner), and its uploads meet v45's CHECK.
+    (45, "Contract documents (S083)", [
+        """ALTER TABLE equipment_documents
+            ADD COLUMN IF NOT EXISTS contract_id INT NULL AFTER procedure_id,
+            ADD KEY IF NOT EXISTS ix_equipment_documents_contract (contract_id, removed_at),
+            ADD CONSTRAINT fk_equipment_documents_contract
+                FOREIGN KEY IF NOT EXISTS (contract_id) REFERENCES contracts (id)""",
+        "ALTER TABLE equipment_documents DROP CONSTRAINT IF EXISTS chk_equipment_documents_owner",
+        """ALTER TABLE equipment_documents ADD CONSTRAINT IF NOT EXISTS chk_equipment_documents_owner
+            CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
+                   + (action_id IS NOT NULL) + (procedure_id IS NOT NULL) + (contract_id IS NOT NULL) = 1)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

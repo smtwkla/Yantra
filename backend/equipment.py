@@ -53,10 +53,11 @@ A write with a model never locks a type: it comes from the model, whose type nev
 - Every write checks its key at the record's site (S011 § 5.4) inside the three choke
   points below (load_node_for_user, _load_target_node, _lock_target_unit), after their
   own refusals, so no write route can skip it.
-- documents.py (S006, S008, S012, S017, S070, S075) takes exactly one owner lock per write,
+- documents.py (S006, S008, S012, S017, S070, S075, S083) takes exactly one owner lock per write,
   briefly: the node (1) through LOCK_EQUIPMENT and load_node_for_user, a model row (4), a ticket
   row (7, below), a countermeasure's, which takes its improvement (6b) then the countermeasure
-  (6c), in that order, or a lesson's procedures row (6d); never two owners'.  Then it touches
+  (6c), in that order, a lesson's procedures row (6d), or a contract row (contracts.py, S083);
+  never two owners'.  Then it touches
   only equipment_documents rows, which nothing else locks.  So it adds no lock cycle.
 - procedures.py (S075) takes per write either (6) the serial counter (scope OPL, taken only by
   lesson creates) or (6d) one procedures row FOR UPDATE, never both, then only shared locks: a
@@ -69,8 +70,9 @@ A write with a model never locks a type: it comes from the model, whose type nev
   contract_equipment row FOR UPDATE (a price change or a removal), the vendor row LOCK IN SHARE MODE (a
   vendor change), or the node (1) LOCK IN SHARE MODE (a machine added), and the foreign-key shared locks
   of its inserts; a contract create takes the site and the vendor LOCK IN SHARE MODE and locks no
-  contract row; it inserts equipment_events lines.  Only contracts.py locks contracts and
-  contract_equipment rows, and it takes nothing exclusive outside them, so it adds no lock cycle.
+  contract row; it inserts equipment_events lines.  Only contracts.py's functions lock contracts and
+  contract_equipment rows (documents.py calls lock_contract_for_change, S083), and they take nothing
+  exclusive outside them, so they add no lock cycle.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

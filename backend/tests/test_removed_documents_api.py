@@ -475,3 +475,65 @@ class TestLessonRows:
         other_lesson, other_url, other_doc = case.removed_photo()
         assert case.here.post(f"{other_url}/{other_doc['id']}/purge").status_code == 204
         assert owner_files("procedure", other_lesson["id"]) == []
+
+
+class TestContractRows:
+    """S083 § 5.5: a contract's removed documents in the same list, only at the sites where both
+    equipment:purge_documents and contract:read_senior are held (IT admin sees none)."""
+
+    @pytest.fixture
+    def case(self, admin, user_at_sites, make_site, make_vendor, uniq):
+        site, vendor = make_site(), make_vendor()
+        here, _ = user_at_sites([(site, "maint_manager", "all")])
+        elsewhere, _ = user_at_sites([(make_site(), "maint_manager", "all")])
+        number = f"CN-{uniq.username()}"
+
+        def removed_doc(**extra):
+            res = admin.post("/api/contracts", json={
+                "site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+                "title": f"Fuji AMC {uniq.vendor_name()}", "contract_number": number,
+                "from_date": "2026-04-01", "to_date": "2027-03-31", **extra})
+            assert res.status_code == 201, res.get_json()
+            contract = res.get_json()
+            url = f"/api/contracts/{contract['id']}/documents"
+            doc = uploaded_to(here, url, title="Fuji AMC quote", filename="AMC14082369550.pdf")
+            assert here.delete(f"{url}/{doc['id']}").status_code == 204
+            return contract, url, doc
+
+        return SimpleNamespace(site=site, here=here, elsewhere=elsewhere, removed_doc=removed_doc, number=number)
+
+    def test_listed_with_the_title_number_and_site(self, case):
+        contract, url, doc = case.removed_doc()
+        page = listing(case.here, q=contract["title"])
+        assert ids(page) == [doc["id"]]
+        item = page["items"][0]
+        assert (item["owner"], item["name"], item["code"], item["unit"], item["state"], item["path"]) == (
+            "contract", contract["title"], case.number, case.site["code"], None, url)
+        assert (item["equipment_id"], item["full_path"], item["title"]) == (None, None, "Fuji AMC quote")
+
+    def test_q_matches_the_title_and_the_number(self, case):
+        contract, _url, doc = case.removed_doc()
+        assert doc["id"] in ids(listing(case.here, q=contract["title"]))
+        assert doc["id"] in ids(listing(case.here, q=case.number))
+        assert doc["id"] in ids(listing(case.here, q="AMC14082369550"))
+
+    def test_only_the_sites_manager_sees_them(self, case, role_client):
+        contract, _url, doc = case.removed_doc()
+        assert ids(listing(case.elsewhere, q=contract["title"])) == []
+        assert ids(listing(role_client("it_admin"), q=contract["title"])) == []
+        assert all(item["owner"] != "contract" for item in listing(role_client("it_admin"), per_page=100)["items"])
+
+    def test_restore_and_purge_by_the_manager(self, case):
+        contract, url, doc = case.removed_doc()
+        res = case.here.post(f"{url}/{doc['id']}/restore")
+        assert (res.status_code, res.get_json()["id"]) == (200, doc["id"])
+        assert case.here.delete(f"{url}/{doc['id']}").status_code == 204
+        assert case.here.post(f"{url}/{doc['id']}/purge").status_code == 204
+        assert owner_files("contract", contract["id"]) == []
+
+    def test_it_admin_may_not_restore_or_purge(self, case, role_client):
+        _contract, url, doc = case.removed_doc()
+        it_admin = role_client("it_admin")
+        assert it_admin.post(f"{url}/{doc['id']}/restore").status_code == 403
+        assert it_admin.post(f"{url}/{doc['id']}/purge").status_code == 403
+        assert case.elsewhere.post(f"{url}/{doc['id']}/restore").status_code == 404

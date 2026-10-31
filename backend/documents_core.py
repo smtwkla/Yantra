@@ -31,8 +31,16 @@ _KIND_TYPES = {
 
 TYPE_REFUSED = "This file can't be added. Use a PDF, or a JPEG, PNG or WebP photo."
 
-# How many first bytes detect_file_type needs (WebP: RIFF, 4 size bytes, WEBP)
+# How many first bytes the WebP rule needs (RIFF, 4 size bytes, WEBP)
 SIGNATURE_BYTES = 12
+
+# The first bytes detect_file_type looks at (S083 § 5.6): PDF readers look for the header within the first 1024
+# bytes (PDF Reference 1.7, Appendix H note 13; PDFium's GetHeaderOffset), so a PDF may start with blank lines there
+HEADER_WINDOW = 1024
+
+_PDF_HEADER = b"%PDF-"
+# Only spaces, tabs and line breaks may come before a PDF header, so no polyglot (HTML or script first) passes
+_PDF_LEADING_WHITESPACE = b" \t\r\n"
 
 THUMB_BOX = (400, 400)
 THUMB_QUALITY = 85
@@ -57,9 +65,11 @@ class PhotoTooLarge(Exception):
 def detect_file_type(first_bytes):
     """The file's type from its first bytes -> ``(file_type, content_type)``, or None.
 
-    The client's file name and content type are never consulted (ISO 27001 A.8.28)."""
-    data = bytes(first_bytes or b"")
-    if data.startswith(b"%PDF-"):
+    The client's file name and content type are never consulted (ISO 27001 A.8.28).  Only the first HEADER_WINDOW
+    bytes count.  A PDF may have spaces, tabs and line breaks before its header (S083 § 5.6) when the whole header
+    is inside the window; JPEG, PNG and WebP must start at the first byte."""
+    data = bytes(first_bytes or b"")[:HEADER_WINDOW]
+    if data.lstrip(_PDF_LEADING_WHITESPACE).startswith(_PDF_HEADER):
         file_type = "pdf"
     elif data.startswith(b"\xff\xd8\xff"):
         file_type = "jpeg"

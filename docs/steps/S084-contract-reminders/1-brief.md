@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079–S083 coded before S084 (staleness check before coding)
+Baseline: refs/steps/S083 (3dc8a3c; d216f48 + S079–S083), checked by staleness review s1
 Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 5 minor; BR1-02 and BR1-03 flagged for KLA at gate B)
 From: R02.5
 ```
@@ -104,8 +104,10 @@ no open step touches; they are cited by line.
 - `backend/email_core.py`: `contract_ending_email(facts)` after `closed_email` (`:131`), with
   `_field` (`:71`) and `one_line` (`:45`).
 - `backend/local_db.py`: migration **v46** (§ 4.1); no `_PRECONDITIONS` entry.
-- `backend/contracts.py` (from S080) and `backend/equipment.py`: docstrings only, the LOCK ORDER
-  notes (§ 5.5).
+- `backend/contracts.py` (from S080): `_contract_out` also deletes `first_reminder_for` and
+  `second_reminder_for` from the answer, beside `del item["renewal_of_id"]`, with a one-line comment
+  (the markers are the scan's, S084; BS1-01); the LOCK ORDER note (§ 5.5).
+- `backend/equipment.py` and `backend/documents.py`: docstrings only, the LOCK ORDER notes (§ 5.5).
 
 **Import direction:** `alerts_core` imports `contracts_core` (pure → pure: `ENDING_SOON_DAYS`,
 `contract_status`, and S081's `TYPE_SHORT` for the email's *Type* line, BR1-04); `alerts.py` imports `alerts_core` and
@@ -357,7 +359,8 @@ The database runs REPEATABLE READ. The contract row is not numbered in the globa
 contracts.py write locks **one** contract row `FOR UPDATE`, **first** in its transaction, then a
 `contract_equipment` line row, the vendor or the node shared (from S080, S081). S083's document
 writes take "one owner lock, the contract row, first in its transaction, then only
-`equipment_documents` rows" (S083 § 5.4, Draft).
+`equipment_documents` rows" (S083, coded: `lock_contract_for_change` → `_lock_contract(cur,
+contract_id, key)` in `backend/contracts.py`).
 
 **The scan** (§ 5.3), one transaction: (1) plain read of the candidates; (2) per candidate in id
 order, the contract row `FOR UPDATE`, one row per statement; (3) plain read of the renewal; (4) the
@@ -380,8 +383,19 @@ unchanged.
 The coder writes into `contracts.py`'s LOCK ORDER note, `equipment.py`'s `contracts.py` bullet and
 `alerts.py`'s docstring: "The daily `contract_reminder_scan` (S084, `alerts.lock_contract_for_scan`)
 locks several contract rows FOR UPDATE in id order, then writes only their reminder columns and
-`task_queue` rows; every route holds at most one contract row, taken first, so no cycle." S081's
-"Only contracts.py locks contracts … rows" becomes "Only contracts.py and the reminder scan …".
+`task_queue` rows; every route holds at most one contract row, taken first, so no cycle." It
+extends these two sentences as they stand after S083 (BS1-03; S083's review may reword them, so
+the coder reads them first):
+- `equipment.py`: "Only contracts.py's functions lock contracts and contract_equipment rows
+  (documents.py calls lock_contract_for_change, S083), and they take nothing exclusive outside them,
+  so they add no lock cycle" → "Only contracts.py's functions and the reminder scan
+  (`alerts.lock_contract_for_scan`, S084) lock contracts rows …".
+- `contracts.py`: "The contract row: only this module's functions lock it, always first in their
+  transaction (the PUT, the three line writes, and documents.py's writes through
+  lock_contract_for_change); nothing holds another lock and then waits on it." gains "The reminder
+  scan (S084) is the one path that holds several, in id order."
+- `documents.py` (`:54-60`, BS1-04): "waits on the contract row only, behind a writer that
+  finishes" gains "or the reminder scan (S084)".
 
 ### 5.6 Recipients
 
@@ -449,7 +463,8 @@ without an address, as the *Closed tickets* line does. **The dot** (`showDot`) c
 
 ## 6. API
 
-No new route and no changed answer, except:
+No new route and no changed answer (the contract answers stay as they are, because
+`_contract_out` drops the two marker columns, § 3), except:
 
 - `GET /api/push/config` (`backend/push.py:79`): `you_get` gains § 5.7's lines.
 - `GET /api/settings/tasks` (`backend/settings.py:348`): lists `contract_reminder_scan` after
@@ -537,7 +552,11 @@ and S080's `POST /api/contracts` as `admin` for each contract; dates set relativ
 `CURDATE()` with `db_rows` (`UPDATE contracts SET to_date = CURDATE() + INTERVAL 60 DAY`). Devices
 are inserted into `push_subscriptions` as `test_alerts.py` does (`add_device`). Each test its own
 site, so the kept worker database gives the starting state. The handler is called with the worker's
-pattern (`improvement_alert_scan(conn, None, …)` in `test_improvement_alerts.py`).
+pattern, the `run` helper of `test_improvement_alerts.py` (`run(improvement_alert_scan, None)`,
+`:111`; BS1-05).
+
+- **Not in the API** (BS1-01): after a scan has set `first_reminder_for`, `GET /api/contracts/<id>`
+  and a row of `GET /api/contracts` hold neither `first_reminder_for` nor `second_reminder_for`.
 
 - **Scan:** 60 days left → one `contract_alert`, payload `{kind, contract_id, to_date}`,
   `first_reminder_for` = the To date, `updated_at` unchanged; a second run → none. 15 days after a
@@ -584,8 +603,8 @@ pattern (`improvement_alert_scan(conn, None, …)` in `test_improvement_alerts.p
   `people_at_unit` serves through the moved query (§ 5.6).
 - Unchanged: `backend/tests/test_rbac.py` `test_role_matrix` (no new key); `backend/tests/conftest.py`
   `_TABLES` (no new table); S080's `test_migration_v43.py`, S081's `test_migration_v44.py`, S083's
-  migration test (each slices its own range); S080's `test_contracts_api.py` (no route change; § 9
-  A4).
+  migration test (each slices its own range); S080's `test_contracts_api.py` (no route change, and
+  no test pins the answer's key set; § 9 A4).
 
 ### 8.4 Automated (e2e)
 
@@ -640,7 +659,10 @@ row. Where the rows finally run is KLA's choice at gate B (§ 9 Q4, BR1-02).
   the checks run after the commit, so coding does not wait).
   - **(a) Production at SMTW, everyone warned the day before — recommended** (§ 8.5 as written).
     The only end-to-end test of push; the reminders are quiet and the title says "TEST … not a real
-    contract".
+    contract". Note (BS1-02): a contract cannot be deleted, so one inactive TEST contract stays in
+    production's register for good (under *Include inactive* in Masters › Contracts and in the
+    vendor's contracts). Device-check rows 59 (S082) and 60 (S083) chose the dev server for this
+    reason ("never production"); push cannot run there, so this check differs on purpose.
   - (b) A test site in production holding only the test logins. The repo names none:
     `docs/steps/device-checks.md` uses a TEST machine at SMTW.MCC2, never a TEST site. It would need
     a site row and a unit (visible in every site filter on production) and memberships for the
@@ -653,9 +675,10 @@ row. Where the rows finally run is KLA's choice at gate B (§ 9 Q4, BR1-02).
 - **Q3. Quiet or loud push: quiet — recommended** (D6).
 - **A1.** v42–v46 ship in one release, so production holds no contract before v46.
 - **A2.** A contract at a site set inactive is reminded like any other; the memberships decide.
-- **A3.** S083 keeps v45 and its one contract-row lock (S083 § 4.1, § 5.4, still Draft).
-- **A4.** S080's `_contract_out` sends named fields only, so the new columns stay out of the API;
-  otherwise the coder leaves them out there (§ 8.3).
+- **A3.** Checked (s1): S083 is coded with v45 (`backend/local_db.py`) and one contract-row lock
+  (`lock_contract_for_change` → `_lock_contract`, `backend/contracts.py`).
+- **A4.** Checked (s1): `_contract_out` sends every column of `c.*` except the ones it deletes, so
+  it deletes the two marker columns too (§ 3, BS1-01).
 - **A staleness check is due before coding** (S080–S083 coded after this brief): `ENDING_SOON_DAYS`,
   `contract_status`'s labels, `CONTRACT_TYPES`, the keys and holders, `renewal_of_id` and
   `ix_contracts_renewal_of`, the `contracts.py` LOCK ORDER note, S081's route, the migration number.
@@ -692,3 +715,13 @@ Sections changed: header, § 3, § 5.3, § 5.4, § 5.7, § 7 D2 and D3, § 8.1, 
 | BR1-04 minor | Accepted (a): `alerts_core` imports S081's `contracts_core.TYPE_SHORT` for `type_word`; `CONTRACT_TYPE_WORDS` and `contracts_core.py` leave § 3 (19 code and test files). |
 | BR1-05 minor | Accepted (a): the function is `alerts.people_with_role_at_site` everywhere; § 3 says why (`tickets.people_at_site` is the people picker). |
 | BR1-06 – BR1-12 nits | Accepted, as recommended: `_payload_time` takes the task name (§ 3, § 5.4); `keys_with_place.update` stays after the `continue` (§ 5.7); `should_send_contract` also checks `from_date <= today` (§ 5.4, § 8.1); IT Admin's account and network in § 8.5; the vendor stays in the push body, stated (§ 5.4); the push text restyle in § 9's roadmap corrections; the candidate query also leaves out a contract whose first reminder is sent for its To date with more than 15 days left, the rule stated exactly (§ 5.3, § 8.1). |
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 31-10-2026
+
+Sections changed: header, § 3, § 5.5, § 6, § 8.2, § 8.3, § 9 (Q4, A3, A4).
+
+| Finding | Answer |
+|---|---|
+| BS1-01 (minor) `_contract_out` sends every column | Accepted (a): `_contract_out` deletes `first_reminder_for` and `second_reminder_for` beside `renewal_of_id` (§ 3); § 6 and A4 state it; § 8.2 gains the *Not in the API* test. |
+| BS1-02 (minor) rows 59 and 60 keep test contracts off production | Accepted as a text change: Q4 (a) names the leftover inactive TEST contract and rows 59, 60. The choice stays KLA's at gate B (BR1-02). |
+| BS1-03 … BS1-06 (nits) | Accepted: § 5.5 quotes the two sentences to extend and adds `documents.py`'s note; § 8.2 names the `run` helper; A3 and § 5.5 drop "Draft". |

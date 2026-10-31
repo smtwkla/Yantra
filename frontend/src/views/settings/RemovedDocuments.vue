@@ -15,6 +15,8 @@
  * when its improvement is closed or dropped, as on a closed ticket.
  * Since S077 a row can be a one-point lesson's photo: "Lesson OPL-007", its machine's code and its unit;
  * a lesson has no state rule, so Restore is never disabled for one.
+ * Since S083 a row can be a contract's document or photo: "Contract <title>", its number and its site (a contract
+ * has no unit); listed only where contract:read_senior is held too, and never disabled (no state rule).
  */
 import { onMounted, ref, watch } from "vue";
 import { apiGet, apiPost } from "../../api";
@@ -138,7 +140,7 @@ onMounted(load);
           v-model="searchText"
           type="search"
           class="form-control form-control-sm removed-search"
-          placeholder="Search equipment code, model, ticket, improvement, lesson number, title or file name…"
+          placeholder="Search equipment code, model, ticket, improvement, lesson number, contract, title or file name…"
           aria-label="Search removed documents"
         />
         <select v-model="kind" class="form-select form-select-sm removed-kind" aria-label="Kind">
@@ -205,6 +207,10 @@ onMounted(load);
                 <td v-else-if="item.owner === 'procedure'">
                   Lesson {{ item.name }}
                   <div class="small text-secondary">{{ item.code }} · {{ item.unit }}</div>
+                </td>
+                <td v-else-if="item.owner === 'contract'" class="text-break">
+                  Contract {{ item.name }}
+                  <div class="small text-secondary">{{ item.code ? `${item.code} · ${item.unit}` : item.unit }}</div>
                 </td>
                 <td v-else>
                   <router-link :to="`/equipment/${item.equipment_id}`">{{ item.code }}</router-link>
