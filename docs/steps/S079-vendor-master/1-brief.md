@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: d216f48
-Status: Gate B 30-10-2026 (code review r1: 2 nits, fixed by the orchestrator)
+Status: Done (committed 73f0bc5, adopted 31-10-2026); was: Gate B 30-10-2026 (code review r1: 2 nits, fixed by the orchestrator)
 From: R02.9
 ```
 

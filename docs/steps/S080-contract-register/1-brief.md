@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 73f0bc5 (refs/steps/S079; d216f48 + S079), checked by staleness review s1
-Status: Gate B 30-10-2026 (code review r1: 1 minor, 2 nits, fixed by the orchestrator)
+Status: Done (committed 31484e6, adopted 31-10-2026); was: Gate B 30-10-2026 (code review r1: 1 minor, 2 nits, fixed by the orchestrator)
 From: R02.1
 ```
 

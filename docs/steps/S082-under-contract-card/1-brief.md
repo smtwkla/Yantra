@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 7b8da9f+ (refs/steps/S081 at gate B; d216f48 + S079, S080, S081), checked by staleness review s1
-Status: Gate B 31-10-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1; verify review r2: no finding; implemented by a resumed coder, paused 30-10-2026 for a reboot); approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 6 minor accepted)
+Status: Committed 185d524 (adopted 31-10-2026); important checks pending: row 59 pending of device-checks.md (IT Admin); was: Gate B 31-10-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1; verify review r2: no finding; implemented by a resumed coder, paused 30-10-2026 for a reboot); approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 6 minor accepted)
 From: R02.2 (second half)
 ```
 

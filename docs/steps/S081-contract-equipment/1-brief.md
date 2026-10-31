@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: 31484e6 (refs/steps/S080; d216f48 + S079, S080), checked by staleness review s1
-Status: Gate B 30-10-2026 (code review r1: 4 nits, fixed in fix round 1)
+Status: Done (committed 1338634, adopted 31-10-2026); was: Gate B 30-10-2026 (code review r1: 4 nits, fixed in fix round 1)
 From: R02.2 (first half: the machines and their prices; the card and the list filter are S082)
 ```
 
