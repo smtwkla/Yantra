@@ -1,6 +1,7 @@
 """Vendor contracts — the pure rules (S080 § 5.1, § 5.3, § 8.2): the fields, the period, breakdown calls, the
 status from the dates and the Status filter; S081's machine line, its price and the history text (S081 § 5.1,
-§ 5.3).  No database.  Phone values are obviously fake, never a real number."""
+§ 5.3); S082's card items and the list's Contract filter (S082 § 5.1, § 5.4).  No database.  Phone values are
+obviously fake, never a real number."""
 
 from datetime import date, timedelta
 from decimal import Decimal
@@ -8,10 +9,10 @@ from decimal import Decimal
 import pytest
 
 from contracts_core import (
-    CALLS_WITHOUT_TICK, CONTRACT_TYPES, ENDING_SOON_DAYS, FROM_AFTER_TO, LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX,
-    PRICE_TOO_LARGE, STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, breakdown_calls_error,
-    contract_status, event_text, newest_end_first, parse_price, period_error, status_bounds, validate_contract,
-    validate_line,
+    CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS, FROM_AFTER_TO,
+    LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT,
+    VENDOR_MISSING, breakdown_calls_error, card_items, contract_status, covered_sql, event_text, newest_end_first,
+    parse_price, period_error, status_bounds, validate_contract, validate_line,
 )
 from masters_core import PHONE_RULE
 
@@ -281,3 +282,68 @@ class TestEventText:
 
     def test_the_line_gate_is_the_cost_key(self):
         assert LINE_GATED_FIELDS == {"price": "contract:read_senior"}
+
+
+# ---------------------------------------------------------------------------
+# S082: the Under contract card and the list's Contract filter (S082 § 5.1, § 5.4, § 8.2)
+# ---------------------------------------------------------------------------
+
+NODE = {"id": 30, "parent_id": 20, "gp_id": 10}
+
+
+def _row(contract_id, on_id, from_offset=-30, to_offset=300):
+    return {"id": contract_id, "equipment_id": on_id,
+            "from_date": TODAY + timedelta(days=from_offset), "to_date": TODAY + timedelta(days=to_offset)}
+
+
+def _shown(rows, node=NODE):
+    return [(item["row"]["id"], item["via_id"]) for item in card_items(rows, node, TODAY)]
+
+
+class TestCardItems:
+
+    def test_the_line_nearest_the_node_wins(self):
+        assert _shown([_row(1, 20), _row(1, 30), _row(1, 10)]) == [(1, None)]
+        assert _shown([_row(1, 10), _row(1, 20)]) == [(1, 20)]
+
+    def test_on_the_grandparent_only(self):
+        assert _shown([_row(1, 10)]) == [(1, 10)]
+
+    def test_a_machine_has_no_ancestors(self):
+        assert _shown([_row(1, 10)], {"id": 10, "parent_id": None, "gp_id": None}) == [(1, None)]
+
+    def test_a_row_on_another_node_is_ignored(self):
+        assert _shown([_row(1, 99)]) == []
+
+    def test_the_ended_window(self):
+        assert CARD_ENDED_DAYS == 90
+        assert _shown([_row(1, 30, -400, -CARD_ENDED_DAYS)]) == [(1, None)]
+        assert _shown([_row(1, 30, -400, -CARD_ENDED_DAYS - 1)]) == []
+
+    def test_a_contract_that_starts_later_is_not_shown(self):
+        assert _shown([_row(1, 30, 1, 300)]) == []
+        assert _shown([_row(1, 30, 0, 300)]) == [(1, None)]
+
+    def test_the_order(self):
+        rows = [_row(5, 30, -400, -10), _row(4, 30, to_offset=200), _row(3, 30, to_offset=100),
+                _row(2, 30, to_offset=100), _row(6, 30, -400, -50), _row(7, 30, -400, -10), _row(8, 30, to_offset=0)]
+        assert [contract_id for contract_id, _ in _shown(rows)] == [8, 2, 3, 4, 5, 7, 6]
+
+
+class TestCoveredSql:
+
+    @pytest.mark.parametrize("site_ids", [[7], [7, 8, 9]])
+    def test_under_and_not_under(self, site_ids):
+        marks_ = ", ".join(["%s"] * len(site_ids))
+        exists = ("EXISTS (SELECT 1 FROM contract_equipment ce JOIN contracts ct ON ct.id = ce.contract_id"
+                  " WHERE ce.equipment_id IN (e.id, e.parent_id, p.parent_id) AND ct.active = 1"
+                  f" AND ct.from_date <= %s AND ct.to_date >= %s AND ct.site_id IN ({marks_}))")
+        assert covered_sql("under", site_ids, TODAY) == (exists, [TODAY, TODAY, *site_ids])
+        assert covered_sql("not_under", site_ids, TODAY) == (f"NOT {exists}", [TODAY, TODAY, *site_ids])
+
+    def test_no_site(self):
+        assert covered_sql("under", [], TODAY) == ("0 = 1", [])
+        assert covered_sql("not_under", [], TODAY) == ("1 = 1", [])
+
+    def test_the_filters(self):
+        assert COVERAGE_FILTERS == ("under", "not_under")

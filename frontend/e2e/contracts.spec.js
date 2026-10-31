@@ -5,12 +5,17 @@
 // of two AMCs, the machine's history lines, and Cost before GST in the list; each S081 test makes its own
 // machines by API (as equipment.spec.js's createEquipment).  The seed has no vendors or contracts:
 // each test makes its own by API, named with its tag, and looks for its own rows only.  Dates are relative to
-// today (IST), far from the 60-day edge.  The call-out number is obviously fake (D10).
+// today (IST), far from the 60-day edge.  The call-out number is obviously fake (D10).  Under contract on the
+// machine (S082): the card on the equipment page (Do not repair, the call-out number as a tel: link by role, the
+// machine's contract on its part, an ended contract, the empty card, the place before Open tickets) and the list's
+// Contract filter; each test makes its own machines, so other tests' contracts never show on its card.
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
+import { equipmentRow, openFilters } from "./support/equipmentList.js";
+import { writeLessonByApi } from "./support/lessons.js";
 import { apiAs, asPerson } from "./support/people.js";
 import { propertyTag } from "./support/properties.js";
-import { card, saveDialog } from "./support/tickets.js";
+import { card, raiseByApi, saveDialog } from "./support/tickets.js";
 
 const CALLOUT = "+91 00000 00000";
 const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -385,5 +390,164 @@ test("S081: the contract page with its machines fits a phone with no sideways sc
   await expect(machinesCard(page).getByTestId("contract-machine")).toHaveCount(3);
   await expect(machineLine(page, machine).getByTestId("line-price")).toHaveText("₹9,809.50");
   await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹45,889.50 before GST · 3 of 3 machines priced.");
+  await expectNoSidewaysScroll(page);
+});
+
+// ---------------------------------------------------------------------------
+// Under contract on the machine (S082): the card on the equipment page and the list's Contract filter
+// ---------------------------------------------------------------------------
+
+const DO_NOT_REPAIR = "Do not repair. Call the engineer; the vendor repairs this machine.";
+const ASK_THE_ENGINEER = "To call the vendor, ask the engineer.";
+const contractCard = (page) => page.getByTestId("contract-card");
+const cardItem = (page, contract) => contractCard(page).locator(`[data-contract="${contract.id}"]`);
+
+/**
+ * Open the node's page as `key` and wait for the card's answer, so a test that expects no card is not passing
+ * before the answer is in.
+ */
+async function openNodeAs(page, key, node) {
+  await asPerson(page, key);
+  const answered = page.waitForResponse((r) => r.url().includes(`/api/contracts/for-equipment/${node.id}`));
+  await page.goto(`/equipment/${node.id}`);
+  await answered;
+  await expect(page.getByRole("heading", { name: `${node.code} — ${node.name}` })).toBeVisible();
+}
+
+/** A component-unit of `machine` by API as IT admin -> the node. */
+const partByApi = (machine, name) => callAs("admin", "post", "/api/equipment", {
+  level: "component_unit", parent_id: machine.id, model_id: machine.model_id, name,
+});
+
+test("S082: a technician sees the Under contract card with Do not repair and no number; the engineer sees the call-out number as a call link", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const vendorOnly = await contractByApi(vendor, `E2E AMC ${tag}`, { only_vendor_repairs: true, callout_number: CALLOUT,
+    response_hours: 24, covers_labour: true, covers_breakdown_calls: true, breakdown_calls_per_year: 4 });
+  const machine = await machineByApi(`E2E compressor ${tag}`);
+  await lineByApi(vendorOnly, machine);
+  const plain = await contractByApi(vendor, `E2E plain AMC ${tag}`, { callout_number: CALLOUT });
+  const second = await machineByApi(`E2E compressor 2 ${tag}`);
+  await lineByApi(plain, second);
+
+  await openNodeAs(page, "technician", machine);
+  const item = cardItem(page, vendorOnly);
+  await expect(contractCard(page).locator(".card-header")).toHaveText("Under contract");
+  await expect(item.getByRole("alert")).toHaveText(DO_NOT_REPAIR);
+  await expect(item).toContainText(`Under AMC with ${vendor.name} until ${shown(day(300))}`);
+  await expect(item).toContainText("Response time: 24 hours");
+  await expect(item).toContainText("Covered: labour, breakdown calls (4 a year).");
+  await expect(item).toContainText("Not covered: spare parts, consumables.");
+  await expect(item).not.toContainText(CALLOUT);
+  await expect(item).not.toContainText(ASK_THE_ENGINEER); // the warning already says to call the engineer
+  await openNodeAs(page, "technician", second);
+  await expect(cardItem(page, plain)).toContainText(ASK_THE_ENGINEER);
+  await expect(cardItem(page, plain).getByRole("alert")).toHaveCount(0);
+
+  await openNodeAs(page, "engineer", machine);
+  await expect(item.getByRole("alert")).toHaveText(DO_NOT_REPAIR);
+  const call = item.getByRole("link", { name: CALLOUT });
+  await expect(call).toHaveAttribute("href", "tel:+910000000000");
+  expect((await call.boundingBox()).height).toBeGreaterThanOrEqual(44); // a gloved thumb (CR1-01)
+  await expect(item).toContainText(`Call-out number: ${CALLOUT}`);
+  await item.getByRole("link", { name: "Open contract" }).click();
+  await expect(page).toHaveURL(new RegExp(`/contracts/${vendorOnly.id}$`));
+  await expect(page.getByRole("heading", { name: vendorOnly.title })).toBeVisible();
+});
+
+test("S082: the Under contract card comes before Open tickets", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag}`, { only_vendor_repairs: true });
+  const machine = await machineByApi(`E2E compressor ${tag}`, "SMTW.MCC2");
+  await lineByApi(contract, machine);
+  await raiseByApi("operator", { equipment_id: machine.id, intensity: "degraded", description: `S082 order: ticket ${tag}` });
+  await openNodeAs(page, "technician", machine);
+  const tickets = page.locator(".card-header", { hasText: /^\s*Open tickets/ });
+  await expect(tickets).toBeVisible();
+  const contractY = (await contractCard(page).boundingBox()).y;
+  expect(contractY, "the Under contract card is below Open tickets").toBeLessThan((await tickets.boundingBox()).y);
+
+  await writeLessonByApi(machine, { title: `S082 order: keep the guard on ${tag}` });
+  await openNodeAs(page, "technician", machine);
+  await expect(page.getByTestId("lessons-card")).toBeVisible();
+  const lessonsY = (await page.getByTestId("lessons-card").boundingBox()).y;
+  const cardY = (await contractCard(page).boundingBox()).y;
+  expect(lessonsY, "the Lessons card is below Under contract").toBeLessThan(cardY);
+  expect(cardY, "the Under contract card is below Open tickets").toBeLessThan((await tickets.boundingBox()).y);
+});
+
+test("S082: a contract on a machine shows on its part's card, naming the machine", async ({ page }, testInfo) => {
+  const { tag, vendor, contract, machine } = await contractWithMachine(testInfo);
+  const part = await partByApi(machine, `E2E motor ${tag}`);
+  await openNodeAs(page, "technician", part);
+  const item = cardItem(page, contract);
+  await expect(item).toContainText(`Under AMC with ${vendor.name} until ${shown(day(300))}`);
+  await expect(item).toContainText(`Through ${machine.code} — ${machine.name}, this part's machine.`);
+});
+
+test("S082: an ended contract shows on the card as ended, with no warning", async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E ended AMC ${tag}`, {
+    from_date: day(-400), to_date: day(-10), only_vendor_repairs: true, callout_number: CALLOUT });
+  const machine = await machineByApi(`E2E compressor ${tag}`);
+  await lineByApi(contract, machine);
+  await openNodeAs(page, "engineer", machine);
+  const item = cardItem(page, contract);
+  await expect(item).toContainText(`AMC with ${vendor.name} ended on ${shown(day(-10))}.`);
+  await expect(item).toHaveClass(/text-secondary/);
+  await expect(item.getByRole("alert")).toHaveCount(0);
+  await expect(item).not.toContainText(CALLOUT);
+  await expect(item.getByRole("link", { name: "Open contract" })).toBeVisible();
+});
+
+test("S082: the engineer sees No contract on this machine; the operator sees no card", async ({ page }, testInfo) => {
+  const machine = await machineByApi(`E2E compressor ${propertyTag(testInfo)}`, "SMTW.MCC2");
+  await openNodeAs(page, "engineer", machine);
+  await expect(contractCard(page)).toContainText("No contract on this machine.");
+  await openNodeAs(page, "operator", machine);
+  await expect(contractCard(page)).toHaveCount(0);
+});
+
+test("S082: a machine removed from its contract loses the card", async ({ page }, testInfo) => {
+  const { contract, machine } = await contractWithMachine(testInfo);
+  await openNodeAs(page, "technician", machine);
+  await expect(cardItem(page, contract)).toBeVisible();
+  await callAs("engineer", "delete", `/api/contracts/${contract.id}/equipment/${machine.id}`);
+  await openNodeAs(page, "technician", machine);
+  await expect(contractCard(page)).toHaveCount(0);
+});
+
+test("S082: Under contract and Not under contract filter the equipment list", async ({ page }, testInfo) => {
+  const { tag, machine } = await contractWithMachine(testInfo);
+  const other = await machineByApi(`E2E compressor 2 ${tag}`);
+  await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(tag)}`);
+  await expect(equipmentRow(page, machine)).toBeVisible();
+  await expect(equipmentRow(page, other)).toBeVisible();
+  await openFilters(page);
+  const select = page.getByRole("combobox", { name: "Contract" });
+  await select.selectOption({ label: "Under contract" });
+  await expect(page).toHaveURL(/contract=under/);
+  await expect(equipmentRow(page, machine)).toBeVisible();
+  await expect(equipmentRow(page, other)).toHaveCount(0);
+  await select.selectOption({ label: "Not under contract" });
+  await expect(page).toHaveURL(/contract=not_under/);
+  await expect(equipmentRow(page, other)).toBeVisible();
+  await expect(equipmentRow(page, machine)).toHaveCount(0);
+  await select.selectOption({ label: "Any contract status" });
+  await expect(page).not.toHaveURL(/contract=/);
+  await expect(equipmentRow(page, machine)).toBeVisible();
+});
+
+test("S082: the Under contract card with its warning fits a phone with no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor with a long name for the phone ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag}`, { only_vendor_repairs: true, response_hours: 48,
+    covers_labour: true, covers_consumables: true, covers_breakdown_calls: true, breakdown_calls_per_year: 12 });
+  const machine = await machineByApi(`E2E compressor ${tag}`);
+  await lineByApi(contract, machine);
+  await openNodeAs(page, "technician", machine);
+  await expect(cardItem(page, contract).getByRole("alert")).toHaveText(DO_NOT_REPAIR);
   await expectNoSidewaysScroll(page);
 });

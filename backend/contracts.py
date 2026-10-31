@@ -17,7 +17,10 @@ contract's price_total and priced_count; contract:edit adds and changes contract
 through _contract_out (and _machine_lines for the lines), which leaves a gated field out (absent, not null) for a
 reader without its key, and every write drops a gated field the writer may not read (_drop_gated with
 GATED_FIELDS or LINE_GATED_FIELDS), so their save leaves it as it was (ISO 27001 A.5.15).  A price change has no
-other field: it needs contract:read_senior too, else 403 (S081 B3).
+other field: it needs contract:read_senior too, else 403 (S081 B3).  The Under contract card (S082,
+/for-equipment/<node_id>) reads the node through load_node_for_user (404 outside the reader's units), keeps each
+contract only at a site where contract:read_basic is held, and cuts _contract_out's answer to _CARD_KEYS: never a
+price, a total or a cost note, for any reader.
 
 LOCK ORDER (S080 § 5.6, S081 § 5.5).  The database runs REPEATABLE READ; each write decides from its locking reads,
 and access checks are plain reads.  Per write this module takes at most one exclusive contract lock and one
@@ -58,19 +61,19 @@ No deadlock cycle:
   two adds of one node to two contracts share the node's lock.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 
 from api_common import MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg
-from auth_utils import has_perm_at, require_perm, require_perm_at
+from auth_utils import has_perm_at, require_perm, require_perm_at, sites_holding
 from contracts_core import (
-    CONTRACT_TYPES, DEFAULT_STATUS, GATED_FIELDS, LINE_GATED_FIELDS, SITE_INACTIVE, SITE_KEPT, STATUS_FILTERS,
-    breakdown_calls_error, contract_status, event_text, newest_end_first, period_error, status_bounds,
-    validate_contract, validate_line,
+    CARD_ENDED_DAYS, CONTRACT_TYPES, DEFAULT_STATUS, GATED_FIELDS, LINE_GATED_FIELDS, SITE_INACTIVE, SITE_KEPT,
+    STATUS_FILTERS, breakdown_calls_error, card_items, contract_status, event_text, newest_end_first, period_error,
+    status_bounds, validate_contract, validate_line,
 )
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, transaction, update_row
-from equipment import IST, NODE_JOINS, accessible_unit_ids, node_path, write_events
+from equipment import IST, NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path, write_events
 from equipment_core import SCRAPPED
 from masters import check_active_vendor
 
@@ -87,14 +90,30 @@ UNIQUE_KEY_ERRORS.update({
 
 # The machine lines' sums (S081 § 4.2): computed on every read, never stored.  price_total stays NULL while no
 # line has a price.
-_CONTRACT_SELECT = (
+_CONTRACT_COLUMNS = (
     "SELECT c.*, s.code AS site_code, v.name AS vendor_name, v.active AS vendor_active,"
     " COALESCE(ce.machine_count, 0) AS machine_count, COALESCE(ce.priced_count, 0) AS priced_count,"
-    " ce.price_total FROM contracts c"
+    " ce.price_total"
+)
+_CONTRACT_FROM = (
+    " FROM contracts c"
     " JOIN sites s ON s.id = c.site_id JOIN vendors v ON v.id = c.vendor_id"
     " LEFT JOIN (SELECT contract_id, COUNT(*) AS machine_count, COUNT(price) AS priced_count,"
     " SUM(price) AS price_total FROM contract_equipment GROUP BY contract_id) ce ON ce.contract_id = c.id"
 )
+_CONTRACT_SELECT = _CONTRACT_COLUMNS + _CONTRACT_FROM
+
+# The card's rows (S082 § 5.1, BS1-01): every contract with a line on one of the nodes, each row once per line
+# (cl.equipment_id; ``ce`` is the sums' alias above).  The caller adds the node ids and the dates.
+_CARD_SELECT = (
+    f"{_CONTRACT_COLUMNS}, cl.equipment_id{_CONTRACT_FROM}"
+    " JOIN contract_equipment cl ON cl.contract_id = c.id"
+)
+
+# The card's item (S082 § 5.2): the keys kept from _contract_out's answer; never a price, a total or a cost note
+_CARD_KEYS = ("title", "contract_type", "vendor_name", "from_date", "to_date", "status", "response_hours",
+              "covers_labour", "covers_parts", "covers_consumables", "covers_breakdown_calls",
+              "breakdown_calls_per_year", "only_vendor_repairs", "can_read_callout", "callout_number")
 
 INACTIVE_NO_ADD = "This contract is inactive. Set it active in Masters › Contracts, then add machines."
 CHOOSE_MACHINE = "Choose a machine."
@@ -120,13 +139,6 @@ class _SiteFlags:
                 "can_read_cost": has_perm_at(READ_COST, site_id),
             }
         return self._flags[site_id]
-
-
-def _sites_holding(cur, key):
-    """The sites where the user holds ``key`` (plain read), ordered by code, as _SiteViewer.grantable_site_ids
-    decides per site."""
-    cur.execute("SELECT id, code, name, active FROM sites ORDER BY code")
-    return [row for row in cur.fetchall() if has_perm_at(key, row["id"])]
 
 
 def _contract_out(row, flags, today):
@@ -223,7 +235,7 @@ def _detail(cur, row, flags, today):
     write's answer (BS1-01)."""
     item = _contract_out(row, flags, today)
     lines = _machine_lines(cur, row, flags)
-    overlaps = _overlaps(cur, row, lines, [s["id"] for s in _sites_holding(cur, READ_BASIC)])
+    overlaps = _overlaps(cur, row, lines, [s["id"] for s in sites_holding(cur, READ_BASIC)])
     for line in lines:
         line["overlaps"] = overlaps.get(line["equipment_id"], [])
     item["machines"] = lines
@@ -278,7 +290,7 @@ def list_contracts():
     today = _today()
     flags = _SiteFlags()
     with get_db().cursor() as cur:
-        sites = _sites_holding(cur, READ_BASIC)
+        sites = sites_holding(cur, READ_BASIC)
         site_ids = [s["id"] for s in sites]
         if site_id is not None:
             site_ids = [s for s in site_ids if s == site_id]   # a site not held: an empty list, not a 403
@@ -319,6 +331,45 @@ def get_contract(contract_id):
         if row is None or not has_perm_at(READ_BASIC, row["site_id"]):
             raise ApiError("Not found", 404)   # existence is not shown outside the reader's sites
         return jsonify(_detail(cur, row, _SiteFlags().at(row["site_id"]), _today()))
+
+
+def _via(node, via_id):
+    """The ancestor whose line brought the contract to the node (S082 § 5.1), from the node row's columns; None on
+    the node itself.  ``level`` lets the card name a machine or a component-unit."""
+    if via_id is None:
+        return None
+    prefix = "p" if via_id == node["parent_id"] else "gp"
+    return {"id": via_id, "code": node[f"{prefix}_code"], "name": node[f"{prefix}_name"],
+            "level": node[f"{prefix}_level"]}
+
+
+@contracts_bp.route("/for-equipment/<int:node_id>")
+@require_perm(READ_BASIC)
+def contracts_for_equipment(node_id):
+    """The Under contract card (S082 § 5.1, § 5.2): the contracts in force on the node or its ancestors, and those
+    ended in the last CARD_ENDED_DAYS, each at a site where contract:read_basic is held.  One plain read; the item
+    goes through _contract_out, then keeps only _CARD_KEYS."""
+    today = _today()
+    flags = _SiteFlags()
+    readable = {}
+    with get_db().cursor() as cur:
+        _locked, node = load_node_for_user(cur, node_id, for_update=False)
+        node_ids = [i for i in (node["id"], node["parent_id"], node["gp_id"]) if i is not None]
+        cur.execute(f"{_CARD_SELECT} WHERE cl.equipment_id IN ({marks(node_ids)}) AND c.active = 1"
+                    " AND c.from_date <= %s AND c.to_date >= %s",
+                    [*node_ids, today, today - timedelta(days=CARD_ENDED_DAYS)])
+        rows = cur.fetchall()
+    items = []
+    for found in card_items(rows, node, today):
+        row = found["row"]
+        if row["site_id"] not in readable:
+            readable[row["site_id"]] = has_perm_at(READ_BASIC, row["site_id"])
+        if not readable[row["site_id"]]:
+            continue
+        out = _contract_out(row, flags.at(row["site_id"]), today)
+        items.append({"contract_id": out["id"], **{key: out[key] for key in _CARD_KEYS if key in out},
+                      "via": _via(node, found["via_id"])})
+    return jsonify({"items": items})
 
 
 @contracts_bp.route("/", methods=["POST"], strict_slashes=False)

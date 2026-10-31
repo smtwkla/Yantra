@@ -35,6 +35,10 @@
  * Lessons (S077): the Lessons card (one-point lessons of the machine and its class) comes first,
  * before Open tickets, on every width: an operator who scans the QR label wants what to do, and a
  * busy press has open tickets. After an add the page opens the lesson, as the operator will read it.
+ *
+ * Under contract (S082): the vendor contracts on the node or its machine come after Lessons and before Open
+ * tickets, on every width, so the technician who scans the label reads "Do not repair" before a long list of
+ * tickets (BR1-01). The card loads itself and hides when it has nothing to say.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -57,6 +61,7 @@ import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
 import LessonsCard from "./equipment/LessonsCard.vue";
 import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
+import UnderContractCard from "./equipment/UnderContractCard.vue";
 import ItemPropertiesModal from "./equipment/ItemPropertiesModal.vue";
 import ModelPropertiesModal from "./masters/ModelPropertiesModal.vue";
 
@@ -235,7 +240,7 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <!-- On a phone the order is Lessons (S077), Open tickets, then Documents and Photos, above the long
+      <!-- On a phone the order is Lessons (S077), Under contract (S082), Open tickets, then Documents and Photos, above the long
            cards (S064 UX-07): one flex column, ordered below md; from md up every order is reset to the
            page order -->
       <div class="d-flex flex-column">
@@ -264,6 +269,8 @@ function onSaved({ result, created }) {
       </div>
 
       <LessonsCard :node="node" @saved="(lesson) => router.push(`/equipment/lessons/${lesson.id}`)" />
+
+      <UnderContractCard :node="node" />
 
       <div v-if="canReadTickets" class="card mb-3 order-0">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">

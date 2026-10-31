@@ -272,3 +272,53 @@ def event_text(contract):
     Never the price: the history is read with equipment:read.  At most 137 characters."""
     period = f"{contract['from_date'].strftime('%d-%m-%Y')} to {contract['to_date'].strftime('%d-%m-%Y')}"
     return f"{contract['title']} ({TYPE_SHORT[contract['contract_type']]}, {period})"
+
+
+# ---------------------------------------------------------------------------
+# Under contract on the machine (S082, R02.2; docs/steps/S082-under-contract-card/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+# The card also shows a contract that ended this many days ago or less (the roadmap's window, § 9 A2)
+CARD_ENDED_DAYS = 90
+
+# The equipment list's Contract filter (§ 5.4); absent = no filter
+COVERAGE_FILTERS = ("under", "not_under")
+
+
+def card_items(rows, node, today):
+    """The card's contracts (§ 5.1) -> ``[{row, via_id}, …]``, one per contract.
+
+    ``rows`` are contract rows, each with the ``equipment_id`` of one of its lines on ``node`` (``{id,
+    parent_id, gp_id}``) or an ancestor.  A contract shows from its From date until CARD_ENDED_DAYS after its To
+    date; one that starts later does not (B15).  The line nearest the node wins: ``via_id`` is None on the node
+    itself, else the ancestor's id.  Order: the contracts not ended by ``to_date, id``; then the ended ones, the
+    latest end first, then by ``id``."""
+    distance = {node["id"]: 0}
+    for steps, ancestor_id in ((1, node["parent_id"]), (2, node["gp_id"])):
+        if ancestor_id is not None:
+            distance[ancestor_id] = steps
+    shown_from = today - timedelta(days=CARD_ENDED_DAYS)
+    nearest = {}
+    for row in rows:
+        if row["equipment_id"] not in distance or row["from_date"] > today or row["to_date"] < shown_from:
+            continue
+        kept = nearest.get(row["id"])
+        if kept is None or distance[row["equipment_id"]] < distance[kept["equipment_id"]]:
+            nearest[row["id"]] = row
+    not_ended = sorted((r for r in nearest.values() if r["to_date"] >= today), key=lambda r: (r["to_date"], r["id"]))
+    ended = sorted((r for r in nearest.values() if r["to_date"] < today), key=lambda r: (-r["to_date"].toordinal(), r["id"]))
+    return [{"row": r, "via_id": None if r["equipment_id"] == node["id"] else r["equipment_id"]}
+            for r in [*not_ended, *ended]]
+
+
+def covered_sql(coverage, site_ids, today):
+    """The Contract filter (§ 5.4) -> ``(sql, params)`` for the equipment list's WHERE.  Under contract: the row's
+    node (``e``), its parent or its grandparent (``p.parent_id``, NODE_JOINS' parent alias) is on a line of an
+    active contract in force on ``today`` at one of ``site_ids`` (where the reader holds contract:read_basic).  Not
+    under contract: the opposite.  No site: nothing is under contract, with no empty ``IN ()``."""
+    if not site_ids:
+        return ("0 = 1", []) if coverage == "under" else ("1 = 1", [])
+    exists = ("EXISTS (SELECT 1 FROM contract_equipment ce JOIN contracts ct ON ct.id = ce.contract_id"
+              " WHERE ce.equipment_id IN (e.id, e.parent_id, p.parent_id) AND ct.active = 1"
+              f" AND ct.from_date <= %s AND ct.to_date >= %s AND ct.site_id IN ({', '.join(['%s'] * len(site_ids))}))")
+    return (exists if coverage == "under" else f"NOT {exists}"), [today, today, *site_ids]

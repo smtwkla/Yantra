@@ -2,13 +2,19 @@
  * Tests for utils/contractLabels.js (S080): the type and status labels, and the dialog's body, which leaves
  * the call-out number and the cost note out unless the chosen site's flags allow them.  S081: the rupees, the
  * coverage lines, the response time, the overlap line and the machine dialog's body, which never sends a price
- * for an editor without the key.
+ * for an editor without the key.  S082: the Under contract card's headline, call line, tel: link and via line, and
+ * the list's Contract filter choices.
  */
 
 import { describe, expect, it } from "vitest";
 import {
+  ASK_THE_ENGINEER,
+  CONTRACT_FILTER_CHOICES,
   CONTRACT_TYPES,
+  NO_CALLOUT_NUMBER,
   STATUS_FILTERS,
+  callLine,
+  cardHeadline,
   contractBody,
   contractTypeLabel,
   coverageLines,
@@ -16,7 +22,10 @@ import {
   lineBody,
   overlapText,
   responseText,
+  showsDoNotRepair,
   statusBadgeClass,
+  telHref,
+  viaText,
 } from "../src/utils/contractLabels";
 
 const FORM = {
@@ -127,5 +136,74 @@ describe("the contract page (S081)", () => {
   it("sends the price alone on Edit price", () => {
     expect(lineBody({ equipment_id: 7, price: "28028" }, { creating: false, canReadCost: true })).toEqual({ price: "28028" });
     expect(lineBody({ equipment_id: 7, price: "" }, { creating: false, canReadCost: true })).toEqual({ price: null });
+  });
+});
+
+describe("the Under contract card (S082)", () => {
+  const IN_FORCE = { kind: "in_force", label: "In force", days: null };
+  const ENDED = { kind: "ended", label: "Ended", days: null };
+  const ITEM = {
+    contract_type: "amc", vendor_name: "Atlas Copco", to_date: "2027-03-31", status: IN_FORCE,
+    only_vendor_repairs: 0, can_read_callout: true, callout_number: "+91 00000 00000",
+  };
+
+  it("names each type in force and ended", () => {
+    const headlines = (status, toDate) => CONTRACT_TYPES.map(({ value }) => (
+      cardHeadline({ ...ITEM, contract_type: value, status, to_date: toDate })
+    ));
+    expect(headlines(IN_FORCE, "2027-03-31")).toEqual([
+      "Under AMC with Atlas Copco until 31-03-2027",
+      "Under CMC with Atlas Copco until 31-03-2027",
+      "Under warranty with Atlas Copco until 31-03-2027",
+      "On-call contract with Atlas Copco until 31-03-2027",
+    ]);
+    expect(headlines(ENDED, "2026-03-31")).toEqual([
+      "AMC with Atlas Copco ended on 31-03-2026.",
+      "CMC with Atlas Copco ended on 31-03-2026.",
+      "Warranty with Atlas Copco ended on 31-03-2026.",
+      "On-call contract with Atlas Copco ended on 31-03-2026.",
+    ]);
+  });
+
+  it("shows the Do not repair warning only on a contract not ended with the tick", () => {
+    expect(showsDoNotRepair({ ...ITEM, only_vendor_repairs: 1 })).toBe(true);
+    expect(showsDoNotRepair({ ...ITEM, only_vendor_repairs: 1, status: ENDED })).toBe(false);
+    expect(showsDoNotRepair(ITEM)).toBe(false);
+  });
+
+  it("gives the call line by who reads it", () => {
+    expect(callLine(ITEM)).toEqual({ text: "Call-out number:", number: "+91 00000 00000" });
+    expect(callLine({ ...ITEM, callout_number: null })).toEqual({ text: NO_CALLOUT_NUMBER, number: null });
+    expect(NO_CALLOUT_NUMBER).toBe("No call-out number on the contract.");
+    const reader = { ...ITEM, can_read_callout: false, callout_number: undefined };
+    expect(callLine(reader)).toEqual({ text: ASK_THE_ENGINEER, number: null });
+    expect(ASK_THE_ENGINEER).toBe("To call the vendor, ask the engineer.");
+    // The warning already says to call the engineer; the engineer keeps the number
+    expect(callLine({ ...reader, only_vendor_repairs: 1 })).toBeNull();
+    expect(callLine({ ...ITEM, only_vendor_repairs: 1 }).number).toBe("+91 00000 00000");
+    expect(callLine({ ...ITEM, status: ENDED })).toBeNull();
+  });
+
+  it("makes a tel: link of the digits and a leading plus", () => {
+    expect(telHref("+91 00000 00000")).toBe("tel:+910000000000");
+    expect(telHref("0422-000 000")).toBe("tel:0422000000");
+    expect(telHref(" +91 (0422) 000-000 ")).toBe("tel:+910422000000");
+  });
+
+  it("names the ancestor whose line brings the contract", () => {
+    expect(viaText({ code: "CMP001", name: "Screw compressor 1", level: "equipment" })).toBe(
+      "Through CMP001 — Screw compressor 1, this part's machine.",
+    );
+    expect(viaText({ code: "CU001", name: "Gearbox", level: "component_unit" })).toBe(
+      "Through CU001 — Gearbox, this part's component-unit.",
+    );
+  });
+
+  it("offers the list's Contract filter", () => {
+    expect(CONTRACT_FILTER_CHOICES).toEqual([
+      ["", "Any contract status"],
+      ["under", "Under contract"],
+      ["not_under", "Not under contract"],
+    ]);
   });
 });

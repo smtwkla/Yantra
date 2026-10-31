@@ -145,7 +145,9 @@ from api_common import (
 )
 import asset_list_core
 from asset_list_core import build_asset_list
-from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
+from auth_utils import permissions_at_site, require_perm, require_perm_at, sites_holding, user_unit_ids
+# The pure contracts rules only: contracts.py imports this module (S082 B10)
+from contracts_core import COVERAGE_FILTERS, covered_sql
 from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
 from equipment_core import (
     CRITICALITIES, LEVELS, LIFECYCLES, SCRAPPED, check_parent, derive_from_model, effective_criticality,
@@ -621,6 +623,7 @@ def list_equipment():
     level = enum_arg("level", (*LEVELS, "all")) or "equipment"
     q = (request.args.get("q") or "").strip()
     tickets = enum_arg("tickets", tuple(_TICKET_FILTERS))
+    coverage = enum_arg("contract", COVERAGE_FILTERS)
 
     empty = {"items": [], "total": 0, "page": page, "per_page": per_page}
     with get_db().cursor() as cur:
@@ -651,6 +654,13 @@ def list_equipment():
                 conditions.append(f"u.id IN ({', '.join(['%s'] * len(ticket_unit_ids))})")
                 params.extend(sorted(ticket_unit_ids))
             condition, condition_params = _TICKET_FILTERS[tickets]
+            conditions.append(condition)
+            params.extend(condition_params)
+        # Not in _list_filters: the printed asset list ignores it, as it ignores tickets (S082 B12).  A contract
+        # counts only at a site where contract:read_basic is held (S082 § 5.4).
+        if coverage is not None:
+            site_ids = [site["id"] for site in sites_holding(cur, "contract:read_basic")]
+            condition, condition_params = covered_sql(coverage, site_ids, datetime.now(IST).date())
             conditions.append(condition)
             params.extend(condition_params)
         light_sql, light_params = _ticket_light_column(ticket_unit_ids)

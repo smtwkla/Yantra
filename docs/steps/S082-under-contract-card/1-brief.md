@@ -4,8 +4,8 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted R02 docs; S079, S080 and S081 coded before S082 (staleness check before coding)
-Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 6 minor accepted)
+Baseline: 7b8da9f+ (refs/steps/S081 at gate B; d216f48 + S079, S080, S081), checked by staleness review s1
+Status: Gate B 31-10-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1; verify review r2 running; implemented by a resumed coder, paused 30-10-2026 for a reboot); approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 6 minor accepted)
 From: R02.2 (second half)
 ```
 

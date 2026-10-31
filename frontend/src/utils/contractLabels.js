@@ -1,6 +1,6 @@
 /**
- * Vendor contracts (S080, R02.1; S081, R02.2: the machines and their prices) — labels and the dialogs' bodies,
- * pure.  The rules live in the backend (contracts_core.py); this file only names things and shapes what the
+ * Vendor contracts (S080, R02.1; S081, R02.2: the machines and their prices; S082: the Under contract card and the
+ * list's Contract filter) — labels and the dialogs' bodies, pure.  The rules live in the backend (contracts_core.py); this file only names things and shapes what the
  * dialogs send.
  */
 import { formatDate } from "./datetime";
@@ -125,6 +125,64 @@ export function overlapText(overlap) {
   const noun = TYPE_NOUNS[overlap.contract_type] ?? overlap.contract_type;
   const on = overlap.on_code ? ` (on ${overlap.on_code})` : "";
   return `Also in another ${noun}: ${overlap.title}, ${formatDate(overlap.from_date)} to ${formatDate(overlap.to_date)}${on}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Under contract on the machine (S082 § 5.3, § 5.4)
+// ---------------------------------------------------------------------------
+
+// The equipment list's Contract filter (contracts_core.COVERAGE_FILTERS), "" = no filter
+export const CONTRACT_FILTER_CHOICES = [
+  ["", "Any contract status"],
+  ["under", "Under contract"],
+  ["not_under", "Not under contract"],
+];
+
+export const DO_NOT_REPAIR = "Do not repair. Call the engineer; the vendor repairs this machine.";
+export const ASK_THE_ENGINEER = "To call the vendor, ask the engineer.";
+export const NO_CALLOUT_NUMBER = "No call-out number on the contract.";
+
+// The type in the card's headline: in force ("Under AMC with …"), and ended, at the start of a sentence
+const IN_FORCE_TEXT = { amc: "Under AMC", cmc: "Under CMC", warranty: "Under warranty", on_call: "On-call contract" };
+const ENDED_TEXT = { amc: "AMC", cmc: "CMC", warranty: "Warranty", on_call: "On-call contract" };
+
+export const isEnded = (item) => item.status?.kind === "ended";
+
+/** The D9 warning shows on a card item not ended whose contract lets only the vendor repair. */
+export function showsDoNotRepair(item) {
+  return !isEnded(item) && Boolean(item.only_vendor_repairs);
+}
+
+/** "Under AMC with Atlas Copco until 31-03-2027"; ended: "AMC with Atlas Copco ended on 31-03-2026." */
+export function cardHeadline(item) {
+  const type = item.contract_type;
+  if (isEnded(item)) return `${ENDED_TEXT[type] ?? type} with ${item.vendor_name} ended on ${formatDate(item.to_date)}.`;
+  return `${IN_FORCE_TEXT[type] ?? type} with ${item.vendor_name} until ${formatDate(item.to_date)}`;
+}
+
+/** The ancestor whose line brings the contract: "Through CMP001 — Screw compressor 1, this part's machine." */
+export function viaText(via) {
+  const level = via.level === "component_unit" ? "component-unit" : "machine";
+  return `Through ${via.code} — ${via.name}, this part's ${level}.`;
+}
+
+/**
+ * The call line of a card item, or null when there is none: an ended contract has none, and a reader without
+ * the number gets none when the D9 warning already says to call the engineer. ``{text, number}``: a reader of
+ * the call-out number gets "Call-out number:" and the number (or the text that there is none); anyone else
+ * "To call the vendor, ask the engineer." (D10).
+ */
+export function callLine(item) {
+  if (isEnded(item)) return null;
+  if (!item.can_read_callout) return showsDoNotRepair(item) ? null : { text: ASK_THE_ENGINEER, number: null };
+  if (!item.callout_number) return { text: NO_CALLOUT_NUMBER, number: null };
+  return { text: "Call-out number:", number: item.callout_number };
+}
+
+/** A tap-to-call link: "tel:" and the number with every character but the digits and a leading "+" removed. */
+export function telHref(number) {
+  const text = String(number).trim();
+  return `tel:${text.startsWith("+") ? "+" : ""}${text.replace(/\D/g, "")}`;
 }
 
 /**

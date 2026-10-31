@@ -26,6 +26,7 @@ import {
   ensureEquipmentCategories, ensureEquipmentClasses, ensureEquipmentTypes, ensureProperties, ensureSites, ensureUnits,
   equipmentCategories, equipmentClasses, equipmentTypes, properties, sites, units,
 } from "../stores/masters";
+import { CONTRACT_FILTER_CHOICES } from "../utils/contractLabels";
 import { CRITICALITY_OPTIONS, LIFECYCLE_LABELS } from "../utils/equipmentLabels";
 import { assetListPath } from "../utils/assetList";
 import { activeFirstBy, classChoicesFor, classOutsideCategory } from "../utils/equipmentFilters";
@@ -52,6 +53,15 @@ const canEdit = computed(() => userPermissions.value.includes("equipment:edit"))
 // The bulb and its filter are for people who may read tickets at some site (the list is the union
 // over their sites; the API answers a dash for the rows of the other sites)
 const canSeeTickets = computed(() => userPermissions.value.includes("ticket:read"));
+// The Contract filter (S082 § 5.4) for people who may read contracts at some site; the API counts only the
+// contracts of the sites where they do
+const canSeeContracts = computed(() => userPermissions.value.includes("contract:read_basic"));
+// A filter key the user may not use is neither sent nor counted (a bookmarked URL must not filter invisibly)
+function keyApplies(key) {
+  if (key === "tickets") return canSeeTickets.value;
+  if (key === "contract") return canSeeContracts.value;
+  return true;
+}
 const formModal = ref(null);
 const filterModal = ref(null);
 
@@ -148,15 +158,18 @@ const lifecycleModel = filterModel("lifecycle", "", chooseLifecycle);
 const criticalityModel = filterModel("criticality");
 const levelModel = filterModel("level", DEFAULT_LEVEL);
 const ticketsModel = filterModel("tickets");
+const contractModel = filterModel("contract");
 
 // ---- the phone's folded filters (S064 UX-08): closed on load (D5); the count says what is set ----
 
 const filtersOpen = ref(false);
 // Each select set, Show scrapped when on, the property filter as one; not the search, the page or
 // the default level.  The keys the list sends (listUrl), so a filter that does not apply is not counted.
-const FILTER_KEYS = ["site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "tickets"];
+const FILTER_KEYS = [
+  "site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "contract",
+];
 const filterCount = computed(() => {
-  let count = FILTER_KEYS.filter((key) => query.value[key] && (key !== "tickets" || canSeeTickets.value)).length;
+  let count = FILTER_KEYS.filter((key) => query.value[key] && keyApplies(key)).length;
   if (level.value !== DEFAULT_LEVEL) count += 1;
   if (showScrapped.value) count += 1;
   if (hasProps.value) count += 1;
@@ -216,10 +229,9 @@ watch(() => query.value.q, (q) => {
 
 function listUrl() {
   const params = new URLSearchParams({ level: level.value, page: String(pageNumber.value), per_page: String(PAGE_SIZE) });
-  for (const key of ["site_id", "unit_id", "category_id", "class_id", "type_id", "lifecycle", "criticality", "tickets", "q", "props"]) {
-    // A bookmarked ?tickets= must not filter invisibly for a user who has no ticket column or filter
-    if (key === "tickets" && !canSeeTickets.value) continue;
-    if (query.value[key]) params.set(key, query.value[key]);
+  for (const key of [...FILTER_KEYS, "q", "props"]) {
+    // A bookmarked ?tickets= or ?contract= must not filter invisibly for a user who has no such filter
+    if (query.value[key] && keyApplies(key)) params.set(key, query.value[key]);
   }
   if (showScrapped.value) params.set("include_scrapped", "1");
   return `/api/equipment?${params}`;
@@ -370,6 +382,9 @@ function printAssetList() {
       </select>
       <select v-if="canSeeTickets" v-model="ticketsModel" class="form-select form-select-sm w-auto" aria-label="Tickets">
         <option v-for="[value, text] in TICKET_FILTER_CHOICES" :key="value" :value="value">{{ text }}</option>
+      </select>
+      <select v-if="canSeeContracts" v-model="contractModel" class="form-select form-select-sm w-auto" aria-label="Contract">
+        <option v-for="[value, text] in CONTRACT_FILTER_CHOICES" :key="value" :value="value">{{ text }}</option>
       </select>
       <select v-model="levelModel" class="form-select form-select-sm w-auto" aria-label="Level">
         <option v-for="[value, text] in LEVEL_CHOICES" :key="value" :value="value">{{ text }}</option>

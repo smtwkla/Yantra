@@ -5,11 +5,14 @@ Codes are asserted relative to the first one issued in a fresh class (n, n+1), n
 as absolute numbers.  Unit-access tests each use a fresh username.
 """
 
+from datetime import datetime, timedelta
+
 import pymysql
 import pytest
 
 import api_common
 import config
+import config_rbac
 import equipment
 from local_db import get_local_db
 from tests.conftest import SERVER_ERROR, server_error
@@ -1394,6 +1397,80 @@ class TestTicketLight:
         res = admin.get(f"{EQUIPMENT}/asset-list", query_string={"unit_id": unit["id"], "tickets": "down"})
         assert res.status_code == 200, res.get_json()
         assert "ticket_light" not in res.get_data(as_text=True)
+
+
+class TestContractFilter:
+    """S082 § 5.4: ?contract=under|not_under — the node, its parent or its grandparent on a line of an active
+    contract in force today, at a site where the reader holds contract:read_basic."""
+
+    @pytest.fixture
+    def covered(self, admin, make_site, make_unit, make_vendor, make_equipment, uniq):
+        """A unit of a fresh site with M1 (covered) and its part P1, M2 with its covered part P2, and M3; the
+        contracts made by IT admin (contract:edit)."""
+        site = make_site()
+        unit = make_unit(site=site)
+        vendor = make_vendor()
+        today = datetime.now(equipment.IST).date()
+
+        def contract(from_offset=-30, to_offset=300):
+            res = admin.post("/api/contracts", json={
+                "site_id": site["id"], "vendor_id": vendor["id"], "contract_type": "amc",
+                "title": f"AMC {uniq.vendor_name()}", "from_date": (today + timedelta(days=from_offset)).isoformat(),
+                "to_date": (today + timedelta(days=to_offset)).isoformat()})
+            assert res.status_code == 201, res.get_json()
+            return res.get_json()
+
+        def cover(contract_row, node):
+            res = admin.post(f"/api/contracts/{contract_row['id']}/equipment", json={"equipment_id": node["id"]})
+            assert res.status_code == 201, res.get_json()
+
+        m1, m2, m3 = (make_equipment(unit=unit) for _ in range(3))
+        p1, p2 = make_equipment(parent=m1), make_equipment(parent=m2)
+        in_force = contract()
+        cover(in_force, m1)
+        cover(in_force, p2)
+        # On M3: an ended, an upcoming and an inactive contract, none of which counts
+        cover(contract(-400, -1), m3)
+        cover(contract(1, 300), m3)
+        inactive = contract()
+        cover(inactive, m3)
+        assert admin.put(f"/api/contracts/{inactive['id']}", json={"active": False}).status_code == 200
+        return {"site": site, "unit": unit, "m1": m1, "m2": m2, "m3": m3, "p1": p1, "p2": p2}
+
+    def _listed(self, client, covered, **params):
+        page = _list(client, unit_id=covered["unit"]["id"], **params)
+        ids = {item["id"] for item in page["items"]}
+        assert page["total"] == len(ids)
+        names = {node["id"]: name for name, node in covered.items() if name[0] in "mp"}
+        return {names[i] for i in ids}
+
+    def test_under_and_not_under(self, admin, covered):
+        assert self._listed(admin, covered) == {"m1", "m2", "m3"}
+        assert self._listed(admin, covered, contract="under") == {"m1"}
+        assert self._listed(admin, covered, contract="under", level="all") == {"m1", "p1", "p2"}
+        assert self._listed(admin, covered, contract="not_under") == {"m2", "m3"}
+        assert self._listed(admin, covered, contract="not_under", level="all") == {"m2", "m3"}
+
+    def test_a_reader_at_the_site(self, user_at_sites, covered):
+        technician, _ = user_at_sites([(covered["site"], "maint_technician", "all")])
+        assert self._listed(technician, covered, contract="under") == {"m1"}
+
+    def test_no_read_basic_at_the_contract_s_site(self, monkeypatch, user_at_sites, covered):
+        technician, _ = user_at_sites([(covered["site"], "maint_technician", "all")])
+        monkeypatch.setitem(config_rbac.PERMISSIONS, "contract:read_basic", ("maint_engineer",))
+        assert self._listed(technician, covered, contract="under") == set()
+        assert self._listed(technician, covered, contract="not_under") == {"m1", "m2", "m3"}
+
+    @pytest.mark.parametrize("value", ["maybe", ""])
+    def test_a_bad_value_is_400(self, admin, value):
+        res = admin.get(EQUIPMENT, query_string={"contract": value})
+        assert (res.status_code, res.get_json()["field"]) == (400, "contract")
+
+    def test_the_asset_list_ignores_it(self, admin, covered):
+        res = admin.get(f"{EQUIPMENT}/asset-list", query_string={"unit_id": covered["unit"]["id"],
+                                                                  "contract": "under"})
+        assert res.status_code == 200, res.get_json()
+        assert covered["m3"]["code"] in res.get_data(as_text=True)
 
 
 class TestNoModel:
