@@ -30,9 +30,10 @@ the contract's site (people_with_role_at_site); the tap opens CONTRACT_PATH.  Th
 candidates plain once (contract_scan_candidates, only to narrow the work).  The daily
 contract_reminder_scan (S084, alerts.lock_contract_for_scan) then locks several contract rows
 FOR UPDATE in id order, decides from the locked row, and writes only their reminder columns and
-task_queue rows; every route holds at most one contract row, taken first, so no cycle.  The
-renewal read (contract_renewed) is plain on purpose: a locking read's gap lock on ix_contracts_renewal_of could block R02.4's
-renewal insert while the scan waits on the old contract that insert holds.  contract_alert reads
+task_queue rows; every route holds at most one existing contract row (the renewal also inserts
+one), taken first, so no cycle.  The renewal read (contract_renewed) is plain on purpose: a
+locking read's gap lock on uq_contracts_renewal_of (v47, S085) could block the renewal's insert
+while the scan waits on the old contract that insert holds.  contract_alert reads
 plain.  This module never imports contracts.py.
 """
 

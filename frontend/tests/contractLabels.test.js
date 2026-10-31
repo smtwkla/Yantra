@@ -3,7 +3,8 @@
  * the call-out number and the cost note out unless the chosen site's flags allow them.  S081: the rupees, the
  * coverage lines, the response time, the overlap line and the machine dialog's body, which never sends a price
  * for an editor without the key.  S082: the Under contract card's headline, call line, tel: link and via line, and
- * the list's Contract filter choices.
+ * the list's Contract filter choices.  S085: the dialog's form from a contract, the renewal's form, its notice and
+ * the chain line.
  */
 
 import { describe, expect, it } from "vitest";
@@ -11,16 +12,21 @@ import {
   ASK_THE_ENGINEER,
   CONTRACT_FILTER_CHOICES,
   CONTRACT_TYPES,
+  EMPTY_CONTRACT_FORM,
   NO_CALLOUT_NUMBER,
   STATUS_FILTERS,
   callLine,
   cardHeadline,
+  chainText,
   contractBody,
+  contractForm,
   contractTypeLabel,
   coverageLines,
   formatRupees,
   lineBody,
   overlapText,
+  renewalForm,
+  renewalNotice,
   responseText,
   showsDoNotRepair,
   statusBadgeClass,
@@ -205,5 +211,84 @@ describe("the Under contract card (S082)", () => {
       ["under", "Under contract"],
       ["not_under", "Not under contract"],
     ]);
+  });
+});
+
+describe("the renewal (S085)", () => {
+  // A detail as the API sends it to an engineer: no cost note, a call-out number, ticks as 0/1
+  const DETAIL = {
+    id: 7, site_id: 1, site_code: "SMTW", vendor_id: 2, contract_type: "amc", title: "Atlas Copco AMC 2026–27",
+    contract_number: "AC/17", from_date: "2026-04-01", to_date: "2027-03-31", covers_labour: 1, covers_parts: 0,
+    covers_consumables: 0, covers_breakdown_calls: 1, breakdown_calls_per_year: 4, covered_text: null,
+    not_covered_text: "Filters", pm_visits_per_year: 4, response_hours: null, only_vendor_repairs: 1,
+    callout_number: "+91 00000 00000", notes: null, active: 1,
+    renewal: { from_date: "2027-04-01", to_date: "2028-03-31", machines: [], skipped: [] },
+  };
+
+  it("contractForm fills every field of the empty form", () => {
+    const form = contractForm(DETAIL);
+    expect(Object.keys(form).sort()).toEqual(["contract_type", "site_id", ...Object.keys(EMPTY_CONTRACT_FORM)].sort());
+    expect(form.covers_labour).toBe(true);
+    expect(form.covers_parts).toBe(false);
+    expect(form.covered_text).toBe("");
+    expect(form.cost_note).toBe(""); // absent for this reader
+    expect(form.vendor_id).toBe(2);
+  });
+
+  it("renewalForm takes the proposed dates and starts the cost note empty", () => {
+    const form = renewalForm({ ...DETAIL, cost_note: "Rs 37,837 a year" });
+    expect([form.from_date, form.to_date]).toEqual(["2027-04-01", "2028-03-31"]);
+    expect(form.cost_note).toBe("");
+    expect(form.title).toBe("Atlas Copco AMC 2026–27");
+    expect(form.callout_number).toBe("+91 00000 00000");
+    expect(form.site_id).toBe(1);
+    const late = renewalForm({ ...DETAIL, renewal: { from_date: null, to_date: null, machines: [], skipped: [] } });
+    expect([late.from_date, late.to_date]).toEqual(["", ""]);
+    const { callout_number: _gone, ...noCallout } = DETAIL;
+    expect(renewalForm(noCallout).callout_number).toBe("");
+  });
+
+  it("renewalNotice names the machines copied and skipped", () => {
+    const renewal = {
+      machines: [{ equipment_id: 1, code: "CMP001" }, { equipment_id: 2, code: "CMP002" }],
+      skipped: [
+        { equipment_id: 4, code: "CMP004", reason: "scrapped" },
+        { equipment_id: 5, code: "CMP005", reason: "now at BRICKS" },
+      ],
+    };
+    expect(renewalNotice({ ...renewal, skipped: [] }, false, "SMTW")).toBe(
+      "The new contract starts the day after this one ends. 2 machines are copied: CMP001, CMP002. Prices start" +
+        " empty: the managers of SMTW enter them on the new contract. Documents stay on this contract."
+    );
+    expect(renewalNotice(renewal, true, "SMTW")).toBe(
+      "The new contract starts the day after this one ends. 2 machines are copied: CMP001, CMP002. Not copied:" +
+        " CMP004 (scrapped), CMP005 (now at BRICKS). Prices start empty: enter them on the new contract. Documents" +
+        " stay on this contract."
+    );
+    expect(renewalNotice({ machines: [renewal.machines[0]], skipped: [] }, true, "SMTW")).toContain(
+      "1 machine is copied: CMP001."
+    );
+    expect(renewalNotice({ machines: [], skipped: [] }, false, "SMTW")).toBe(
+      "The new contract starts the day after this one ends. This contract has no machines; the new one starts with" +
+        " none. Documents stay on this contract."
+    );
+    expect(renewalNotice({ machines: [], skipped: renewal.skipped }, false, "SMTW")).toBe(
+      "The new contract starts the day after this one ends. No machine is copied: CMP004 (scrapped)," +
+        " CMP005 (now at BRICKS). Documents stay on this contract."
+    );
+  });
+
+  it("chainText gives the period and marks an inactive contract", () => {
+    const link = { id: 8, title: "Atlas Copco AMC 2027–28", from_date: "2027-04-01", to_date: "2028-03-31", active: true };
+    expect(chainText(link)).toBe(" · 01-04-2027 to 31-03-2028");
+    expect(chainText({ ...link, active: false })).toBe(" · 01-04-2027 to 31-03-2028 (inactive)");
+  });
+
+  it("the renewal body sends the gated fields only with their flags", () => {
+    const form = renewalForm(DETAIL);
+    const body = contractBody(form, { can_read_callout: true, can_read_cost: false });
+    expect(body.callout_number).toBe("+91 00000 00000");
+    expect("cost_note" in body).toBe(false);
+    expect("callout_number" in contractBody(form, { can_read_callout: false, can_read_cost: false })).toBe(false);
   });
 });

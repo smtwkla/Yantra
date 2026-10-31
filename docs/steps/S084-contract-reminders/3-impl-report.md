@@ -172,3 +172,14 @@ Docs updated: none, because only comments, one facts key and a test changed; no 
 #### Feedback
 
 - none
+
+### Round 2 (in S085's fix round)
+
+- **CR2-01** (nit) — Fixed. `alerts_core.contract_facts` no longer holds `status_label`; no code or test read it
+  (`ends_words` is built from the same label). No test pins the facts dict, so none changed. Red run not possible:
+  a dead key is removed.
+
+Tests: run with S085's fix round, `tests/test_alerts_core.py tests/test_email_core.py tests/test_contract_alerts.py
+tests/test_contract_renewal_api.py` — 246 passed (`YANTRA_TEST_RUN=s085c2`).
+
+Docs updated: none, because one unused key left a dict.

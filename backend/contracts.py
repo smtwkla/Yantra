@@ -5,7 +5,11 @@ from the dates (contracts_core.contract_status), never stored.  Never deleted: o
 inactive (ISO 9001 § 7.5).  The machines covered and their prices (contract_equipment, S081, R02.2; docs/steps/
 S081-contract-equipment/1-brief.md): one line per node of the contract's site, any level, with an optional price
 before GST; the total is their sum, never stored.  Each add and remove writes a line in the machine's history
-(equipment_events), never with the price.
+(equipment_events), never with the price.  The renewal (S085, R02.4; docs/steps/S085-contract-renewal/1-brief.md):
+a new contract at the old one's site with renewal_of_id the old one (one renewal per contract, v47), its terms from
+the dialog, the old contract's in-service machines of the site copied without prices; the old contract, its prices,
+cost note and documents stay as they were.  The renewal is made only here (renew_contract), under the old contract's
+lock.
 
 Thin shell: contracts_core holds the rules; this module checks access, locks, reads and stores.
 
@@ -45,6 +49,15 @@ existing contract, so every plain read comes after it.
   the contract_equipment row FOR UPDATE (404) → update_row → the answer.
 - Remove a machine: the contracts row FOR UPDATE (404) → plain: 404, contract:edit 403 → the contract_equipment
   row FOR UPDATE (404) → the delete → the history line (a shared foreign-key lock on the node) → the answer.
+- Renew (S085 § 5.8): the old contracts row FOR UPDATE, first (_lock_contract: 404, contract:edit 403) → plain:
+  active 409 (from the locked row) → the site LOCK IN SHARE MODE (inactive 409) → plain: a contract whose
+  renewal_of_id is the old one 409 (every renewal locks the old contract first, so one committed before the lock
+  was granted is seen; uq_contracts_renewal_of, v47, backs it) → _drop_gated, the call-out number, the rules → the
+  vendor LOCK IN SHARE MODE (400) → the insert of the new contract (shared foreign-key locks on the site and the
+  vendor, held, and the old contract, held exclusive; the new row is this transaction's own, which no other
+  transaction sees, locks or waits on before the commit) → plain: the old contract's lines, sorted by
+  equipment_id; per line the node (1) LOCK IN SHARE MODE, in id order → per copied line the insert (shared
+  foreign-key locks, held) and the history line → the answer.  It never waits on a second existing contract row.
 - Documents (S083): documents.py locks the contract row FOR UPDATE through lock_contract_for_change, first in its
   transaction, then touches only equipment_documents rows (plain: 404, the write or purge key 403,
   contract:read_senior 403).
@@ -54,14 +67,21 @@ No deadlock cycle:
   line writes, and documents.py's writes through lock_contract_for_change); nothing holds another lock and then
   waits on it.  The reminder scan (S084) is the one path that holds several, in id order: the daily
   contract_reminder_scan (alerts.lock_contract_for_scan) locks several contract rows FOR UPDATE in id order, then
-  writes only their reminder columns and task_queue rows; every route holds at most one contract row, taken
-  first, so no cycle.
+  writes only their reminder columns and task_queue rows; every route holds at most one existing contract row
+  (the renewal also inserts one), taken first, so no cycle.  The renewal (S085), after the old contract, waits
+  only on the site, the vendor and nodes (1), which no holder of a contract row holds exclusive.
 - The contract_equipment row: only this module locks it, after its contract; no other module reads it with a lock.
 - The node (1): taken shared only, after the contract.  equipment.py's writes (move, scrap, edit), meters.py,
   item_properties.py, documents.py and tickets.py's raise hold (1) exclusive and never wait on a contract or a
   line row, so an add waiting on (1) waits behind a writer that finishes.  documents.py's node path holds (1)
   exclusive and waits on no contract row; its contract path (S083) holds the contract row and no (1).  A scrap waiting for an add's shared
-  lock gets it after the add commits; a scrapped node keeps its line.
+  lock gets it after the add commits; a scrapped node keeps its line.  The renewal holds several nodes shared, in
+  id order.  A residual, accepted (S085 § 5.8): a move holds the node (1) then its target parent (2), and a scrap
+  locks a subtree top-down (equipment.py's "one accepted deadlock"); a renewal holding one covered node shared
+  and waiting for another, at the same instant as such a move or scrap of those two nodes, can meet a cycle.
+  MariaDB rolls one back (1213, the plain 500 of api_common._operational_error); the renewal leaves nothing, and
+  the engineer taps again.
+- Two renewals of one contract serialise on the old contract's row; the second meets the renewal check (409).
 - equipment_events rows are inserted, never locked by anyone.
 - The vendor row: masters.py's vendor update locks only its own row and waits on nothing after it; a person write
   takes the person, then the vendor shared.  Neither waits on a contract or site lock a contract write holds, so a
@@ -80,9 +100,10 @@ from flask import Blueprint, jsonify, request
 from api_common import MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg
 from auth_utils import has_perm_at, require_perm, require_perm_at, sites_holding
 from contracts_core import (
-    CARD_ENDED_DAYS, CONTRACT_TYPES, DEFAULT_STATUS, GATED_FIELDS, LINE_GATED_FIELDS, SITE_INACTIVE, SITE_KEPT,
-    STATUS_FILTERS, breakdown_calls_error, card_items, contract_status, event_text, newest_end_first, period_error,
-    status_bounds, validate_contract, validate_line,
+    CARD_ENDED_DAYS, CONTRACT_TYPES, DEFAULT_STATUS, GATED_FIELDS, LINE_GATED_FIELDS, RENEW_INACTIVE, RENEWAL_RACE,
+    SITE_INACTIVE, SITE_KEPT, STATUS_FILTERS, already_renewed, breakdown_calls_error, card_items, contract_status,
+    event_text, newest_end_first, period_error, renew_site_inactive, renewal_lines, renewal_period, status_bounds,
+    validate_contract, validate_line, validate_renewal,
 )
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, transaction, update_row
 from equipment import IST, NODE_JOINS, accessible_unit_ids, load_node_for_user, node_path, write_events
@@ -98,12 +119,13 @@ EDIT = "contract:edit"
 
 UNIQUE_KEY_ERRORS.update({
     "uq_contract_equipment": ("equipment_id", "This machine is already on the contract."),
+    "uq_contracts_renewal_of": (None, RENEWAL_RACE),   # S085 § 5.5: two renewals at one instant
 })
 
 # The machine lines' sums (S081 § 4.2): computed on every read, never stored.  price_total stays NULL while no
 # line has a price.
 _CONTRACT_COLUMNS = (
-    "SELECT c.*, s.code AS site_code, v.name AS vendor_name, v.active AS vendor_active,"
+    "SELECT c.*, s.code AS site_code, s.active AS site_active, v.name AS vendor_name, v.active AS vendor_active,"
     " COALESCE(ce.machine_count, 0) AS machine_count, COALESCE(ce.priced_count, 0) AS priced_count,"
     " ce.price_total"
 )
@@ -165,6 +187,8 @@ def _contract_out(row, flags, today):
     # The reminder markers are the daily scan's (S084), not the contract's
     del item["first_reminder_for"]
     del item["second_reminder_for"]
+    # The site's state decides can_renew (S085 § 6.1); the page reads it from there
+    del item["site_active"]
     item["status"] = contract_status(row["from_date"], row["to_date"], today)
     item.update(flags)
     if not flags["can_read_callout"]:
@@ -258,7 +282,43 @@ def _detail(cur, row, flags, today):
     for line in lines:
         line["overlaps"] = overlaps.get(line["equipment_id"], [])
     item["machines"] = lines
+    item.update(_renewal_links(cur, row))
+    # S085 § 6.1: the button shows only when the renewal would pass the route's refusals
+    item["can_renew"] = (flags["can_edit"] and bool(row["active"]) and bool(row["site_active"])
+                         and item["renewed_by"] is None)
+    if item["can_renew"]:
+        item["renewal"] = _renewal_offer(row, lines)
     return item
+
+
+_LINK_SELECT = "SELECT id, title, from_date, to_date, active FROM contracts"
+
+
+def _link_out(link):
+    if link is None:
+        return None
+    return {**row_to_dict(link), "active": bool(link["active"])}
+
+
+def _renewal_links(cur, row):
+    """The chain (S085 § 6.1): the contract this one renews and its renewal (at most one, v47), plain reads.  Both
+    are contracts of the same site (a renewal copies the site), so a reader of one may read the other."""
+    renewal_of = None
+    if row["renewal_of_id"] is not None:
+        cur.execute(f"{_LINK_SELECT} WHERE id = %s", (row["renewal_of_id"],))
+        renewal_of = cur.fetchone()
+    cur.execute(f"{_LINK_SELECT} WHERE renewal_of_id = %s", (row["id"],))
+    return {"renewal_of": _link_out(renewal_of), "renewed_by": _link_out(cur.fetchone())}
+
+
+def _renewal_offer(row, lines):
+    """What the renew dialog proposes (S085 § 5.2, § 5.3): the period and the machines copied and skipped.  The
+    route decides again from its locked rows."""
+    new_from, new_to = renewal_period(row["from_date"], row["to_date"])
+    copied, skipped = renewal_lines(lines)
+    return {"from_date": new_from.isoformat() if new_from else None,
+            "to_date": new_to.isoformat() if new_to else None,
+            "machines": copied, "skipped": skipped}
 
 
 def _answer(cur, contract_id):
@@ -534,6 +594,53 @@ def remove_machine(contract_id, equipment_id):
         write_events(cur, equipment_id, [("contract_removed", event_text(locked), None)])
         answer = _answer(cur, contract_id)
     return jsonify(answer)
+
+
+# ---------------------------------------------------------------------------
+# Renewal (S085 § 5, § 6; LOCK ORDER above)
+# ---------------------------------------------------------------------------
+
+@contracts_bp.route("/<int:contract_id>/renew", methods=["POST"])
+@require_perm(EDIT)
+def renew_contract(contract_id):
+    """The next contract with the terms sent (the dialog fills them from the old one), at the old contract's site,
+    renewal_of_id the old one; its in-service machines at the site copied without prices, each with a history line
+    (§ 5.3, § 5.4).  The old contract, its prices, cost note and documents are not changed."""
+    clean = clean_body(validate_renewal, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        old = _lock_contract(cur, contract_id)
+        site_id = old["site_id"]
+        if not old["active"]:
+            raise ApiError(RENEW_INACTIVE, 409)
+        cur.execute("SELECT id, code, active FROM sites WHERE id = %s LOCK IN SHARE MODE", (site_id,))
+        site = cur.fetchone()
+        if not site["active"]:
+            raise ApiError(renew_site_inactive(site["code"]), 409)
+        # Every renewal locks the old contract first, so one committed before our lock is seen; v47's key backs it
+        cur.execute("SELECT id, title FROM contracts WHERE renewal_of_id = %s", (contract_id,))
+        renewal = cur.fetchone()
+        if renewal is not None:
+            raise ApiError(already_renewed(renewal["title"]), 409)
+        _drop_gated(clean, site_id)
+        if not has_perm_at(READ_CALLOUT, site_id):
+            # The vendor's breakdown line, not a fact of one period: kept for a renewer who may not read it (§ 5.4)
+            clean["callout_number"] = old["callout_number"]
+        _check_rules(clean, {})
+        check_active_vendor(cur, clean["vendor_id"])
+        new_id = insert_row(cur, "contracts", {**clean, "site_id": site_id, "renewal_of_id": contract_id}, actor())
+        lines = sorted(_machine_lines(cur, old, _SiteFlags().at(site_id)), key=lambda line: line["equipment_id"])
+        for line in lines:   # node (1) shared, in id order, before any line insert; "scrapped" from the locked row
+            cur.execute("SELECT lifecycle FROM equipment WHERE id = %s LOCK IN SHARE MODE", (line["equipment_id"],))
+            line["lifecycle"] = cur.fetchone()["lifecycle"]
+        copied, skipped = renewal_lines(lines)
+        added = event_text(clean)
+        for machine in copied:
+            insert_row(cur, "contract_equipment", {"contract_id": new_id, "equipment_id": machine["equipment_id"]},
+                       actor())
+            write_events(cur, machine["equipment_id"], [("contract_added", None, added)])
+        answer = {**_answer(cur, new_id), "skipped": skipped}
+    return jsonify(answer), 201
 
 
 # ---------------------------------------------------------------------------

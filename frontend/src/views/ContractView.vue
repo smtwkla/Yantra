@@ -13,13 +13,18 @@
  * and Photos cards after the machines, only for a reader with can_read_documents (contract:read_senior at the
  * site: a quote or a signed contract shows the price); their buttons follow can_edit_documents. Others see nothing
  * of them, as of the price.
+ *
+ * The renewal (docs/steps/S085-contract-renewal/1-brief.md § 5.7): *Renew contract* shows only when the detail's
+ * can_renew; its dialog makes the next contract and the page then opens it. The chain lines link the contract this
+ * one renews and its renewal; an inactive renewal tells an editor how to renew again.
  */
 import { computed, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { apiDelete, apiGet } from "../api";
 import LifecycleBadge from "../components/LifecycleBadge.vue";
 import DocumentsCards from "../components/documents/DocumentsCards.vue";
 import {
+  chainText,
   contractTypeLabel,
   coverageLines,
   formatRupees,
@@ -29,8 +34,10 @@ import {
 } from "../utils/contractLabels";
 import { formatDate } from "../utils/datetime";
 import ContractMachineDialog from "./contracts/ContractMachineDialog.vue";
+import ContractRenewDialog from "./contracts/ContractRenewDialog.vue";
 
 const route = useRoute();
+const router = useRouter();
 
 const contract = ref(null);
 const loading = ref(true);
@@ -40,6 +47,7 @@ const actionError = ref("");
 const confirmingId = ref(null); // the machine whose Remove asks first
 const removing = ref(false);
 const dialog = ref(null);
+const renewDialog = ref(null);
 let loadSeq = 0;
 
 async function load() {
@@ -114,6 +122,11 @@ function onSaved(detail) {
   contract.value = detail;
   actionError.value = "";
 }
+
+// The renewal is saved and its dialog has faded out: open the new contract (the watch on the id loads it)
+function onRenewed(detail) {
+  router.push({ name: "contract", params: { id: detail.id } });
+}
 </script>
 
 <template>
@@ -134,8 +147,28 @@ function onSaved(detail) {
         <span class="badge text-bg-light border">{{ contractTypeLabel(contract.contract_type) }}</span>
         <span class="badge" :class="statusBadgeClass(contract.status.kind)">{{ contract.status.label }}</span>
         <span v-if="!contract.active" class="badge text-bg-secondary">Inactive</span>
+        <button v-if="contract.can_renew" class="btn btn-outline-primary btn-sm ms-auto" @click="renewDialog.open()">
+          <i class="fa-solid fa-rotate-right me-1" aria-hidden="true"></i>Renew contract
+        </button>
       </div>
-      <div class="text-secondary mb-3">{{ vendorText }} · {{ contract.site_code }}</div>
+      <div class="text-secondary" :class="contract.renewal_of || contract.renewed_by ? 'mb-1' : 'mb-3'">
+        {{ vendorText }} · {{ contract.site_code }}
+      </div>
+      <div v-if="contract.renewal_of || contract.renewed_by" class="small mb-3" data-testid="contract-chain">
+        <div v-if="contract.renewal_of">
+          Renews:
+          <router-link :to="`/contracts/${contract.renewal_of.id}`">{{ contract.renewal_of.title }}</router-link>{{ chainText(contract.renewal_of) }}
+        </div>
+        <template v-if="contract.renewed_by">
+          <div>
+            Renewed by:
+            <router-link :to="`/contracts/${contract.renewed_by.id}`">{{ contract.renewed_by.title }}</router-link>{{ chainText(contract.renewed_by) }}
+          </div>
+          <div v-if="!contract.renewed_by.active && contract.can_edit" class="form-text mt-0">
+            To renew this contract again, set that renewal active in Masters › Contracts and change its terms.
+          </div>
+        </template>
+      </div>
 
       <div class="card mb-3">
         <div class="card-header"><i class="fa-solid fa-file-signature me-2"></i>Terms</div>
@@ -237,6 +270,7 @@ function onSaved(detail) {
         :can-read-cost="contract.can_read_cost"
         @saved="onSaved"
       />
+      <ContractRenewDialog v-if="contract.can_renew" :key="contract.id" ref="renewDialog" :contract="contract" @renewed="onRenewed" />
     </template>
   </div>
 </template>

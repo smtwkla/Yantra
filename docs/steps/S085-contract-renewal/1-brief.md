@@ -5,7 +5,7 @@ Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
 Baseline: refs/steps/S084 (2232cc6; d216f48 + S079–S084, S084 in code review), checked by staleness review s1
-Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor; BR1-01 and BR1-02 flagged for KLA at gate B)
+Status: Gate B 31-10-2026 (code review r1: 1 minor, 2 nits, fixed in fix round 1; verify review r2 running); (staleness s1: 0 blocker, 0 major, 2 minor accepted); approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 3 minor; BR1-01 and BR1-02 flagged for KLA at gate B)
 From: R02.4
 ```
 

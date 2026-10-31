@@ -420,7 +420,6 @@ def contract_facts(contract, today, base_url):
         "site_code": contract["site_code"],
         "from_date": contract["from_date"],
         "to_date": contract["to_date"],
-        "status_label": label,
         # The label as words after a name: "ends in 60 days", "ends today" (push and email both read it)
         "ends_words": label[0].lower() + label[1:],
         "path": path,

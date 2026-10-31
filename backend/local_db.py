@@ -1525,6 +1525,17 @@ _MIGRATIONS = [
             ADD COLUMN IF NOT EXISTS first_reminder_for DATE NULL AFTER to_date,
             ADD COLUMN IF NOT EXISTS second_reminder_for DATE NULL AFTER first_reminder_for""",
     ]),
+    # S085 — contract renewal (docs/steps/S085-contract-renewal/1-brief.md § 4.1, R02.4): one renewal per contract.
+    # A renewal set inactive keeps its place; it is set active again to renew with it.  The unique key serves
+    # fk_contracts_renewal_of and S084's renewed check, so the plain key goes; the unique key comes first, so the
+    # foreign key always has an index on its column.  Many NULLs pass (a contract that renews nothing).  No
+    # precondition: nothing wrote renewal_of_id before S085, and production holds no contract before v46.  Two
+    # statements, each safe to run twice: a half-applied v47 re-runs.  Rollback: a release before v47 reads
+    # renewal_of_id only in S084's renewed check, which works with either key.
+    (47, "One renewal per contract (S085)", [
+        "ALTER TABLE contracts ADD UNIQUE KEY IF NOT EXISTS uq_contracts_renewal_of (renewal_of_id)",
+        "ALTER TABLE contracts DROP INDEX IF EXISTS ix_contracts_renewal_of",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

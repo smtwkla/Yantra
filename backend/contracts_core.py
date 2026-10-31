@@ -6,10 +6,12 @@ rules.  The one stated copy is ``_iso_date``, the 7 lines of improvements_core._
 each other's private helpers), with the date bounds of § 5.1 added here.
 """
 
+import calendar
 import re
 from datetime import date, timedelta
 from decimal import Decimal
 
+from equipment_core import SCRAPPED
 from masters_core import collapsed, flag_parser, id_parser, optional_text_parser, phone_parser, validate_fields
 
 # The ENUM of contracts.contract_type (v43), in the order the dialog lists them after AMC
@@ -322,3 +324,75 @@ def covered_sql(coverage, site_ids, today):
               " WHERE ce.equipment_id IN (e.id, e.parent_id, p.parent_id) AND ct.active = 1"
               f" AND ct.from_date <= %s AND ct.to_date >= %s AND ct.site_id IN ({', '.join(['%s'] * len(site_ids))}))")
     return (exists if coverage == "under" else f"NOT {exists}"), [today, today, *site_ids]
+
+
+# ---------------------------------------------------------------------------
+# Renewal (S085, R02.4; docs/steps/S085-contract-renewal/1-brief.md § 5)
+# ---------------------------------------------------------------------------
+
+RENEW_INACTIVE = "This contract is inactive. Set it active in Masters › Contracts, then renew it."
+# The unique key's text (§ 5.5): two renewals of one contract at one instant
+RENEWAL_RACE = "This contract is already renewed. Reload the page to see the renewal."
+SKIP_SCRAPPED = "scrapped"
+
+
+def renew_site_inactive(site_code):
+    """§ 5.5: the old contract's site is inactive."""
+    return f"{site_code} is inactive. Set it active in Masters › Sites, then renew the contract."
+
+
+def already_renewed(title):
+    """§ 5.5: the contract has a renewal, active or not."""
+    return f"This contract is already renewed: {title}. Open that contract to change it."
+
+
+def validate_renewal(body, creating):
+    """A renewal's body -> ``(clean, errors)`` for clean_body (§ 5.4, E10).  ``creating`` is taken only for
+    clean_body's call shape and ignored: a renewal is always a create.  The site is the old contract's, set by the
+    route, so a ``site_id`` sent is removed and validate_contract's "Choose a site." is dropped; ``active`` and
+    ``renewal_of_id`` are ignored, as on a create."""
+    data = dict(body)
+    data.pop("site_id", None)
+    clean, errors = validate_contract(data, True)
+    clean.pop("site_id", None)
+    return clean, [e for e in errors if e["field"] != "site_id"]
+
+
+def _add_months(day, months):
+    """``day`` plus whole months: the same day of the month, or the month's last day when the month is shorter."""
+    index = day.month - 1 + months
+    year, month = day.year + index // 12, index % 12 + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def renewal_period(from_date, to_date):
+    """The proposed period of the renewal (§ 5.2, E3) -> ``(new_from, new_to)``, or ``(None, None)`` past DATE_MAX.
+    It starts the day after ``to_date``.  When the old period was whole months (the new From has the old From's day
+    of the month) it keeps that number of months; otherwise the same number of days."""
+    new_from = to_date + timedelta(days=1)
+    if new_from.day == from_date.day:
+        months = max(1, (new_from.year - from_date.year) * 12 + new_from.month - from_date.month)
+        new_to = _add_months(new_from, months) - timedelta(days=1)
+    else:
+        new_to = new_from + (to_date - from_date)
+    if new_to > DATE_MAX:
+        return None, None
+    return new_from, new_to
+
+
+def renewal_lines(machines):
+    """The old contract's lines -> ``(copied, skipped)`` (§ 5.3, E5).  Each line has ``equipment_id``, ``code``,
+    ``lifecycle``, ``at_contract_site`` and ``site_code``.  Copied: not scrapped and still at the contract's site, as
+    an add requires (S081 § 5.2 rules 3 and 4); the renewer's units are not asked.  Skipped, with the reason:
+    "scrapped" (it wins), or "now at <site>"."""
+    copied, skipped = [], []
+    for line in machines:
+        if line["lifecycle"] == SCRAPPED:
+            reason = SKIP_SCRAPPED
+        elif not line["at_contract_site"]:
+            reason = f"now at {line['site_code']}"
+        else:
+            copied.append({"equipment_id": line["equipment_id"], "code": line["code"]})
+            continue
+        skipped.append({"equipment_id": line["equipment_id"], "code": line["code"], "reason": reason})
+    return copied, skipped

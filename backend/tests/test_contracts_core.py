@@ -1,6 +1,7 @@
 """Vendor contracts — the pure rules (S080 § 5.1, § 5.3, § 8.2): the fields, the period, breakdown calls, the
 status from the dates and the Status filter; S081's machine line, its price and the history text (S081 § 5.1,
-§ 5.3); S082's card items and the list's Contract filter (S082 § 5.1, § 5.4).  No database.  Phone values are
+§ 5.3); S082's card items and the list's Contract filter (S082 § 5.1, § 5.4); S085's renewal: the proposed period,
+the machines copied and skipped, the body and the refusals' texts (S085 § 5.2-§ 5.5).  No database.  Phone values are
 obviously fake, never a real number."""
 
 from datetime import date, timedelta
@@ -10,9 +11,11 @@ import pytest
 
 from contracts_core import (
     CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS, FROM_AFTER_TO,
-    LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT,
-    VENDOR_MISSING, breakdown_calls_error, card_items, contract_status, covered_sql, event_text, newest_end_first,
-    parse_price, period_error, status_bounds, validate_contract, validate_line,
+    LINE_GATED_FIELDS, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE, STATUS_FILTERS,
+    TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed, breakdown_calls_error,
+    card_items, contract_status, covered_sql, event_text, newest_end_first, parse_price, period_error,
+    renew_site_inactive, renewal_lines, renewal_period, status_bounds, validate_contract, validate_line,
+    validate_renewal,
 )
 from masters_core import PHONE_RULE
 
@@ -347,3 +350,80 @@ class TestCoveredSql:
 
     def test_the_filters(self):
         assert COVERAGE_FILTERS == ("under", "not_under")
+
+
+# ---------------------------------------------------------------------------
+# Renewal (S085 § 5.2-§ 5.5, § 8.2)
+# ---------------------------------------------------------------------------
+
+def _d(text):
+    """DD-MM-YYYY -> date, so the examples read as the brief writes them."""
+    day, month, year = (int(part) for part in text.split("-"))
+    return date(year, month, day)
+
+
+class TestRenewal:
+
+    @pytest.mark.parametrize("old, new", [
+        (("01-04-2026", "31-03-2027"), ("01-04-2027", "31-03-2028")),   # one year
+        (("15-01-2026", "14-07-2026"), ("15-07-2026", "14-01-2027")),   # six months
+        (("01-03-2027", "29-02-2028"), ("01-03-2028", "28-02-2029")),   # a leap year ends
+        (("01-04-2024", "31-03-2029"), ("01-04-2029", "31-03-2034")),   # five years
+    ])
+    def test_renewal_period_whole_months(self, old, new):
+        assert renewal_period(_d(old[0]), _d(old[1])) == (_d(new[0]), _d(new[1]))
+
+    @pytest.mark.parametrize("old, new", [
+        (("10-04-2026", "31-03-2027"), ("01-04-2027", "21-03-2028")),
+        (("05-05-2026", "05-05-2026"), ("06-05-2026", "06-05-2026")),   # one day
+        # A leap-day start is not whole months: day 1 of 01-03-2025 is not 29 (BR1-07), so 366 days
+        (("29-02-2024", "28-02-2025"), ("01-03-2025", "01-03-2026")),
+    ])
+    def test_renewal_period_not_whole_months(self, old, new):
+        assert renewal_period(_d(old[0]), _d(old[1])) == (_d(new[0]), _d(new[1]))
+
+    def test_renewal_period_past_2099(self):
+        assert renewal_period(_d("01-01-2099"), _d("31-12-2099")) == (None, None)
+        assert renewal_period(_d("01-01-2098"), _d("31-12-2098")) == (_d("01-01-2099"), _d("31-12-2099"))
+
+    def test_add_months_keeps_the_month_end(self):
+        assert _add_months(_d("31-01-2027"), 1) == _d("28-02-2027")
+        assert _add_months(_d("31-01-2028"), 1) == _d("29-02-2028")
+        assert _add_months(_d("15-11-2027"), 3) == _d("15-02-2028")
+
+    def test_renewal_lines(self):
+        def line(equipment_id, code, lifecycle="in_service", at_site=True, site_code="SMTW"):
+            return {"equipment_id": equipment_id, "code": code, "lifecycle": lifecycle,
+                    "at_contract_site": at_site, "site_code": site_code}
+        copied, skipped = renewal_lines([
+            line(1, "CMP001"), line(2, "CMP002", "standby"), line(3, "CMP003", "out_of_use"),
+            line(4, "CMP004", "scrapped"), line(5, "CMP005", at_site=False, site_code="BRICKS"),
+            line(6, "CMP006", "scrapped", at_site=False, site_code="BRICKS"),
+        ])
+        assert copied == [{"equipment_id": 1, "code": "CMP001"}, {"equipment_id": 2, "code": "CMP002"},
+                          {"equipment_id": 3, "code": "CMP003"}]
+        assert skipped == [{"equipment_id": 4, "code": "CMP004", "reason": "scrapped"},
+                           {"equipment_id": 5, "code": "CMP005", "reason": "now at BRICKS"},
+                           {"equipment_id": 6, "code": "CMP006", "reason": "scrapped"}]
+        assert renewal_lines([]) == ([], [])
+
+    def test_validate_renewal(self):
+        body = {key: value for key, value in VALID.items() if key != "site_id"}
+        clean, errors = validate_renewal(body, False)   # creating is ignored: always a create
+        assert errors == [] and "site_id" not in clean and clean["title"] == VALID["title"]
+        clean, errors = validate_renewal({**body, "site_id": 99}, True)
+        assert errors == [] and "site_id" not in clean
+        assert validate_renewal({**body, "title": ""}, True)[1] == [{"field": "title", "message": "Enter a title."}]
+        clean, errors = validate_renewal({**body, "active": 0, "renewal_of_id": 5}, True)
+        assert errors == [] and "active" not in clean and "renewal_of_id" not in clean
+        # A create's required fields stay required
+        assert [e["field"] for e in validate_renewal({}, True)[1]] == [
+            "vendor_id", "contract_type", "title", "from_date", "to_date"]
+
+    def test_the_messages(self):
+        assert RENEW_INACTIVE == "This contract is inactive. Set it active in Masters › Contracts, then renew it."
+        assert renew_site_inactive("SMTW") == (
+            "SMTW is inactive. Set it active in Masters › Sites, then renew the contract.")
+        assert already_renewed("Atlas Copco AMC 2027–28") == (
+            "This contract is already renewed: Atlas Copco AMC 2027–28. Open that contract to change it.")
+        assert RENEWAL_RACE == "This contract is already renewed. Reload the page to see the renewal."

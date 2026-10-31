@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator's drafter (Opus)
 Date: 30-10-2026
 Track: full
-Baseline: d216f48 + uncommitted S079; S080, S081, S082, S083, S084 and S085 coded before S086 (staleness check before coding)
+Baseline: refs/steps/S084 (100cd87; d216f48 + S079–S084) and S085's approved brief, checked by staleness review s1
 Status: Approved 30-10-2026 (gate A delegated by KLA for tonight's R02 steps; review r1: 0 blocker, 0 major, 4 minor; BR1-03, Q2 and C3 flagged for KLA at gate B)
 From: R02.6
 ```
@@ -50,8 +50,8 @@ called.
   only, as the roadmap says).
 - The contract line on a closed ticket (§ 7 C6).
 - The call-out number on the ticket line (§ 9 Q3).
-- Any change to S082's card route or its *Under contract* card, beyond moving one text into a
-  shared constant (§ 3).
+- Any change to S082's card route or its *Under contract* card; the ticket line reuses S082's
+  exported text and helpers (§ 3, BS1-01).
 
 ## 2. Standards and practice
 
@@ -108,10 +108,12 @@ staleness review checks them:
 - `backend/contracts.py` (from S080): the route `GET /api/contracts/<int:contract_id>/calls`
   (§ 6), with `_call_rows(cur, contract)`, `_vendor_people(cur, ticket_ids, vendor_id)` and
   `_vendor_reach(cur, vendor_id, site_id)`. The module docstring names S086 and its reads (no
-  lock). It imports `events_by_ticket` from `tickets.py` and `unit_access_condition`,
-  `accessible_unit_ids` from `equipment.py`. No cycle (BR1-11, checked): `tickets.py` imports
-  `alerts`, `equipment`, `improvements_core` and `tickets_core`, none of which imports
-  `contracts.py`.
+  lock). It imports `events_by_ticket` from `tickets.py` and `unit_access_condition` from
+  `equipment.py` (`accessible_unit_ids` and `IST` are already imported; BS1-03). No cycle (BR1-11,
+  checked; s1 re-checked): `tickets.py` imports `alerts`, `equipment`, `improvements_core` and
+  `tickets_core`, none of which imports `contracts.py`. Since S082 and S084, `equipment.py` and
+  `alerts_core.py` import `contracts_core`, so `contracts_core` may import only pure modules
+  (`tickets_core`, `masters_core`), never a shell module (BS1-04).
 - `backend/contracts_core.py` (from S080, pure): `call_figures(state, not_a_fault, events, now)`,
   `calls_total(calls)`, `calls_used(count, per_year, from_date, to_date, complete)`,
   `vendor_warning(linked_count, assignable_count)`, `CALLS_USED_MAX_DAYS` (§ 5). It imports
@@ -137,10 +139,9 @@ staleness review checks them:
   the picked line (§ 5.7).
 - `frontend/src/utils/ticketLabels.js`: `groupPeople`'s filter also matches `vendor_name`.
 - `frontend/src/utils/contractLabels.js` (from S080): `callsTotalLine(total)`,
-  `callsUsedLine(used)`, `ticketContractLine(item)`, `DO_NOT_REPAIR_TEXT`.
-- `frontend/src/views/equipment/UnderContractCard.vue` (from S082): uses `DO_NOT_REPAIR_TEXT`
-  instead of its own copy of the text (one text, two places; DRY). Only when S082 wrote the text
-  inline; the coder checks.
+  `callsUsedLine(used)`, `ticketContractLine(item)`. The ticket line reuses S082's exported
+  `DO_NOT_REPAIR`, `showsDoNotRepair` and `isEnded` (BS1-01); `UnderContractCard.vue` already
+  imports `DO_NOT_REPAIR` and does not change.
 
 ### Tests
 
@@ -160,8 +161,8 @@ staleness review checks them:
 - `.claude/CLAUDE.md` § SMTW-Review: the point *Breakdown calls (S086)* (§ 8.6).
 - No change: `docs/schema/` (`tooling\schema-docs.bat check` exits 0), `docs/steps/device-checks.md`.
 
-**File count:** 18 code and test files (4 backend code, 3 backend tests, 8 frontend code with
-`UnderContractCard.vue`, 2 frontend unit tests, 1 spec), 2 docs. One concern: the
+**File count:** 17 code and test files (4 backend code, 3 backend tests, 7 frontend code, 2
+frontend unit tests, 1 spec), 2 docs. One concern: the
 vendor's work on tickets, seen from the contract and from the ticket. A split is possible (§ 9
 Q1); not recommended.
 
@@ -386,10 +387,12 @@ named on a new labour row.
     `covers_breakdown_calls`. Example: "Under AMC with Atlas Copco until 31-03-2027 · response 24
     hours · breakdown calls included". The headline is a link to `/contracts/<id>` (every item's
     reader holds `contract:read_basic` at its site, the page's gate).
-  - **The D9 warning** (S082's rule, the same text): when `only_vendor_repairs`, an `alert
-    alert-warning py-2` with `fa-triangle-exclamation`, `DO_NOT_REPAIR_TEXT` = "Do not repair. Call
-    the engineer; the vendor repairs this machine." Shown to every reader of the line, as on S082's
-    card.
+  - **The D9 warning** (S082's rule, the same text): when `showsDoNotRepair(item)` (S082's helper),
+    an `alert alert-warning py-2` with `fa-triangle-exclamation` and S082's `DO_NOT_REPAIR` = "Do not
+    repair. Call the engineer; the vendor repairs this machine." Shown to every reader of the line,
+    as on S082's card. Ended items are dropped with S082's `isEnded(item)` (BS1-01).
+  - The item's id is `contract_id` (the card route's key; BS1-02), so the link is
+    `/contracts/<contract_id>`.
 - **Nothing to show** (no item, an error, a 403 or 404): nothing drawn; the ticket page works
   without the line. A 404 comes when the ticket is visible through its old unit but its machine
   now stands outside the user's `equipment:read` units; accepted.
@@ -418,7 +421,8 @@ named on a new labour row.
 
 None. The calls route, the for-equipment route and the people picker read plainly; S086 writes
 nothing. The LOCK ORDER notes (`tickets.py`, `masters.py`, `improvements.py`, `procedures.py`,
-`contracts.py`) are unchanged; `contracts.py`'s docstring says the calls route takes no lock.
+`contracts.py`, and the contract sentences in `equipment.py`, `documents.py` and `alerts.py`,
+S083–S084; BS1-06) are unchanged; `contracts.py`'s docstring says the calls route takes no lock.
 
 ### 5.9 The database down
 
@@ -560,7 +564,7 @@ the ticket routes (S018). The session database gives no contract, so each test's
 - `frontend/tests/contractLabels.test.js`: `callsTotalLine` ("3 calls · down 5 h 20 min · waited
   on the vendor 2 h", "1 call · no downtime", the waiting part left out at 0); `callsUsedLine`
   (the three texts; `null` → `null`); `ticketContractLine` (with and without the response time,
-  with and without the breakdown-calls part); `DO_NOT_REPAIR_TEXT`.
+  with and without the breakdown-calls part). `DO_NOT_REPAIR` is S082's and already tested.
 - `frontend/tests/ticketLabels.test.js` `groupPeople`: "atlas" finds a person by `vendor_name`; a
   person with `vendor_name` `null` or absent is matched by name only.
 
@@ -576,9 +580,8 @@ the ticket routes (S018). The session database gives no contract, so each test's
 - **Browser:** `frontend/e2e/tickets-work.spec.js`, `frontend/e2e/tickets-raise.spec.js`,
   `frontend/e2e/tickets-parts.spec.js`, `frontend/e2e/improvements.spec.js` use the picker or
   `/api/tickets/people`; the seed people have no vendor, so the text is unchanged; re-run.
-  `frontend/e2e/contracts.spec.js` (S080–S085): the contract page gains a card at its end, and
-  S082's card test asserts the "Do not repair" text, which moves to a constant with the same
-  words; re-run. No shared file changes (settings: *Shared code*: `FormModal.vue`,
+  `frontend/e2e/contracts.spec.js` (S080–S085): the contract page gains a card at its end; S082's
+  card is unchanged; re-run. No shared file changes (settings: *Shared code*: `FormModal.vue`,
   `useFormModal.js`, `api.js`, the router, the auth store and `e2e/support/` are untouched).
 
 ### 8.4 Automated (e2e, `frontend/e2e/contracts.spec.js`)
@@ -590,7 +593,7 @@ own machine and vendor; the period around today. The ticket-page tests sit here 
 
 **Team records (BR1-01):** each S086 test creates its own Team records by API as IT admin
 (`POST /api/masters/people` with `employment: "contractor"` and `vendor_id`, and a Technician or
-Operator row at SMTW through the site-roles route). No test links, relinks or changes a seed
+Operator row at SMTW through `PUT /api/masters/people/<id>/sites/<site_id>` with `{role, all_units, unit_ids}`, the `give_site_role` call). No test links, relinks or changes a seed
 person: other specs in the same lane read the seed people's picker text unchanged (§ 8.3).
 
 - **important** `S086: the contract page lists the vendor's breakdown call with downtime and the
@@ -701,3 +704,12 @@ None.
 | BR1-05…BR1-13 (nits) | Accepted as recommended | "By: Ravi, Atlas Copco service"; `vendor_name` `null` or absent; period edges on a contract ending yesterday; DOM order, not geometry, in the ticket-line test; every `test_contract*_api.py`; the inactive-unit residual in § 5.5; the import check in § 3; `is_breakdown` kept and why; the operator test asserts the one line shown. |
 
 Q2 and C3 taken as recommended under the delegation; flagged for KLA at gate B (§ 9).
+
+### Staleness s1 — `2-brief-review-s1.md` (Fable), answered 31-10-2026
+
+Sections changed: header, § 1 Out of scope, § 3 (Backend, Frontend, file count), § 5.6, § 5.8, § 8.2, § 8.3, § 8.4.
+
+| Finding | Answer |
+|---|---|
+| BS1-01 (minor) S082 already exports `DO_NOT_REPAIR` | Accepted: the ticket line reuses `DO_NOT_REPAIR`, `showsDoNotRepair` and `isEnded`; the `UnderContractCard.vue` bullet is dropped (17 code and test files); § 1, § 5.6, § 8.2, § 8.3 reworded. |
+| BS1-02 … BS1-06 (nits) | Accepted: the item key `contract_id` (§ 5.6); only `unit_access_condition` is a new import (§ 3); the `contracts_core` import rule (§ 3); the site-row route named (§ 8.4); the LOCK ORDER notes in `equipment.py`, `documents.py` and `alerts.py` listed as unchanged (§ 5.8). The coder re-reads `_CONTRACT_COLUMNS` and `_detail` after S085 is coded. |

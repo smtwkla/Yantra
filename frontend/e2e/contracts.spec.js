@@ -10,7 +10,8 @@
 // machine's contract on its part, an ended contract, the empty card, the place before Open tickets) and the list's
 // Contract filter; each test makes its own machines, so other tests' contracts never show on its card.  The
 // contract's documents (S083): a manager adds a PDF, removes it and restores it from Settings; an engineer sees
-// no Documents card.
+// no Documents card.  Contract renewal (S085): Renew contract, its notice, the chain lines on both pages, an
+// inactive vendor, a scrapped machine and an inactive renewal.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -638,4 +639,158 @@ test("S083: an engineer sees no Documents card on the contract page", async ({ p
   await expect(page.getByRole("button", { name: "Add document" })).toHaveCount(0);
   await expect(page.locator(".card-header", { hasText: /^\s*Documents/ })).toHaveCount(0);
   await expect(page.getByText(SIGNED_LINE)).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// Contract renewal (S085, R02.4): Renew contract on the contract page makes the next contract with the same terms
+// and machines; prices and the cost note start empty; the chain shows on both pages.  The old contract runs from
+// 300 days ago to 65 days ahead; each test makes its own vendor, contract and machines.
+// ---------------------------------------------------------------------------
+
+const RENEW_FROM = -300;
+const RENEW_TO = 65;
+const WAY_OUT = "To renew this contract again, set that renewal active in Masters › Contracts and change its terms.";
+const chain = (page) => page.getByTestId("contract-chain");
+const renewButton = (page) => page.getByRole("button", { name: "Renew contract" });
+
+/** The tag's vendor, an AMC at SMTW from 300 days ago to 65 days ahead, and `machines` machines on it. */
+async function contractToRenew(testInfo, { machines = 0, price = null } = {}) {
+  const tag = propertyTag(testInfo);
+  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const contract = await contractByApi(vendor, `E2E AMC ${tag} 2026–27`, { from_date: day(RENEW_FROM), to_date: day(RENEW_TO) });
+  const nodes = [];
+  for (let n = 1; n <= machines; n += 1) {
+    const machine = await machineByApi(`E2E compressor ${tag} ${n}`);
+    await lineByApi(contract, machine, price);
+    nodes.push(machine);
+  }
+  return { tag, vendor, contract, machines: nodes };
+}
+
+/** A renewal by API as the engineer, with the terms and the proposed dates -> its detail. */
+async function renewByApi(contract, title) {
+  const detail = await callAs("engineer", "get", `/api/contracts/${contract.id}`);
+  return callAs("engineer", "post", `/api/contracts/${contract.id}/renew`, {
+    vendor_id: detail.vendor_id, contract_type: detail.contract_type, title,
+    from_date: detail.renewal.from_date, to_date: detail.renewal.to_date,
+  });
+}
+
+/** Open Renew contract on the contract page -> the dialog. */
+async function openRenew(page) {
+  await renewButton(page).click();
+  await expectDialogFits(page);
+  return openDialog(page);
+}
+
+test("S085: the engineer renews a contract; the new contract opens with its terms and machines, and the chain shows on both pages", async ({ page }, testInfo) => {
+  const { contract, vendor, machines } = await contractToRenew(testInfo, { machines: 2 });
+  const offer = (await callAs("engineer", "get", `/api/contracts/${contract.id}`)).renewal;
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  const dialog = await openRenew(page);
+  await expect(dialog.locator(".modal-title")).toHaveText(`Renew contract — ${contract.title}`);
+  await expect(dialog.getByLabel("Title")).toHaveValue(contract.title);
+  await expect(dialog.getByLabel("Vendor", { exact: true }).locator("option:checked")).toHaveText(vendor.name);
+  await expect(dialog.getByLabel("From")).toHaveValue(day(RENEW_TO + 1));
+  await expect(dialog.getByLabel("To", { exact: true })).toHaveValue(offer.to_date);
+  const codes = machines.map((m) => m.code).sort().join(", ");
+  await expect(dialog.getByTestId("renewal-notice")).toContainText(`2 machines are copied: ${codes}.`);
+  await expect(dialog.getByTestId("renewal-notice")).toContainText("Prices start empty: the managers of SMTW enter them on the new contract.");
+  const newTitle = contract.title.replace("2026–27", "2027–28");
+  await dialog.getByLabel("Title").fill(newTitle);
+  await saveDialog(page, "Renew contract");
+
+  await expect(page.getByRole("heading", { name: newTitle })).toBeVisible();
+  for (const machine of machines) await expect(machineLine(page, machine)).toBeVisible();
+  await expect(chain(page)).toContainText(`Renews: ${contract.title} · ${shown(day(RENEW_FROM))} to ${shown(day(RENEW_TO))}`);
+  await chain(page).getByRole("link", { name: contract.title }).click();
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(chain(page)).toContainText(`Renewed by: ${newTitle} · ${shown(offer.from_date)} to ${shown(offer.to_date)}`);
+  await expect(renewButton(page)).toHaveCount(0);
+});
+
+test("S085: when the vendors cannot be loaded, the renew dialog opens and says so", async ({ page, consoleWatch }, testInfo) => {
+  consoleWatch.allowFailedRequest("/api/masters/vendors", 503);
+  const { contract } = await contractToRenew(testInfo);
+  await page.route("**/api/masters/vendors**", (route) => route.fulfill({ status: 503, json: { error: "Service unavailable" } }));
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  const dialog = await openRenew(page);
+  await expect(dialog).toContainText("The list of vendors could not be loaded. Close the dialog and try again.");
+});
+
+test("S085: the manager renews a priced contract; the new contract shows No prices entered yet", async ({ page }, testInfo) => {
+  const { contract } = await contractToRenew(testInfo, { machines: 1, price: "9809" });
+  await asPerson(page, "manager", `/contracts/${contract.id}`);
+  await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹9,809 before GST · 1 of 1 machines priced.");
+  const dialog = await openRenew(page);
+  await expect(dialog.getByLabel("Cost note")).toHaveValue("");
+  await expect(dialog.getByTestId("renewal-notice")).toContainText("Prices start empty: enter them on the new contract.");
+  const newTitle = `${contract.title} renewed`;
+  await dialog.getByLabel("Title").fill(newTitle);
+  await saveDialog(page, "Renew contract");
+  await expect(page.getByRole("heading", { name: newTitle })).toBeVisible();
+  await expect(page.getByTestId("contract-total")).toHaveText("No prices entered yet.");
+  await chain(page).getByRole("link", { name: contract.title }).click();
+  await expect(page.getByTestId("contract-total")).toHaveText("Total: ₹9,809 before GST · 1 of 1 machines priced.");
+});
+
+test("S085: an inactive vendor is refused on renewal beside the Vendor field", async ({ page, consoleWatch }, testInfo) => {
+  const { tag, contract, vendor } = await contractToRenew(testInfo);
+  consoleWatch.allowFailedRequest(`/api/contracts/${contract.id}/renew`, 400);
+  const other = await vendorByApi(`E2E Vendor other ${tag}`);
+  await callAs("engineer", "put", `/api/masters/vendors/${vendor.id}`, { active: false });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  const dialog = await openRenew(page);
+  const vendorField = dialog.getByLabel("Vendor", { exact: true });
+  await expect(vendorField.locator("option:checked")).toHaveText(`${vendor.name} (inactive)`);
+  const refusal = `Vendor ${vendor.name} is inactive. Choose another vendor or reactivate it.`;
+  await expect(dialog.getByText(refusal)).toBeVisible();
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expect(vendorField).toHaveClass(/is-invalid/);
+  await expectFieldMessage(dialog, refusal);
+  await vendorField.selectOption({ label: other.name });
+  await saveDialog(page, "Renew contract");
+  await expect(page.locator(".text-secondary", { hasText: `${other.name} · SMTW` }).first()).toBeVisible();
+  await expect(chain(page)).toContainText(`Renews: ${contract.title}`);
+});
+
+test("S085: a scrapped machine is named in the notice and not copied", async ({ page }, testInfo) => {
+  const { contract, machines } = await contractToRenew(testInfo, { machines: 2 });
+  const [kept, scrapped] = machines;
+  await callAs("admin", "put", `/api/equipment/${scrapped.id}`, { lifecycle: "scrapped" });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  const dialog = await openRenew(page);
+  await expect(dialog.getByTestId("renewal-notice")).toContainText(`1 machine is copied: ${kept.code}.`);
+  await expect(dialog.getByTestId("renewal-notice")).toContainText(`Not copied: ${scrapped.code} (scrapped).`);
+  await dialog.getByLabel("Title").fill(`${contract.title} renewed`);
+  await saveDialog(page, "Renew contract");
+  await expect(page.getByRole("heading", { name: `${contract.title} renewed` })).toBeVisible();
+  await expect(machineLine(page, kept)).toBeVisible();
+  await expect(machineLine(page, scrapped)).toHaveCount(0);
+  await expect(machinesCard(page).locator(".card-header")).toContainText("Machines covered (1)");
+});
+
+test("S085: a renewal set inactive shows the way out to the engineer, and no Renew contract button", async ({ page }, testInfo) => {
+  const { contract } = await contractToRenew(testInfo);
+  const renewal = await renewByApi(contract, `${contract.title} renewed`);
+  await callAs("engineer", "put", `/api/contracts/${renewal.id}`, { active: false });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await expect(chain(page)).toContainText(`Renewed by: ${renewal.title} · ${shown(renewal.from_date)} to ${shown(renewal.to_date)} (inactive)`);
+  await expect(chain(page)).toContainText(WAY_OUT);
+  await expect(renewButton(page)).toHaveCount(0);
+
+  await asPerson(page, "operator", `/contracts/${contract.id}`);
+  await expect(chain(page)).toContainText(`Renewed by: ${renewal.title}`);
+  await expect(page.getByText(WAY_OUT)).toHaveCount(0);
+});
+
+test("S085: the operator sees the chain but no Renew contract button", async ({ page }, testInfo) => {
+  const { contract } = await contractToRenew(testInfo);
+  await asPerson(page, "operator", `/contracts/${contract.id}`);
+  await expect(page.getByRole("heading", { name: contract.title })).toBeVisible();
+  await expect(renewButton(page)).toHaveCount(0);
+  const renewal = await renewByApi(contract, `${contract.title} renewed`);
+  await asPerson(page, "operator", `/contracts/${renewal.id}`);
+  await expect(chain(page)).toContainText(`Renews: ${contract.title}`);
+  await expect(renewButton(page)).toHaveCount(0);
 });

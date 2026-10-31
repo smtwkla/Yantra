@@ -75,7 +75,10 @@ A write with a model never locks a type: it comes from the model, whose type nev
   contract_equipment rows (documents.py calls lock_contract_for_change, S083); they take nothing
   exclusive outside them, so they add no lock cycle.  The scan locks several contract rows in id
   order and writes only their reminder columns and task_queue rows; every route holds at most one
-  contract row, taken first.
+  existing contract row (the renewal also inserts one), taken first.  The renewal (S085) locks the
+  old contract FOR UPDATE first, then the site, the vendor and the covered nodes (1) LOCK IN SHARE
+  MODE, the nodes in id order; it inserts the new contract and its lines, so it never waits on a
+  second existing contract row.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the

@@ -79,6 +79,74 @@ export function contractBody(form, site) {
   return body;
 }
 
+// The dialog's empty form (S080 § 5.7), apart from the site and the type: one copy for add, edit and renew (S085)
+export const EMPTY_CONTRACT_FORM = Object.freeze({
+  vendor_id: null, title: "", contract_number: "", from_date: "", to_date: "", covers_labour: false,
+  covers_parts: false, covers_consumables: false, covers_breakdown_calls: false, breakdown_calls_per_year: "",
+  covered_text: "", not_covered_text: "", pm_visits_per_year: "", response_hours: "", only_vendor_repairs: false,
+  callout_number: "", cost_note: "", notes: "",
+});
+
+/** A contract from the API → the dialog's form: a tick as a boolean, an empty value as "" (a field the reader may
+ * not see, absent from the answer, is "" too and is never sent). */
+export function contractForm(contract) {
+  const form = { site_id: contract.site_id, contract_type: contract.contract_type };
+  for (const field of Object.keys(EMPTY_CONTRACT_FORM)) {
+    const value = contract[field];
+    form[field] = typeof EMPTY_CONTRACT_FORM[field] === "boolean" ? Boolean(value) : (value ?? "");
+  }
+  form.vendor_id = contract.vendor_id;
+  return form;
+}
+
+// ---------------------------------------------------------------------------
+// Renewal (S085 § 5.7)
+// ---------------------------------------------------------------------------
+
+/** The renew dialog's form from the contract's detail: its terms, the proposed dates (``renewal``; "" past 2099)
+ * and an empty cost note (each period's note is its own, E4). */
+export function renewalForm(contract) {
+  return {
+    ...contractForm(contract),
+    from_date: contract.renewal?.from_date ?? "",
+    to_date: contract.renewal?.to_date ?? "",
+    cost_note: "",
+  };
+}
+
+/** The renew dialog's notice: what is copied and what is not. ``renewal`` is the detail's offer
+ * ({machines, skipped}); a reader of prices enters them, others are told who does. */
+export function renewalNotice(renewal, canReadCost, siteCode) {
+  const codes = (lines) => lines.map((line) => line.code).join(", ");
+  const skippedText = (lines) => lines.map((line) => `${line.code} (${line.reason})`).join(", ");
+  const { machines, skipped } = renewal;
+  const sentences = ["The new contract starts the day after this one ends."];
+  if (machines.length === 0 && skipped.length === 0) {
+    sentences.push("This contract has no machines; the new one starts with none.");
+  } else if (machines.length === 0) {
+    sentences.push(`No machine is copied: ${skippedText(skipped)}.`);
+  } else {
+    const count = machines.length === 1 ? "1 machine is copied" : `${machines.length} machines are copied`;
+    sentences.push(`${count}: ${codes(machines)}.`);
+  }
+  if (skipped.length && machines.length) {
+    sentences.push(`Not copied: ${skippedText(skipped)}.`);
+  }
+  if (machines.length) {
+    sentences.push(canReadCost
+      ? "Prices start empty: enter them on the new contract."
+      : `Prices start empty: the managers of ${siteCode} enter them on the new contract.`);
+  }
+  sentences.push("Documents stay on this contract.");
+  return sentences.join(" ");
+}
+
+/** A chain line's text after the linked title: " · 01-04-2026 to 31-03-2027", and " (inactive)" for an inactive
+ * contract. */
+export function chainText(link) {
+  return ` · ${formatDate(link.from_date)} to ${formatDate(link.to_date)}${link.active ? "" : " (inactive)"}`;
+}
+
 // ---------------------------------------------------------------------------
 // The contract page and its machines (S081 § 5.7)
 // ---------------------------------------------------------------------------

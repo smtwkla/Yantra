@@ -7,17 +7,21 @@
  * dialog sends them only for the chosen site's flags.  Never deleted: a contract entered by mistake is
  * deactivated.  S081: each title opens the contract page (its machines and prices), and the managers see the
  * contract's cost before GST, the sum of its machines' prices (a column shown when some site lets the user read
- * it; the API leaves the total out elsewhere).
+ * it; the API leaves the total out elsewhere).  S085: the dialog's fields live in ContractFields.vue, shared with
+ * the renewal on the contract page.
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { apiGet } from "../../api";
 import ActiveToggle from "../../components/ActiveToggle.vue";
 import FormModal from "../../components/FormModal.vue";
+import ContractFields from "../contracts/ContractFields.vue";
 import { ensureVendors, vendors } from "../../stores/masters";
 import {
   CONTRACT_TYPES,
+  EMPTY_CONTRACT_FORM,
   STATUS_FILTERS,
   contractBody,
+  contractForm,
   contractTypeLabel,
   formatRupees,
   statusBadgeClass,
@@ -81,13 +85,6 @@ async function reload() {
 
 watch([siteFilter, typeFilter, statusFilter, vendorFilter, showInactive], reload);
 
-const EMPTY = {
-  vendor_id: null, title: "", contract_number: "", from_date: "", to_date: "", covers_labour: false,
-  covers_parts: false, covers_consumables: false, covers_breakdown_calls: false, breakdown_calls_per_year: "",
-  covered_text: "", not_covered_text: "", pm_visits_per_year: "", response_hours: "", only_vendor_repairs: false,
-  callout_number: "", cost_note: "", notes: "",
-};
-
 const {
   modal, form, editingId, editingActive, editingLabel, confirmingDeactivate, saving, dirty,
   fieldError, modalError, openCreate, openEdit, save, changeActive,
@@ -95,19 +92,11 @@ const {
   path: "/api/contracts",
   // No seed: the one site the user may add at is preselected, else none
   blank: () => ({
-    ...EMPTY,
+    ...EMPTY_CONTRACT_FORM,
     site_id: addableSites.value.length === 1 ? addableSites.value[0].id : null,
     contract_type: "amc",
   }),
-  fromRecord: (c) => {
-    const record = { site_id: c.site_id, contract_type: c.contract_type };
-    for (const field of Object.keys(EMPTY)) {
-      const value = c[field];
-      record[field] = typeof EMPTY[field] === "boolean" ? Boolean(value) : (value ?? "");
-    }
-    record.vendor_id = c.vendor_id;
-    return record;
-  },
+  fromRecord: contractForm,
   toBody: (f) => contractBody(f, chosenSite.value),
   label: (c) => c.title,
   reload,
@@ -116,13 +105,10 @@ const {
 // The site the dialog is about: its flags decide the call-out number and cost note fields
 const chosenSite = computed(() => sites.value.find((s) => s.id === form.value.site_id) ?? null);
 
-// The vendors offered: the active ones; on edit, a stored inactive vendor first, so the contract still saves
-const vendorOptions = computed(() => {
-  const all = vendors.value ?? [];
-  const active = all.filter((v) => v.active);
-  const stored = editingId.value !== null ? all.find((v) => v.id === form.value.vendor_id && !v.active) : null;
-  return stored ? [stored, ...active] : active;
-});
+// On edit, the contract's vendor: ContractFields lists it first when it is inactive, so the contract still saves
+const storedVendor = computed(() =>
+  editingId.value !== null ? ((vendors.value ?? []).find((v) => v.id === form.value.vendor_id) ?? null) : null
+);
 
 onMounted(reload);
 </script>
@@ -238,133 +224,16 @@ onMounted(reload);
         @change="changeActive"
       />
     </template>
-    <div class="row g-3">
-      <div class="col-12 col-md-6">
-        <label class="form-label" for="contract-site">Site</label>
-        <select v-if="editingId === null" id="contract-site" v-model="form.site_id" class="form-select" :class="{ 'is-invalid': fieldError('site_id') }">
-          <option :value="null" disabled>Choose a site</option>
-          <option v-for="s in addableSites" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
-        </select>
-        <div v-else id="contract-site" class="form-control-plaintext">{{ chosenSite?.code }}</div>
-        <div v-if="fieldError('site_id')" class="invalid-feedback d-block">{{ fieldError("site_id") }}</div>
-      </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label" for="contract-type">Type</label>
-        <select id="contract-type" v-model="form.contract_type" class="form-select" :class="{ 'is-invalid': fieldError('contract_type') }">
-          <option v-for="t in CONTRACT_TYPES" :key="t.value" :value="t.value">{{ t.label }} — {{ t.help }}</option>
-        </select>
-        <div v-if="fieldError('contract_type')" class="invalid-feedback d-block">{{ fieldError("contract_type") }}</div>
-      </div>
-      <div class="col-12">
-        <label class="form-label" for="contract-vendor">Vendor</label>
-        <select id="contract-vendor" v-model="form.vendor_id" class="form-select" :class="{ 'is-invalid': fieldError('vendor_id') }">
-          <option :value="null" disabled>Choose a vendor</option>
-          <option v-for="v in vendorOptions" :key="v.id" :value="v.id">{{ vendorName(v) }}</option>
-        </select>
-        <div v-if="fieldError('vendor_id')" class="invalid-feedback d-block">{{ fieldError("vendor_id") }}</div>
-        <div class="form-text">Choose a vendor from Vendors.</div>
-      </div>
-      <div class="col-12">
-        <label class="form-label" for="contract-title">Title</label>
-        <input id="contract-title" v-model="form.title" class="form-control" :class="{ 'is-invalid': fieldError('title') }" maxlength="100" />
-        <div v-if="fieldError('title')" class="invalid-feedback d-block">{{ fieldError("title") }}</div>
-        <div class="form-text">e.g. Atlas Copco AMC 2026–27</div>
-      </div>
-      <div class="col-12">
-        <label class="form-label" for="contract-number">Vendor's contract number (optional)</label>
-        <input id="contract-number" v-model="form.contract_number" class="form-control" :class="{ 'is-invalid': fieldError('contract_number') }" maxlength="60" />
-        <div v-if="fieldError('contract_number')" class="invalid-feedback d-block">{{ fieldError("contract_number") }}</div>
-      </div>
-      <div class="col-6">
-        <label class="form-label" for="contract-from">From</label>
-        <input id="contract-from" v-model="form.from_date" type="date" class="form-control" :class="{ 'is-invalid': fieldError('from_date') }" />
-        <div v-if="fieldError('from_date')" class="invalid-feedback d-block">{{ fieldError("from_date") }}</div>
-      </div>
-      <div class="col-6">
-        <label class="form-label" for="contract-to">To</label>
-        <input id="contract-to" v-model="form.to_date" type="date" class="form-control" :class="{ 'is-invalid': fieldError('to_date') }" />
-        <div v-if="fieldError('to_date')" class="invalid-feedback d-block">{{ fieldError("to_date") }}</div>
-      </div>
-      <div class="col-6">
-        <label class="form-label" for="contract-visits">PM visits per year</label>
-        <input id="contract-visits" v-model="form.pm_visits_per_year" type="number" inputmode="numeric" min="0" max="52" class="form-control" :class="{ 'is-invalid': fieldError('pm_visits_per_year') }" />
-        <div v-if="fieldError('pm_visits_per_year')" class="invalid-feedback d-block">{{ fieldError("pm_visits_per_year") }}</div>
-      </div>
-      <div class="col-6">
-        <label class="form-label" for="contract-response">Response time (hours)</label>
-        <input id="contract-response" v-model="form.response_hours" type="number" inputmode="numeric" min="1" max="720" class="form-control" :class="{ 'is-invalid': fieldError('response_hours') }" />
-        <div v-if="fieldError('response_hours')" class="invalid-feedback d-block">{{ fieldError("response_hours") }}</div>
-      </div>
-      <fieldset class="col-12">
-        <legend class="form-label fs-6 mb-1">Covered by the contract</legend>
-        <div class="form-check">
-          <input id="contract-labour" v-model="form.covers_labour" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="contract-labour">Labour</label>
-        </div>
-        <div class="form-check">
-          <input id="contract-parts" v-model="form.covers_parts" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="contract-parts">Spare parts</label>
-        </div>
-        <div class="form-check">
-          <input id="contract-consumables" v-model="form.covers_consumables" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="contract-consumables">Consumables (oil, filters)</label>
-        </div>
-        <div class="form-check">
-          <input id="contract-calls" v-model="form.covers_breakdown_calls" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="contract-calls">Breakdown calls</label>
-        </div>
-        <div v-for="field in ['covers_labour', 'covers_parts', 'covers_consumables', 'covers_breakdown_calls']" :key="field">
-          <div v-if="fieldError(field)" class="invalid-feedback d-block">{{ fieldError(field) }}</div>
-        </div>
-      </fieldset>
-      <div v-if="form.covers_breakdown_calls" class="col-12 col-md-6">
-        <label class="form-label" for="contract-calls-per-year">Calls per year</label>
-        <input id="contract-calls-per-year" v-model="form.breakdown_calls_per_year" type="number" inputmode="numeric" min="1" max="365" class="form-control" :class="{ 'is-invalid': fieldError('breakdown_calls_per_year') }" />
-        <div v-if="fieldError('breakdown_calls_per_year')" class="invalid-feedback d-block">{{ fieldError("breakdown_calls_per_year") }}</div>
-        <div class="form-text">Leave empty when the calls have no limit.</div>
-      </div>
-      <div v-else-if="fieldError('breakdown_calls_per_year')" class="col-12">
-        <div class="invalid-feedback d-block">{{ fieldError("breakdown_calls_per_year") }}</div>
-      </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label" for="contract-covered">Covered</label>
-        <textarea id="contract-covered" v-model="form.covered_text" rows="2" class="form-control" :class="{ 'is-invalid': fieldError('covered_text') }" maxlength="1000"></textarea>
-        <div v-if="fieldError('covered_text')" class="invalid-feedback d-block">{{ fieldError("covered_text") }}</div>
-      </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label" for="contract-not-covered">Not covered</label>
-        <textarea id="contract-not-covered" v-model="form.not_covered_text" rows="2" class="form-control" :class="{ 'is-invalid': fieldError('not_covered_text') }" maxlength="1000"></textarea>
-        <div v-if="fieldError('not_covered_text')" class="invalid-feedback d-block">{{ fieldError("not_covered_text") }}</div>
-      </div>
-      <div class="col-12">
-        <div class="form-check">
-          <input id="contract-only-vendor" v-model="form.only_vendor_repairs" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="contract-only-vendor">Only the vendor may repair</label>
-        </div>
-        <div v-if="fieldError('only_vendor_repairs')" class="invalid-feedback d-block">{{ fieldError("only_vendor_repairs") }}</div>
-        <div class="form-text">
-          Tick when the contract is void if anyone else repairs the machine. The machine's page will then warn: Do not repair.
-        </div>
-      </div>
-      <div v-if="chosenSite?.can_read_callout" class="col-12">
-        <label class="form-label" for="contract-callout">Call-out number</label>
-        <input id="contract-callout" v-model="form.callout_number" type="tel" inputmode="tel" class="form-control" :class="{ 'is-invalid': fieldError('callout_number') }" maxlength="20" />
-        <div v-if="fieldError('callout_number')" class="invalid-feedback d-block">{{ fieldError("callout_number") }}</div>
-        <div class="form-text">The vendor's breakdown line. Engineers and managers see it.</div>
-      </div>
-      <div v-if="chosenSite?.can_read_cost" class="col-12">
-        <div class="small fw-semibold text-secondary mb-1">Managers only</div>
-        <label class="form-label" for="contract-cost">Cost note</label>
-        <input id="contract-cost" v-model="form.cost_note" class="form-control" :class="{ 'is-invalid': fieldError('cost_note') }" maxlength="255" />
-        <div v-if="fieldError('cost_note')" class="invalid-feedback d-block">{{ fieldError("cost_note") }}</div>
-        <div class="form-text">Only the managers of this site see this note.</div>
-      </div>
-      <div class="col-12">
-        <label class="form-label" for="contract-notes">Notes</label>
-        <textarea id="contract-notes" v-model="form.notes" rows="2" class="form-control" :class="{ 'is-invalid': fieldError('notes') }" maxlength="1000"></textarea>
-        <div v-if="fieldError('notes')" class="invalid-feedback d-block">{{ fieldError("notes") }}</div>
-        <div class="form-text">Do not enter prices here: every reader of the contract sees the notes.</div>
-      </div>
-    </div>
+    <ContractFields
+      v-model:form="form"
+      :field-error="fieldError"
+      :mode="editingId === null ? 'create' : 'edit'"
+      :sites="addableSites"
+      :site-code="chosenSite?.code ?? ''"
+      :vendors="vendors ?? []"
+      :stored-vendor="storedVendor"
+      :can-read-callout="Boolean(chosenSite?.can_read_callout)"
+      :can-read-cost="Boolean(chosenSite?.can_read_cost)"
+    />
   </FormModal>
 </template>
