@@ -20,8 +20,9 @@ for (const key of ["it_admin", "admin"]) {
 
     const dialog = page.getByRole("dialog", { name: "What changed in Yantra" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("heading", { name: new RegExp(`^v${VERSION.replaceAll(".", "\\.")} `) })).toBeVisible();
-    await expect(dialog.getByText("This version")).toBeVisible();
+    const heading = dialog.getByRole("heading", { name: new RegExp(`^v${VERSION.replaceAll(".", "\\.")} `) });
+    await expect(heading).toBeVisible();
+    await expect(heading.getByText("This version", { exact: true })).toBeVisible();
     const close = dialog.getByRole("button", { name: "Close" });
     await expect(close).toBeInViewport();
     await close.click();
