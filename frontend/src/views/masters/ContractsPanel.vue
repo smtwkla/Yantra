@@ -130,18 +130,18 @@ onMounted(reload);
     </div>
     <div class="card-body">
       <div class="d-flex flex-wrap gap-2 mb-3">
-        <select v-model="siteFilter" class="form-select form-select-sm w-auto" aria-label="Site">
+        <select v-model="siteFilter" class="form-select form-select-sm w-auto mw-100" aria-label="Site">
           <option value="">All sites</option>
           <option v-for="s in sites" :key="s.id" :value="s.id">{{ s.active ? s.code : `${s.code} (inactive)` }}</option>
         </select>
-        <select v-model="typeFilter" class="form-select form-select-sm w-auto" aria-label="Type">
+        <select v-model="typeFilter" class="form-select form-select-sm w-auto mw-100" aria-label="Type">
           <option value="">All types</option>
           <option v-for="t in CONTRACT_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
         </select>
-        <select v-model="statusFilter" class="form-select form-select-sm w-auto" aria-label="Status">
+        <select v-model="statusFilter" class="form-select form-select-sm w-auto mw-100" aria-label="Status">
           <option v-for="s in STATUS_FILTERS" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
-        <select v-model="vendorFilter" class="form-select form-select-sm w-auto" aria-label="Vendor">
+        <select v-model="vendorFilter" class="form-select form-select-sm w-auto mw-100" aria-label="Vendor">
           <option value="">All vendors</option>
           <option v-for="v in vendors ?? []" :key="v.id" :value="v.id">{{ vendorName(v) }}</option>
         </select>

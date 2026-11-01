@@ -96,6 +96,7 @@ read, are in `README.md`. The index was in `README.md` until S056.
 | S087 | [Contracts across sites](S087-contracts-across-sites/1-brief.md) — a contract covers machines of any site: the site leaves the contract; v42–v47 squashed into v50, the four contract keys become company-wide, reminders, renewal, calls and the screens follow (full track) | KLA 31-10-2026 | Done (committed 31-10-2026) | 31-10-2026 |
 | S088 | [Squash migrations v20–v41](S088-migrations-squash-v41/1-brief.md) — the released v20–v41 become one entry numbered v41 (production at v41 skips it); old texts frozen in a fixture; a precondition refuses a database between v20 and v40; coded before S087 (full track) | KLA 31-10-2026 | Done (committed f5bbb38, adopted 31-10-2026) | 31-10-2026 |
 | S089 | [Changelog test matches the badge exactly](S089-changelog-test-exact/1-brief.md) — the S048 test matched "This version" inside "No notes were written for this version."; `exact: true` (fix lane) | pre-flight 0bb67c5 | Done (committed 01-11-2026) | 01-11-2026 |
+| S090 | [Contracts filters fit the phone's width](S090-contracts-filter-width/1-brief.md) — a long vendor name made the Vendor filter wider than an iPhone's screen; `mw-100` on the filters, the S080 test uses a long name (fix lane) | pre-flight a6e3778 | Done (committed 01-11-2026) | 01-11-2026 |
 ## Queued (not yet briefed)
 
 Ideas agreed as worth doing, in no fixed order. A queued item gets its step ID
@@ -118,3 +119,4 @@ when its brief is opened, or earlier when the user assigns one (S007–S009, 16-
 | Drop the legacy `user_units` table | S011 A1, 16-10-2026 | After S011 is live and a rollback is no longer wanted (S011 A1 rule 3) |
 | Dev and test MariaDB match production — `tooling/dev/docker-compose.dev.yml` pins `mariadb:11.4`; production runs 11.8.8 (KLA, 27-10-2026), so migrations and the release's upgrade tests run on a different version than production | S061 § 9 A1, KLA 27-10-2026 | Small: the image tag, then a full test run; the dev DB volume may need a reset |
 | Pre-flight on every new commit — a hook that notices a new commit on `main` and runs `tooling/common/preflight.py` on it in the background, so the commit is stamped and ready to release by the time KLA wants to | user, 25-10-2026 (S049 A1) | After S049; generic, for smtw-common |
+| Equipment list filters fit the phone's width — the same `w-auto` selects as S090 fixed on Contracts (`EquipmentView.vue:355-389`); a long class, category or unit name would widen the row on an iPhone | S090, 01-11-2026 | Small; options are short today |

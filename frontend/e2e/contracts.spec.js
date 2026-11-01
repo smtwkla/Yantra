@@ -246,7 +246,7 @@ test("S087: the engineer of SMTW sees and edits a contract whose machine is at B
 
 test("S080: the Contracts list fits a phone with no sideways scroll", { tag: "@device" }, async ({ page }, testInfo) => {
   const tag = propertyTag(testInfo);
-  const vendor = await vendorByApi(`E2E Vendor ${tag}`);
+  const vendor = await vendorByApi(`E2E Vendor with a long name for the phone list to fit ${tag}`);
   const contracts = [];
   for (const [n, to] of [[1, 20], [2, 200], [3, 300]]) {
     contracts.push(await contractByApi(vendor, `E2E phone ${n} ${tag}`, { from_date: day(-30), to_date: day(to) }));
