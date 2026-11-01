@@ -7,7 +7,8 @@ import pytest
 
 from contracts_core import ENDING_SOON_DAYS
 from alerts_core import (
-    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED, CONTRACT_AUDIENCE_KEY,
+    ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, ASSIGNED_ALERT, AUDIENCE, BREAKDOWN, CHANNELS, CLOSED,
+    CONTRACT_AUDIENCE_KEY,
     CONTRACT_ENDING, CONTRACT_KINDS, DEFECT, ESCALATION, FIRST, FIRST_REMINDER_DAYS, SECOND, SECOND_REMINDER_DAYS,
     IMPROVEMENT_KINDS, KINDS, TICKET_KINDS, VERIFY_READY, Alert, alert_text, close_alert, contract_facts,
     contract_message, contract_reminder_due, contract_text, display_name, should_send_contract,
@@ -241,8 +242,10 @@ class TestYouGet:
         """S032: each manager membership adds its closed-ticket email line; S074: and its verify line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
             "Breakdowns at BRICKS, escalations", "Improvements ready to verify at BRICKS",
-            "Contracts ending for machines at BRICKS", "Closed tickets at BRICKS, by email", "Contracts ending for machines at BRICKS, by email",
-            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Contracts ending for machines at SMTW",
+            "Contracts ending for machines at BRICKS", "Closed tickets at BRICKS, by email",
+            "Contracts ending for machines at BRICKS, by email",
+            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW",
+            "Contracts ending for machines at SMTW",
             "Closed tickets at SMTW, by email", "Contracts ending for machines at SMTW, by email",
             "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
@@ -250,14 +253,16 @@ class TestYouGet:
         """S084 § 5.7: the contract lines name the site, not the unit."""
         assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
             "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to verify at SMTW.MCC2",
-            "Contracts ending for machines at SMTW", "Closed tickets at SMTW.MCC2, by email", "Contracts ending for machines at SMTW, by email",
+            "Contracts ending for machines at SMTW", "Closed tickets at SMTW.MCC2, by email",
+            "Contracts ending for machines at SMTW, by email",
             "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
 
     def test_a_manager_without_units_gets_the_contract_lines(self):
         """S084 § 5.7, BR1-07: the reminders reach a site member whatever their units; no
         countermeasure lines come from a membership without units."""
         assert you_get([_membership("SMTW", "maint_manager", [])]) == [
-            "Contracts ending for machines at SMTW", "Contracts ending for machines at SMTW, by email", "Jobs assigned to you"]
+            "Contracts ending for machines at SMTW", "Contracts ending for machines at SMTW, by email",
+            "Jobs assigned to you"]
 
     def test_engineer_gets_no_email_line(self):
         assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
@@ -381,7 +386,8 @@ class TestShouldSendImprovement:
         assert should_send_improvement(ACTION_GIVEN, "actions_open", None, _action(), {"person_id": 7}) is True
 
     def test_given_owner_changed_again(self):
-        assert should_send_improvement(ACTION_GIVEN, "actions_open", None, _action(owner_id=8), {"person_id": 7}) is False
+        assert should_send_improvement(ACTION_GIVEN, "actions_open", None, _action(owner_id=8),
+                                       {"person_id": 7}) is False
 
     @pytest.mark.parametrize("kind", [ACTION_GIVEN, ACTION_OVERDUE])
     @pytest.mark.parametrize("state", ["done", "cancelled"])

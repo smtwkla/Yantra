@@ -10,7 +10,8 @@ from improvements_core import (
     overdue_days, validate_action, validate_cancel, validate_done,
     ANSWER_NEEDED, ANSWER_NOT_TEXT, ANSWER_TOO_LONG, CAUSE_NEEDED, CONTRIBUTING_NOT_TEXT, CONTRIBUTING_TOO_LONG,
     EVIDENCE_NOT_TEXT, EVIDENCE_TOO_LONG, QUESTION_NEEDED, QUESTION_NOT_TEXT, QUESTION_TOO_LONG, ROOT_CAUSE_NEEDED,
-    POSITION_NOT_NUMBER, ROOT_CAUSE_NOT_TEXT, ROOT_CAUSE_TOO_LONG, WHYS_FULL, WHYS_MAX, position_error, renumber, reorder,
+    POSITION_NOT_NUMBER, ROOT_CAUSE_NOT_TEXT, ROOT_CAUSE_TOO_LONG, WHYS_FULL, WHYS_MAX, position_error, renumber,
+    reorder,
     validate_root_cause, validate_why,
     ALREADY_HERE, IMPROVEMENT_OPEN_STATES, LEAD_NEEDED, NOT_A_FAULT, PROBLEM_NEEDED, PROBLEM_NOT_TEXT,
     PROBLEM_TOO_LONG, START_FROM_STATES, START_STATE, TICKET_NEEDED, TITLE_NEEDED, TITLE_NOT_TEXT, TITLE_TOO_LONG,
@@ -135,7 +136,8 @@ class TestLinks:
 
     def test_a_closed_link_does_not_count(self):
         """R05.4 sets open_link to NULL when an improvement closes."""
-        assert link_error("TK-2026-10-002", [{"improvement_id": 4, "serial": "IM-2026-10-001", "open_link": None}]) is None
+        assert link_error("TK-2026-10-002", [{"improvement_id": 4, "serial": "IM-2026-10-001",
+                                              "open_link": None}]) is None
 
 
 HP003 = {"id": 30, "code": "HP003"}
@@ -145,7 +147,8 @@ class TestRemoval:
 
     def test_the_machines_only_ticket_stays(self):
         links = [{"id": 1, "equipment_id": 30}]
-        assert removal_error(links[0], links, HP003) == keeps_a_ticket("HP003") == "An improvement keeps a ticket of HP003."
+        assert removal_error(links[0], links,
+                             HP003) == keeps_a_ticket("HP003") == "An improvement keeps a ticket of HP003."
 
     def test_also_when_tickets_of_other_machines_remain(self):
         links = [{"id": 1, "equipment_id": 30}, {"id": 2, "equipment_id": 31}]
@@ -178,7 +181,8 @@ class TestLoss:
 
     def test_a_mix(self):
         tickets = [{"intensity": "critical", "downtime_minutes": 90}, {"intensity": "critical", "downtime_minutes": 30},
-                   {"intensity": "degraded", "downtime_minutes": 0}, {"intensity": "critical", "downtime_minutes": None}]
+                   {"intensity": "degraded", "downtime_minutes": 0}, {"intensity": "critical",
+                                                                      "downtime_minutes": None}]
         assert loss(tickets) == {"tickets": 4, "breakdowns": 3, "downtime_minutes": 120}
 
 
@@ -628,7 +632,8 @@ class TestCloseBodies:
         assert validate_note({"remark": "  Oil\nchecked  "}) == ({"remark": "Oil\nchecked"}, [])
         assert validate_note({"remark": "x" * 1000})[1] == []
         for body, message in (({}, "Write the note"), ({"remark": ""}, "Write the note"),
-                              ({"remark": 3}, "Note must be text"), ({"remark": "x" * 1001}, "Note: up to 1000 characters")):
+                              ({"remark": 3}, "Note must be text"), ({"remark": "x" * 1001},
+                                                                     "Note: up to 1000 characters")):
             assert validate_note(body)[1] == [{"field": "remark", "message": message}]
 
     def test_the_dropped_reason_is_cut_to_500(self):
@@ -638,7 +643,8 @@ class TestCloseBodies:
 
 def ticket(occurred_at, intensity="critical", mode=11, downtime=60, tid=1):
     return {"id": tid, "serial": f"TK-{tid}", "occurred_at": occurred_at, "intensity": intensity,
-            "failure_mode_id": mode, "machine_code": "HP003", "symptom": {"id": mode, "code": "ST", "label": "Won't start"},
+            "failure_mode_id": mode, "machine_code": "HP003", "symptom": {"id": mode, "code": "ST",
+                                                                          "label": "Won't start"},
             "downtime_minutes": downtime}
 
 
@@ -646,7 +652,8 @@ class TestWatchFigures:
 
     def test_before_and_after_split_at_the_start(self):
         tickets = [ticket(T0 - timedelta(days=10), tid=1), ticket(T0 - timedelta(days=95), tid=2),
-                   ticket(T0, tid=3, downtime=30), ticket(T0 + timedelta(days=5), "initial", mode=12, tid=4, downtime=None)]
+                   ticket(T0, tid=3, downtime=30), ticket(T0 + timedelta(days=5), "initial", mode=12, tid=4,
+                                                          downtime=None)]
         figures = watch_figures(tickets, {11}, T0, 90, T0 + timedelta(days=20))
         assert figures["before"] == {"days": 90, "breakdowns": 1, "symptom_breakdowns": 1, "downtime_minutes": 60}
         assert figures["after"] == {"days": 20, "breakdowns": 1, "symptom_breakdowns": 1, "downtime_minutes": 30}
@@ -657,7 +664,8 @@ class TestWatchFigures:
         figures = watch_figures([ticket(until, tid=7)], {11}, T0, 30, until + timedelta(days=3))
         assert figures["after"]["breakdowns"] == 0 and figures["after"]["days"] == 30
         assert figures["repeats"] == [{"id": 7, "serial": "TK-7", "occurred_at": until, "intensity": "critical",
-                                       "machine_code": "HP003", "symptom": {"id": 11, "code": "ST", "label": "Won't start"},
+                                       "machine_code": "HP003", "symptom": {"id": 11, "code": "ST",
+                                                                            "label": "Won't start"},
                                        "in_watch": False}]
 
     def test_no_symptoms_gives_nulls(self):

@@ -98,11 +98,15 @@ from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
 )
-from auth_utils import check_perm, current_person_id, has_perm, has_perm_at, permissions_at_site, require_perm, require_perm_at
+from auth_utils import (
+    check_perm, current_person_id, has_perm, has_perm_at, permissions_at_site, require_perm, require_perm_at,
+)
 import alerts
 from alerts_core import ASSIGNED_ALERT, close_alert, raise_alert, regrade_alert, send_back_alert
 from config_rbac import ASSIGNABLE_ROLES
-from db_helpers import count, get_db, insert_row, marks, next_counter, row_to_dict, rows_to_list, transaction, update_row
+from db_helpers import (
+    count, get_db, insert_row, marks, next_counter, row_to_dict, rows_to_list, transaction, update_row,
+)
 from equipment import IST, load_node_for_user, unit_access_condition
 from equipment_core import SCRAPPED
 import improvements_core
@@ -916,7 +920,8 @@ def raise_ticket():
             # S021 § 5.3: a breakdown alerts and escalates, a defect alerts quietly; *Already fixed*
             # sends nothing (nothing needs a response).  After the refusals above, so a refused
             # raise rolls the task rows back with it (BS1-09).
-            alerts.enqueue_alert(cur, ticket_id, raise_alert(clean["intensity"], now - clean["occurred_at"]), raised_event_id,
+            alerts.enqueue_alert(cur, ticket_id, raise_alert(clean["intensity"], now - clean["occurred_at"]),
+                                 raised_event_id,
                                  current_person_id(cur), clean["reported_by_id"], now)
         # Read inside the transaction, as documents.py does: nothing after the commit can
         # turn this answer into an error
@@ -1117,7 +1122,8 @@ def make_move(ticket_id, move):
     now = _now()
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        ticket = _lock_open_ticket(cur, ticket_id, lambda state: spec.key_at(state) if state in spec.from_states else spec.keys)
+        ticket = _lock_open_ticket(cur, ticket_id, lambda state: spec.key_at(state) if state in spec.from_states
+                                   else spec.keys)
         _apply_move(cur, ticket, move, clean, now)
         detail = _ticket_response(cur, ticket_id)
     return jsonify(detail)
@@ -1239,7 +1245,8 @@ def edit_ticket(ticket_id):
             node = _check_component(cur, component_id, ticket["equipment_id"]) if component_id else None
             new["component"] = _node_label(node["code"], node["name"]) if node else None
         if "failure_mode_id" in clean:
-            mode = _check_mode(cur, clean["failure_mode_id"], ticket["m_class_id"]) if clean["failure_mode_id"] else None
+            mode = (_check_mode(cur, clean["failure_mode_id"], ticket["m_class_id"])
+                    if clean["failure_mode_id"] else None)
             new["failure_mode"] = mode["label"] if mode else None
             mode_code = mode["code"] if mode else None
         if "description" in clean:
@@ -1395,7 +1402,8 @@ def edit_note(ticket_id, event_id):
         # One clock value for both rows, so "Edited by …, <time>" and the earlier text's
         # "replaced at" show the same minute
         now, user = _now(), actor()
-        cur.execute("INSERT INTO ticket_note_edits (event_id, remark, replaced_at, replaced_by) VALUES (%s, %s, %s, %s)",
+        cur.execute("INSERT INTO ticket_note_edits (event_id, remark, replaced_at, replaced_by)"
+                    " VALUES (%s, %s, %s, %s)",
                     (event_id, note["remark"], now, user))
         cur.execute("UPDATE ticket_events SET remark = %s, updated_at = %s, updated_by = %s WHERE id = %s",
                     (clean["remark"], now, user, event_id))

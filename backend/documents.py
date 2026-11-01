@@ -11,11 +11,12 @@ names, thumbnails); file_store does the file I/O; this module checks access and 
 scrapped rule, orders the writes and serves files.
 
 Owners (OWNERS below): a document belongs to exactly one node, model, ticket, countermeasure,
-lesson or contract (the owner CHECK, v9, v12, v38, v41 and v45).  Each operation is written once and takes ``(owner, owner_id)``; its URLs
-are stacked route decorators whose ``defaults`` name the owner.  Each owner carries its keys
-as data (S017 § 5.5); every owner takes every kind (S018 removed the ticket's photos-only rule): the route checks the owner's key held at any site
-(check_perm), then the owner's read or lock function checks it at the record's site.  Node documents follow the
-node's site and units (S011: unit access, and the write key checked at the node's site).
+lesson or contract (the owner CHECK, v9, v12, v38, v41 and v45).  Each operation is written once
+and takes ``(owner, owner_id)``; its URLs are stacked route decorators whose ``defaults`` name the
+owner.  Each owner carries its keys as data (S017 § 5.5); every owner takes every kind (S018 removed
+the ticket's photos-only rule): the route checks the owner's key held at any site (check_perm), then
+the owner's read or lock function checks it at the record's site.  Node documents follow the node's
+site and units (S011: unit access, and the write key checked at the node's site).
 Model documents are visible to every user with equipment:read, at every site, and are
 maintained by equipment:edit (restore and purge: equipment:purge_documents) held at any
 site (S012 § 2, ISO 27001 A.8.3: a model's documents are generic maker information).  A

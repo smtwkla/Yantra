@@ -120,7 +120,8 @@ class TestNotifications:
         assert res.status_code == 200, res.get_json()
         assert res.get_json()["escalate_minutes"] == {"A": 5, "B": 20, "C": 1440}
         assert admin.get(NOTIFICATIONS).get_json()["escalate_minutes"] == {"A": 5, "B": 20, "C": 1440}
-        assert any("escalate_minutes_b changed by test_it_admin: " in r.getMessage() and r.getMessage().endswith("-> 20")
+        assert any("escalate_minutes_b changed by test_it_admin: " in r.getMessage()
+                   and r.getMessage().endswith("-> 20")
                    for r in caplog.records)
 
     def test_manager_cannot_change(self, role_client):

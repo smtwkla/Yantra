@@ -159,7 +159,8 @@ count sees it; a later one waits behind the cause's lock and then sees the new c
 allowed (the code changed before its first use).
 
 Import direction: this module imports read_ticket, improvement_links, person_at_site,
-people_at_site and events_by_ticket (S086) from tickets.py; tickets.py never imports this module (only improvements_core).
+people_at_site and events_by_ticket (S086) from tickets.py; tickets.py never imports this module (only
+improvements_core).
 It imports alerts (S074), as tickets.py does; alerts never imports this module.  procedures.py
 (S075) imports lesson_source from this module; this module never imports procedures.py: it reads
 the procedures table by SQL only (each countermeasure's lesson, plain) and the rule of *Write
@@ -302,7 +303,8 @@ def _settle_state(cur, improvement_id, locked, root_cause_set):
     watch_from = watch_start(actions) if state == WATCHING else None
     if state == locked["state"] and watch_from == locked["watch_from"]:
         return
-    cur.execute("UPDATE improvements SET state = %s, watch_from = %s WHERE id = %s", (state, watch_from, improvement_id))
+    cur.execute("UPDATE improvements SET state = %s, watch_from = %s WHERE id = %s",
+                (state, watch_from, improvement_id))
     if state != locked["state"]:
         now = _stamp()
         _add_event(cur, improvement_id, STATE_CHANGED, now,
@@ -747,7 +749,8 @@ def list_improvements():
         items.append({
             "id": plain["id"], "serial": plain["serial"],
             "state": display_state(row["state"], row["watch_from"], row["watch_days"], now), "title": plain["title"],
-            "machine": _machine(plain), "unit": _unit(plain), "lead": {"id": plain["lead_id"], "name": plain["lead_name"]},
+            "machine": _machine(plain), "unit": _unit(plain), "lead": {"id": plain["lead_id"],
+                                                                       "name": plain["lead_name"]},
             "loss": loss(linked[row["id"]]), "created_at": plain["created_at"],
         })
     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
@@ -865,7 +868,8 @@ def _register_overdue(cur, site_id, visible, today):
 
 def _register_closed(cur, site_id, visible, start, end):
     cur.execute(f"{_REGISTER_COLUMNS}, i.closed_at, i.closed_by, i.close_remark, i.lead_id,"
-                f" clp.id AS closed_by_person_id, clp.name AS closed_by_name, fu.id AS fu_id, fu.serial AS fu_serial{_IMPROVEMENT_FROM}"
+                f" clp.id AS closed_by_person_id, clp.name AS closed_by_name,"
+                f" fu.id AS fu_id, fu.serial AS fu_serial{_IMPROVEMENT_FROM}"
                 f" WHERE u.site_id = %s AND {visible[0]} AND i.state IN ({marks(CLOSED_STATES)})"
                 " AND i.closed_at >= %s AND i.closed_at < %s ORDER BY i.closed_at, i.id",
                 [site_id, *visible[1], *CLOSED_STATES, start, end])
@@ -897,7 +901,8 @@ def register():
         raise ApiError(error["message"], 400, error["field"])
     start, end = period_bounds(period)
     answer = {
-        "sites": [], "site": None, "units": None, "period": {"from": period[0].isoformat(), "to": period[1].isoformat()},
+        "sites": [], "site": None, "units": None, "period": {"from": period[0].isoformat(),
+                                                             "to": period[1].isoformat()},
         "today": now.date().isoformat(), "printed_at": datetime.now(IST).isoformat(timespec="seconds"),
         "printed_by": g.user.get("name") or actor(),
         "started": {"count": 0, "items": []}, "open": {**open_summary([]), "items": []},
@@ -1445,7 +1450,8 @@ def my_actions():
         from_ = (" FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id"
                  " JOIN equipment m ON m.id = i.equipment_id JOIN units u ON u.id = i.unit_id")
         total = count(cur, f"SELECT COUNT(*) AS n{from_} WHERE {where}", params)
-        cur.execute("SELECT a.id, a.kind, a.text, a.due_date, a.state, i.id AS i_id, i.serial, i.title, i.state AS i_state,"
+        cur.execute("SELECT a.id, a.kind, a.text, a.due_date, a.state, i.id AS i_id, i.serial, i.title,"
+                    " i.state AS i_state,"
                     f" u.site_id, m.id AS m_id, m.code AS m_code, m.name AS m_name{from_} WHERE {where}"
                     " ORDER BY a.due_date, a.id LIMIT %s", [*params, MAX_PER_PAGE])
         rows = cur.fetchall()
@@ -1457,7 +1463,8 @@ def my_actions():
             "id": row["id"], "kind": row["kind"], "text": row["text"], "due_date": row["due_date"].isoformat(),
             "overdue_days": overdue_days(row["state"], row["due_date"], today),
             "can_mark_done": flags["can_mark_done"], "can_add_photo": flags["can_add_photo"],
-            "improvement": {"id": row["i_id"], "serial": row["serial"], "title": row["title"], "machine": _machine(row)},
+            "improvement": {"id": row["i_id"], "serial": row["serial"], "title": row["title"],
+                            "machine": _machine(row)},
         })
     return jsonify({"items": items, "total": total})
 

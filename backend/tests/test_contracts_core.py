@@ -14,7 +14,8 @@ import pytest
 
 from contracts_core import (
     CALLS_USED_MAX_DAYS, CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS,
-    FROM_AFTER_TO, LINE_GATED_FIELDS, LINE_SITE_JOINS, LINE_SITES_SQL, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE, RENEW_INACTIVE, RENEWAL_RACE,
+    FROM_AFTER_TO, LINE_GATED_FIELDS, LINE_SITE_JOINS, LINE_SITES_SQL, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE,
+    RENEW_INACTIVE, RENEWAL_RACE,
     STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed,
     breakdown_calls_error, call_figures, calls_total, calls_used, card_items, contract_status, covered_sql,
     event_text, newest_end_first, parse_price, period_error, renewal_lines, renewal_period,
@@ -87,7 +88,8 @@ class TestFields:
         assert _error_of("contract_number", "x" * 61) == "Contract number must be at most 60 characters"
         assert _error_of("contract_number", 5) == "Contract number must be text"
 
-    @pytest.mark.parametrize("value", ["31-03-2027", "2027-02-30", "1999-12-31", "2100-01-01", "", None, 20270331, "20270331", "2027-W13-3", "2027-3-31"])
+    @pytest.mark.parametrize("value", ["31-03-2027", "2027-02-30", "1999-12-31", "2100-01-01", "", None, 20270331,
+                                       "20270331", "2027-W13-3", "2027-3-31"])
     def test_dates_out_of_form_or_range_are_refused(self, value):
         assert _error_of("from_date", value) == "Enter a From date."
         assert _error_of("to_date", value) == "Enter a To date."

@@ -198,7 +198,8 @@ class TestStart:
         _, inactive = user_at_sites([(site, "maint_engineer", "all")])
         assert admin.put(f"{MASTERS}/people/{inactive['id']}", json={"active": False}).status_code == 200
         for lead in (technician, elsewhere, inactive):
-            assert refusal(start(client, ticket, lead)) == (400, "lead_id", "Choose an engineer or manager of this site")
+            assert refusal(start(client, ticket, lead)) == (400, "lead_id",
+                                                            "Choose an engineer or manager of this site")
         assert refusal(client.post(IMPROVEMENTS, json={**body(ticket, technician), "lead_id": None}))[:2] == (
             400, "lead_id")
 
@@ -575,7 +576,8 @@ class TestLeads:
 
     def test_needs_an_anchor(self, eng):
         client, _ = eng
-        assert refusal(client.get(f"{IMPROVEMENTS}/leads")) == (400, "ticket_id", "ticket_id or improvement_id is required")
+        assert refusal(client.get(f"{IMPROVEMENTS}/leads")) == (400, "ticket_id",
+                                                                "ticket_id or improvement_id is required")
 
     def test_an_unknown_or_invisible_anchor_is_404(self, user_at_sites, site, unit, make_unit, make_equipment,
                                                    restored_ticket, eng):

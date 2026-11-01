@@ -121,7 +121,8 @@ class TestStarted:
         assert item["follow_up_of"] == {"id": before["id"], "serial": before["serial"]}
         assert data["started"]["items"][0]["follow_up_of"] is None
         assert item["state"] == "analysing" and item["lead_name"] == world.person["name"]
-        assert item["machine"]["code"] == world.machines[0]["code"] and item["started_at"].startswith("2026-10-15T08:00")
+        assert item["machine"]["code"] == world.machines[0]["code"]
+        assert item["started_at"].startswith("2026-10-15T08:00")
 
     def test_a_dropped_one_counts_too(self, world):
         world.make(created_at=datetime(2026, 10, 5, 8, 0), state="dropped", closed_at=datetime(2026, 10, 6, 8, 0),
@@ -156,10 +157,13 @@ class TestOpen:
         assert serials(data) == [ended["serial"], watching["serial"], actions_open["serial"], analysing["serial"]]
         assert closed["serial"] not in serials(data) and dropped["serial"] not in serials(data)
         by_serial = {item["serial"]: item for item in data["items"]}
-        assert [by_serial[s]["state"] for s in serials(data)] == ["ready_to_verify", "watching", "actions_open", "analysing"]
+        assert [by_serial[s]["state"] for s in serials(data)] == ["ready_to_verify", "watching", "actions_open",
+                                                                  "analysing"]
         assert [by_serial[s]["age_days"] for s in serials(data)] == [181, 91, 31, 0]
-        assert (by_serial[actions_open["serial"]]["actions_open"], by_serial[actions_open["serial"]]["actions_overdue"]) == (3, 1)
-        assert (by_serial[analysing["serial"]]["actions_open"], by_serial[analysing["serial"]]["actions_overdue"]) == (0, 0)
+        assert (by_serial[actions_open["serial"]]["actions_open"],
+                by_serial[actions_open["serial"]]["actions_overdue"]) == (3, 1)
+        assert (by_serial[analysing["serial"]]["actions_open"],
+                by_serial[analysing["serial"]]["actions_overdue"]) == (0, 0)
         assert data["count"] == 4
         table = {row["state"]: row for row in data["by_state"]}
         assert list(table) == ["analysing", "actions_open", "watching", "ready_to_verify"]
@@ -253,10 +257,12 @@ class TestPeriod:
         refusal(register(world.client, **params), 400, field=field)
 
     def test_a_bad_period_is_a_400_before_a_site_404(self, world):
-        refusal(register(world.client, **{"from": "2026-10-05", "to": "2026-10-04"}, site_id=999999999), 400, field="from")
+        refusal(register(world.client, **{"from": "2026-10-05", "to": "2026-10-04"}, site_id=999999999), 400,
+                field="from")
 
     def test_the_messages(self, world):
-        refusal(register(world.client, **{"from": "soon"}), 400, "from must be a date, DD-MM-YYYY or YYYY-MM-DD", "from")
+        refusal(register(world.client, **{"from": "soon"}), 400, "from must be a date, DD-MM-YYYY or YYYY-MM-DD",
+                "from")
         refusal(register(world.client, **{"from": "2026-10-05", "to": "2026-10-04"}), 400,
                 "The start must be on or before the end", "from")
         refusal(register(world.client, **{"from": "2027-12-31", "to": "2028-12-31"}), 400,

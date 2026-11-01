@@ -340,7 +340,8 @@ class TestActivationRules:
         # The machine moves away: the unit holds no equipment, only the tickets
         assert admin.put(f"/api/equipment/{machine['id']}", json={"unit_id": make_unit()["id"]}).status_code == 200
         res = admin.put(f"{BASE}/units/{unit['id']}", json={"active": False})
-        assert (res.status_code, res.get_json()) == (409, {"error": "Close its tickets first (2 open)", "field": "active"})
+        assert (res.status_code, res.get_json()) == (409, {"error": "Close its tickets first (2 open)",
+                                                           "field": "active"})
         set_ticket_state(first, "closed")
         assert admin.put(f"{BASE}/units/{unit['id']}", json={"active": False}).get_json()["error"] == (
             "Close its tickets first (1 open)")
@@ -798,7 +799,8 @@ class TestEquipmentCategories:
         category = make_category()
         make_class(category_id=category["id"])
         res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
-        assert _refusal(res) == (409, "active", "1 active class is in this category. Move it to another category first.")
+        assert _refusal(res) == (409, "active",
+                                 "1 active class is in this category. Move it to another category first.")
         make_class(category_id=category["id"])
         res = engineer.put(f"{CATEGORIES}/{category['id']}", json={"active": False})
         assert _refusal(res) == (409, "active",

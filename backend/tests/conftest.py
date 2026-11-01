@@ -183,12 +183,16 @@ def _fresh_access_caches():
 
 
 # Tables emptied once per session so tests start from a known state, child tables first
-_TABLES = ("contract_equipment", "contracts", "procedures", "improvement_events", "improvement_actions", "improvement_whys", "improvement_tickets", "improvements",
-           "meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions", "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees", "people", "vendors", "trades", "ticket_note_edits", "ticket_events",
+_TABLES = ("contract_equipment", "contracts", "procedures", "improvement_events", "improvement_actions",
+           "improvement_whys", "improvement_tickets", "improvements",
+           "meter_readings", "node_meters", "model_meters", "access_log", "task_queue", "push_subscriptions",
+           "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees",
+           "people", "vendors", "trades", "ticket_note_edits", "ticket_events",
            "equipment_documents", "tickets",
            "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",
            "manufacturers",
-           "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes", "equipment_categories",
+           "equipment_types", "user_units", "units", "sites", "class_properties", "equipment_classes",
+           "equipment_categories",
            "serial_counters")
 
 # The failure-code lists (S016) keep their seed rows (migration v11): only what tests added goes
@@ -217,8 +221,8 @@ def _clean_tables():
             try:
                 with transaction(conn):
                     for table, creators in _SEEDED_TABLES.items():
-                        cur.execute(f"DELETE FROM {table} WHERE created_by NOT IN ({', '.join(['%s'] * len(creators))})",
-                                    creators)
+                        creator_marks = ", ".join(["%s"] * len(creators))
+                        cur.execute(f"DELETE FROM {table} WHERE created_by NOT IN ({creator_marks})", creators)
                     for table in _TABLES:
                         cur.execute(f"DELETE FROM {table}")
             finally:

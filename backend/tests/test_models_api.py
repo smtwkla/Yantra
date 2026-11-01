@@ -345,7 +345,8 @@ class TestModelMeters:
         assert _refusal(_add(engineer, model, oil)) == (409, "meter_type_id", "This model already has this meter")
         inactive = make_meter_type()
         admin.put(f"{BASE}/meter-types/{inactive['id']}", json={"active": False})
-        assert _refusal(_add(engineer, model, inactive)) == (409, "meter_type_id", "This meter type is inactive. Pick another meter type.")
+        assert _refusal(_add(engineer, model, inactive)) == (409, "meter_type_id",
+                                                             "This meter type is inactive. Pick another meter type.")
         assert engineer.post(f"{MODELS}/99999999/meters", json={"meter_type_id": oil["id"]}).status_code == 404
         assert engineer.get(f"{MODELS}/99999999/meters").status_code == 404
         assert engineer.put(f"{MODEL_METERS}/99999999", json={"active": False}).status_code == 404

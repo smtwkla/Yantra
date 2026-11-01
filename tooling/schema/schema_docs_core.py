@@ -216,7 +216,8 @@ def parse_notes(text):
     except json.JSONDecodeError as exc:
         return None, f"{NOTES_JSON} is not valid JSON: {exc}. Fix the file, then run the command again."
     if not isinstance(notes, dict):
-        return None, f"{NOTES_JSON} is not valid JSON: the file must hold one object {{...}}. Fix the file, then run the command again."
+        return None, (f"{NOTES_JSON} is not valid JSON: the file must hold one object {{...}}. "
+                      "Fix the file, then run the command again.")
     wrong = _wrong_type(notes)
     if wrong:
         return None, f"{NOTES_JSON} is not valid JSON: {wrong}. Fix the file, then run the command again."
@@ -285,7 +286,8 @@ def notes_problems(schema, notes):
     for name in built:
         if name not in tables:
             problems.append(f"{NOTES_JSON} has no line for table {name}. Add \"{name}\": {{\"area\": \"<one of: "
-                            f"{one_of}>\", \"holds\": \"<what it holds>\"}} under \"tables\", then run {COMMAND} write.")
+                            f"{one_of}>\", \"holds\": \"<what it holds>\"}} under \"tables\", "
+                            f"then run {COMMAND} write.")
     for name in sorted(tables):
         entry = tables[name] if isinstance(tables[name], dict) else {}
         if name not in built:

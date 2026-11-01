@@ -119,8 +119,9 @@ A write with a model never locks a type: it comes from the model, whose type nev
   against a send-back of the earlier ticket (the raise holds the machine (1) and waits for
   the earlier ticket; the send-back holds the ticket and waits for the machine), and a unit
   edit (unit FOR UPDATE, then its tickets counted LOCK IN SHARE MODE) against a ticket move
-  in that unit.  InnoDB rolls one side back (1213); a retry gives the right answer.  Its inserts take shared FK locks (person, trade, cause, action,
-  mode, ticket), which wait for a master's FOR UPDATE.  Three of its shared locks fall on rows
+  in that unit.  InnoDB rolls one side back (1213); a retry gives the right answer.  Its inserts
+  take shared FK locks (person, trade, cause, action, mode, ticket), which wait for a master's FOR
+  UPDATE.  Three of its shared locks fall on rows
   this module locks (S025 § 1.5, § 1.6; S020 § 5.2): the ticket edit's new component (its FK
   lock, taken first by a LOCK IN SHARE MODE read), which a scrap of that component holds FOR
   UPDATE as (1), so the two serialise; a repeat raise's earlier ticket (7), after the raise's
@@ -678,7 +679,8 @@ def list_equipment():
         light_sql, light_params = _ticket_light_column(ticket_unit_ids)
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
         total = count(cur, f"SELECT COUNT(*) AS n{_NODE_FROM}{where}", params)
-        cur.execute(f"{_NODE_COLUMNS}, {_PART_COUNT}, {light_sql}{_NODE_FROM}{where} ORDER BY e.code LIMIT %s OFFSET %s",
+        cur.execute(f"{_NODE_COLUMNS}, {_PART_COUNT}, {light_sql}{_NODE_FROM}{where}"
+                    " ORDER BY e.code LIMIT %s OFFSET %s",
                     [*light_params, *params, per_page, (page - 1) * per_page])
         items = [{**_summary(row), "part_count": row["part_count"], "ticket_light": row["ticket_light"]}
                  for row in cur.fetchall()]

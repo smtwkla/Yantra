@@ -170,7 +170,8 @@ def test_column_fields_and_prefix_index():
 def test_ordering_and_shuffled_rows_give_the_same_text():
     schema = built()
     assert list(schema["tables"]) == ["improvements", "links", "options", "people", "values"]
-    assert [c["name"] for c in schema["tables"]["improvements"]["checks"]] == ["chk_improvements_a", "chk_improvements_b"]
+    assert [c["name"] for c in schema["tables"]["improvements"]["checks"]] == ["chk_improvements_a",
+                                                                               "chk_improvements_b"]
     assert [f["name"] for f in schema["tables"]["improvements"]["foreign_keys"]] == [
         "fk_improvements_follow_up", "fk_improvements_lead"]
     assert [c["name"] for c in schema["tables"]["people"]["columns"]] == ["id", "name", "username", "active"]

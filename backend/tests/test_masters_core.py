@@ -5,7 +5,8 @@ import pytest
 from masters_core import (
     CAUSE_GROUPS, NO_LOGIN_ROLE_MESSAGE, category_in_use, model_label, no_login_role_error, normalise_username,
     technician_only, validate_equipment_category, validate_equipment_class, validate_equipment_model,
-    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_equipment_type, validate_manufacturer, validate_meter_type,
+    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_equipment_type,
+    validate_manufacturer, validate_meter_type,
     validate_person, validate_site, validate_site_row, validate_site_rows, validate_trade, validate_unit,
     optional_text_parser, validate_unit_ids, validate_username,
     DIRECT_WITH_VENDOR, PHONE_RULE, phone_parser, validate_vendor, vendor_link_error,

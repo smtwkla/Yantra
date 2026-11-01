@@ -782,25 +782,24 @@ Standing rule (01-11-2026, by KLA: "the output of gates and questions gets too
 jumbled; I have to keep scrolling back and forth"). Every gate (A, B, R, the fix
 lane's gate B), every amendment shown for approval, and the pre-flight result are
 one **card**, in this order. Other messages and questions (progress, `check`, 
-`feedback`, `stats`, a reply in conversation) keep the plain style of § Rules:
+`feedback`, `stats`, a reply in conversation) keep the plain style of § Rules.
 
-```
-━━ S0NN · <gate or topic> · <state in 3–5 words> ━━━━━━━━━━━━━━━━━
-Summary   1–2 lines: what happened and where it stands now.
+**Write the card as normal Markdown text, never inside a code block** (01-11-2026,
+by KLA: a code block shows in a fixed-width font, and its long lines do not wrap).
+Its parts, in order:
 
-Details   Short labelled lines, never paragraphs:
-          Bug ...... / Change ... / Tests .... / Review ... / Snapshot . / Files ....
-          (gate A: the brief's verbatim sections go here, under their headings)
-
-Pending   At most 3 lines: things waiting on the user elsewhere
-          (other steps, device checks, an uncommitted repo). Omit when none.
-
-Decide    1. <The question?> One line: why it matters, what each answer does.
-             (a) <option> ★   (b) <option>   (c) <option>
-          2. …
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Reply e.g. "1a 2b".
-```
+1. **Title line**, in bold: `**S0NN · <gate or topic> · <state in 3–5 words>**`.
+2. **Summary**: 1–2 sentences: what happened and where it stands now.
+3. **Details**: a bullet list of short labelled lines, never paragraphs, each
+   `- **Bug:** …`, `- **Change:** …`, `- **Tests:** …`, `- **Review:** …`,
+   `- **Snapshot:** …`, `- **Files:** …`. At gate A the brief's verbatim sections
+   go here, under their headings.
+4. **Pending**: at most 3 bullets: things waiting on the user elsewhere (other
+   steps, device checks, an uncommitted repo). Omit when none.
+5. **Decide**, last: a numbered list; each item is the question with one line on
+   why it matters and what each answer does, then its options on one line,
+   `(a) <option> ★ · (b) <option> · (c) <option>`.
+6. The closing line: `Reply e.g. "1a 2b".`
 
 - **Summary first, Decide last.** The questions sit next to the input box, so
   the user never scrolls up to find them. ★ marks the recommended option; each

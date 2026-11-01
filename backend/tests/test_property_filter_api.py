@@ -108,14 +108,16 @@ class TestNumber:
         _set_own(admin, part, [(power, "30")])
         assert _codes(admin, _props(_rule(power, "gt", "20")), unit_id=unit["id"]) == _sorted(part)
         # The level filter still applies: the default level lists machines only
-        body = _ok(admin.get(EQUIPMENT, query_string={"props": _props(_rule(power, "gt", "20")), "unit_id": unit["id"]}))
+        body = _ok(admin.get(EQUIPMENT, query_string={"props": _props(_rule(power, "gt", "20")),
+                                                      "unit_id": unit["id"]}))
         assert body["items"] == []
 
 
 class TestChoice:
 
     def test_is_and_is_not(self, admin, make_equipment, make_model, cls, mount, unit):
-        nodes = {label: make_equipment(unit=unit, model=make_model(cls=cls)) for label in ("Portable", "Mobile", "Fixed")}
+        nodes = {label: make_equipment(unit=unit, model=make_model(cls=cls)) for label in ("Portable", "Mobile",
+                                                                                           "Fixed")}
         bare = make_equipment(unit=unit, model=make_model(cls=cls))
         for label, node in nodes.items():
             _set_own(admin, node, [(mount, _option(mount, label))])
@@ -126,7 +128,8 @@ class TestChoice:
         assert _codes(admin, _props(_rule(mount, "not_in", [_option(mount, "Fixed")])), unit_id=unit["id"]) == (
             _sorted(nodes["Portable"], nodes["Mobile"]))
         assert _codes(admin, _props(_rule(mount, "not_in", [_option(mount, "Fixed")]), _rule(mount, "none"),
-                                    match="any"), unit_id=unit["id"]) == _sorted(nodes["Portable"], nodes["Mobile"], bare)
+                                    match="any"), unit_id=unit["id"]) == _sorted(nodes["Portable"], nodes["Mobile"],
+                                                                                 bare)
 
 
 class TestApplies:
@@ -257,5 +260,6 @@ class TestAssetList:
         assert (res.status_code, res.get_json()) == (400, {"error": UNREADABLE, "field": "props"})
 
     def test_a_bad_filter_is_400(self, admin):
-        res = admin.get(ASSET_LIST, query_string={"props": json.dumps({"match": "any", "rules": [{"property_id": "x"}]})})
+        res = admin.get(ASSET_LIST, query_string={"props": json.dumps({"match": "any",
+                                                                       "rules": [{"property_id": "x"}]})})
         assert (res.status_code, res.get_json()) == (400, {"error": UNREADABLE, "field": "props.rules.0"})

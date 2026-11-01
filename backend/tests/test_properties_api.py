@@ -1,5 +1,6 @@
 """Equipment properties (S043 § 5, § 6, § 8.2) — the property master, its options, the class
-links and the models' values (S061: the flags, per-machine properties), against the test DB.  Needs the dev MariaDB container
+links and the models' values (S061: the flags, per-machine properties), against the test DB.  Needs the dev MariaDB
+container
 (tooling/dev/dev-db-up.bat).  Names come from a counter of this module, never fixed values."""
 
 import itertools
@@ -367,7 +368,8 @@ class TestModelValues:
     def test_an_inactive_property_is_hidden_and_refused(self, engineer, setup):
         model, props = setup
         engineer.put(f"{PROPERTIES}/{props['text']['id']}", json={"active": False})
-        assert props["text"]["id"] not in [i["property_id"] for i in engineer.get(_model_path(model)).get_json()["items"]]
+        assert props["text"]["id"] not in [i["property_id"]
+                                           for i in engineer.get(_model_path(model)).get_json()["items"]]
         res = engineer.put(_model_path(model), json={"values": {str(props["text"]["id"]): "x"}})
         assert res.status_code == 400
 
@@ -404,7 +406,8 @@ class TestPermissions:
         assert res.status_code == 201
         prop = res.get_json()
         model = make_model()
-        assert engineer.post(_class_path({"id": model["class_id"]}), json={"property_ids": [prop["id"]]}).status_code == 200
+        assert engineer.post(_class_path({"id": model["class_id"]}),
+                             json={"property_ids": [prop["id"]]}).status_code == 200
         assert engineer.put(_model_path(model), json={"values": {str(prop["id"]): "250"}}).status_code == 200
 
 

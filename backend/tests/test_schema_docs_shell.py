@@ -30,7 +30,8 @@ def test_database_down_ends_with_exit_2_and_writes_nothing(monkeypatch, capsys):
     monkeypatch.setitem(config.DB_CONFIG, "host", "127.0.0.1")
     monkeypatch.setitem(config.DB_CONFIG, "port", _unused_port())
     monkeypatch.setattr(schema_docs, "_write_text", _never("_write_text"))
-    monkeypatch.setattr(schema_docs.local_db, "init_db", _never("init_db"))   # the first connection fails, before the lock
+    # the first connection fails, before the lock
+    monkeypatch.setattr(schema_docs.local_db, "init_db", _never("init_db"))
 
     assert schema_docs.main(["write"]) == 2
 

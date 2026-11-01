@@ -81,7 +81,8 @@ class TestLines:
         assert row["created_by"]
         changed = client.put(url(ticket, "parts", str(row["id"])), json=line(part, quantity="2"))
         assert changed.status_code == 200, changed.get_json()
-        assert (changed.get_json()["parts"][0]["quantity"], changed.get_json()["parts"][0]["qty_unit"]) == ("2.00", "nos")
+        assert (changed.get_json()["parts"][0]["quantity"], changed.get_json()["parts"][0]["qty_unit"]) == ("2.00",
+                                                                                                            "nos")
         removed = client.delete(url(ticket, "parts", str(row["id"])))
         assert removed.status_code == 200 and removed.get_json()["parts"] == []
         assert client.delete(url(ticket, "parts", str(row["id"]))).status_code == 404

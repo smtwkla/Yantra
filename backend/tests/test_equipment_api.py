@@ -1008,7 +1008,8 @@ class TestMyUnits:
         manager, _ = user_at_sites([(site, "maint_manager", "all")])
         body = manager.get(f"{EQUIPMENT}/my-units").get_json()
         assert body["all_units"] is False
-        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]]) == body["edit_unit_ids"] == body["reading_unit_ids"]
+        assert body["unit_ids"] == sorted([unit_a["id"], unit_b["id"]])
+        assert body["unit_ids"] == body["edit_unit_ids"] == body["reading_unit_ids"]
 
     def test_edit_units_are_where_edit_is_held(self, user_at_sites, make_site, make_unit):
         site_a, site_b = make_site(), make_site()
@@ -1717,7 +1718,8 @@ class TestProperties:
             self, admin, uniq, make_class, make_equipment):
         """BS1-01: model_id None -> every property of the class, display and source None."""
         cls = make_class()
-        rating = admin.post(f"{MASTERS}/properties", json={"name": f"Eq rating {uniq.designation()}", "data_type": "number",
+        rating = admin.post(f"{MASTERS}/properties", json={"name": f"Eq rating {uniq.designation()}",
+                                                           "data_type": "number",
                                                            "unit": "kW"}).get_json()
         res = admin.post(f"{MASTERS}/equipment-classes/{cls['id']}/properties", json={"property_ids": [rating["id"]]})
         assert res.status_code == 200, res.get_json()

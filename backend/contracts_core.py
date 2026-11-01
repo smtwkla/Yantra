@@ -306,7 +306,8 @@ def card_items(rows, node, today):
         if kept is None or distance[row["equipment_id"]] < distance[kept["equipment_id"]]:
             nearest[row["id"]] = row
     not_ended = sorted((r for r in nearest.values() if r["to_date"] >= today), key=lambda r: (r["to_date"], r["id"]))
-    ended = sorted((r for r in nearest.values() if r["to_date"] < today), key=lambda r: (-r["to_date"].toordinal(), r["id"]))
+    ended = sorted((r for r in nearest.values() if r["to_date"] < today), key=lambda r: (-r["to_date"].toordinal(),
+                                                                                         r["id"]))
     return [{"row": r, "via_id": None if r["equipment_id"] == node["id"] else r["equipment_id"]}
             for r in [*not_ended, *ended]]
 

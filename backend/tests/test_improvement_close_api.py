@@ -455,7 +455,8 @@ class TestWatchFigures:
         figures = get(client, improvement)["watch"]["figures"]
         assert figures["machines"] == [{"id": machine["id"], "code": machine["code"]}]
         assert [s["id"] for s in figures["symptoms"]] == [modes[0]]
-        assert (figures["before"]["days"], figures["before"]["breakdowns"], figures["before"]["symptom_breakdowns"]) == (
+        assert (figures["before"]["days"], figures["before"]["breakdowns"],
+                figures["before"]["symptom_breakdowns"]) == (
             90, 1, 1)
         assert (figures["after"]["days"], figures["after"]["breakdowns"], figures["after"]["symptom_breakdowns"]) == (
             20, 2, 1)

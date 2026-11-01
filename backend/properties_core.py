@@ -3,8 +3,9 @@
 A property is a technical datum of a class of equipment (ISO 14224 Annex A equipment-specific
 data), defined once with a data type and, for a number, a unit (IEC 61360: one definition,
 reused across classes).  Its value sits on the model (the maker's design value), and an item may
-hold its own where its nameplate differs (S044): the item's wins on that item only.  Validators return ``(clean, errors)`` like masters_core; value parsers return
-``(value, message)``, where ``(None, None)`` means "clear the value".
+hold its own where its nameplate differs (S044): the item's wins on that item only.  Validators
+return ``(clean, errors)`` like masters_core; value parsers return ``(value, message)``, where
+``(None, None)`` means "clear the value".
 
 S061 (docs/steps/S061-global-properties-gps/1-brief.md): a *Location* data type (``geo``, a
 latitude and a longitude), and two flags on a property: ``all_classes`` (on every class, no link
@@ -507,8 +508,9 @@ def value_display(prop, row, option_labels):
 def property_view(properties, model_values, option_labels, item_values=None):
     """The Properties card's rows (§ 5.5, § 6.3), by name: each property given (the active ones
     linked to the item's class, or on every class) with the value in force -> ``{property_id,
-    name, data_type, per_item_only, value, unit, display, source, map_url}``.  The item's own value wins (``source`` "item", S044 § 5.5), else the
-    model's ("model"); ``display`` and ``source`` are None without a value.  An own value of a
+    name, data_type, per_item_only, value, unit, display, source, map_url}``.  The item's own value
+    wins (``source`` "item", S044 § 5.5), else the model's ("model"); ``display`` and ``source`` are
+    None without a value.  An own value of a
     property not given (not on the class now) is not shown.  ``model_values`` and
     ``item_values``: ``{property_id: row}``; ``option_labels``: ``{option_id: label}``."""
     item_values = item_values or {}

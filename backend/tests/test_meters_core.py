@@ -219,7 +219,8 @@ class TestEffectiveMeters:
         meters = effective_meters([_model(OIL, D("10"), D("60"))], [_node(OIL, 1, D("20"), D("50"))])
         assert len(meters) == 1
         oil = meters[0]
-        assert (oil["source"], oil["min_value"], oil["max_value"], oil["overridden"]) == (SOURCE_MODEL, "20", "50", True)
+        assert (oil["source"], oil["min_value"], oil["max_value"], oil["overridden"]) == (SOURCE_MODEL, "20", "50",
+                                                                                          True)
 
     def test_an_own_row_with_no_limits_under_a_model_meter_is_no_override(self):
         oil = effective_meters([_model(OIL, D("10"), D("60"))], [_node(OIL, 1)])[0]

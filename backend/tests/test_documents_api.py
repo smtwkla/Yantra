@@ -537,7 +537,8 @@ class TestOwnerCheckConstraint:
         db_rows("INSERT INTO improvement_actions (improvement_id, kind, text, owner_id, due_date, created_by)"
                 " SELECT MAX(id), 'lesson', 'x', (SELECT MIN(id) FROM people), CURDATE(), 'test' FROM improvements")
         action_id = db_rows("SELECT MAX(id) AS id FROM improvement_actions")[0]["id"]
-        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by) VALUES (%s, %s, 'x', 'x', 'test')",
+        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by)"
+                " VALUES (%s, %s, 'x', 'x', 'test')",
                 (f"OPL-CHK-{node['id']}", node["id"]))
         lesson_id = db_rows("SELECT MAX(id) AS id FROM procedures")[0]["id"]
         with pytest.raises(pymysql.err.OperationalError) as caught:
@@ -550,15 +551,16 @@ class TestOwnerCheckConstraint:
     def test_a_lesson_and_a_contract_together_are_refused(self, make_equipment, make_vendor, db_rows, uniq):
         """S083 § 8.2: the sixth owner counts in the same CHECK."""
         node = make_equipment()
-        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by) VALUES (%s, %s, 'x', 'x', 'test')",
+        db_rows("INSERT INTO procedures (serial, equipment_id, title, body, created_by)"
+                " VALUES (%s, %s, 'x', 'x', 'test')",
                 (f"OPL-CHK6-{node['id']}", node["id"]))
         lesson_id = db_rows("SELECT MAX(id) AS id FROM procedures")[0]["id"]
         db_rows("INSERT INTO contracts (vendor_id, contract_type, title, from_date, to_date, created_by)"
                 " VALUES (%s, 'amc', 'x', CURDATE(), CURDATE(), 'test')", (make_vendor()["id"],))
         contract_id = db_rows("SELECT MAX(id) AS id FROM contracts")[0]["id"]
         with pytest.raises(pymysql.err.OperationalError) as caught:
-            db_rows("INSERT INTO equipment_documents (procedure_id, contract_id, kind, title, original_name, stored_name,"
-                    " content_type, size_bytes, created_by) VALUES (%s, %s, 'document', 'x', 'x.pdf', %s,"
+            db_rows("INSERT INTO equipment_documents (procedure_id, contract_id, kind, title, original_name,"
+                    " stored_name, content_type, size_bytes, created_by) VALUES (%s, %s, 'document', 'x', 'x.pdf', %s,"
                     " 'application/pdf', 1, 'test')", (lesson_id, contract_id, f"chk-{uniq.username()}.pdf"))
         assert caught.value.args[0] == 4025
         assert "chk_equipment_documents_owner" in caught.value.args[1]

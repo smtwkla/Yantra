@@ -102,7 +102,8 @@ def restored_ticket(plant, client=None, when=None, **raise_body):
                  "restore": {"occurred_at": local(when + timedelta(hours=2))}}
     ticket = _ok(client.post(TICKETS, json=body), 201)
     _ok(client.post(_url(ticket, "moves", "start"), json=times.get("start", {})))
-    _ok(client.post(_url(ticket, "moves", "restore"), json={"person_id": pid(plant, "closer"), **times.get("restore", {})}))
+    _ok(client.post(_url(ticket, "moves", "restore"),
+                    json={"person_id": pid(plant, "closer"), **times.get("restore", {})}))
     work_date = (when or now_ist()).date().isoformat()
     _ok(client.post(_url(ticket, "labour"), json={"person_id": pid(plant, "closer"), "work_date": work_date,
                                                   "minutes": 90}), 201)

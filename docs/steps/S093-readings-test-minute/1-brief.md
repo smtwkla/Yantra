@@ -5,7 +5,7 @@ Author: Orchestrator (Opus)
 Date: 01-11-2026
 Track: fix
 Baseline: 45ae23d
-Status: Gate B 01-11-2026 (code review r1: 1 major, CR1-01, fixed; r2: 1 nit, CR2-01, fixed)
+Status: Done (committed f8a699c; no device check); was: Gate B 01-11-2026 (code review r1: 1 major, CR1-01, fixed; r2: 1 nit, CR2-01, fixed)
 ```
 
 # S093 — The readings tests take the expected time from the reading itself

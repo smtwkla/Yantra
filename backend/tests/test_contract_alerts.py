@@ -3,7 +3,8 @@ dev MariaDB container.
 
 The daily scan (contract_reminder_scan) queues one contract_alert per reminder due and marks it (v46);
 contract_alert sends it by push to the holders of contract:read and by email to the holders of contract:read_senior
-at the sites of the contract's machines (S087; every site for a contract with no machine).  The handlers run here on a connection of their own, in a transaction as the worker runs
+at the sites of the contract's machines (S087; every site for a contract with no machine).  The handlers run here on a
+connection of their own, in a transaction as the worker runs
 them (test_alerts.run); the worker itself runs only where draining every task is the point, with both senders
 faked, so no test reaches a push service or a mail server (no_real_push, smtp_test_values).
 
@@ -27,7 +28,8 @@ import worker as worker_module
 from local_db import get_local_db
 from task_handlers import BadTask, contract_alert, contract_reminder_scan
 from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
-from tests.test_alerts import add_device, fake_send as fake_push, run  # noqa: F401  (add_device: a fixture used by name)
+# add_device: a fixture used by name
+from tests.test_alerts import add_device, fake_send as fake_push, run  # noqa: F401
 from tests.test_closed_email import fake_send as fake_mail
 from worker import Worker
 
@@ -106,7 +108,8 @@ def alert_tasks(db_rows, contract_id):
 
 def push_sends(db_rows, contract_id):
     rows = db_rows("SELECT status, payload FROM task_queue WHERE task_type = 'push_send'"
-                   " AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.path')) = %s ORDER BY id", (f"/contracts/{contract_id}",))
+                   " AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.path')) = %s ORDER BY id",
+                   (f"/contracts/{contract_id}",))
     return [{**json.loads(row["payload"]), "status": row["status"]} for row in rows]
 
 
@@ -380,7 +383,8 @@ class TestHandler:
         managers = {}
         for name, at in (("a", a), ("b", b), ("c", c)):
             _client, person = user_at_sites([(at, "maint_manager", "all")])
-            db_rows("UPDATE people SET email = %s WHERE id = %s", (f"m{name}-{person['id']}@example.test", person["id"]))
+            db_rows("UPDATE people SET email = %s WHERE id = %s", (f"m{name}-{person['id']}@example.test",
+                                                                   person["id"]))
             managers[name] = person["id"]
         made = contract(60, at=[a, b])
         scan()

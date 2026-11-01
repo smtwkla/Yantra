@@ -255,9 +255,10 @@ class TestAssigned:
         ticket = raise_on(plant, intensity="degraded")
         shown = self._assign(plant, ticket)
         (alert,) = self._assigned(db_rows, ticket)
-        assert alert["payload"] == {"ticket_id": ticket["id"], "kind": "assigned", "event_id": event_id(shown, "assigned"),
-                                    "exclude_person_ids": [person_id(plant, "engineer")],
-                                    "person_id": person_id(plant, "technician")}
+        assert alert["payload"] == {
+            "ticket_id": ticket["id"], "kind": "assigned", "event_id": event_id(shown, "assigned"),
+            "exclude_person_ids": [person_id(plant, "engineer")],
+            "person_id": person_id(plant, "technician")}
 
     def test_the_same_person_again_sends_nothing(self, plant, db_rows):
         ticket = raise_on(plant, intensity="degraded")

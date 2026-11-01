@@ -68,18 +68,21 @@ class TestS069Lines:
         improvement, _ = aged()
         self.why(client, improvement, "Why does it trip?", "Dust on the contacts")
         detail = self.why(client, improvement, "Why is there dust?", "The seal is torn", "Photo")
-        assert events(detail, "why_added")[0]["remark"] == "2. Why is there dust? Because: The seal is torn Evidence: Photo"
+        added = events(detail, "why_added")[0]
+        assert added["remark"] == "2. Why is there dust? Because: The seal is torn Evidence: Photo"
         first, second = detail["whys"]
         detail = ok(client.put(url(improvement, f"/whys/{first['id']}"), json={"answer": "Dust and oil"}))
         assert shape(events(detail, "why_changed")[0]) == (
-            "why_changed", "1. Why does it trip? Because: Dust and oil", "1. Why does it trip? Because: Dust on the contacts")
+            "why_changed", "1. Why does it trip? Because: Dust and oil",
+            "1. Why does it trip? Because: Dust on the contacts")
         detail = ok(client.put(url(improvement, f"/whys/{second['id']}"), json={"position": 1}))
         changed = events(detail, "why_changed")
         assert len(changed) == 2   # the moved why only; the other's shift writes none
         assert shape(changed[0]) == ("why_changed", "1. Why is there dust? Because: The seal is torn Evidence: Photo",
                                      "2. Why is there dust? Because: The seal is torn Evidence: Photo")
         detail = ok(client.delete(url(improvement, f"/whys/{first['id']}")))
-        assert shape(events(detail, "why_removed")[0]) == ("why_removed", None, "2. Why does it trip? Because: Dust and oil")
+        assert shape(events(detail, "why_removed")[0]) == ("why_removed", None,
+                                                           "2. Why does it trip? Because: Dust and oil")
         detail = ok(client.put(url(improvement, f"/whys/{second['id']}"), json={"answer": "The seal is torn"}))
         assert len(events(detail, "why_changed")) == 2   # nothing changed: no line
 
@@ -122,7 +125,8 @@ class TestS070Lines:
         done_at = minute(now_ist() - 2 * DAY)
         detail = mark_done(client, improvement, action, done_at, "Cleaned and sealed")
         done = events(detail, "action_done")[0]
-        assert (done["remark"], done["occurred_at"]) == ("Cleaned and sealed", done_at.strftime("%Y-%m-%dT%H:%M:%S+05:30"))
+        assert (done["remark"], done["occurred_at"]) == ("Cleaned and sealed",
+                                                         done_at.strftime("%Y-%m-%dT%H:%M:%S+05:30"))
         # Back-dated: it sorts by its time, below the lines written today
         assert detail["timeline"].index(done) > detail["timeline"].index(events(detail, "action_changed")[0])
         _, second = add_action(client, improvement, person, kind="lesson")
@@ -136,7 +140,8 @@ class TestNotes:
         client, _ = eng
         improvement, _ = aged()
         operator, person = operator_at_site
-        detail = ok(operator.post(url(improvement, "/notes"), json={"remark": "  Panel cleaned on\nnight shift  "}), 201)
+        detail = ok(operator.post(url(improvement, "/notes"), json={"remark": "  Panel cleaned on\nnight shift  "}),
+                    201)
         note = events(detail, "note")[0]
         assert (note["remark"], note["by_name"]) == ("Panel cleaned on\nnight shift", person["name"])
         assert detail["can_add_note"] is True

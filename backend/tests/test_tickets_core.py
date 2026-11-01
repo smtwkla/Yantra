@@ -11,7 +11,8 @@ from tickets_core import (
     INTENSITIES, INTENSITY_FILTERS, LABOUR_BEFORE_CLOSE, LABOUR_DATE_EARLY, LABOUR_DATE_FORMAT, LABOUR_DATE_FUTURE,
     LOWERING_NEEDS_REMARK, MODE_NEEDED, MOVES, NOTHING_TO_CHANGE, OPEN_STATES, PERSON_NEEDED, REMARK_MAX,
     REPEAT_WINDOW_DAYS, STARTED_AFTER_RESTORE, STARTED_ALREADY, STATES, TRADE_NEEDED, allowed_moves,
-    description_error, edit_lines, event_time_error, format_serial, format_ticket_serial, is_breakdown, is_repeat_candidate, latest_restoration,
+    description_error, edit_lines, event_time_error, format_serial, format_ticket_serial, is_breakdown,
+    is_repeat_candidate, latest_restoration,
     machine_and_component, parse_event_time, regrade_options, send_back_intensity, serial_scope, started_at_error,
     ticket_times, trade_error, validate_close, validate_edit, validate_event_time, validate_labour, validate_move,
     validate_raise, validate_regrade,
@@ -342,7 +343,8 @@ class TestValidateMove:
 
     def test_close_needs_cause_and_action(self):
         _, errors = validate_move("close", {})
-        assert errors == [{"field": "cause_id", "message": CAUSE_NEEDED}, {"field": "action_id", "message": ACTION_NEEDED}]
+        assert errors == [{"field": "cause_id", "message": CAUSE_NEEDED}, {"field": "action_id",
+                                                                           "message": ACTION_NEEDED}]
         clean, errors = validate_move("close", {"cause_id": 1, "action_id": 2, "failure_mode_id": 3})
         assert errors == [] and (clean["cause_id"], clean["action_id"], clean["failure_mode_id"]) == (1, 2, 3)
 
@@ -673,7 +675,8 @@ class TestValidatePlanMoves:
     def test_other_needs_a_remark(self):
         body = {"planned_date": "2026-10-25", "waiting_reason": "other"}
         assert validate_move("schedule", body)[1] == [{"field": "remark", "message": REMARK_NEEDED}]
-        assert validate_move("schedule", {**body, "remark": "   "})[1] == [{"field": "remark", "message": REMARK_NEEDED}]
+        assert validate_move("schedule", {**body, "remark": "   "})[1] == [{"field": "remark",
+                                                                            "message": REMARK_NEEDED}]
         assert validate_move("schedule", {**body, "remark": "Crane booked by civil"})[1] == []
 
     def test_change_plan_needs_a_remark_once(self):

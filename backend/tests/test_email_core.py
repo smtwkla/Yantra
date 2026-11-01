@@ -204,7 +204,8 @@ class TestAddress:
 
     @pytest.mark.parametrize("text", [
         "", None, "bad", "priya.example.test", "a@b@example.test", "priya @example.test", "a@b.test, c@d.test",
-        "a@b.test;c@d.test", "<a@b.test>", "a@b.test\r\nBcc: x@y.test", "@example.test", "priya@localhost", "a@" + "b" * 248 + ".test",   # the last: 255 characters
+        "a@b.test;c@d.test", "<a@b.test>", "a@b.test\r\nBcc: x@y.test", "@example.test", "priya@localhost",
+        "a@" + "b" * 248 + ".test",   # the last: 255 characters
     ])
     def test_refused(self, text):
         assert not valid_address(text)

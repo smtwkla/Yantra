@@ -39,7 +39,8 @@ def _one_improvement():
 
 
 def _link(improvement_id, ticket_id, open_link):
-    _run("INSERT INTO improvement_tickets (improvement_id, ticket_id, open_link, created_by) VALUES (%s, %s, %s, 'kla')",
+    _run("INSERT INTO improvement_tickets (improvement_id, ticket_id, open_link, created_by)"
+         " VALUES (%s, %s, %s, 'kla')",
          (improvement_id, ticket_id, open_link))
 
 

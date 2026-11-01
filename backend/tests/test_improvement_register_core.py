@@ -112,7 +112,8 @@ class TestOpenSummary:
 
 class TestClosedSummary:
 
-    @pytest.mark.parametrize("worked, not_worked, share", [(3, 1, 75), (1, 7, 13), (0, 0, None), (0, 2, 0), (2, 0, 100)])
+    @pytest.mark.parametrize("worked, not_worked, share",
+                             [(3, 1, 75), (1, 7, 13), (0, 0, None), (0, 2, 0), (2, 0, 100)])
     def test_worked_share(self, worked, not_worked, share):
         assert worked_share(worked, not_worked) == share
 

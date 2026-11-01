@@ -20,7 +20,9 @@ from access_core import compute_permissions
 from config_rbac import ASSIGNABLE_ROLES
 from contracts_core import ENDING_SOON_DAYS, TYPE_SHORT, contract_status
 from equipment_core import effective_criticality
-from improvements_core import ACTION_OPEN, EDIT_KEY, IMPROVEMENT_OPEN_STATES, READ_KEY, VERIFY_KEY, WATCHING, watch_until
+from improvements_core import (
+    ACTION_OPEN, EDIT_KEY, IMPROVEMENT_OPEN_STATES, READ_KEY, VERIFY_KEY, WATCHING, watch_until,
+)
 from tickets_core import (
     BREAKDOWN_INTENSITY, CLOSED as CLOSED_STATE, DOWN_STATES, MAX_BACKDATE_DAYS, OPEN_STATES, RAISED, SENT_BACK_EVENT,
 )
@@ -469,7 +471,8 @@ def you_get(memberships):
     (S074), then "Contracts ending for machines at SMTW" when the role holds contract:read (S084,
     S087: the reminders follow the machines' sites; the site code even for a membership without
     units), then "Closed tickets at SMTW, by email" when the role gets *ticket closed* (S032), then
-    "Contracts ending for machines at SMTW, by email" when the role holds contract:read_senior; then "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
+    "Contracts ending for machines at SMTW, by email" when the role holds contract:read_senior; then
+    "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
     lines (S074 § 5.8) when a membership with a place holds improvement:read (the owner's alerts)
     or improvement:edit (who may lead gets the overdue alerts of the improvements they lead).
     The improvement lines follow config_rbac through compute_permissions.  Empty: nothing to get

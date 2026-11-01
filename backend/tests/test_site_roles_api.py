@@ -193,14 +193,19 @@ class TestLoginSave:
         old, new = uniq.username(), uniq.username()
         person = make_person(username=old, sites=[_site(site_a, "maint_manager"), _site(site_b)])
         with caplog.at_level(logging.INFO, logger="masters"):
-            admin.put(f"{BASE}/people/{person['id']}", json={"username": new, "sites": [_site(site_a, "maint_manager")]})
+            admin.put(f"{BASE}/people/{person['id']}", json={"username": new, "sites": [_site(site_a,
+                                                                                              "maint_manager")]})
             admin.put(f"{BASE}/people/{person['id']}", json={"username": None, "sites": [_site(site_a)]})
         lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("login saved")]
         prefix = f"login saved: actor=test_it_admin person={person['id']} 'Test person' login="
         codes = sorted([site_a["code"], site_b["code"]])
-        before_both = ";".join(f"{c}:{'maint_manager' if c == site_a['code'] else 'maint_technician'}:all" for c in codes)
-        assert lines[1:] == [f"{prefix}{old}->{new} before=[{before_both}] after=[{site_a['code']}:maint_manager:all]",
-                         f"{prefix}{new}->- before=[{site_a['code']}:maint_manager:all] after=[{site_a['code']}:maint_technician:all]"]
+        before_both = ";".join(f"{c}:{'maint_manager' if c == site_a['code'] else 'maint_technician'}:all"
+                               for c in codes)
+        manager_all = f"{site_a['code']}:maint_manager:all"
+        assert lines[1:] == [
+            f"{prefix}{old}->{new} before=[{before_both}] after=[{manager_all}]",
+            f"{prefix}{new}->- before=[{manager_all}] after=[{site_a['code']}:maint_technician:all]",
+        ]
 
     def test_rows_replaced_with_the_login_unchanged_or_absent_are_logged(self, admin, make_person, uniq, two_sites,
                                                                          caplog):
@@ -208,7 +213,8 @@ class TestLoginSave:
         login = uniq.username()
         person = make_person(username=login, sites=[_site(site_a)])
         with caplog.at_level(logging.INFO, logger="masters"):
-            admin.put(f"{BASE}/people/{person['id']}", json={"username": login, "sites": [_site(site_a, "maint_manager")]})
+            admin.put(f"{BASE}/people/{person['id']}", json={"username": login, "sites": [_site(site_a,
+                                                                                                "maint_manager")]})
             res = admin.post(f"{BASE}/people", json={"name": "N", "employment": "direct", "username": None,
                                                       "sites": [_site(site_a)]})
         assert res.status_code == 201

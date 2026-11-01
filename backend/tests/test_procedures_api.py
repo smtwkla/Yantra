@@ -205,7 +205,8 @@ class TestCreateFromACountermeasure:
         lesson = created(client, machine, action_id=action["id"])
         assert lesson["source"] == {"improvement": {"id": improvement["id"], "serial": improvement["serial"],
                                                     "title": improvement["title"]}, "action_id": action["id"]}
-        assert db_rows("SELECT action_id FROM procedures WHERE id = %s", (lesson["id"],))[0]["action_id"] == action["id"]
+        rows = db_rows("SELECT action_id FROM procedures WHERE id = %s", (lesson["id"],))
+        assert rows[0]["action_id"] == action["id"]
 
     def test_a_done_one_links(self, eng, machine, improvement):
         client, person = eng
@@ -240,7 +241,8 @@ class TestCreateFromACountermeasure:
         action = add_action(client, improvement, person)
         other = make_equipment(unit=unit)
         assert refusal(create(client, other, action_id=action["id"])) == (
-            400, "equipment_id", f"A lesson for this countermeasure goes on {machine['code']}, the improvement's machine")
+            400, "equipment_id",
+            f"A lesson for this countermeasure goes on {machine['code']}, the improvement's machine")
 
     def test_a_second_lesson_for_it_is_409_naming_the_first(self, eng, machine, improvement):
         client, person = eng

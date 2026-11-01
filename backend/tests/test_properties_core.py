@@ -219,14 +219,17 @@ class TestModelValues:
 
     def test_the_first_refusal_by_name_answers(self):
         props = {1: _prop(1, "Zeta"), 2: _prop(2, "alpha")}
-        assert check_values({"1": "x", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "x", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2",
+                                                                                               ENTER_NUMBER))
 
     def test_an_unlinked_property_is_refused_in_its_name_s_place(self):
         """CR1-05: the order is by name, not by the body's key order; an unknown id (no name) first."""
         props = {1: _prop(1, "Zeta", linked=False), 2: _prop(2, "alpha")}
-        assert check_values({"1": "1", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2", ENTER_NUMBER))
+        assert check_values({"1": "1", "2": "y"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.2",
+                                                                                               ENTER_NUMBER))
         props = {1: _prop(1, "alpha", active=0), 2: _prop(2, "Zeta")}
-        assert check_values({"2": "y", "1": "1"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.1", NOT_ON_CLASS))
+        assert check_values({"2": "y", "1": "1"}, props, {}, {}, owner=OWNER_MODEL) == (None, ("values.1",
+                                                                                               NOT_ON_CLASS))
         assert check_values({"2": "y", "9": "1", "7": "1"}, props, {}, {}, owner=OWNER_MODEL) == (
             None, ("values.7", NOT_ON_CLASS))
 

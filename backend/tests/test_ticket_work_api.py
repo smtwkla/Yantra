@@ -74,7 +74,8 @@ def moved(client, ticket, name, **body):
 
 
 def labour(client, ticket, person, minutes=60, **body):
-    return client.post(url(ticket, "labour"), json={"person_id": person["id"], "work_date": now_ist().date().isoformat(),
+    return client.post(url(ticket, "labour"), json={"person_id": person["id"],
+                                                    "work_date": now_ist().date().isoformat(),
                                                     "minutes": minutes, **body})
 
 
@@ -337,7 +338,8 @@ class TestClose:
             "edited", "Symptom: Abnormal noise → Vibration", "closed")
 
     def test_an_inactive_cause_is_400(self, admin, engineer, restored, uniq, action, noise):
-        res = engineer.post(f"{MASTERS}/failure-causes", json={"code": uniq.failure_code(), "label": uniq.failure_label(),
+        res = engineer.post(f"{MASTERS}/failure-causes", json={"code": uniq.failure_code(),
+                                                               "label": uniq.failure_label(),
                                                               "cause_group": "misc", "active": False})
         assert res.status_code == 201, res.get_json()
         res = move(admin, restored, "close", cause_id=res.get_json()["id"], action_id=action, failure_mode_id=noise)
@@ -361,7 +363,8 @@ class TestClose:
         moved(client, ticket, "start")
         moved(client, ticket, "restore", person_id=person["id"])
         booked(client, ticket, person)
-        assert moved(client, ticket, "close", cause_id=cause, action_id=action, failure_mode_id=noise)["state"] == "closed"
+        assert moved(client, ticket, "close", cause_id=cause, action_id=action,
+                     failure_mode_id=noise)["state"] == "closed"
 
 
 class TestNotAFault:
@@ -414,7 +417,8 @@ class TestRegrade:
         assert res.get_json()["events"][-1]["intensity"] == "critical"
         assert detail(operator_client, ticket)["regrade_to"] == []
         assert self.regrade(operator_client, ticket, intensity="degraded", remark="runs").status_code == 403
-        assert refusal(self.regrade(tech[0], ticket, intensity="degraded")) == (400, "remark", "Say why the machine runs")
+        assert refusal(self.regrade(tech[0], ticket, intensity="degraded")) == (400, "remark",
+                                                                                "Say why the machine runs")
         res = self.regrade(tech[0], ticket, intensity="degraded", remark="Runs at half speed")
         assert res.status_code == 200 and res.get_json()["intensity"] == "degraded"
         assert detail(tech[0], ticket)["regrade_to"] == ["critical", "initial"]
@@ -911,7 +915,8 @@ class TestAlreadyFixed:
         res = self.raise_fixed(admin, machine, {"person_id": eng[1]["id"],
                                                 "occurred_at": local(failed_at - timedelta(minutes=5))},
                                occurred_at=local(failed_at))
-        assert refusal(res) == (400, "restore.occurred_at", f"Must be at or after the time it happened, {failed_at:%d-%m-%Y %H:%M}")
+        assert refusal(res) == (400, "restore.occurred_at",
+                                f"Must be at or after the time it happened, {failed_at:%d-%m-%Y %H:%M}")
 
     @pytest.mark.parametrize("offset", [-5, 50])
     def test_a_start_outside_raise_and_back_in_service_is_400(self, admin, eng, machine, nothing_written, offset):
@@ -1137,7 +1142,8 @@ class TestLeavingScheduled:
         moved(admin, ticket, "start", occurred_at=local(start + timedelta(minutes=10)))
         scheduled(admin, ticket, occurred_at=local(start + timedelta(minutes=40)))
         moved(admin, ticket, "start", occurred_at=local(start + timedelta(minutes=100)))
-        shown = moved(admin, ticket, "restore", person_id=eng[1]["id"], occurred_at=local(start + timedelta(minutes=130)))
+        restored_at = local(start + timedelta(minutes=130))
+        shown = moved(admin, ticket, "restore", person_id=eng[1]["id"], occurred_at=restored_at)
         assert shown["times"] == {"response_minutes": 10, "repair_minutes": 60, "downtime_minutes": 130,
                                   "waiting_minutes": 60, "waiting_by_reason": {"parts": 60},
                                   "planned_downtime_minutes": None}

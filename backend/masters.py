@@ -53,7 +53,8 @@ from tickets_core import CLOSED, close_tickets_first
 from masters_core import (
     CLASS_CATEGORY_INACTIVE, category_in_use, model_label, no_login_role_error, normalise_username, technician_only,
     validate_equipment_category, validate_equipment_class, validate_equipment_model, validate_equipment_type,
-    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_manufacturer, validate_person, validate_site, validate_site_row,
+    validate_failure_cause, validate_failure_mode, validate_maintenance_action, validate_manufacturer, validate_person,
+    validate_site, validate_site_row,
     validate_meter_type, validate_site_rows, validate_trade, validate_unit, validate_vendor, vendor_link_error,
 )
 

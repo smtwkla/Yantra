@@ -186,7 +186,8 @@ class TestLevels:
         """BR1-01: --project=desktop-chromium at Normal runs every matching test there, not zero."""
         given = ["--project=desktop-chromium", "e2e/equipment.spec.js", "-g", "S044"]
         assert run_lanes.expand_level("normal", given) == (given, {})
-        assert run_lanes.expand_level("normal", ["--project", "phone-chromium"]) == (["--project", "phone-chromium"], {})
+        assert run_lanes.expand_level("normal", ["--project", "phone-chromium"]) == (["--project", "phone-chromium"],
+                                                                                     {})
 
     def test_full_adds_no_project_and_sets_the_full_level(self):
         """S055: every project runs; E2E_LEVEL=full makes desktop and the iPhone run @device only."""
@@ -276,7 +277,8 @@ class TestLaneArguments:
                 "--repeat-each", "3", "--timeout", "5000", "--retries=1", "--grep-invert", "slow", "e2e/b.spec.js"]
         positional, others = run_lanes.split_args(args)
         assert positional == ["e2e/a.spec.js", "e2e/b.spec.js"]
-        assert others == ["-g", "S044", "--repeat-each", "3", "--timeout", "5000", "--retries=1", "--grep-invert", "slow"]
+        assert others == ["-g", "S044", "--repeat-each", "3", "--timeout", "5000", "--retries=1", "--grep-invert",
+                          "slow"]
 
     def test_names_after_a_bare_project_are_projects(self):
         """Playwright's --project is variadic: what follows it, up to the next option, is a project name."""
@@ -285,8 +287,10 @@ class TestLaneArguments:
         assert others == []
 
     def test_the_lane_leaves_out_the_shard_and_passes_the_rest(self):
-        others = ["-g", "S044", "--shard=1/3", "--shard", "2/3", "--grep", "@smoke", "--repeat-each", "2", "--retries", "1"]
-        assert run_lanes.lane_arguments(others) == ["-g", "S044", "--grep", "@smoke", "--repeat-each", "2", "--retries", "1"]
+        others = ["-g", "S044", "--shard=1/3", "--shard", "2/3", "--grep", "@smoke", "--repeat-each", "2", "--retries",
+                  "1"]
+        assert run_lanes.lane_arguments(others) == ["-g", "S044", "--grep", "@smoke", "--repeat-each", "2", "--retries",
+                                                    "1"]
 
     def test_plain_spec_files_are_planned_and_a_line_falls_back(self):
         assert run_lanes.plannable([])
@@ -403,7 +407,8 @@ class TestMainScratch:
         monkeypatch.setattr(run_lanes.subprocess, "run", no_git)
         assert run_lanes.main_scratch(tmp_path) == tmp_path / "scratch"
         lock = tmp_path / "scratch" / "e2e-run.lock"
-        assert capsys.readouterr().out.strip() == f"Git did not find the main working folder, so the e2e lock is in {lock}."
+        expected = f"Git did not find the main working folder, so the e2e lock is in {lock}."
+        assert capsys.readouterr().out.strip() == expected
 
     def test_not_a_repository_falls_back(self, monkeypatch, tmp_path):
         monkeypatch.setattr(run_lanes.subprocess, "run", lambda *a, **k: _Done(128, stderr="not a git repository"))

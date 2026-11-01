@@ -7,8 +7,8 @@ They are enqueued always, whether or not push is set up (§ 7 decision 10): the 
 channels, so the ticket path has no `if` for them, and every alert leaves its task_queue row.
 
 Worker side: task_handlers reads the ticket's facts, the recipients and their devices (or, for
-email, their addresses and the closed ticket's facts) through the functions below.  Plain reads, except the escalation's ticket lock, which is the
-handler's.
+email, their addresses and the closed ticket's facts) through the functions below.  Plain reads,
+except the escalation's ticket lock, which is the handler's.
 
 Improvements (S074, R05.5).  Request side: improvements.py's countermeasure add and change of
 owner call enqueue_improvement_alert in the route's transaction (*Countermeasure for you*).
@@ -284,7 +284,8 @@ def read_closed_facts(cur, ticket_id, event_id):
     ticket, facts = found
     cur.execute("SELECT c.name AS component_name, t.not_a_fault, fc.label AS cause, ma.label AS action"
                 " FROM tickets t LEFT JOIN equipment c ON c.id = t.component_id"
-                " LEFT JOIN failure_causes fc ON fc.id = t.cause_id LEFT JOIN maintenance_actions ma ON ma.id = t.action_id"
+                " LEFT JOIN failure_causes fc ON fc.id = t.cause_id"
+                " LEFT JOIN maintenance_actions ma ON ma.id = t.action_id"
                 " WHERE t.id = %s", (ticket_id,))
     extra = cur.fetchone()
     cur.execute("SELECT id, event, occurred_at, intensity, remark, waiting_reason, machine_stopped FROM ticket_events"
@@ -377,7 +378,8 @@ def scan_candidates(cur, today, now):
     (an improvement only ready has no action ids).  It only narrows the work: the decision comes
     from the locked rows."""
     states = list(IMPROVEMENT_OPEN_STATES)
-    cur.execute("SELECT a.id, a.improvement_id FROM improvement_actions a JOIN improvements i ON i.id = a.improvement_id"
+    cur.execute("SELECT a.id, a.improvement_id FROM improvement_actions a"
+                " JOIN improvements i ON i.id = a.improvement_id"
                 " WHERE a.state = %s AND a.due_date < %s"
                 " AND (a.overdue_alert_for IS NULL OR a.overdue_alert_for <> a.due_date)"
                 f" AND i.state IN ({marks(states)}) ORDER BY a.improvement_id, a.id",

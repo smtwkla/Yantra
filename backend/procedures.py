@@ -364,7 +364,8 @@ def change_lesson(procedure_id):
         locked = _lock_procedure(cur, procedure_id)   # (6d)
         row = _lesson_row(cur, procedure_id)
         _check_rights(cur, row, locked["class_id"], EDIT_KEY)   # 404, 403 by the locked target
-        changes = {field: clean[field] for field in ("title", "body") if field in clean and clean[field] != locked[field]}
+        changes = {field: clean[field] for field in ("title", "body") if field in clean
+                   and clean[field] != locked[field]}
         if "active" in clean and clean["active"] != bool(locked["active"]):
             changes["active"] = int(clean["active"])
         if "for_class" in clean and clean["for_class"] != (locked["class_id"] is not None):
