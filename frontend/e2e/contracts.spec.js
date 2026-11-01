@@ -327,6 +327,24 @@ test("S081: the engineer adds a machine to a contract; the page lists it and the
   await expect(card(page, "History")).toContainText(`Added to contract: ${historyText(contract)}`);
 });
 
+test("S092: after the pick, Add machine links to the machine's page in a new tab", async ({ page }, testInfo) => {
+  const { contract, machine } = await contractWithMachine(testInfo, { onIt: false });
+  await asPerson(page, "engineer", `/contracts/${contract.id}`);
+  await machinesCard(page).getByRole("button", { name: "Add machine" }).click();
+  const dialog = await openDialog(page);
+  await chooseSite(dialog, "SMTW");
+  await dialog.getByLabel("Equipment", { exact: true }).fill(machine.name);
+  await dialog.locator(".list-group-item", { hasText: machine.name }).click();
+  const picked = dialog.getByTestId("picked-machine");
+  await expect(picked).toContainText(`${machine.code} — ${machine.name}`);
+  const link = picked.getByRole("link", { name: "Open equipment page" });
+  await expect(link).toHaveAttribute("href", `/equipment/${machine.id}`);
+  await expect(link).toHaveAttribute("target", "_blank");
+  // The picked match button left the page, so the focus left the dialog; put it back before the fit check
+  await picked.getByRole("button", { name: "Change" }).focus();
+  await expectDialogFits(page);
+});
+
 test("S081: the manager enters a price per machine and sees the total; the engineer sees no price", async ({ page }, testInfo) => {
   const { contract, machine } = await contractWithMachine(testInfo);
   await asPerson(page, "manager", `/contracts/${contract.id}`);

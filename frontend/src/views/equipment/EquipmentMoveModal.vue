@@ -152,7 +152,7 @@ defineExpose({ open });
           v-model="search"
           class="form-control"
           :class="{ 'is-invalid': fieldError('parent_id') }"
-          placeholder="Search by code or name…"
+          placeholder="Code, name, model or class"
           autocomplete="off"
         />
         <div v-if="fieldError('parent_id')" class="invalid-feedback d-block">{{ fieldError("parent_id") }}</div>
@@ -174,7 +174,7 @@ defineExpose({ open });
           </button>
         </div>
         <div v-if="moreMatches && !searching" class="text-secondary small mt-2">
-          More matches — type more of the code or name to refine the search.
+          More found — add a word, such as the model or class.
         </div>
       </div>
     </template>

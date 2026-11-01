@@ -623,6 +623,10 @@ def _list_filters(cur):
     return conditions, params
 
 
+# A guard against a long paste building a huge query (S092); words after the eighth are ignored
+MAX_SEARCH_WORDS = 8
+
+
 @equipment_bp.route("/", strict_slashes=False)
 @require_perm("equipment:read")
 def list_equipment():
@@ -640,13 +644,14 @@ def list_equipment():
         if level != "all":
             conditions.append("e.level = %s")
             params.append(level)
-        if q:
-            # The type name too, so "closed" finds closed-execution pumps whatever their names say;
-            # and the model label (manufacturer and designation, S012), so "GA37", "Atlas" and
-            # "Atlas Copco GA37" all find it
+        # S092: every word must match some field (AND of words, OR of fields), in any order, so
+        # "press 250" and "atlas ga37" find a machine.  The type name, so "closed" finds closed-execution
+        # pumps whatever their names say; the class name and code; the maker and the model designation
+        # (S012), each alone.  Unit and site names stay out.
+        for word in q.split()[:MAX_SEARCH_WORDS]:
             conditions.append("(e.code LIKE %s OR e.name LIKE %s OR e.notes LIKE %s OR t.name LIKE %s"
-                              " OR CONCAT(mf.name, ' ', m.designation) LIKE %s)")
-            params.extend([like_pattern(q)] * 5)
+                              " OR c.name LIKE %s OR c.code LIKE %s OR mf.name LIKE %s OR m.designation LIKE %s)")
+            params.extend([like_pattern(word)] * 8)   # one per field above
         unit_ids = accessible_unit_ids(cur)
         if unit_ids is not None:
             if not unit_ids:

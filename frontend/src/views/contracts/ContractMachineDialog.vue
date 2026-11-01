@@ -100,12 +100,20 @@ defineExpose({ openAdd, openEditPrice });
       </div>
       <div v-if="picked" class="mb-3" data-testid="picked-machine">
         <div class="form-label">Machine</div>
-        <div class="d-flex align-items-start gap-2">
+        <div class="d-flex flex-wrap align-items-start gap-2">
           <div class="flex-grow-1">
             <span class="fw-semibold">{{ picked.code }}</span> — {{ picked.name }}
             <div class="small text-secondary">{{ picked.full_path }}</div>
           </div>
           <button type="button" class="btn btn-sm btn-outline-secondary" @click="changeMachine">Change</button>
+          <router-link
+            class="btn btn-sm btn-outline-secondary"
+            :to="`/equipment/${picked.id}`"
+            target="_blank"
+            rel="noopener"
+          >
+            Open equipment page
+          </router-link>
         </div>
       </div>
       <EquipmentPicker

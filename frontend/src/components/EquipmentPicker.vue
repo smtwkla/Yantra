@@ -9,6 +9,8 @@
 import { ref, watch } from "vue";
 import { apiGet } from "../api";
 import { useDebounced } from "../composables/useDebounced";
+import CriticalityBadge from "./CriticalityBadge.vue";
+import LifecycleBadge from "./LifecycleBadge.vue";
 
 const PICKER_SIZE = 20;
 
@@ -59,10 +61,13 @@ watch(searchText, scheduleSearch);
       v-model="searchText"
       class="form-control form-control-lg mb-2"
       type="search"
-      placeholder="Code or name"
+      placeholder="Code, name, model or class"
       autocomplete="off"
       :disabled="disabled"
     />
+    <div v-if="!results" class="text-secondary small mb-2">
+      You can also type the manufacturer, or several words in any order.
+    </div>
     <div v-if="searching" class="text-secondary small">Searching…</div>
     <div v-if="searchError" class="alert alert-danger py-2">{{ searchError }}</div>
     <div v-else-if="results && results.items.length === 0" class="text-secondary">No equipment found at your units.</div>
@@ -76,9 +81,15 @@ watch(searchText, scheduleSearch);
       >
         <span class="fw-semibold">{{ e.code }}</span> — {{ e.name }}
         <div class="small text-secondary">{{ e.full_path }}</div>
+        <div class="d-flex flex-wrap align-items-center gap-2 small mt-1">
+          <span v-if="e.model_label">{{ e.model_label }}</span>
+          <span class="text-secondary">{{ e.class_code }}</span>
+          <LifecycleBadge :lifecycle="e.lifecycle" />
+          <CriticalityBadge :grade="e.effective_criticality" />
+        </div>
       </button>
       <div v-if="results.total > results.items.length" class="list-group-item small text-secondary">
-        More found — type more of the code or name.
+        More found — add a word, such as the model or class.
       </div>
     </div>
   </div>

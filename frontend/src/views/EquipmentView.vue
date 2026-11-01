@@ -334,7 +334,7 @@ function printAssetList() {
         v-model="searchText"
         class="form-control search-box order-md-1"
         type="search"
-        placeholder="Search code, name, model, notes…"
+        placeholder="Code, name, model, class or notes"
         aria-label="Search"
       />
       <button v-if="canEdit" class="btn btn-sm btn-primary order-md-3" @click="formModal.openCreateEquipment()">

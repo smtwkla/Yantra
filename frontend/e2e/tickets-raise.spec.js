@@ -85,6 +85,22 @@ test("S050: Change on the raise form brings back the earlier search text and its
   await expect(page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) })).toBeVisible();
 });
 
+test("S092: words in any order find the machine by its model; the match shows class and model; the card links to its page", async ({ page }) => {
+  await asPerson(page, "supervisor", "/tickets");
+  await page.getByRole("link", { name: "Raise ticket" }).click();
+  await expect(page.getByText("You can also type the manufacturer, or several words in any order.")).toBeVisible();
+  await page.getByLabel("Equipment", { exact: true }).fill("600 vah");
+  const match = page.getByRole("button", { name: new RegExp(`^${seed.extruder.code} — `) });
+  await expect(match).toBeVisible();
+  await expect(match).toContainText("VAH 600");
+  // The third line: the class code is the code without its serial number
+  await expect(match.getByText(seed.extruder.code.replace(/\d+$/, ""), { exact: true })).toBeVisible();
+  await match.click();
+  const link = page.getByRole("link", { name: "Open equipment page" });
+  await expect(link).toHaveAttribute("href", `/equipment/${seed.extruder.id}`);
+  await expect(link).toHaveAttribute("target", "_blank");
+});
+
 test("S017: with no symptom and no description, the description is asked for", async ({ page }) => {
   await asPerson(page, "supervisor", "/tickets");
   await page.getByRole("link", { name: "Raise ticket" }).click();

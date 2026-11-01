@@ -1299,6 +1299,41 @@ class TestTypeFilterAndSearch:
         make_equipment(unit=unit, cls=cls, name="Pump")
         assert _ids(admin, unit_id=unit["id"], q="closed") == [node["id"]]
 
+    def test_search_finds_the_class_name_and_code(self, admin, make_unit, make_class, make_model, make_equipment):
+        unit = make_unit()
+        press = make_class(name=f"Hydraulic press {unit['code']}")
+        node = make_equipment(unit=unit, cls=press, name="Line one")
+        make_equipment(unit=unit, name="Line one")
+        assert _ids(admin, unit_id=unit["id"], q=f"hydraulic press {unit['code']}") == [node["id"]]
+        # A node's code starts with its class code, so the class code alone proves nothing.  A model change
+        # to another class keeps the code (S012): then only c.code can find the node by its new class code.
+        other = make_class()
+        assert _put(admin, node, model_id=make_model(cls=other)["id"]).status_code == 200
+        assert other["code"] not in node["code"]
+        assert _ids(admin, unit_id=unit["id"], q=other["code"]) == [node["id"]]
+
+    def test_search_words_in_any_order(self, admin, make_unit, make_equipment):
+        unit = make_unit()
+        node = make_equipment(unit=unit, name="250T press")
+        make_equipment(unit=unit, name="Other")
+        assert _ids(admin, unit_id=unit["id"], q="press 250t") == [node["id"]]
+        assert _ids(admin, unit_id=unit["id"], q="  250t\tpress ") == [node["id"]]
+        assert _ids(admin, unit_id=unit["id"], q="press 999") == []
+
+    def test_search_words_across_fields(self, admin, make_unit, make_manufacturer, make_model, make_equipment):
+        unit = make_unit()
+        maker = make_manufacturer(name=f"Haendle {unit['code']}")
+        node = make_equipment(unit=unit, model=make_model(manufacturer=maker), name="Extruder")
+        make_equipment(unit=unit, name="Extruder")
+        assert _ids(admin, unit_id=unit["id"], q=f"extruder haendle {unit['code']}") == [node["id"]]
+
+    def test_search_uses_at_most_eight_words(self, admin, make_unit, make_equipment):
+        unit = make_unit()
+        node = make_equipment(unit=unit, name="alpha beta gamma delta")
+        eight = "alpha beta gamma delta alpha beta gamma delta"
+        assert _ids(admin, unit_id=unit["id"], q=f"{eight} nomatch") == [node["id"]]
+        assert _ids(admin, unit_id=unit["id"], q=f"nomatch {eight}") == []
+
 
 class TestTicketLight:
     """S029: the bulb on a list row and the tickets filter."""

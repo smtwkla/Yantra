@@ -310,6 +310,9 @@ function done() {
               <div class="small text-secondary">{{ node.full_path }}</div>
             </div>
             <button class="btn btn-outline-secondary" type="button" @click="chooseEquipment(null)">Change</button>
+            <router-link class="btn btn-outline-secondary" :to="`/equipment/${node.id}`" target="_blank" rel="noopener">
+              Open equipment page
+            </router-link>
           </div>
         </div>
 
