@@ -2,6 +2,9 @@
 // lie inside the viewport, and the dialog is no taller than the viewport (a long one scrolls
 // inside, FormModal's modal-dialog-scrollable).  Called by the flow tests on every dialog
 // they open; it waits out Bootstrap's open animation.
+// It waits until the focus is inside the dialog (openDialog). After an action that removes the focused
+// control (a pick that swaps a button out), focus a control in the dialog first, or the check
+// times out (S092).
 import { expect } from "@playwright/test";
 
 const TOLERANCE = 1; // px: sub-pixel rounding

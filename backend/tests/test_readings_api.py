@@ -5,7 +5,7 @@ makes its own meter types and nodes (S038's fixtures).
 
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -38,6 +38,11 @@ def _refusal(res):
 def _minutes_ago(minutes):
     """A whole minute well in the past, so the server's clock never ticks past it mid-test."""
     return now_ist().replace(second=0, microsecond=0) - timedelta(minutes=minutes)
+
+
+def _shown(api_taken_at):
+    """A reading's time as the refusal messages print it, taken from the reading the API returned."""
+    return datetime.strptime(api_taken_at[:16], "%Y-%m-%dT%H:%M").strftime("%d-%m-%Y %H:%M")
 
 
 def _post(client, node, meter_type, value, minutes_ago=None, **body):
@@ -93,8 +98,8 @@ def oil_ok(admin, node, make_meter_type):
 class TestLog:
 
     def test_an_operator_logs_a_reading_at_their_unit(self, operator, node, hours, db_rows):
-        taken_at = _minutes_ago(10)
-        reading = _log(operator, node, hours, "12345.6", 10, note="  end of shift ")
+        taken_at = _minutes_ago(10)         # computed once: sent as given, expected as given
+        reading = _log(operator, node, hours, "12345.6", taken_at=local(taken_at), note="  end of shift ")
         assert set(reading) == {"id", "value", "taken_at", "is_reset", "limit_state", "note", "created_by",
                                 "created_at", "removed_at", "removed_by"}
         assert (reading["value"], reading["taken_at"], reading["is_reset"], reading["limit_state"], reading["note"],
@@ -166,10 +171,10 @@ class TestLog:
 class TestCounter:
 
     def test_lower_than_the_reading_before_is_400_with_its_code(self, operator, node, hours):
-        _log(operator, node, hours, "12345.6", 60)
+        first = _log(operator, node, hours, "12345.6", 60)
         res = _post(operator, node, hours, "12000", 30)
         body = res.get_json()
-        when = _minutes_ago(60).strftime("%d-%m-%Y %H:%M")
+        when = _shown(first["taken_at"])
         assert (res.status_code, body["field"], body["code"]) == (400, "value", "counter_lower")
         assert body["error"] == LOWER.format(when=when, shown="12,345.6 h")
         # Ticked as a reset, the same value is saved
@@ -188,10 +193,10 @@ class TestCounter:
 
     def test_a_back_dated_reading_must_fit_between_its_neighbours(self, operator, node, hours):
         _log(operator, node, hours, "100", 60)
-        _log(operator, node, hours, "200", 20)
+        later = _log(operator, node, hours, "200", 20)
         _log(operator, node, hours, "150", 40)
         res = _post(operator, node, hours, "250", 30)
-        when = _minutes_ago(20).strftime("%d-%m-%Y %H:%M")
+        when = _shown(later["taken_at"])
         assert _refusal(res) == (400, "value", f"Higher than the later reading of {when} (200.0 h). Check the value"
                                                " and the time.")
         assert "code" not in res.get_json()
@@ -256,11 +261,11 @@ class TestOtherKinds:
         assert [r["value"] for r in _history(operator, node, oil_ok)["items"]] == ["yes", "no"]
 
     def test_the_meters_list_carries_the_last_reading(self, operator, node, hours, oil, oil_ok):
-        _log(operator, node, oil, "65", 30)
+        last = _log(operator, node, oil, "65", 30)
         _log(operator, node, oil, "40", 60)                  # back-dated: not the last
         _log(operator, node, oil_ok, "no", 30)
         meters = {m["meter_type"]["id"]: m for m in _ok(operator.get(f"{EQUIPMENT}/{node['id']}/meters"))}
-        assert meters[oil["id"]]["last"] == {"value": "65", "taken_at": api_time(_minutes_ago(30)),
+        assert meters[oil["id"]]["last"] == {"value": "65", "taken_at": last["taken_at"],
                                              "limit_state": "high"}
         assert meters[oil_ok["id"]]["last"]["value"] == "no"
         assert meters[hours["id"]]["last"] is None
@@ -526,11 +531,11 @@ def _column_ids(register):
 class TestRegister:
 
     def test_rows_newest_first_a_cell_per_meter_total_counts_minutes(self, operator, node, hours, oil, oil_ok):
-        _log(operator, node, hours, "100", 60)
+        oldest_at = _log(operator, node, hours, "100", 60)["taken_at"]
         _log(operator, node, oil, "70", 60)                                # above 60: High
         _log(operator, node, oil_ok, "yes", 60)
-        _log(operator, node, hours, "108.5", 30)
-        _log(operator, node, oil, "40", 10)
+        middle_at = _log(operator, node, hours, "108.5", 30)["taken_at"]
+        newest_at = _log(operator, node, oil, "40", 10)["taken_at"]
         register = _register(operator, node)
         assert (register["total"], register["page"], register["per_page"]) == (3, 1, 30)
         assert register["node"]["id"] == node["id"] and register["node"]["full_path"] == node["full_path"]
@@ -539,7 +544,7 @@ class TestRegister:
         oil_column = next(c for c in register["columns"] if c["meter_type"]["id"] == oil["id"])
         assert (oil_column["min_value"], oil_column["max_value"]) == ("10", "60")
         assert register["shown"] == _column_ids(register)
-        assert [r["taken_at"] for r in register["rows"]] == [api_time(_minutes_ago(m)) for m in (10, 30, 60)]
+        assert [r["taken_at"] for r in register["rows"]] == [newest_at, middle_at, oldest_at]
         assert register["rows"][0]["cells"] == {str(oil["id"]): {
             "id": register["rows"][0]["cells"][str(oil["id"])]["id"], "value": "40", "limit_state": None,
             "is_reset": False}}
@@ -548,14 +553,15 @@ class TestRegister:
                 oldest[str(oil_ok["id"])]["value"]) == ("100", "high", "yes")
 
     def test_page_two_gives_the_next_minutes(self, operator, node, hours, oil):
+        taken = {}
         for minutes in (50, 40, 30):
-            _log(operator, node, hours, str(100 - minutes), minutes)
+            taken[minutes] = _log(operator, node, hours, str(100 - minutes), minutes)["taken_at"]
             _log(operator, node, oil, "20", minutes)
         first = _register(operator, node, per_page=2)
         second = _register(operator, node, per_page=2, page=2)
         assert (first["total"], len(first["rows"]), len(second["rows"])) == (3, 2, 1)
         assert [r["taken_at"] for r in first["rows"] + second["rows"]] == [
-            api_time(_minutes_ago(m)) for m in (30, 40, 50)]
+            taken[30], taken[40], taken[50]]
         assert _register(operator, node)["per_page"] == 30
 
     def test_one_meter_gives_only_its_minutes_and_every_column(self, operator, node, hours, oil):

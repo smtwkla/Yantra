@@ -527,8 +527,9 @@ most 5 items, one bullet each, `waste`, `hindrance`, `rule` or `idea`, each with
 `- none`.
 
 - **Tell each subagent** in its spawn prompt that its file ends with the section (its agent file
-  gives the form), and name the themes dropped at the last triage (the log's newest section), so it
-  does not report them again.
+  gives the form), and paste the one line of `tooling/step-feedback.bat --dropped` (the themes
+  whose latest decision is `dropped`; 01-11-2026), so it does not report them again and need not
+  read the log.
 - **At each gate**, read the feedback of the files written since the last gate. When an item
   recurs or cost real time, name it in one line ("Feedback: the coder lost 3 runs to cmd quoting —
   see `/step feedback`"). Fix nothing in the workflow without the user's OK.

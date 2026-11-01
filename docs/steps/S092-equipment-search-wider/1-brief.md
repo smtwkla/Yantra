@@ -4,7 +4,7 @@ Doc: brief
 Author: Orchestrator (Opus)
 Date: 01-11-2026
 Track: light
-Status: Gate B 01-11-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1, tests only); approved 01-11-2026 by KLA (1a: Q1 (a), words in any order); brief review r1: 0 blocker, 0 major, 3 minor, 8 nits — all accepted
+Status: Committed 45ae23d (adopted 01-11-2026); checks: 2 auto; important check pending: row 63 of device-checks.md (IT Admin); was: Gate B 01-11-2026 (code review r1: 1 minor, 1 nit, fixed in fix round 1, tests only); approved 01-11-2026 by KLA (1a: Q1 (a), words in any order); brief review r1: 0 blocker, 0 major, 3 minor, 8 nits — all accepted
 Baseline: 14d7e0b
 ```
 

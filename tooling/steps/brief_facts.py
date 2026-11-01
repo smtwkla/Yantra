@@ -34,6 +34,11 @@ Since 30-10-2026 (the agents' feedback, 23 items):
     another step; a name in more than 10 test files lists 3 files only;
   - screen text is looked for in the frontend test files only.
 
+Since 01-11-2026 (the agents' feedback on S087 and S092):
+  - a path git tracks but which is deleted in the working tree is "no such file" (it crashed);
+  - quoted text with a space at either end or an underscore (" A_B ") is a test value, not
+    screen text, and is skipped; screen text in more than 20 test lines gives its count only.
+
 Since 31-10-2026 (the agents' feedback: an 870-line facts file for S087):
   - a code name the brief marks new (`name` **(new)**) goes in one line, with the files that
     already hold the name; a SQL name (a table, column, key or constraint of the migrations' DDL,
@@ -78,6 +83,7 @@ DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
 UI_TEXT = re.compile(r'^"([^"\n]{1,60})"$')
 MIN_UI_TEXT = 3                         # shorter screen text ("-1", "OK") matches too many test lines
+COMMON_UI_LINES = 20                    # screen text in more test lines than this: the count only
 # path:NN or path:NN-MM anywhere in the text; the extension starts with a letter, so 127.0.0.1:5002 is no path
 CITED = re.compile(r"(?<![\w./\-])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z]\w*):(\d+)(?:-(\d+))?(?!\d)")
 STEP_MENTION = re.compile(r"\bS\d{3}\b")
@@ -124,9 +130,12 @@ def classify(token):
     # "No" and "Save" in hundreds of lines.
     match = UI_TEXT.match(token)
     if match:
-        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text
+        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text.
+        # 01-11-2026 (S092): a test value the brief quotes (" A_B ") is no label either: a label
+        # has no space at its ends and no underscore.
         text = match.group(1)
-        worth = len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
+        worth = (len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
+                 and text == text.strip() and "_" not in text)
         return Ref("ui", text) if worth else None
     match = TEST_ID.match(token)
     if match and ("/" in match.group(1) or "." in match.group(1) or TEST_CLASS.match(match.group(1))):
@@ -391,10 +400,12 @@ def grep(pattern, folders=None, fixed=True, word=True):
 
 
 def files_ending(path):
-    """Tracked or untracked (not ignored) files whose path is ``path`` or ends in ``/path``."""
+    """Tracked or untracked (not ignored) files on disk whose path is ``path`` or ends in ``/path``.
+    git lists a tracked file deleted in the working tree too (S087: a squashed migration's fixture,
+    removed but not yet committed); it is no file, as git grep also skips it."""
     result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{path}",
                              path], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
-    return sorted(set(result.stdout.split()))
+    return sorted(p for p in set(result.stdout.split()) if (ROOT / p).is_file())
 
 
 def is_binary(path):
@@ -507,6 +518,8 @@ def check_ui(ref, folders=None):
     """Screen text -> the frontend test lines that hold it (a backend line is no screen text)."""
     lines = [f"{path}:{line}" for path, line, _ in map(split_hit, grep(ref.value, folders, word=False))
              if is_frontend_test(path)]
+    if len(lines) > COMMON_UI_LINES:     # S092: "Equipment" in 44 lines; a list that long is not read
+        return [f"- `\"{ref.value}\"`: in {len(lines)} test lines — too common to list"]
     return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
 
 

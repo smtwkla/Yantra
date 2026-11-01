@@ -158,7 +158,8 @@ The orchestrator gives you one of three tasks:
 - **Migrations are append-only.** Never edit an applied migration; add a new
   version.
 - **Never commit, push, build images, deploy or release.** Commits are the
-  user's.
+  user's, and so is the git index: never stage (`docs/steps/README.md` § Shell
+  on Windows, rule 8).
 - **IDE reformatting is expected.** Whitespace-only changes in a file the user
   has open are theirs; keep them, and re-read a file before editing it
   (`docs/steps/README.md` § IDE reformatting).

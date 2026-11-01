@@ -318,6 +318,9 @@ Bash tool is Git Bash on Windows.
    text-mode write (`open(path, "w")`, `Path.write_text`): on Windows it turns every LF into CRLF.
    Check a file's line endings by its bytes (`b"\r\n" in Path(path).read_bytes()`), not with
    `grep -c $'\r'`: Git Bash counts every line there.
+8. **Leave the git index alone** (01-11-2026, from the agents' feedback on S087 and S088): delete a
+   file with plain `rm`, never `git rm`, and never `git add`. `git rm` stages the deletion, and the
+   index is the user's, as the commit is.
 
 ## Orchestrated mode (one terminal)
 
