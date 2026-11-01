@@ -445,6 +445,7 @@ class TestThroughTheWorker:
 
     def test_scan_alert_and_sends_all_done(self, contract, people, site, db_rows, monkeypatch, queue_emptied):
         made = contract(60)
+        other = contract(60, at=[])  # no machine: it reminds every site, so the worker sends it too (S091)
         pushed, mailed = [], []
         monkeypatch.setattr(push_sender, "send", fake_push(201, calls=pushed))
         monkeypatch.setattr(mail_sender, "send", fake_mail(mailed))
@@ -458,12 +459,12 @@ class TestThroughTheWorker:
                                               " WHERE task_type = 'contract_reminder_scan'")] == ["done"]
         assert [t["status"] for t in alert_tasks(db_rows, made["id"])] == ["done"]
         assert {s["status"] for s in push_sends(db_rows, made["id"])} == {"done"}
-        mine = [c for c in pushed if c[0] == people["engineer"][1]]
+        mine = [c for c in pushed if c[0] == people["engineer"][1] and c[1]["path"] == f"/contracts/{made['id']}"]
         assert len(mine) == 1 and mine[0][1]["title"] == TITLE_60.format(site=site["code"])
         assert mine[0][2:] == ("low", 86400)
         address = db_rows("SELECT email FROM people WHERE id = %s", (people["manager"][0]["id"],))[0]["email"]
-        to_manager = [m for m in mailed if m[0] == address]
-        assert len(to_manager) == 1 and made["title"] in to_manager[0][1]
+        to_manager = [m for m in mailed if m[0] == address and made["title"] in m[1]]
+        assert len(to_manager) == 1
 
 
 # ---------------------------------------------------------------------------
