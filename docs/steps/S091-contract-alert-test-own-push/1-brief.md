@@ -5,7 +5,7 @@ Author: Orchestrator (Opus)
 Date: 01-11-2026
 Track: fix
 Baseline: c3f8bbf
-Status: Gate B 01-11-2026 (code review r1: 1 nit, CR1-01, fixed)
+Status: Done (committed f58370d at adoption, released in v0.1.15, 01-11-2026; no device check); was: Gate B 01-11-2026 (code review r1: 1 nit, CR1-01, fixed)
 ```
 
 # S091 — The contract reminder worker test counts only its own contract
