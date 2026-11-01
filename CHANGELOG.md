@@ -1,5 +1,15 @@
 # What changed in Yantra
 
+## 0.1.15 — 01-11-2026
+- Record service contracts: vendor, period, coverage, PM visits, response time, machines at any site
+- Keep a list of service vendors in Masters, and link a contractor to their vendor
+- Add machines to a contract; managers see and edit each machine's price
+- The machine page shows its contract; the equipment list filters by contract
+- Managers attach quotes and other documents to a contract
+- Reminders by push 60 and 15 days before a contract ends, with an email to managers
+- Renew a contract with its machines in one step
+- The contract page lists breakdown calls with downtime; an open ticket shows its contract
+
 ## 0.1.14 — 30-10-2026
 
 ## 0.1.13 — 30-10-2026
