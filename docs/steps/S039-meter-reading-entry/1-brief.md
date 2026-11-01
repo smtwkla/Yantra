@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 24-10-2026
 Track: full
-Status: Committed 984761a (25-10-2026); checks: 8 auto; important check pending: row 32 of device-checks.md (keypad and Yes / No on real phones); open for the user: card order and CR1-06
+Status: Committed 984761a (25-10-2026); checks: 8 auto; important check pending: row 32 of device-checks.md (keypad and Yes / No on real phones), for IT Admin; gate B answers by KLA 01-11-2026: card order kept, CR1-06 fix accepted
 Baseline: ff9ddb3 + snapshot refs/steps/S038 (S037, S038) + S043 (port, working tree); stale check s1 done 24-10-2026
 ```
 
@@ -89,7 +89,8 @@ before this step. This step's migration is **v32**.
      Notes. On a phone *Log reading* is then about two screens down the page;
      the daily path for the press supervisors and the genset round is S040's
      sheet, so the order is kept. For the user at gate B: the alternative is
-     the card above Details for `reading:log` holders.
+     the card above Details for `reading:log` holders. KLA, 01-11-2026: keep
+     the order (1a).
 4. **Remove a reading** (a typo blocks every later counter entry): from the
    *History* dialog, only by a holder of `equipment:edit` at the node's site
    (engineer, manager, IT admin; U3). The author who is not one asks an

@@ -154,6 +154,12 @@ The one finding of `4-code-review-r2.md` is answered. Final run: `YANTRA_TEST_RU
 
 Files touched in this round: `frontend/src/utils/meterLabels.js`, `frontend/tests/meterLabels.test.js`, this report.
 
+## Gate B answers (KLA, 01-11-2026)
+
+- Card order (brief § 1.3, BS1-04): keep the *Meters* card below Details / Properties (1a).
+- CR1-06: the fix is accepted as built; the POST answer stays without the limits (2a).
+- Row 32: IT Admin does the real-device check, with the other open rows (3a).
+
 ## Manual checks
 
 - [auto] **Important.** An operator logs a reading from the equipment page; the dialog fits a phone — `frontend/e2e/readings.spec.js::S039: an operator logs a reading from the equipment page`

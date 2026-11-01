@@ -234,7 +234,9 @@ Follow CLAUDE-COMMON § Writing style:
   your final message under **QUESTIONS FOR THE USER**, with why the review
   needs it.
 - **Shell** (29-10-2026): read `docs/steps/README.md` § Shell on Windows before your first Bash
-  call; it holds the rules for scripts, `.bat` wrappers and chained commands.
+  call; it holds the rules for scripts, `.bat` wrappers and chained commands, and (31-10-2026)
+  line endings: write files with the Write tool, or Python `newline=""` / `write_bytes`, never
+  a plain text-mode write (LF becomes CRLF); check them by bytes, not `grep -c $'\r'`.
 - Whitespace-only changes (re-padded tables, re-wrapped lines, line endings)
   come from the user's IDE: not findings (`docs/steps/README.md` § IDE
   reformatting). Read diffs with `git diff -w --ignore-cr-at-eol`.

@@ -7,6 +7,8 @@ own while the next step's coder carries on in the same working tree (decided 24-
     python tooling/steps/step_snapshot.py diff S038 [--stat] [--all] [-- <path>…]   the step's change so far
     python tooling/steps/step_snapshot.py diff S038 --from-round 1 [--stat] [--all] [-- <path>…]
                                                                 the change since round 1
+    python tooling/steps/step_snapshot.py diff [S038] --base <commit> [--stat] [--all] [-- <path>…]
+                                                                the change since <commit>
         (diff leaves out the step folders, docs/steps/INDEX.md, docs/steps/feedback-log.md and
         docs/roadmap/; --all shows them, and paths after -- replace that default)
     python tooling/steps/step_snapshot.py rounds S038
@@ -42,7 +44,12 @@ Since 30-10-2026 (16 feedback items): ``diff`` leaves out every step folder unde
 docs/steps/INDEX.md, docs/steps/feedback-log.md and docs/roadmap/. The orchestrator edits other
 steps' files while a coder works, so they land in the snapshot, but they are not the step's code.
 The device-check list (docs/steps/device-checks.md) stays: a coder's docs pass adds rows to it.
-``--all`` shows everything; the last line of the output names what was left out."""
+``--all`` shows everything; the last line of the output names what was left out.
+
+Since 31-10-2026 (the agents' feedback): ``diff --base <commit>`` compares the working files with
+any commit, the same way and with the same exclusions: for a step with no snapshot yet whose base
+is not HEAD (a brief's baseline), or to override the step's base. The step id may then be left
+out; ``--base`` and ``--from-round`` do not go together."""
 
 import os
 import re
@@ -144,11 +151,16 @@ def step_base(repo, step_id):
 LEFT_OUT = ("docs/steps/*/**", "docs/steps/INDEX.md", "docs/steps/feedback-log.md", "docs/roadmap/**")  # git globs
 
 
-def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False):
-    """The diff from the step's base (or the round named) to the working files: the paths named, or
-    everything (``show_all``), or everything but LEFT_OUT, with a last line that counts what was left
-    out."""
-    if from_round is None:
+def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, base=None):
+    """The diff from the step's base (or the round named, or the commit ``base``) to the working
+    files: the paths named, or everything (``show_all``), or everything but LEFT_OUT, with a last line
+    that counts what was left out."""
+    if base is not None:
+        try:
+            base = git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+        except SnapshotError:
+            raise SnapshotError(f"no such commit: {base}") from None
+    elif from_round is None:
         base = step_base(repo, step_id)
     else:
         found = dict(rounds(repo, step_id))
@@ -170,19 +182,21 @@ def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False):
 
 
 def parse_diff_args(rest):
-    """The arguments after ``diff S0NN``: [--stat] [--all] [--from-round n] [-- <path>…], in any
-    order before the ``--``. Returns (stat, from_round, paths, show_all), or None when an argument
-    is wrong."""
+    """The arguments after ``diff S0NN``: [--stat] [--all] [--from-round n | --base <commit>]
+    [-- <path>…], in any order before the ``--``. Returns (stat, from_round, paths, show_all, base),
+    or None when an argument is wrong."""
     paths = []
     if "--" in rest:
         cut = rest.index("--")
         rest, paths = rest[:cut], rest[cut + 1:]
     stat, show_all = "--stat" in rest, "--all" in rest
     rest = [a for a in rest if a not in ("--stat", "--all")]
-    from_round = None
+    from_round = base = None
     if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
         from_round, rest = int(rest[1]), []
-    return None if rest else (stat, from_round, paths, show_all)
+    elif rest[:1] == ["--base"] and len(rest) == 2 and not rest[1].startswith("-"):
+        base, rest = rest[1], []
+    return None if rest else (stat, from_round, paths, show_all, base)
 
 
 def snapshot(repo, step_id, message):
@@ -254,12 +268,14 @@ def main(argv, repo=ROOT):
             print(f"adopted {argv[1]}: HEAD is now {adopt(repo, argv[1])[:7]}")
             return 0
         if argv[:1] == ["diff"] and len(argv) >= 2:
-            parsed = parse_diff_args(argv[2:])
-            if parsed is None:
+            # the step id may be left out with --base: the diff then needs no step's snapshot
+            step_id, rest = (argv[1], argv[2:]) if STEP_ID.match(argv[1]) else (None, argv[1:])
+            parsed = parse_diff_args(rest)
+            if parsed is None or (step_id is None and parsed[4] is None):
                 print(__doc__)
                 return 2
-            stat, from_round, paths, show_all = parsed
-            print(diff(repo, argv[1], from_round, stat, paths, show_all))
+            stat, from_round, paths, show_all, base = parsed
+            print(diff(repo, step_id, from_round, stat, paths, show_all, base))
             return 0
         if argv[:1] == ["rounds"] and len(argv) == 2:
             found = rounds(repo, argv[1])

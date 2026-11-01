@@ -1,6 +1,6 @@
 ---
 name: step
-description: Orchestrate the step workflow (docs/steps) from one terminal — plan a step and loop it through the Fable brief reviewer, then implement it with the coder subagent (Sonnet, or Opus when complex) and loop it through the Opus code reviewer, stopping only at the user's gates. Use when the user says /step, "run S00N", "plan/implement/review step …", asks to drive the step loop, or asks which steps are open (`/step ls`).
+description: Orchestrate the step workflow (docs/steps) from one terminal — plan a step and loop it through the Fable brief reviewer, then implement it with the coder subagent (Sonnet, or Opus when complex) and loop it through the Opus code reviewer, stopping only at the user's gates. Use when the user says /step, "run S00N", "plan/implement/review step …", asks to drive the step loop, or asks which steps are open (`/step ls`), or says "recap" (`/step recap`: the current decision card again).
 ---
 
 # /step — step-workflow orchestrator
@@ -54,6 +54,13 @@ findings) first takes the step's claim, and a refused claim stops the command
   parked, then the queued ideas, as one table (§ Listing). `all` also lists
   Done, Dropped and parked steps; `deferred` lists only the parked
   (deferred) ones (25-10-2026, by KLA).
+- `/step recap` (or the bare word **recap**): show the decision card again
+  (§ Messages to the user), rebuilt from the files, not from the conversation:
+  run `tooling/step-ls.bat` once, read the Status and open points of each
+  step not `Done`, and the newest `scratch/preflight/<short-sha>.md` when it
+  names HEAD. One card: *Summary* (each open step, one line: its phase and
+  what it waits for), *Details* (only what a decision needs), *Decide* (every
+  question waiting for the user, numbered, with the options). Change nothing.
 - `/step check`: check the step files against each other and git (§ Check).
   Report the problems and the fixes you propose; change nothing until the user
   says which to make.
@@ -142,8 +149,9 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      end, as in § Phase 2 step 3).
   4. One `code-reviewer` round (Opus). Every finding is fixed (§ Phase 2
      step 3). A `blocker` or `major` gets the usual loop.
-  5. Gate B, short: the bug, its cause, the change, the tests, "ready to
-     commit with the `S0NN:` prefix".
+  5. Gate B, short, as a card (§ Messages to the user): the bug, its cause,
+     the change, the tests, the snapshot line; *Decide*: adopt (or commit
+     with the `S0NN:` prefix).
 - **Leave the fix lane** as soon as the coder, the reviewer or you find that
   a criterion fails. Stop, set the track to light or full, and bring the step
   to gate A with a brief of that track.
@@ -280,7 +288,8 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
    - Stop after **3 rounds** and ask the user. Light track: one round (§ Tracks).
    - A finding that needs a user decision isn't settled by you. Collect it for
      the gate.
-3. **Gate A: STOP.** Light track: a bullet summary instead of the verbatim
+3. **Gate A: STOP.**: the *Summary* first,
+   then the sections below, then *Decide* last. Light track: a bullet summary instead of the verbatim
    sections (§ Tracks); the rest below still applies. Full track: the user
    approves the brief itself, not a summary of it.
    Only after all review rounds are done, show them, in this order:
@@ -314,9 +323,12 @@ rule, 24-10-2026, by KLA). The user's request is the approval.
      the commit and uncommitted steps named in its last review, or else the
      commit current on its approval date;
    - **nothing changed:** say so in one line and go on;
-   - **something changed:** spawn `brief-reviewer` in **staleness mode** with
-     the brief's path, the round (`s1`, `s2`, …), the baseline and the list of
-     changed files. Answer its `BS` findings in the Review log and fix the
+   - **something changed:** re-run `tooling/step-brief-facts.bat S0NN` first
+     and name the fresh `scratch/brief-facts-S0NN.md` in the prompt (31-10-2026,
+     from the brief reviewers' feedback: a facts file made before earlier steps
+     were coded reported their names as missing). Then spawn `brief-reviewer`
+     in **staleness mode** with the brief's path, the round (`s1`, `s2`, …),
+     the baseline and the list of changed files. Answer its `BS` findings in the Review log and fix the
      brief text. A `blocker` or `major` finding returns the step to gate A:
      show the user what changed and why, and wait for approval again;
    - set `Baseline:` to the code just checked;
@@ -560,7 +572,9 @@ next step's coder carries on in the same working tree.
   leaves out every step folder, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
   and `docs/roadmap/`, and its last line counts them; `--all` or named paths
   show them. A spawn prompt names the command only, no list of files to skip.
-  A fix after gate B re-runs `snapshot` for the same step; only the newest
+  `diff [S00N] --base <commit>` (31-10-2026) diffs from that commit instead
+  of the step's base, with the same exclusions: for a step with no snapshot
+  yet whose base is not `HEAD`. A fix after gate B re-runs `snapshot` for the same step; only the newest
   snapshot can be replaced.
 - **Rounds** (27-10-2026): `snapshot` also runs after every coder hand-back
   before gate B (§ Phase 2 step 2), and each run keeps its commit as a round
@@ -760,6 +774,41 @@ a guess), a check that is a false alarm and why. Report as a table: step,
 problem, proposed fix. Fix nothing until the user says which fixes to make;
 then follow the usual rules (never tick a check for someone, never edit a
 review file).
+
+## Messages to the user
+
+Standing rule (01-11-2026, by KLA: "the output of gates and questions gets too
+jumbled; I have to keep scrolling back and forth"). Every gate (A, B, R, the fix
+lane's gate B), every amendment shown for approval, and the pre-flight result are
+one **card**, in this order. Other messages and questions (progress, `check`, 
+`feedback`, `stats`, a reply in conversation) keep the plain style of § Rules:
+
+```
+━━ S0NN · <gate or topic> · <state in 3–5 words> ━━━━━━━━━━━━━━━━━
+Summary   1–2 lines: what happened and where it stands now.
+
+Details   Short labelled lines, never paragraphs:
+          Bug ...... / Change ... / Tests .... / Review ... / Snapshot . / Files ....
+          (gate A: the brief's verbatim sections go here, under their headings)
+
+Pending   At most 3 lines: things waiting on the user elsewhere
+          (other steps, device checks, an uncommitted repo). Omit when none.
+
+Decide    1. <The question?> One line: why it matters, what each answer does.
+             (a) <option> ★   (b) <option>   (c) <option>
+          2. …
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Reply e.g. "1a 2b".
+```
+
+- **Summary first, Decide last.** The questions sit next to the input box, so
+  the user never scrolls up to find them. ★ marks the recommended option; each
+  option says its consequence in a few words.
+- **Record the open questions in the files** (the brief's Review log or § Open
+  questions, the impl report, the pre-flight report), so `recap` can rebuild
+  the card after a long scroll or `/clear`.
+- **Long gate A**: offer the brief as a private artifact page in one line of
+  *Pending*.
 
 ## Rules
 

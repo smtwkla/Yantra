@@ -1042,7 +1042,10 @@ Sync only adds and overwrites — a file removed from `smtw-common` stays in the
    ```
    GITHUB_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
    ```
-2. Run: `python tooling/common/sync_common.py`
+2. Install `python-dotenv` and, recommended, `truststore` into the Python that runs the sync. With `truststore` the
+   certificate check uses the operating system's verifier; Python's default check on Windows can fail now and then
+   ("unable to get issuer certificate") when the certificate stores hold a stale intermediate certificate.
+3. Run: `python tooling/common/sync_common.py`
 
 To share a new file, add it to `FILES` or `DIRS` in `sync_common.py` in `smtw-common`, push, then sync. From
 `smtw-common`, `tooling/common/sync_all.py` runs the sync across all sibling repos in one go.

@@ -78,7 +78,9 @@ The orchestrator gives you one of three tasks:
     skip it silently: stop and return it under **QUESTIONS FOR THE USER**,
     with what it would do and why the step needs it.
 - **Shell** (29-10-2026): read `docs/steps/README.md` § Shell on Windows before your first Bash
-  call; it holds the rules for scripts, `.bat` wrappers and chained commands.
+  call; it holds the rules for scripts, `.bat` wrappers and chained commands, and (31-10-2026)
+  line endings: write files with the Write or Edit tool, or Python `newline=""` / `write_bytes`,
+  never a plain text-mode write (LF becomes CRLF); check them by bytes, not `grep -c $'\r'`.
 - **Design and structure** (CLAUDE-COMMON principles):
   - put each rule in its layer: business rules and calculations in the pure
     core, fetching, locking and storing in the route and DB shell, display

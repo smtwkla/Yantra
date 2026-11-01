@@ -33,6 +33,19 @@ Since 30-10-2026 (the agents' feedback, 23 items):
   - the names found nowhere go in one line, with "(planned in S0NN)" when their sentence names
     another step; a name in more than 10 test files lists 3 files only;
   - screen text is looked for in the frontend test files only.
+
+Since 31-10-2026 (the agents' feedback: an 870-line facts file for S087):
+  - a code name the brief marks new (`name` **(new)**) goes in one line, with the files that
+    already hold the name; a SQL name (a table, column, key or constraint of the migrations' DDL,
+    or an upper-case information_schema column) goes in one line, without its uses;
+  - screen text shorter than 3 characters or with no letter ("-1", "0 = 1") is skipped;
+  - a binary file (png, pdf, …) has no line count: "exists (binary)";
+  - a cited range shows its first and its last line, so a range that runs into the next entry
+    shows it;
+  - a test id Class::test (or file::Class::test) lists the class's other tests by name;
+  - "planned in S0NN" takes the steps the sentence says add the name ("new in S0NN", "S0NN
+    adds"), else every other step it names, sorted; a step that has its 3-impl-report.md is
+    marked "now coded — re-check": the brief names what that step planned, not what it built.
 Writes the same text to scratch/brief-facts-<step>.md.
 
 The folders searched are the repo's `Code folders` setting (.claude/CLAUDE.md § Step workflow);
@@ -63,10 +76,28 @@ NAME = re.compile(r"^[A-Za-z_][\w.]*$")
 # Worth grepping: has an underscore, an inner capital, or a dot (module.name); not a plain word
 DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
-UI_TEXT = re.compile(r'^"([^"\n]{2,60})"$')
+UI_TEXT = re.compile(r'^"([^"\n]{1,60})"$')
+MIN_UI_TEXT = 3                         # shorter screen text ("-1", "OK") matches too many test lines
 # path:NN or path:NN-MM anywhere in the text; the extension starts with a letter, so 127.0.0.1:5002 is no path
 CITED = re.compile(r"(?<![\w./\-])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z]\w*):(\d+)(?:-(\d+))?(?!\d)")
 STEP_MENTION = re.compile(r"\bS\d{3}\b")
+# The steps a sentence says add a name: "new in S080", "added by S080", "planned in S080", "S080 adds"
+STEP_ADDS = re.compile(r"\b(?:new in|added (?:in|by)|planned in|lands (?:in|with))\s+(S\d{3})\b|"
+                       r"\b(S\d{3})(?:'s brief)?\s+(?:adds|introduces|plans)\b")
+# `name` **(new)**: the brief marks the name as one the step adds
+MARKED_NEW = re.compile(r"`([^`\n]+)`\**\s*\**\(new\b")
+TEST_CLASS = re.compile(r"^[A-Z]\w*$")   # a test id without its file: Class::test
+BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".pdf", ".zip", ".gz", ".woff",
+                   ".woff2", ".ttf", ".otf", ".eot", ".xlsx", ".docx", ".pptx", ".mp3", ".mp4", ".wav"}
+SQL_TYPES = ("INT|INTEGER|BIGINT|SMALLINT|TINYINT|MEDIUMINT|DECIMAL|NUMERIC|FLOAT|DOUBLE|REAL|BOOLEAN|BOOL|BIT|"
+             "CHAR|VARCHAR|BINARY|VARBINARY|TEXT|TINYTEXT|MEDIUMTEXT|LONGTEXT|BLOB|MEDIUMBLOB|LONGBLOB|DATE|"
+             "DATETIME|TIMESTAMP|TIME|YEAR|ENUM|SET|JSON|SERIAL|UUID")
+# information_schema and the columns of its views that tests read (information_schema.COLUMNS, …)
+INFORMATION_SCHEMA_NAMES = {
+    "information_schema", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME", "COLUMN_TYPE", "COLUMN_DEFAULT",
+    "COLUMN_KEY", "DATA_TYPE", "IS_NULLABLE", "CONSTRAINT_SCHEMA", "CONSTRAINT_NAME", "CONSTRAINT_TYPE",
+    "INDEX_NAME", "NON_UNIQUE", "SEQ_IN_INDEX", "REFERENCED_TABLE_NAME", "REFERENCED_COLUMN_NAME", "CHECK_CLAUSE",
+    "ORDINAL_POSITION", "CHARACTER_MAXIMUM_LENGTH"}
 # EQUIPMENT = "/api/equipment", const BASE = `/api/x`, REGISTER = f"{IMPROVEMENTS}/register"
 ROUTE_CONSTANT = re.compile(r"^\s*(?:export\s+)?(?:const\s+)?([A-Z][A-Z0-9_]*)\s*=\s*f?[\"'`]([^\"'`\n]*)[\"'`]", re.M)
 # A paragraph ends at a blank line or before a heading, list item or table row
@@ -93,9 +124,12 @@ def classify(token):
     # "No" and "Save" in hundreds of lines.
     match = UI_TEXT.match(token)
     if match:
-        return Ref("ui", match.group(1))
+        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text
+        text = match.group(1)
+        worth = len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
+        return Ref("ui", text) if worth else None
     match = TEST_ID.match(token)
-    if match and "/" in match.group(1) or (match and "." in match.group(1)):
+    if match and ("/" in match.group(1) or "." in match.group(1) or TEST_CLASS.match(match.group(1))):
         return Ref("test", token)
     match = PATH.match(token)
     if match and "/" in match.group(1):
@@ -164,13 +198,47 @@ def names_in(sentence):
     return [ref.value.rpartition(".")[2] for ref in refs if ref and ref.kind == "name"]
 
 
-def planned_in(name, all_sentences, own_step=None):
-    """' (planned in S070)' when a sentence that names `name` also names another step, else ''."""
-    steps = []
+def new_names(text):
+    """The code names the brief marks new: `name` **(new)** or `name()` (new)."""
+    refs = [classify(token) for token in MARKED_NEW.findall(text)]
+    return {ref.value for ref in refs if ref and ref.kind == "name"}
+
+
+def planned_in(name, all_sentences, own_step=None, coded=frozenset()):
+    """' (planned in S070)' when a sentence that names `name` also names another step, else ''.
+    A sentence that says which step adds the name ("new in S070", "S070 adds") gives that step
+    only (31-10-2026: a paragraph names many steps).  A step in ``coded`` (it has its impl report)
+    is marked: the name should exist by now, so the brief's name is stale."""
+    steps = set()
     for sentence in all_sentences:
         if f"`{name}" in sentence:
-            steps += [s for s in STEP_MENTION.findall(sentence) if s != own_step and s not in steps]
-    return f" (planned in {', '.join(steps)})" if steps else ""
+            adds = {a or b for a, b in STEP_ADDS.findall(sentence)}
+            steps |= (adds or set(STEP_MENTION.findall(sentence))) - {own_step}
+    if not steps:
+        return ""
+    named = ", ".join(sorted(steps))
+    done = sorted(steps & set(coded))
+    if not done:
+        return f" (planned in {named})"
+    if len(done) == len(steps):
+        return f" (planned in {named}, now coded — re-check)"
+    return f" (planned in {named}; {', '.join(done)} now coded — re-check)"
+
+
+def coded_steps(step_ids):
+    """The steps of ``step_ids`` that have a 3-impl-report.md under docs/steps/S0NN-*/."""
+    return {step for step in step_ids if any(STEPS_DIR.glob(f"{step}-*/3-impl-report.md"))}
+
+
+def is_sql_name(name, hits):
+    """Whether ``name`` is a table, column, key or constraint (a DDL line among the grep ``hits``
+    defines it) or an information_schema name.  Its uses say little: site_id is in 76 files."""
+    if name in INFORMATION_SCHEMA_NAMES:
+        return True
+    word = re.escape(name)
+    ddl = re.compile(rf"(?:^|[(,])\s*[\"'`]?{word}[\"'`]?\s+(?:{SQL_TYPES})\b|"
+                     rf"\b(?:TABLE|COLUMN|KEY|INDEX|CONSTRAINT)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?[\"'`]?{word}\b")
+    return any(ddl.search(split_hit(hit)[2]) for hit in hits)
 
 
 def route_shape(route):
@@ -263,6 +331,8 @@ def cited_row(lines, first, last, names):
     row = f"{spot} {code_span(lines[first - 1])}"
     if last > len(lines):
         row += f" **(the file ends at line {len(lines)})**"
+    elif last != first:                  # a range that runs into the next entry shows it here
+        row += f" … :{last} {code_span(lines[last - 1])}"
     cited = "\n".join(lines[first - 1:last])
     notes, absent = [], []
     for name in names:
@@ -327,6 +397,14 @@ def files_ending(path):
     return sorted(set(result.stdout.split()))
 
 
+def is_binary(path):
+    """A png, pdf, … (by its suffix), or a file with a NUL byte near its start, as git judges."""
+    if path.suffix.lower() in BINARY_SUFFIXES:
+        return True
+    with path.open("rb") as file:
+        return b"\0" in file.read(8000)
+
+
 def check_path(ref, folders=None):
     """A path not at the root is looked for as the end of a longer one: briefs often give the
     folder in prose ("in `frontend/src/views/`", S048, S059, S061, S064 feedback)."""
@@ -336,6 +414,8 @@ def check_path(ref, folders=None):
     if len(found) > 1:
         return [f"- `{ref.value}`: **{len(found)} files end so**: {listing(found)}"]
     where = "" if found[0] == ref.value else f" (at `{found[0]}`)"
+    if is_binary(ROOT / found[0]):
+        return [f"- `{ref.value}`{where}: exists (binary)"]
     count = len((ROOT / found[0]).read_text(encoding="utf-8", errors="replace").splitlines())
     if ref.last_line > count:
         return [f"- `{ref.value}`{where}: **has {count} lines**, the brief cites line {ref.last_line}"]
@@ -349,17 +429,56 @@ def check_file(ref, folders=None):
 
 
 def check_test(ref, folders=None):
-    """A test id's file is looked up at the root, then in each code folder and its tests/ folder."""
-    file_part, names = ref.value.split("::", 1)
-    places = [ROOT / file_part]
-    for folder in folders or ():
-        places += [ROOT / folder / file_part, ROOT / folder / "tests" / file_part]
-    candidates = [p for p in places if p.is_file()]
-    if not candidates:
-        return [f"- `{ref.value}`: **no such test file**"]
-    text = candidates[0].read_text(encoding="utf-8", errors="replace")
-    missing = [n for n in names.split("::") if not re.search(rf"\b{re.escape(n)}\b", text)]
-    return [f"- `{ref.value}`: " + (f"**not found: {', '.join(missing)}**" if missing else "exists")]
+    """A test id's file is looked up at the root, then in each code folder and its tests/ folder;
+    a test id without its file (Class::test) in the test files that define the class.  A test of a
+    class lists the class's other tests (31-10-2026: a change to one test often meets its
+    siblings)."""
+    parts = ref.value.split("::")
+    if TEST_CLASS.match(parts[0]):
+        names = parts
+        found = class_files(parts[0], folders)
+        if len(found) != 1:
+            many = f"**{len(found)} test files define it**: {listing(found)}" if found else "**no such test class**"
+            return [f"- `{ref.value}`: {many}"]
+        path = ROOT / found[0]
+    else:
+        names = parts[1:]
+        places = [ROOT / parts[0]]
+        for folder in folders or ():
+            places += [ROOT / folder / parts[0], ROOT / folder / "tests" / parts[0]]
+        candidates = [p for p in places if p.is_file()]
+        if not candidates:
+            return [f"- `{ref.value}`: **no such test file**"]
+        path = candidates[0]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    missing = [n for n in names if not re.search(rf"\b{re.escape(n)}\b", text)]
+    lines = [f"- `{ref.value}`: " + (f"**not found: {', '.join(missing)}**" if missing else "exists")]
+    if len(names) >= 2 and names[-2] not in missing:
+        others = [t for t in class_tests(text, names[-2]) if t != names[-1]]
+        lines.append(f"  - other tests of {names[-2]} ({len(others)}): {', '.join(others) or '—'}")
+    return lines
+
+
+def class_files(name, folders=None):
+    """The test files that define the class ``name`` at top level."""
+    head = re.compile(rf"^class {re.escape(name)}\b")
+    return sorted({path for path, _, text in map(split_hit, grep(f"class {name}", folders))
+                   if is_test_path(path) and head.match(text)})
+
+
+def class_tests(text, name):
+    """The test methods of the top-level class ``name`` in a Python file's ``text``, in order."""
+    found = re.search(rf"^class {re.escape(name)}\b", text, re.M)
+    if not found:
+        return []
+    tests = []
+    for line in text[found.end():].splitlines()[1:]:
+        if line.strip() and not line[0].isspace() and not line.startswith("#"):
+            break                        # the next top-level statement ends the class
+        method = re.match(r"\s+(?:async\s+)?def\s+(test\w*)", line)
+        if method:
+            tests.append(method.group(1))
+    return tests
 
 
 def split_hit(hit):
@@ -391,12 +510,18 @@ def check_ui(ref, folders=None):
     return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
 
 
-def check_names(group, folders=None, all_sentences=(), own_step=None):
-    """The code names: one entry per name found; the names found nowhere in one line; and a dotted
-    name whose module is no code file defining it (a table.column, a JS object) in one line."""
-    lines, missing, not_looked_up = [], [], []
+def check_names(group, folders=None, all_sentences=(), own_step=None, new=frozenset()):
+    """The code names: one entry per name found; then one line each for the names the brief marks
+    new (``new``), the SQL names, the names found nowhere, and the dotted names whose module is no
+    code file defining it (a table.column, a JS object)."""
+    lines, marked_new, sql, missing, not_looked_up = [], [], [], [], []
+    coded = coded_steps({step for sentence in all_sentences for step in STEP_MENTION.findall(sentence)})
     for ref in group:
         module, _, short = ref.value.rpartition(".")
+        if ref.value in new:
+            files = sorted({split_hit(hit)[0] for hit in grep(short, folders)})
+            marked_new.append(f"`{ref.value}`" + (f" (already in {listing(files, COMMON_LISTED)})" if files else ""))
+            continue
         own_file = None
         if module:
             own_file = module_file(module.rsplit(".", 1)[-1], folders)
@@ -407,10 +532,17 @@ def check_names(group, folders=None, all_sentences=(), own_step=None):
         hits = grep(short, folders)
         if own_file:
             hits = [h for h in hits if h.startswith(own_file + ":")] or hits
+        if is_sql_name(short, hits):
+            sql.append(f"`{ref.value}`")
+            continue
         if not hits:
-            missing.append(f"`{ref.value}`{planned_in(ref.value, all_sentences, own_step)}")
+            missing.append(f"`{ref.value}`{planned_in(ref.value, all_sentences, own_step, coded)}")
             continue
         lines += summarise_hits(ref.value, hits, folders)
+    if marked_new:
+        lines.append(f"- marked new in the brief: {', '.join(marked_new)}")
+    if sql:
+        lines.append(f"- SQL names (tables, columns, keys; their uses not listed): {', '.join(sql)}")
     if missing:
         lines.append(f"- not found: {', '.join(missing)}")
     if not_looked_up:
@@ -434,8 +566,11 @@ def check_cited(cites):
         if len(found) > 1:
             out.append(f"- `{path}`: **{len(found)} files end so** ({listing(found, COMMON_LISTED)}), cited at {spots}")
             continue
-        lines = (ROOT / found[0]).read_text(encoding="utf-8", errors="replace").splitlines()
         where = "" if found[0] == path else f" (at `{found[0]}`)"
+        if is_binary(ROOT / found[0]):
+            out.append(f"- `{path}`{where}: exists (binary), cited at {spots}")
+            continue
+        lines = (ROOT / found[0]).read_text(encoding="utf-8", errors="replace").splitlines()
         out.append(f"- `{path}`{where} ({len(lines)} lines):")
         out += [f"  - {cited_row(lines, first, last, names)}" for first, last, names in rows]
     return out
@@ -472,7 +607,8 @@ def main(argv):
         if group:
             out += [f"## {title}", ""]
             if kind == "name":
-                out += check_names(group, folders, all_sentences, step.group(0) if step else None)
+                out += check_names(group, folders, all_sentences, step.group(0) if step else None,
+                                   new_names(brief))
             else:
                 for ref in group:
                     out += CHECKS[kind](ref, folders)

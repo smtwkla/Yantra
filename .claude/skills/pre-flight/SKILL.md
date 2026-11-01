@@ -183,6 +183,17 @@ release notes of § 3a.
    *Investigate first* there means: investigate yourself, read-only (read the code and the log,
    run the one test), write what you found into the bug report, and ask again.
 
+## 5a. How the result is shown (with a person)
+
+Standing rule (01-11-2026, by KLA). The result of § 4 or § 5 is one card, and nothing else is in the
+message: a frame line `━━ Pre-flight <short sha> · <green | red | flaky> ━━`, then *Summary* (1–2
+lines: stamped or not, and why), *Details* (short labelled lines: the suites' counts, each failure with
+its verdict, the bug-report file, the release notes and their file), *Pending* (at most 3 lines, e.g.
+the § 2 information), and *Decide* last: the questions of § 5, numbered, options `(a) … ★ (b) …`, each
+with its consequence in a few words, then `Reply e.g. "1a 2b".` and the § 6 line. Then put each
+question into the question pop-up (`AskUserQuestion`, up to 4 per call, recommended option first with
+"(Recommended)"), each written to stand on its own (it names the commit and the test).
+
 ## 6. End
 
 End every red or flaky outcome with: "Commit the fixes, then run /pre-flight again: the new commit

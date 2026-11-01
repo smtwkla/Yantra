@@ -1,18 +1,30 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["python-dotenv"]
+# dependencies = ["python-dotenv", "truststore"]
 # ///
 """Sync shared files from the private smtw-common repo into the current project."""
 
 import json
 import os
+import ssl
 import sys
 import base64
 import hashlib
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from dotenv import load_dotenv
+
+# truststore checks certificates with the operating system's own verifier.
+# Python's default check on Windows loads the Root and the intermediate (CA)
+# stores into OpenSSL, and a stale cross-signed intermediate there can make the
+# check fail now and then ("unable to get issuer certificate"). truststore is
+# optional: a repo whose Python lacks it keeps the default check, so the
+# self-update below never breaks a sync.
+try:
+    import truststore
+except ImportError:
+    truststore = None
 
 REPO = "smtwkla/smtw-common"
 BRANCH = "main"
@@ -91,6 +103,31 @@ CLAUDE_MD_BANNER = (
 )
 
 
+def _ssl_context() -> ssl.SSLContext:
+    if truststore is not None:
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    return ssl.create_default_context()
+
+
+SSL_CONTEXT = _ssl_context()
+
+
+def report_cert_error(e: ssl.SSLCertVerificationError):
+    """Stop on a certificate failure: every other fetch would fail the same way."""
+    print(f"Error: the certificate of api.github.com could not be verified "
+          f"({e.verify_message}).")
+    if truststore is None:
+        print("Python's own check is in use, and a stale certificate in the Windows "
+              "certificate stores can cause this. Install truststore into this Python, "
+              "so the check uses the operating system's verifier:\n"
+              f"  uv pip install --python \"{sys.executable}\" truststore\n"
+              f"  (or: \"{sys.executable}\" -m pip install truststore)")
+    else:
+        print("The operating system's verifier (truststore) refused it too. Check for "
+              "a proxy or antivirus that inspects HTTPS, and the system clock.")
+    raise SystemExit(1)
+
+
 def _gh_request(token: str, path: str):
     url = f"https://api.github.com/repos/{REPO}/contents/{path}?ref={BRANCH}"
     req = Request(url, headers={
@@ -98,8 +135,15 @@ def _gh_request(token: str, path: str):
         "Accept": "application/vnd.github.v3+json",
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    with urlopen(req) as resp:
-        return json.loads(resp.read())
+    try:
+        with urlopen(req, context=SSL_CONTEXT) as resp:
+            return json.loads(resp.read())
+    except HTTPError:
+        raise  # a subclass of URLError; the callers report it per file
+    except URLError as e:
+        if isinstance(e.reason, ssl.SSLCertVerificationError):
+            report_cert_error(e.reason)
+        raise
 
 
 def fetch_file(token: str, file_path: str) -> str:

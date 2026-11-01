@@ -313,6 +313,11 @@ Bash tool is Git Bash on Windows.
    (`git show refs/steps/S0NN:<file>`); Git Bash turns it into a Windows path otherwise.
 6. **Read the summary line** of a test run before you call it green: it must name the tests that
    ran. A run that ran nothing failed.
+7. **Line endings** (31-10-2026, from the agents' feedback): write a file with the Write or Edit
+   tool, or in Python with `open(path, "w", newline="")` or `Path.write_bytes`. Never a plain
+   text-mode write (`open(path, "w")`, `Path.write_text`): on Windows it turns every LF into CRLF.
+   Check a file's line endings by its bytes (`b"\r\n" in Path(path).read_bytes()`), not with
+   `grep -c $'\r'`: Git Bash counts every line there.
 
 ## Orchestrated mode (one terminal)
 
@@ -355,6 +360,10 @@ terminal, with each role as a subagent (`.claude/agents/`):
   not show the step folders, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
   or `docs/roadmap/`, and its last line counts what it left out. The
   device-check list stays in. `--all` shows everything; paths after `--` win.
+- **A diff from any commit** (31-10-2026): `diff [S00N] --base <commit>`
+  compares the working tree with that commit, the same way and with the
+  same exclusions: for a step with no snapshot yet whose base is not `HEAD`,
+  or to override the step's base.
 - **The files and conventions above are unchanged.** The separate terminals
   below still work.
 
