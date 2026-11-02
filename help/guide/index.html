@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yantra user guide</title>
+<style>
+/* Yantra user guide. One copy of the text, two views: the reading page (the default, and with
+   JavaScript off) and the slide show (body.show, set by the script at 900 px and wider).
+   The slide show's sizes are for a 1920 x 1080 slide that the script scales to the window. */
+:root { --ink: #1e293b; --muted: #475569; --accent: #1d4ed8; --line: #cbd5e1; --page: #e5eaf0;
+  --font: "Public Sans", "Segoe UI", Roboto, Arial, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 17px/1.5 var(--font); }
+h1, h2, h3 { font-weight: 600; line-height: 1.15; margin: 0; }
+p, ol, ul { margin: 0; }
+img { display: block; max-width: 100%; height: auto; }
+
+/* --- bar -------------------------------------------------------------------------- */
+.bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  padding: 8px 16px; background: #1e293b; color: #f1f5f9; }
+.bar a.home { color: #f1f5f9; font-weight: 600; text-decoration: none; margin-right: auto; min-height: 44px;
+  display: inline-flex; align-items: center; }
+.bar button, .bar summary, .pager button { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid #94a3b8; background: transparent; color: inherit; font: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; list-style: none; }
+.bar summary::-webkit-details-marker { display: none; }
+.bar button:focus-visible, .bar summary:focus-visible, .pager button:focus-visible, .bar a:focus-visible {
+  outline: 3px solid #93c5fd; outline-offset: 2px; }
+.toc { position: relative; }
+.toc[open] summary { background: #334155; }
+.toc nav { position: absolute; right: 0; top: 52px; width: min(92vw, 420px); max-height: 75vh; overflow: auto;
+  background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.25); }
+.toc nav a { display: block; padding: 10px 12px; border-radius: 6px; color: var(--ink); text-decoration: none;
+  min-height: 44px; }
+.toc nav a:hover, .toc nav a:focus-visible { background: #eef2f7; }
+.toc nav b { display: block; }
+.toc nav span { color: var(--muted); font-size: 14px; }
+.bar [data-js] { display: none; }
+.js .bar [data-js] { display: inline-flex; }
+.pager { display: none; }
+#count { min-width: 5.5em; text-align: center; }
+
+/* --- reading page ------------------------------------------------------------------ */
+.deck { padding: 8px 12px 48px; }
+.slide { max-width: 820px; margin: 16px auto; padding: 20px 16px 24px; border-radius: 12px; display: flex;
+  flex-direction: column; gap: 14px; scroll-margin-top: 72px; overflow-wrap: anywhere; }
+.light { background: #f6f8fb; }
+.alt { background: #fff; }
+.dark { background: #1e293b; color: #f1f5f9; }
+.kick { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.dark .kick { color: #93c5fd; }
+.slide h1 { font-size: 40px; }
+.slide h2 { font-size: 24px; }
+.slide h3 { font-size: 18px; }
+.who { color: var(--muted); font-size: 15px; }
+.note { color: #64748b; font-size: 15px; }
+.dark .lead, .dark .sub, .dark .fine { color: #cbd5e1; }
+.fine { font-size: 15px; }
+ol, ul { padding-left: 1.3em; display: grid; gap: 6px; }
+.tx, .col, .card, .fig, .cols, .grid, .shot { min-width: 0; }
+.tx, .col { display: flex; flex-direction: column; gap: 12px; }
+.cols, .grid { display: flex; flex-direction: column; gap: 14px; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; display: flex;
+  flex-direction: column; gap: 8px; }
+.card.warn { background: #fff7ed; border-color: #fed7aa; }
+.box { background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.box.hl { background: #dbeafe; border-color: #2563eb; }
+.arrow::before { content: "\2193"; color: #94a3b8; font-weight: 700; }
+.fig { display: flex; flex-direction: column; gap: 6px; }
+.shot, .row > .crop, .stack > .crop { display: flex; justify-content: center; }
+.ph, .dk, .sm { border-radius: 10px; box-shadow: 0 4px 16px rgba(15,23,42,.2); }
+.ph { max-width: min(100%, 428px); margin: 0 auto; }
+.crop img { margin: 0 auto; border-radius: 10px; }
+.crop.dup { display: none; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; }
+aside { border-left: 4px solid var(--line); padding: 2px 0 2px 12px; color: var(--muted); font-size: 15px; }
+.dark aside { color: #cbd5e1; border-color: #475569; }
+
+/* --- slide show ----------------------------------------------------------------------- */
+body.show { overflow: hidden; height: 100vh; background: #0f172a; }
+body.show .deck { position: fixed; inset: 60px 0 60px 0; padding: 0; }
+body.show .slide { display: none; position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; margin: 0;
+  max-width: none; border-radius: 0; padding: 96px 128px; gap: 36px; transform-origin: 0 0; overflow: hidden;
+  overflow-wrap: normal; }
+body.show .slide.on { display: flex; }
+body.show .slide.row { flex-direction: row; align-items: center; gap: 80px; }
+body.show .dark { padding: 128px; }
+body.show .dark.row { padding: 104px 128px; }
+body.show .stack.mid { align-items: center; padding: 64px 128px; gap: 24px; }
+body.show .desk { padding: 96px; gap: 56px; }
+body.show aside { display: none; }
+body.show .kick { font-size: 24px; letter-spacing: 2px; }
+body.show .dark .kick { font-size: 28px; letter-spacing: 3px; }
+body.show .slide h1 { font-size: 120px; line-height: 1.05; }
+body.show .slide h2 { font-size: 64px; }
+body.show .desk h2 { font-size: 52px; }
+body.show .mid h2 { font-size: 48px; width: 1664px; }
+body.show .dark h2 { font-size: 72px; }
+body.show .who { font-size: 28px; }
+body.show .desk .who { font-size: 26px; }
+body.show .note { font-size: 24px; }
+body.show .lead { font-size: 44px; line-height: 1.3; }
+body.show .sub { font-size: 28px; line-height: 1.4; color: #94a3b8; }
+body.show .fine { font-size: 24px; color: #94a3b8; }
+body.show ol, body.show ul { display: block; padding-left: 1.4em; line-height: 1.4; }
+body.show .dark ol, body.show .dark ul { color: #cbd5e1; line-height: 1.5; }
+body.show li { margin-bottom: 8px; }
+body.show .f24 { font-size: 24px; }
+body.show .f26, body.show .f27 { font-size: 26px; }
+body.show .f28 { font-size: 28px; }
+body.show .f30 { font-size: 30px; }
+body.show .f32 { font-size: 32px; }
+body.show .f34 { font-size: 34px; }
+body.show .f36 { font-size: 36px; }
+body.show p.f28, body.show p.f24, body.show p.f26 { line-height: 1.4; }
+body.show .sec { font-size: 32px; color: var(--muted); }
+body.show .tx { flex: 1; gap: 28px; }
+body.show .desk .tx { flex: none; width: var(--w, 472px); gap: 24px; }
+body.show .col { flex: 1; gap: 14px; }
+body.show .cols { flex-direction: row; gap: 40px; }
+body.show .cols.wide { gap: 64px; }
+body.show .cols.pair { gap: 32px; }
+body.show .card { flex: 1; gap: 16px; padding: 40px; border-radius: 16px; }
+body.show .box { font-size: 28px; padding: 16px 24px; border-radius: 12px; }
+body.show .arrow { display: block; width: 36px; height: 32px; }
+body.show .arrow::before { font-size: 30px; line-height: 32px; }
+body.show .grid { display: grid; grid-template-columns: 640px 640px; gap: 24px 48px; }
+body.show .fig { gap: 8px; }
+body.show .shot { flex: 1; height: 888px; align-items: center; }
+body.show .ph { border-radius: 24px; box-shadow: 0 12px 40px rgba(15,23,42,.25); max-width: none; margin: 0; }
+body.show .dk { border-radius: 12px; box-shadow: 0 12px 40px rgba(15,23,42,.22); max-width: none; }
+body.show .sm { border-radius: 10px; box-shadow: 0 8px 24px rgba(15,23,42,.18); max-width: none; }
+body.show .slide img { max-width: none; object-fit: contain; }
+body.show .crop { display: block; width: 428px; height: 872px; overflow: hidden; border-radius: 24px;
+  box-shadow: 0 12px 40px rgba(15,23,42,.25); flex: none; }
+body.show .crop.dup { display: block; }
+body.show .crop img { max-width: none; border-radius: 0; margin: 0; object-fit: cover;
+  transform: translateY(var(--shift, 0)); }
+body.show table { display: table; font-size: 28px; color: var(--ink); }
+body.show th, body.show td { padding: 10px 14px; }
+body.show .pager { position: fixed; left: 0; right: 0; bottom: 0; height: 60px; display: flex; align-items: center;
+  justify-content: center; gap: 16px; background: #1e293b; color: #f1f5f9; }
+body.show .pager button { border-color: #94a3b8; }
+
+@media print { .bar, .pager { display: none; } body.show { overflow: visible; height: auto; } }
+
+@media (max-width: 560px) { .bar a.home { display: none; } .bar { justify-content: flex-end; } }
+.toc nav a.up { border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a class="home" href="../home/">Yantra Help</a>
+  <details class="toc">
+    <summary>Contents</summary>
+    <nav aria-label="Contents">
+      <a class="up" href="../home/">&larr; Yantra Help</a>
+      <a href="#cover"><b>1 · Getting around</b><span>Getting around: who uses Yantra, the Me page and the menus</span></a>
+      <a href="#x13"><b>2 · Equipment</b><span>Equipment: find a machine, its page, QR labels and the asset list</span></a>
+      <a href="#x20"><b>3 · Tickets</b><span>Tickets: raise, work and close a breakdown or a defect</span></a>
+      <a href="#x33"><b>4 · Improvements</b><span>Improvements: root-cause analysis and countermeasures</span></a>
+      <a href="#x35"><b>5 · One-point lessons</b><span>One-point lessons</span></a>
+      <a href="#x40"><b>6 · Meter readings</b><span>Meter readings</span></a>
+      <a href="#x60"><b>7 · Preventive maintenance</b><span>Preventive maintenance: plans, jobs on the phone, verify, reschedule and skip</span></a>
+      <a href="#x80"><b>8 · Contracts</b><span>Contracts: AMC and warranty</span></a>
+      <a href="#mt1"><b>9 · Masters and onboarding</b><span>Masters: how sites, classes, models and documents fit together, onboarding a machine, the set-up lists</span></a>
+      <a href="#x90"><b>10 · Notifications and settings</b><span>Notifications and Settings</span></a>
+    </nav>
+  </details>
+  <button type="button" id="view" data-js>Read as a page</button>
+</header>
+<main class="deck" id="deck">
+<section id="cover" class="slide dark row phone">
+<div class="tx">
+<p class="kick">User guide · v0.1.15 + PM</p>
+<h1>Yantra</h1>
+<p class="lead">What is where, and how to do the daily work — shown on real screens</p>
+<p class="sub">Equipment · Tickets · Improvements · Lessons · Readings · Preventive maintenance · Contracts · Masters · Settings</p>
+<p class="fine">Screens taken on a test copy with sample plant data. The screens show Yantra v0.1.15 with preventive maintenance, as of 02-11-2026.</p>
+</div>
+<div class="crop"><img src="shots/50-pm-list-due-phone.webp" alt="The PM jobs list on a phone" width="428" height="872" loading="lazy"></div>
+<aside>Yantra is the plant maintenance app. Each slide shows one screen: who uses it, where (phone on the floor or desktop in the office) and the steps, in the app’s own button names.</aside>
+</section>
+<section id="roles" class="slide light stack">
+<p class="kick">1 · Getting around</p>
+<h2>Who uses Yantra, and where</h2>
+<table>
+<tr><th>Role</th><th>Device</th><th>Main work in Yantra</th></tr>
+<tr><td>Operator</td><td>Phone</td><td>Raise a ticket at the machine (QR label), log meter readings, read one-point lessons</td></tr>
+<tr><td>Supervisor</td><td>Phone</td><td>As the operator, for the units they look after</td></tr>
+<tr><td>Technician</td><td>Phone</td><td>Work tickets to Back in service; do PM jobs item by item</td></tr>
+<tr><td>Engineer</td><td>Desktop</td><td>Assign and close tickets; PM plans; verify, send back, reschedule or skip PM jobs; improvements</td></tr>
+<tr><td>Manager</td><td>Desktop</td><td>Contracts with prices and documents; improvement register; all sites</td></tr>
+<tr><td>IT admin, Admin</td><td>Desktop</td><td>Settings, QR labels, network; Admin also the Masters lists</td></tr>
+</table>
+<p class="who">A person’s role is set per site in Masters › Team. The role decides which menus, buttons and machines they see.</p>
+<aside>The sample people in these screens are made up: Muthu (operator), Selvi (supervisor), Kannan and Ravi (technicians), Priya (engineer), Arun (manager).</aside>
+</section>
+<section id="x01" class="slide light row phone">
+<div class="tx">
+<p class="kick">1 · Getting around</p>
+<h2>Me › Open work</h2>
+<p class="who">Technician · phone on the floor · /me</p>
+<ol class="f34">
+<li>The first screen after login: the <b>PM jobs</b> and <b>Tickets</b> given to you, most urgent first.</li>
+<li>Tap a row to open the job or the ticket.</li>
+<li>The bottom bar: <b>Me</b>, <b>Equipment</b>, <b>Tickets</b>, <b>PM</b>, <b>Readings</b>.</li>
+<li>The bell at the top opens your notifications.</li>
+</ol>
+</div>
+<img class="ph" src="shots/01-me-open-work-phone.webp" alt="Me page, open work, on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x02" class="slide light row phone">
+<div class="tx">
+<p class="kick">1 · Getting around</p>
+<h2>Me › Raised by me</h2>
+<p class="who">Operator · phone · /me</p>
+<ol class="f34">
+<li>Tap <b>Raised by me</b> to see the tickets you raised.</li>
+<li>Each shows its state: Raised, Acknowledged, In progress, Back in service.</li>
+<li><b>My activity</b> lists what you did.</li>
+</ol>
+</div>
+<img class="ph" src="shots/02-me-operator-phone.webp" alt="Me page, raised by me, on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x03" class="slide alt row desk">
+<div class="tx">
+<p class="kick">1 · Getting around</p>
+<h2>Me on the desktop</h2>
+<p class="who">Engineer · office desktop · /me</p>
+<ol class="f28">
+<li>The menu is the dark bar on the left: the same items, plus <b>Masters</b> and <b>Settings</b> for those who may use them.</li>
+<li>Your open work shows here, e.g. a <b>Countermeasure</b> with <b>Mark done</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/03-me-engineer-desktop.webp" alt="Me page on the desktop" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x13" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Equipment list</h2>
+<p class="who">Engineer · desktop · /equipment</p>
+<ol class="f28">
+<li>Filter by site, unit, class, lifecycle, criticality, ticket status or contract.</li>
+<li>Tick rows, then <b>Print labels</b>.</li>
+<li><b>Print asset list</b> prints a stock-check list.</li>
+<li><b>Add equipment</b> adds a machine.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/13-equipment-list-desktop.webp" alt="Equipment list on the desktop" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x14" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Find a machine</h2>
+<p class="who">Anyone · desktop or phone</p>
+<ol class="f28">
+<li>Type in the search box, e.g. “compressor”. Words match the code, name, model, class or notes, in any order.</li>
+<li>The list keeps only the matches.</li>
+<li>Click the code (e.g. <b>CMP002</b>) to open the machine.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/14-equipment-search-desktop.webp" alt="Equipment search" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x10" class="slide light row phone">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Equipment on the phone</h2>
+<p class="who">Operator · phone · /equipment</p>
+<ol class="f34">
+<li>Type part of the code, name, model or class.</li>
+<li><b>Filters</b> narrows the list.</li>
+<li>The dot shows open tickets: red = breakdown, yellow = defect, green = none.</li>
+</ol>
+</div>
+<img class="ph" src="shots/10-equipment-list-phone.webp" alt="Equipment list on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x11" class="slide light row phone">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Scan a QR label</h2>
+<p class="who">Anyone · phone, at the machine · /e/&lt;code&gt;</p>
+<ol class="f34">
+<li>Point the phone camera at the machine’s QR label.</li>
+<li>Yantra opens that machine’s page at once.</li>
+<li>Tap <b>Raise ticket</b> to report a problem on it.</li>
+</ol>
+</div>
+<img class="ph" src="shots/11-qr-landing-phone.webp" alt="The page a QR label opens" width="428" height="872" loading="lazy">
+</section>
+<section id="x12" class="slide light row phone">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>A machine’s page</h2>
+<p class="who">Operator · phone · /equipment/&lt;id&gt;</p>
+<ol class="f32">
+<li>Top: code, name, <b>In service</b>, criticality (A, B, C).</li>
+<li>The big red <b>Raise ticket</b> button.</li>
+<li>Cards: <b>Open tickets</b>, <b>PM plans</b>, <b>Documents</b>, <b>Photos</b>, <b>Details</b>, then <b>Meters</b> and <b>History</b>.</li>
+</ol>
+<p class="note">Left: top of the page. Right: further down.</p>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/12-equipment-detail-phone.webp" alt="Machine page on a phone, top" width="428" height="1247" loading="lazy"></div>
+<div class="crop dup"><img src="shots/12-equipment-detail-phone.webp" alt="Machine page on a phone, lower part" width="428" height="1247" loading="lazy" style="--shift:-375px"></div>
+</div>
+</section>
+<section id="x15" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>A machine’s page, whole</h2>
+<p class="who">Engineer · desktop · Main extruder</p>
+<ol class="f28">
+<li>Buttons: <b>Raise ticket</b>, <b>Edit</b>, <b>Add part</b>, <b>Move</b>, <b>Change lifecycle</b>, <b>Print label</b>.</li>
+<li>Cards: <b>Lessons</b>, <b>Under contract</b>, <b>Open tickets</b>, <b>PM plans</b>, <b>Details</b>, <b>Properties</b>, <b>Parts</b>, <b>Meters</b>, <b>History</b>, <b>Documents</b>, <b>Photos</b>.</li>
+<li>Each card has its own add button, e.g. <b>Add PM plan</b>, <b>Log reading</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/15-equipment-detail-desktop.webp" alt="Machine page on the desktop, whole page" width="607" height="888" loading="lazy"></div>
+</section>
+<section id="x16" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>A part of a machine</h2>
+<p class="who">Engineer · desktop · GBX001 Extruder main gearbox</p>
+<ol class="f28">
+<li>The path at the top (SMTW › MCC2 › EXT001 › GBX001) shows which machine it belongs to.</li>
+<li>A part has its own tickets, meters and PM plans, here <b>Gearbox oil change</b>.</li>
+<li>Add one with <b>Add part</b> on the machine’s page.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="775" height="888" loading="lazy"></div>
+</section>
+<section id="x17" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Print QR labels</h2>
+<p class="who">Engineer or IT admin · desktop · /labels</p>
+<ol class="f28">
+<li>On the Equipment list, tick the machines and click <b>Print labels</b>.</li>
+<li>This page opens in a new tab. Click <b>Print</b>.</li>
+<li>Print at 100 % (“Actual size”) on plain A4. Check one square with a ruler.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/17-labels-print-desktop.webp" alt="QR label sheet" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x18" class="slide alt row desk">
+<div class="tx">
+<p class="kick">2 · Equipment</p>
+<h2>Asset list for a stock check</h2>
+<p class="who">Engineer or manager · desktop · /asset-list</p>
+<ol class="f28">
+<li>Click <b>Print asset list</b> on the Equipment list.</li>
+<li>One table per unit. <b>Include parts</b> and <b>Checklist columns</b> change what is printed.</li>
+<li>Click <b>Print</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/18-asset-list-print-desktop.webp" alt="Asset list for printing" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x20" class="slide light row phone">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Raise ticket: pick the machine</h2>
+<p class="who">Operator · phone · /tickets/new</p>
+<ol class="f34">
+<li>Tap <b>Tickets</b>, then <b>Raise ticket</b>.</li>
+<li>Type part of the name, e.g. “compressor”, and tap the machine.</li>
+<li>Quicker: scan the machine’s QR label and tap <b>Raise ticket</b> there.</li>
+</ol>
+</div>
+<img class="ph" src="shots/20-raise-ticket-pick-machine-phone.webp" alt="Raise ticket, picking the machine" width="428" height="872" loading="lazy">
+</section>
+<section id="x21" class="slide light row phone">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Raise ticket: describe it</h2>
+<p class="who">Operator · phone</p>
+<ol class="f30">
+<li>Under <b>How bad is it?</b> tap <b>Stopped</b> (breakdown), <b>Running, reduced</b> or <b>Early signs</b>.</li>
+<li>Pick the symptom if you know it. Write <b>What is wrong?</b></li>
+<li>Check <b>When did it happen?</b></li>
+<li>Fixed it yourself? Tick <b>Already fixed — back in service</b>.</li>
+<li>Tap <b>Save ticket</b>.</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/21-raise-ticket-filled-phone.webp" alt="Raise ticket form, top" width="428" height="1168" loading="lazy"></div>
+<div class="crop dup"><img src="shots/21-raise-ticket-filled-phone.webp" alt="Raise ticket form, lower part" width="428" height="1168" loading="lazy" style="--shift:-296px"></div>
+</div>
+</section>
+<section id="x22" class="slide light row phone">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Tickets on the phone</h2>
+<p class="who">Technician · phone · /tickets</p>
+<ol class="f34">
+<li>Red rows are breakdowns, yellow rows are defects.</li>
+<li>The clock shows how long the ticket is open.</li>
+<li>Filters: <b>Open</b>, <b>Breakdowns and defects</b>, site, unit, <b>Assigned to me</b>.</li>
+</ol>
+</div>
+<img class="ph" src="shots/22-tickets-list-phone.webp" alt="Tickets list on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x25" class="slide alt row desk">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Tickets list</h2>
+<p class="who">Engineer · desktop · /tickets</p>
+<ol class="f28">
+<li>The same list and filters as on the phone, plus a search box.</li>
+<li><b>Overdue since …</b> marks a ticket on hold past its planned date.</li>
+<li><b>Raise ticket</b> is at the right. The <b>Improvements</b> tab is next to <b>Tickets</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/25-tickets-list-desktop.webp" alt="Tickets list on the desktop" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x23" class="slide light row phone">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Work a ticket</h2>
+<p class="who">Technician · phone · a breakdown in progress</p>
+<ol class="f30">
+<li>The next step is the big blue button, here <b>Back in service</b>.</li>
+<li>Also: <b>Add note</b>, <b>Change severity</b>, <b>Put on hold</b>.</li>
+<li>The contract line shows the machine is under AMC.</li>
+<li>Cards: <b>Details</b>, <b>Times</b>, <b>Assigned</b>, then <b>Timeline</b>.</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/23-ticket-detail-phone.webp" alt="Ticket on a phone, top" width="428" height="1247" loading="lazy"></div>
+<div class="crop dup"><img src="shots/23-ticket-detail-phone.webp" alt="Ticket on a phone, lower part" width="428" height="1247" loading="lazy" style="--shift:-375px"></div>
+</div>
+</section>
+<section id="x24" class="slide light row phone">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Back in service</h2>
+<p class="who">Technician · phone · dialog</p>
+<ol class="f34">
+<li>Tap <b>Back in service</b> when the machine runs again.</li>
+<li>Check <b>Back in service at</b>, or keep <b>Now</b>.</li>
+<li>Under <b>Who did the work?</b> tap the person.</li>
+<li>Tap <b>Back in service</b> to save.</li>
+</ol>
+</div>
+<img class="ph" src="shots/24-ticket-back-in-service-dialog-phone.webp" alt="Back in service dialog" width="428" height="872" loading="lazy">
+</section>
+<section id="x26" class="slide alt row desk">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>A ticket waiting to be closed</h2>
+<p class="who">Engineer · desktop · back in service</p>
+<ol class="f28">
+<li><b>Close</b> it, or <b>Send back</b> when it is not fixed.</li>
+<li>Also: <b>Add note</b>, <b>Start improvement</b>, <b>Not fixed — raise again</b>.</li>
+<li>Before closing, fill <b>Labour</b> (<b>Add labour</b>) and <b>Parts used</b> (<b>Add part</b>).</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/26-ticket-detail-desktop.webp" alt="Ticket page on the desktop" width="807" height="888" loading="lazy"></div>
+</section>
+<section id="x27" class="slide alt row desk">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Close a ticket</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>Click <b>Close</b>. Check the <b>Symptom</b>; choose the <b>Cause</b> and the <b>Action taken</b>.</li>
+<li>Labour must be entered first. Parts fitted? Cancel and add them on the ticket first.</li>
+<li>Click <b>Close ticket</b>. The ticket becomes read-only.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/27-ticket-close-dialog-desktop.webp" alt="Close ticket dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x28" class="slide alt row desk">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>Assign a ticket</h2>
+<p class="who">Engineer or supervisor · desktop · dialog</p>
+<ol class="f28">
+<li>On a ticket, click <b>Assign</b> in the <b>Assigned</b> card.</li>
+<li>Type a name or vendor to filter, then click the person.</li>
+<li>Click <b>Assign</b>. The person gets a notification.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/28-ticket-assign-dialog-desktop.webp" alt="Assign dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x29" class="slide alt row desk">
+<div class="tx">
+<p class="kick">3 · Tickets</p>
+<h2>A ticket on hold</h2>
+<p class="who">Engineer · desktop</p>
+<ol class="f28">
+<li><b>Put on hold</b> when the work must wait, e.g. for a part or a shutdown.</li>
+<li>The ticket shows <b>Deferred</b>, its planned date and the reason.</li>
+<li>Next: <b>Start work</b>, <b>Fixed</b>, or <b>Change plan</b> to move the date.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/29-ticket-on-hold-desktop.webp" alt="Ticket on hold" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x33" class="slide alt row desk">
+<div class="tx">
+<p class="kick">4 · Improvements</p>
+<h2>Start an improvement</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>On a ticket that keeps coming back, click <b>Start improvement</b>.</li>
+<li>Fill <b>Title</b> and <b>Problem</b>, and choose the <b>Lead</b>.</li>
+<li>Click <b>Start improvement</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/33-start-improvement-dialog-desktop.webp" alt="Start improvement dialog" width="1180" height="663" loading="lazy"></div>
+<aside>An improvement is a root-cause analysis (RCA): find why a failure happens and remove the cause, so the breakdown does not come back. This follows the TPM pillar Focused Improvement.</aside>
+</section>
+<section id="x30" class="slide alt row desk">
+<div class="tx">
+<p class="kick">4 · Improvements</p>
+<h2>Improvements list</h2>
+<p class="who">Engineer or manager · desktop · /tickets/improvements</p>
+<ol class="f28">
+<li>Tickets › <b>Improvements</b> tab.</li>
+<li>Filters: <b>Open improvements</b>, <b>All units</b>.</li>
+<li><b>Print register</b> opens the register for the management review.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/30-improvements-list-desktop.webp" alt="Improvements list" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x31" class="slide alt row desk">
+<div class="tx">
+<p class="kick">4 · Improvements</p>
+<h2>An improvement</h2>
+<p class="who">Engineer · desktop · whole page</p>
+<ol class="f27">
+<li><b>The problem</b> and its <b>Tickets</b> (<b>Add ticket</b>).</li>
+<li><b>Why-why</b>: click <b>Add why</b> until the answer is something the plant can change. Then <b>Edit root cause</b>.</li>
+<li><b>Add countermeasure</b>, each with a kind, owner and due date. The owner clicks <b>Mark done</b>.</li>
+<li>The <b>Timeline</b> keeps every change.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/31-improvement-detail-desktop.webp" alt="Improvement page, whole" width="505" height="888" loading="lazy"></div>
+</section>
+<section id="x32" class="slide alt row desk">
+<div class="tx">
+<p class="kick">4 · Improvements</p>
+<h2>Improvement register</h2>
+<p class="who">Manager · desktop · /tickets/improvements/register</p>
+<ol class="f28">
+<li>Choose the period: <b>From</b>, <b>To</b>.</li>
+<li>The register counts improvements by state and lists each one.</li>
+<li>Click <b>Print</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/32-improvement-register-desktop.webp" alt="Improvement register" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x35" class="slide light row phone">
+<div class="tx">
+<p class="kick">5 · One-point lessons</p>
+<h2>Read a one-point lesson</h2>
+<p class="who">Operator · phone, at the machine</p>
+<ol class="f34">
+<li>Open the machine and tap the lesson in the <b>Lessons</b> card.</li>
+<li>Read the photo and the steps.</li>
+<li>“for every Compressor”: the lesson shows on every machine of that class.</li>
+<li><b>Print lesson</b> prints it to hang at the machine.</li>
+</ol>
+</div>
+<img class="ph" src="shots/35-lesson-page-phone.webp" alt="One-point lesson on a phone" width="408" height="872" loading="lazy">
+<aside>A one-point lesson (OPL) is a TPM tool: one sheet, one skill or check, mostly a picture, read in a few minutes at the machine.</aside>
+</section>
+<section id="x36" class="slide alt row desk">
+<div class="tx">
+<p class="kick">5 · One-point lessons</p>
+<h2>Write a lesson</h2>
+<p class="who">Engineer · desktop</p>
+<ol class="f28">
+<li>On the machine’s page, click <b>Add lesson</b> in the <b>Lessons</b> card.</li>
+<li>Write the steps and add a photo.</li>
+<li>Tick the class to show it on every machine of that class.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/36-lesson-page-desktop.webp" alt="One-point lesson on the desktop" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x40" class="slide light row phone">
+<div class="tx">
+<p class="kick">6 · Meter readings</p>
+<h2>Readings sheet</h2>
+<p class="who">Operator · phone, end of shift · /readings</p>
+<ol class="f30">
+<li>Tap <b>Readings</b>. Each machine of your units with its meters; the last reading is under the name.</li>
+<li>Type each value.</li>
+<li>Keep <b>Now</b> ticked, or untick it and set the <b>Time of reading</b>.</li>
+<li>Tap <b>Save readings</b>.</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/40-readings-sheet-phone.webp" alt="Readings sheet, top" width="428" height="1099" loading="lazy"></div>
+<div class="crop dup"><img src="shots/40-readings-sheet-phone.webp" alt="Readings sheet, lower part" width="428" height="1099" loading="lazy" style="--shift:-227px"></div>
+</div>
+</section>
+<section id="x41" class="slide light row phone">
+<div class="tx">
+<p class="kick">6 · Meter readings</p>
+<h2>Log one reading</h2>
+<p class="who">Operator · phone · dialog</p>
+<ol class="f34">
+<li>On a machine’s page, tap <b>Log reading</b> beside a meter.</li>
+<li>Type the <b>Value</b>.</li>
+<li>Tick <b>Meter reset</b> only when the meter was replaced or set back to zero.</li>
+<li>Tap <b>Save</b>.</li>
+</ol>
+</div>
+<img class="ph" src="shots/41-log-reading-dialog-phone.webp" alt="Log reading dialog" width="428" height="872" loading="lazy">
+</section>
+<section id="x42" class="slide alt row desk">
+<div class="tx">
+<p class="kick">6 · Meter readings</p>
+<h2>Readings register</h2>
+<p class="who">Engineer · desktop · /readings?tab=register</p>
+<ol class="f28">
+<li>On a machine’s page click <b>Open register</b>, or pick a machine on the <b>Register</b> tab.</li>
+<li>All readings of the machine, newest first.</li>
+<li><b>Meters: All</b> picks one meter.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/42-readings-register-desktop.webp" alt="Readings register" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x60" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A PM plan</h2>
+<p class="who">Engineer · desktop · /equipment/pm/&lt;id&gt;</p>
+<ol class="f26">
+<li>On the machine’s page click <b>Add PM plan</b>, or a plan’s name to change it.</li>
+<li><b>Plan</b>: <b>Title</b>, <b>Done by</b>, <b>Assign jobs to</b>, <b>An engineer verifies each job</b>.</li>
+<li><b>When is it due?</b> <b>By calendar: every</b> … and/or <b>By meter: every</b> …; <b>Last done</b>.</li>
+<li><b>Items</b> on the right: <b>Add item</b>; the arrows change the order. Click <b>Save plan</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/60-pm-plan-desktop.webp" alt="PM plan page" width="1111" height="888" loading="lazy"></div>
+<aside>A PM plan is time-based or usage-based maintenance (EN 13306: preventive maintenance carried out at set intervals). With both a calendar and a meter, the job is due at whichever comes first.</aside>
+</section>
+<section id="x61" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Add an item to a plan</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>Click <b>Add item</b>. Choose <b>Task</b>, <b>Check</b> or <b>Reading</b>.</li>
+<li>Write <b>What to do or check</b>; add <b>Help text</b> if useful; choose <b>Photo</b>.</li>
+<li>A reading can log a meter and has Min and Max.</li>
+<li>Click <b>Save item</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/61-pm-add-item-dialog-desktop.webp" alt="Add item dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x62" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A new plan</h2>
+<p class="who">Engineer · desktop · Screw compressor 2</p>
+<ol class="f28">
+<li>Fill the title.</li>
+<li>Tick the trigger: calendar, meter or both.</li>
+<li>Add at least one item.</li>
+<li>Click <b>Save plan</b>. The first job comes when the plan falls due.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/62-pm-new-plan-desktop.webp" alt="New PM plan" width="1151" height="888" loading="lazy"></div>
+</section>
+<section id="x50" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM jobs on the phone</h2>
+<p class="who">Technician · phone · /pm</p>
+<ol class="f32">
+<li>Tap <b>PM</b>. Tabs: <b>Due</b>, <b>Upcoming</b>, <b>To verify</b>, <b>Done</b>.</li>
+<li>Badges: <b>Overdue</b>, <b>Due</b>, <b>In progress</b>, <b>Sent back</b>.</li>
+<li><b>Assigned to me</b> shows only your jobs.</li>
+<li>Tap a job to open it.</li>
+</ol>
+</div>
+<img class="ph" src="shots/50-pm-list-due-phone.webp" alt="PM jobs list on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x51" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Start a PM job</h2>
+<p class="who">Technician · phone · /pm/jobs/&lt;id&gt;</p>
+<ol class="f34">
+<li>Check <b>Performed by</b> and <b>Started</b> (keep <b>Now</b>).</li>
+<li>Tap <b>Start job</b>.</li>
+<li>Before that the items are only shown, not filled.</li>
+</ol>
+</div>
+<img class="ph" src="shots/51-pm-job-before-start-phone.webp" alt="PM job before start" width="372" height="872" loading="lazy">
+</section>
+<section id="x52" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Fill the items</h2>
+<p class="who">Technician · phone</p>
+<ol class="f30">
+<li>For a check tap <b>OK</b>, <b>Not OK</b> or <b>NA</b>.</li>
+<li>For a task tap <b>Done</b> or <b>Not done</b>.</li>
+<li><b>Not OK</b> asks <b>What is wrong?</b> Type it and tap <b>Save</b>.</li>
+<li>Each answer is saved at once (“Saved”).</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/52-pm-job-filling-phone.webp" alt="Filling a PM job, top" width="428" height="1334" loading="lazy"></div>
+<div class="crop dup"><img src="shots/52-pm-job-filling-phone.webp" alt="Filling a PM job, lower part" width="428" height="1334" loading="lazy" style="--shift:-462px"></div>
+</div>
+</section>
+<section id="x53" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>All items filled</h2>
+<p class="who">Technician · phone</p>
+<ol class="f30">
+<li>For a reading, type the value and tap <b>Save</b>.</li>
+<li>A reading tied to a meter is also logged as a meter reading.</li>
+<li>When it says “4 of 4 filled”, tap <b>Mark job done</b>.</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/53-pm-job-filled-phone.webp" alt="PM job filled, top" width="428" height="1372" loading="lazy"></div>
+<div class="crop dup"><img src="shots/53-pm-job-filled-phone.webp" alt="PM job filled, lower part" width="428" height="1372" loading="lazy" style="--shift:-500px"></div>
+</div>
+</section>
+<section id="x54" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Mark job done</h2>
+<p class="who">Technician · phone · dialog</p>
+<ol class="f34">
+<li>Check the <b>Done</b> time, or keep <b>Now</b>.</li>
+<li>After this you cannot change the job, unless an engineer sends it back.</li>
+<li>Tap <b>Mark job done</b>.</li>
+</ol>
+</div>
+<img class="ph" src="shots/54-pm-mark-done-dialog-phone.webp" alt="Mark job done dialog" width="428" height="872" loading="lazy">
+</section>
+<section id="x55" class="slide light row phone">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A job sent back</h2>
+<p class="who">Technician · phone</p>
+<ol class="f32">
+<li>The <b>Sent back</b> badge and the engineer’s remark in the yellow box, e.g. “Belt is still loose…”.</li>
+<li>Do the work again and change the answers.</li>
+<li>Tap <b>Mark job done</b>.</li>
+</ol>
+</div>
+<div class="cols pair">
+<div class="crop"><img src="shots/55-pm-job-sent-back-phone.webp" alt="Sent back job, top" width="428" height="1101" loading="lazy"></div>
+<div class="crop dup"><img src="shots/55-pm-job-sent-back-phone.webp" alt="Sent back job, lower part" width="428" height="1101" loading="lazy" style="--shift:-229px"></div>
+</div>
+</section>
+<section id="x63" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM › Due</h2>
+<p class="who">Engineer · desktop · /pm</p>
+<ol class="f28">
+<li>All due, overdue and started jobs.</li>
+<li>Filters: <b>All my units</b> and <b>Assigned to me</b>.</li>
+<li>A job turns <b>Overdue</b> after its on-time window.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/63-pm-jobs-due-desktop.webp" alt="PM jobs, Due tab" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x64" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM › Upcoming</h2>
+<p class="who">Engineer · desktop · /pm?tab=upcoming</p>
+<ol class="f28">
+<li>Jobs coming due soon, here the gearbox oil change.</li>
+<li>Use it to plan parts and a stop of the machine.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/64-pm-jobs-upcoming-desktop.webp" alt="PM jobs, Upcoming tab" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x65" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM › To verify</h2>
+<p class="who">Engineer · desktop · /pm?tab=to_verify</p>
+<ol class="f28">
+<li>Finished jobs waiting for an engineer.</li>
+<li>“1 Not OK” warns that a check failed.</li>
+<li>Click a job to read it and verify it.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/65-pm-jobs-to-verify-desktop.webp" alt="PM jobs, To verify tab" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x66" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM › Done</h2>
+<p class="who">Engineer · desktop · /pm?tab=done</p>
+<ol class="f28">
+<li>Closed jobs: <b>Verified</b>, <b>On time</b> or late, <b>Skipped</b>.</li>
+<li>On time means done within the job’s window around its due date.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/66-pm-jobs-done-desktop.webp" alt="PM jobs, Done tab" width="1180" height="663" loading="lazy"></div>
+<aside>The on-time window is 10 % of the interval (at least one day). This feeds the SMRP measure PM compliance later.</aside>
+</section>
+<section id="x67" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Check a finished job</h2>
+<p class="who">Engineer · desktop · /pm/jobs/&lt;id&gt;</p>
+<ol class="f28">
+<li>Read each result. Not OK rows are red.</li>
+<li>Then click <b>Verify job</b> or <b>Send back</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/67-pm-job-to-verify-desktop.webp" alt="A PM job to verify" width="1105" height="888" loading="lazy"></div>
+</section>
+<section id="x68" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Verify job</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>Add a <b>Remark (optional)</b>.</li>
+<li>Click <b>Verify job</b>.</li>
+<li>The job closes. It cannot be changed or sent back after this.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/68-pm-verify-dialog-desktop.webp" alt="Verify job dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x69" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Send back job</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>Write <b>What must be done again?</b></li>
+<li>Click <b>Send back job</b>.</li>
+<li>The job goes back to In progress, and the technician sees your remark.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/69-pm-send-back-dialog-desktop.webp" alt="Send back job dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x70" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Reschedule a job</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>On a due job, card <b>Reschedule or skip</b>, click <b>Reschedule job</b>.</li>
+<li>Set the <b>New due date</b>.</li>
+<li>Write <b>Why is the job moved?</b></li>
+<li>Click <b>Reschedule job</b>.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/70-pm-reschedule-dialog-desktop.webp" alt="Reschedule job dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x71" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>Skip a job</h2>
+<p class="who">Engineer · desktop · dialog</p>
+<ol class="f28">
+<li>Click <b>Skip job</b>.</li>
+<li>Write <b>Why is the job skipped?</b></li>
+<li>Click <b>Skip job</b>. You cannot undo this.</li>
+<li>The job counts as not done; the next job counts from today.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/71-pm-skip-dialog-desktop.webp" alt="Skip job dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x72" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A verified job</h2>
+<p class="who">Anyone with PM access · desktop</p>
+<ol class="f28">
+<li>Who did it, and when.</li>
+<li><b>Verified by</b>, with the remark.</li>
+<li><b>History</b> at the bottom lists every step of the job.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/72-pm-job-verified-desktop.webp" alt="A verified PM job" width="1180" height="794" loading="lazy"></div>
+</section>
+<section id="x73" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A skipped job</h2>
+<p class="who">Anyone with PM access · desktop</p>
+<ol class="f28">
+<li>The <b>Skipped</b> badge, the reason, and who skipped it.</li>
+<li>The next job of the plan counts from the skip.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/73-pm-job-skipped-desktop.webp" alt="A skipped PM job" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x80" class="slide alt row desk">
+<div class="tx">
+<p class="kick">8 · Contracts</p>
+<h2>A contract</h2>
+<p class="who">Manager · desktop · /contracts/&lt;id&gt;</p>
+<ol class="f26">
+<li><b>Terms</b>: vendor, period, covered and not covered, response time, call-out number, cost note.</li>
+<li><b>Machines covered</b>: <b>Add machine</b>, <b>Edit price</b>, <b>Remove</b>.</li>
+<li><b>Breakdown calls</b>: tickets the vendor’s engineer worked on, “N of 4 calls used”.</li>
+<li><b>Renew contract</b> at the top right.</li>
+</ol>
+<p class="note">Only managers see the price, the cost note and the documents.</p>
+</div>
+<div class="shot"><img class="dk" src="shots/80-contract-page-desktop.webp" alt="Contract page" width="777" height="888" loading="lazy"></div>
+</section>
+<section id="x81" class="slide alt row desk">
+<div class="tx">
+<p class="kick">8 · Contracts</p>
+<h2>Under contract, on the machine</h2>
+<p class="who">Anyone · machine page</p>
+<ol class="f28">
+<li>The <b>Under contract</b> card shows the vendor, the end date (<b>Ends in 45 days</b>), what is covered and the <b>Call-out number</b>.</li>
+<li><b>Open contract</b> opens it.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/81-contract-card-on-machine-desktop.webp" alt="Under contract card" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x85contracts" class="slide alt row desk">
+<div class="tx">
+<p class="kick">8 · Contracts</p>
+<h2>All contracts</h2>
+<p class="who">Manager or admin · desktop · Masters › Contracts</p>
+<ol class="f28">
+<li>Every contract, with filters.</li>
+<li><b>Add contract</b> starts a new one.</li>
+<li>Click a contract to open it.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/85-masters-contracts-desktop.webp" alt="Masters, Contracts tab" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="mt1" class="slide light stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>How the masters fit together</h2>
+<div class="cols wide">
+<div class="col">
+<h3 class="sec">Where it is: the place tree</h3>
+<p class="box"><b>Site</b> · SMTW, BRICKS, SSVT</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box"><b>Unit</b> · SMTW.MCC2, SMTW.KILN</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box hl"><b>Equipment</b> · EXT001 Main extruder</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box"><b>Parts</b> (component-units, components) · GBX001 gearbox</p>
+</div>
+<div class="col">
+<h3 class="sec">What it is: the kind</h3>
+<p class="box"><b>Category</b> (optional) · Lifting equipment</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box"><b>Class</b> · EXT Extruder → <b>Type</b> · Vacuum extruder</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box"><b>Model</b> = <b>Manufacturer</b> + designation · Haendle VAH 600</p>
+<span class="arrow" aria-hidden="true"></span>
+<p class="box hl">The machine picks <b>one model</b>; class and type come from it</p>
+</div>
+</div>
+<aside>This follows the ISO 14224 taxonomy: installation (site), plant and section (unit), equipment unit, subunit and maintainable item (parts). Places and kinds are separate: the same class, e.g. a blower, can be a machine in one place and a part of a machine elsewhere.</aside>
+</section>
+<section id="mt2" class="slide light stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>Sites and units: the places</h2>
+<div class="cols">
+<div class="card">
+<h3 class="f36">Site</h3>
+<p class="f28">A factory, yard or farm: SMTW, BRICKS, SSVT, the farms.</p>
+<p class="f28">People get their role per site in Team.</p>
+</div>
+<div class="card">
+<h3 class="f36">Unit</h3>
+<p class="f28">An area or line in a site, coded SITE.UNIT: SMTW.MCC2, SMTW.KILN, BRICKS.FILTER.</p>
+<p class="f28">Only a machine has a unit. Its parts go where it goes.</p>
+</div>
+<div class="card warn">
+<h3 class="f36">Rules</h3>
+<p class="f28">Made by IT admin.</p>
+<p class="f28">A code is frozen once anything uses it. Check the code before the first machine.</p>
+<p class="f28">Never deleted: set inactive.</p>
+</div>
+</div>
+</section>
+<section id="mt3" class="slide light stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>Category, class, type: what a machine is</h2>
+<div class="cols">
+<div class="card">
+<h3 class="f36">Class</h3>
+<p class="f28">The kind of machine: Extruder, Compressor, Hydraulic press.</p>
+<p class="f28">Its code starts every machine code: class EXT → EXT001, EXT002.</p>
+<p class="f28">One class at any level: a blower is a blower, machine or part.</p>
+</div>
+<div class="card">
+<h3 class="f36">Type</h3>
+<p class="f28">How machines of a class are built: Screw compressor, Vacuum extruder.</p>
+<p class="f28">Optional. A type belongs to one class.</p>
+</div>
+<div class="card">
+<h3 class="f36">Category</h3>
+<p class="f28">A group of classes: Lifting equipment, Utilities, Power tools.</p>
+<p class="f28">Optional, a name only. Used for filters and reports.</p>
+</div>
+</div>
+<p class="who">Made by an engineer or IT admin. Add a class only for a new kind of machine, not for a new maker. A class code is frozen once a machine uses it.</p>
+</section>
+<section id="mt4" class="slide alt row desk">
+<div class="tx" style="--w:520px">
+<p class="kick">9 · Masters · onboarding</p>
+<h2>Manufacturer and model</h2>
+<ul class="f27">
+<li>A <b>model</b> is a maker’s product: manufacturer + designation, e.g. Atlas Copco GA37.</li>
+<li>It belongs to one class (and a type) for life.</li>
+<li>Every machine picks a model. Its class and type come from the model: there is no class picker on the machine.</li>
+<li>Set things up once on the model: its <b>meters</b>, <b>property values</b> and <b>documents</b> apply to every machine of that model.</li>
+<li>Two machines of the same model share one model record.</li>
+</ul>
+</div>
+<div class="shot"><img class="dk" src="shots/85-masters-models-desktop.webp" alt="Masters, Models" width="1150" height="646" loading="lazy"></div>
+<aside>ISO 14224 asks for the maker and model on every equipment unit, so reliability can be compared across machines of one model.</aside>
+</section>
+<section id="mt5" class="slide light stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>No maker’s model? Generic or in-house</h2>
+<div class="cols">
+<div class="card">
+<h3 class="f36">Maker unknown → Generic</h3>
+<p class="f28">Manufacturer <b>Generic</b>, model named by what it is: “Generic gearbox”, “Generic bore pump”.</p>
+<p class="f28">One Generic model per class is enough.</p>
+<p class="f28">When you find the nameplate later, give the machine the real model.</p>
+</div>
+<div class="card">
+<h3 class="f36">Built here → in-house</h3>
+<p class="f28">Manufacturer <b>SMTW (in-house)</b>, model e.g. SMTW-HYP-01.</p>
+<p class="f28">The design drawings go on this model.</p>
+</div>
+<div class="card">
+<h3 class="f36">A part with no model</h3>
+<p class="f28">A component-unit (a drive, a power pack) may have no model.</p>
+<p class="f28">Then pick its class (and type) directly.</p>
+<p class="f28">A machine always needs a model.</p>
+</div>
+</div>
+<p class="who">Why not leave it blank? “Generic” says the maker is not known. A blank cannot tell that from “nobody looked”. Reports by model leave Generic out.</p>
+</section>
+<section id="mt6" class="slide alt row desk">
+<div class="tx" style="--w:560px">
+<p class="kick">9 · Masters · onboarding</p>
+<h2>Parts of a machine</h2>
+<ul class="f27">
+<li>Add a part with <b>Add part</b> on the machine’s page: a component-unit (drive, power pack) or a component (motor, gearbox).</li>
+<li>Make a part only when tickets or PM point at it: the gearbox oil change, a press’s safety door.</li>
+<li>A part gets its own code (GBX001) and can have its own meters and PM plans.</li>
+<li>It has no unit: it follows its machine. Criticality comes from the machine unless you grade it.</li>
+<li>The code never changes, also when the part moves to another machine.</li>
+</ul>
+</div>
+<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="775" height="888" loading="lazy"></div>
+</section>
+<section id="mt7" class="slide light stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>Documents and photos: where each goes</h2>
+<table>
+<tr><th>What</th><th>Put it on</th><th>Why</th></tr>
+<tr><td>Maker’s manual, drawings, parts list</td><td>The <b>model</b> (Masters › Models)</td><td>Uploaded once; shows on every machine of that model, at every site</td></tr>
+<tr><td>Design drawings of an in-house press</td><td>The in-house <b>model</b></td><td>The same design for each press built to it</td></tr>
+<tr><td>Nameplate photo, drawing of a change to one machine</td><td>The <b>machine</b></td><td>True of this machine only</td></tr>
+<tr><td>Photo of the machine in place</td><td>The <b>machine</b> (Photos card)</td><td>Helps find it on the floor</td></tr>
+</table>
+<ul class="f28">
+<li>Documents are PDF. Photos are JPEG, PNG or WebP. The size limit is in Settings › Uploads (20 MB at the start).</li>
+<li>To replace a file, remove the old one and add the new one. A removed file is kept; a manager or IT admin can restore or erase it.</li>
+</ul>
+<aside>EN 13460 separates documents that come with a product (manuals, drawings, parts lists) from records of the item. ISO 55001 clause 7.5 asks the plant to decide what asset information it needs and keep it.</aside>
+</section>
+<section id="mt8" class="slide dark stack">
+<p class="kick">9 · Masters · onboarding equipment</p>
+<h2>Checklist: one new machine</h2>
+<div class="cols wide">
+<ol class="f30">
+<li>Its <b>site</b> and <b>unit</b> exist. If not, ask IT admin.</li>
+<li>Its <b>class</b> exists. If it is a new kind of machine, add the class with a short code.</li>
+<li>Its <b>manufacturer</b> exists. If not, add it.</li>
+<li>Its <b>model</b> exists. If not, add it, or use the class’s Generic model.</li>
+<li>On the model: meters, property values, the maker’s documents.</li>
+</ol>
+<ol class="f30">
+<li>Equipment › <b>Add equipment</b>: unit, model, name, criticality (A, B, C), serial number, year.</li>
+<li>Add the <b>parts</b> that tickets or PM will point at.</li>
+<li>This machine’s own values: properties that differ, its own meters, the nameplate photo.</li>
+<li><b>Print label</b>, stick it on the machine, scan it once to check.</li>
+</ol>
+</div>
+<aside>Who: steps 1 needs IT admin; steps 2–9 an engineer or IT admin. Scanning the label once proves the label and the record match.</aside>
+</section>
+<section id="m1" class="slide alt stack mid">
+<h2>Masters: where the plant is set up</h2>
+<div class="grid">
+<div class="fig"><img class="sm" src="shots/85-masters-sites-desktop.webp" alt="Masters, Sites" width="640" height="360" loading="lazy"><p class="f24"><b>Sites</b>: the plant’s sites. <b>Add site</b>.</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-units-desktop.webp" alt="Masters, Units" width="640" height="360" loading="lazy"><p class="f24"><b>Units</b>: areas or lines in a site (SMTW.MCC1 …).</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-classes-desktop.webp" alt="Masters, Classes" width="640" height="360" loading="lazy"><p class="f24"><b>Classes</b>: kinds of equipment; the code starts each machine code.</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-models-desktop.webp" alt="Masters, Models" width="640" height="360" loading="lazy"><p class="f24"><b>Models</b>: maker and model; its meters pass to each machine.</p></div>
+</div>
+<aside>Masters is on the desktop for the admin (some tabs also for the engineer). Click Masters in the left bar, then a tab.</aside>
+</section>
+<section id="m2" class="slide alt stack mid">
+<h2>Masters: the lists the work uses</h2>
+<div class="grid">
+<div class="fig"><img class="sm" src="shots/85-masters-meter-types-desktop.webp" alt="Masters, Meter types" width="640" height="360" loading="lazy"><p class="f24"><b>Meter types</b>: run hours, oil temperature …</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-failure-codes-desktop.webp" alt="Masters, Failure codes" width="640" height="360" loading="lazy"><p class="f24"><b>Failure codes</b>: modes, causes, actions (ISO 14224).</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-trades-desktop.webp" alt="Masters, Trades" width="640" height="360" loading="lazy"><p class="f24"><b>Trades</b>: labour is booked per trade.</p></div>
+<div class="fig"><img class="sm" src="shots/85-masters-vendors-desktop.webp" alt="Masters, Vendors" width="640" height="360" loading="lazy"><p class="f24"><b>Vendors</b>: outside firms such as the AMC vendor.</p></div>
+</div>
+</section>
+<section id="x85team" class="slide alt row desk">
+<div class="tx">
+<p class="kick">9 · Masters</p>
+<h2>Team</h2>
+<p class="who">Admin · desktop · Masters › Team</p>
+<ol class="f28">
+<li>Every person: employment (Direct, Contractor), trades, login, <b>Sites and roles</b>.</li>
+<li>A person’s role at each site decides what they see and may do.</li>
+<li><b>Add person</b> adds one. Link a vendor’s engineer as a contractor.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/85-masters-team-desktop.webp" alt="Masters, Team" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x90" class="slide light row phone">
+<div class="tx">
+<p class="kick">10 · Notifications and settings</p>
+<h2>My notifications</h2>
+<p class="who">Anyone · phone · /notifications</p>
+<ol class="f32">
+<li>Open it from the bell at the top.</li>
+<li><b>This device</b>: turn on notifications for this phone.</li>
+<li>Also <b>My devices</b>, <b>Email</b> and <b>What you will get</b>.</li>
+</ol>
+<p class="note">The test browser blocks notifications, so this screen says “Notifications are blocked”.</p>
+</div>
+<img class="ph" src="shots/90-notifications-phone.webp" alt="My notifications on a phone" width="428" height="872" loading="lazy">
+</section>
+<section id="x91" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Notifications and settings</p>
+<h2>Notifications on the desktop</h2>
+<p class="who">Manager · desktop</p>
+<ol class="f28">
+<li>Shows the email address from the login, and <b>Send test email</b>.</li>
+<li>The list of alerts a manager gets.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/91-notifications-desktop.webp" alt="My notifications on the desktop" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x95" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Notifications and settings</p>
+<h2>Settings</h2>
+<p class="who">Admin · desktop · /settings</p>
+<ol class="f26">
+<li><b>Database</b> status, <b>Uploads</b>, <b>Labels</b> (label link address), <b>Network</b> (plant network ranges).</li>
+<li><b>Notifications</b>: escalation minutes per criticality.</li>
+<li><b>Background tasks</b> and <b>Access log</b>.</li>
+<li>Each section has its own <b>Save</b>.</li>
+</ol>
+<p class="note">On the test copy no worker runs, so the tasks show as overdue.</p>
+</div>
+<div class="shot"><img class="dk" src="shots/95-settings-admin-desktop.webp" alt="Settings page, whole" width="505" height="888" loading="lazy"></div>
+</section>
+<section id="x96" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Notifications and settings</p>
+<h2>Settings as IT admin</h2>
+<p class="who">IT admin · desktop</p>
+<ol class="f28">
+<li>The same page.</li>
+<li>IT admin looks after uploads, labels and the network.</li>
+<li>IT admin works only from inside the plant network.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/96-settings-it-admin-desktop.webp" alt="Settings as IT admin" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="notes" class="slide dark stack">
+<h2>About these screens</h2>
+<ul class="f32">
+<li>Taken on a test copy with sample data: made-up people, machines from the plant facts.</li>
+<li>History lines show test logins such as <b>e2e_operator</b>. Real use shows the person’s name.</li>
+<li>Notifications are blocked in the test browser, and no background worker runs, so those two screens look different in real use.</li>
+<li>The access log is empty on the test copy.</li>
+<li>The screens show Yantra v0.1.15 with preventive maintenance, as of 02-11-2026.</li>
+</ul>
+</section>
+</main>
+<div class="pager" data-js-block>
+  <button type="button" id="prev" aria-label="Previous slide">&larr;</button>
+  <span id="count" aria-live="polite">1 / 72</span>
+  <button type="button" id="next" aria-label="Next slide">&rarr;</button>
+</div>
+<script>
+// Views and slides only (S103 D8, D9). No library, no storage: the view lives in the address
+// (?view=page or ?view=slides), the slide in the hash (#x20), so a link opens that slide and Back works.
+(function () {
+  var slides = [].slice.call(document.querySelectorAll(".slide"));
+  var body = document.body, deck = document.getElementById("deck");
+  var count = document.getElementById("count"), toggle = document.getElementById("view");
+  var toc = document.querySelector(".toc");
+  var WIDE = 900, W = 1920, H = 1080, SWIPE = 50;
+  var index = 0;
+
+  function wantSlides() {
+    var view = new URLSearchParams(location.search).get("view");
+    if (view === "page") return false;
+    if (view === "slides") return true;
+    return window.innerWidth >= WIDE;
+  }
+  function indexOfHash() {
+    var id = decodeURIComponent(location.hash.slice(1));
+    for (var i = 0; i < slides.length; i++) if (slides[i].id === id) return i;
+    return -1;
+  }
+  function fit() {
+    if (!body.classList.contains("show")) return;
+    var k = Math.min(deck.clientWidth / W, deck.clientHeight / H);
+    var x = (deck.clientWidth - W * k) / 2, y = (deck.clientHeight - H * k) / 2;
+    slides[index].style.transform = "translate(" + x + "px," + y + "px) scale(" + k + ")";
+  }
+  function show(i) {
+    index = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach(function (s, n) { s.classList.toggle("on", n === index); });
+    count.textContent = (index + 1) + " / " + slides.length;
+    fit();
+  }
+  function go(i) {
+    var next = Math.max(0, Math.min(slides.length - 1, i));
+    if (next === index) return;
+    location.hash = slides[next].id;   // hashchange shows it; Back goes to the slide before
+  }
+  function setView(slidesOn, keepAddress) {
+    body.classList.toggle("show", slidesOn);
+    toggle.textContent = slidesOn ? "Read as a page" : "Show as slides";
+    if (!keepAddress) {
+      try {
+        var q = new URLSearchParams(location.search);
+        q.set("view", slidesOn ? "slides" : "page");
+        history.replaceState(null, "", "?" + q.toString() + location.hash);
+      } catch (e) { /* a file address may refuse; the view still switches */ }
+    }
+    if (slidesOn) {
+      var at = indexOfHash();
+      if (at < 0) {   // from the page: the first section in view
+        at = 0;
+        for (var i = 0; i < slides.length; i++) {
+          if (slides[i].getBoundingClientRect().bottom > 80) { at = i; break; }
+        }
+      }
+      show(at);
+    } else {
+      slides.forEach(function (s) { s.style.transform = ""; });
+      slides[index].scrollIntoView();
+    }
+  }
+
+  document.documentElement.classList.add("js");
+  var start = indexOfHash();
+  setView(wantSlides(), true);
+  if (start >= 0) { show(start); if (!body.classList.contains("show")) slides[start].scrollIntoView(); }
+
+  toggle.addEventListener("click", function () { setView(!body.classList.contains("show")); });
+  document.getElementById("prev").addEventListener("click", function () { go(index - 1); });
+  document.getElementById("next").addEventListener("click", function () { go(index + 1); });
+  window.addEventListener("resize", fit);
+  window.addEventListener("hashchange", function () {
+    var at = indexOfHash();
+    if (at >= 0) show(at);
+  });
+  toc.addEventListener("click", function (e) { if (e.target.closest("a")) toc.removeAttribute("open"); });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { toc.removeAttribute("open"); return; }
+    if (!body.classList.contains("show") || e.altKey || e.ctrlKey || e.metaKey) return;
+    var tag = e.target.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    var onControl = tag === "BUTTON" || tag === "SUMMARY" || tag === "A";
+    var step = { ArrowRight: 1, ArrowDown: 1, PageDown: 1, ArrowLeft: -1, ArrowUp: -1, PageUp: -1 }[e.key];
+    if (e.key === " " && !onControl) step = e.shiftKey ? -1 : 1;
+    if (step) { e.preventDefault(); go(index + step); }
+    else if (e.key === "Home" && !onControl) { e.preventDefault(); go(0); }
+    else if (e.key === "End" && !onControl) { e.preventDefault(); go(slides.length - 1); }
+  });
+
+  var touch = null;
+  deck.addEventListener("touchstart", function (e) {
+    touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  deck.addEventListener("touchend", function (e) {
+    if (!touch || !body.classList.contains("show")) return;
+    var dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) > SWIPE && Math.abs(dx) > Math.abs(dy)) go(index + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+})();
+</script>
+</body>
+</html>

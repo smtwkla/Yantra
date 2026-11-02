@@ -12,6 +12,20 @@ if defined YANTRA_TEST_RUN if /i not "%YANTRA_TEST_RUN%"=="dev" set "TEST_SUMMAR
 if exist "%TEST_SUMMARY_FILE%" del "%TEST_SUMMARY_FILE%"
 set "FAILED="
 
+:: The line-width check first (S094; feedback triage 02-11-2026): a long line found after the 3-minute
+:: backend suite cost a second full run. It takes seconds; when it fails, no suite runs.
+set "WIDTH_LOG=%YANTRA_TEST_LOG_DIR%\line-width.log"
+if defined YANTRA_TEST_RUN if /i not "%YANTRA_TEST_RUN%"=="dev" set "WIDTH_LOG=%YANTRA_TEST_LOG_DIR%\line-width-%YANTRA_TEST_RUN%.log"
+pushd "%~dp0.."
+uv run --no-project --with "pytest>=8,<10" --with python-dotenv pytest -q tooling\tests\test_line_width.py > "%WIDTH_LOG%" 2>&1
+set "WIDTH_EXIT=%ERRORLEVEL%"
+popd
+if not "%WIDTH_EXIT%"=="0" (
+  type "%WIDTH_LOG%"
+  echo == LINE WIDTH: FAILED. Wrap the lines listed above to 120 characters, then run again. No suite ran.
+  exit /b 1
+)
+
 call "%~dp0run-backend-tests.bat" || set "FAILED=1"
 call "%~dp0run-frontend-tests.bat" || set "FAILED=1"
 call "%~dp0run-tooling-tests.bat" || set "FAILED=1"

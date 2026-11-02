@@ -1,10 +1,11 @@
 // S064 floor UX: dialogs full screen on a phone (UX-01), the top bar's name and Sign out (UX-02),
 // Masters in the nav for its editors only (UX-12), the bottom bar by keyboard (UX-22), and a
-// dropped connection's plain message (UX-06).
+// dropped connection's plain message (UX-06); S103: the Help link.
 import { test, expect } from "./support/test.js";
-import { openDialog } from "./support/dialogs.js";
+import { expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { asPerson } from "./support/people.js";
 import { navItem } from "./support/nav.js";
+import { HELP_URL } from "../src/help.js";
 
 const SM = 576; // Bootstrap's sm: below it a dialog is the whole screen
 
@@ -80,4 +81,37 @@ test("S064: the bottom bar is reached by Tab and opens with Enter", async ({ pag
   expect(reached, "Tab never reached the bottom bar's Tickets item").toBe(true);
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/tickets(\?|$)/);
+});
+
+// S103: the Help link in the top bar leads to the gallery; the test never opens the gallery
+test("S103: the top bar has a Help link to the gallery, opening in a new tab", async ({ page }) => {
+  for (const [person, path] of [["operator", "/me"], ["it_admin", "/settings"]]) {
+    await asPerson(page, person, path);
+    const help = page.locator(".topbar").filter({ visible: true }).getByRole("link", { name: "Help" });
+    await expect(help).toBeVisible();
+    await expect(help).toHaveAttribute("href", HELP_URL);
+    await expect(help).toHaveAttribute("target", "_blank");
+    await expect(help).toHaveAttribute("rel", /noopener/);
+  }
+});
+
+test("S103: Help, the bell and Sign out fit the top bar at 360 px", { tag: "@device" }, async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await asPerson(page, "operator", "/me");
+  const bar = page.locator(".topbar").filter({ visible: true });
+  for (const control of [
+    bar.getByRole("link", { name: "Help" }),
+    bar.getByRole("link", { name: "My notifications" }),
+    bar.getByRole("button", { name: "Sign out" }),
+  ]) {
+    await expect(control).toBeInViewport({ ratio: 1 });
+    const box = await control.boundingBox();
+    expect(box.height, "a top-bar control is lower than 44 px").toBeGreaterThanOrEqual(44);
+    expect(box.width, "a top-bar control is narrower than 44 px").toBeGreaterThanOrEqual(44);
+  }
+  await expect(bar.getByRole("button", { name: "Sign out" }).locator("i")).toBeVisible();
+  const title = bar.locator(".topbar-center");
+  await expect(title).toBeInViewport({ ratio: 1 });
+  expect((await title.boundingBox()).width, "the page title is narrower than 60 px").toBeGreaterThanOrEqual(60);
+  await expectNoSidewaysScroll(page);
 });

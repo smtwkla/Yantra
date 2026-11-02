@@ -1,6 +1,7 @@
 <script setup>
 /**
- * Topbar — page title, the notifications bell, username, and Sign out.
+ * Topbar — page title, the Help link, the notifications bell, username, and Sign out.
+ * The Help link (S103) opens the Help home in the gallery in a new tab; everyone logged in sees it.
  * The bell (S021 § 1.3) opens My notifications. It shows to people with push:subscribe, and its
  * dot when this device needs turning on (stores/notifications.js decides).
  * Yantra runs on shared phones and kiosks, so the name is plain dark text and Sign out a
@@ -11,6 +12,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { userName, userPermissions, logout } from "../../stores/auth";
 import { showDot } from "../../stores/notifications";
+import { HELP_URL } from "../../help";
 
 const route = useRoute();
 const canSubscribe = computed(() => userPermissions.value.includes("push:subscribe"));
@@ -25,6 +27,16 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
       {{ route.meta?.title }}
     </div>
     <div class="topbar-right">
+      <a
+        :href="HELP_URL"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="help-link text-secondary"
+        aria-label="Help"
+        title="Help"
+      >
+        <i class="fa-solid fa-circle-question"></i>
+      </a>
       <router-link
         v-if="canSubscribe"
         to="/notifications"
@@ -58,6 +70,8 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
   font-weight: 600;
   font-size: 1rem;
   color: var(--text-primary);
+  flex: 1 1 auto;
+  text-align: center;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -83,8 +97,8 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
   align-items: center;
 }
 /* A 44 px tap target (a gloved thumb), drawn without a border so it sits in the 48 px bar */
+.help-link,
 .bell {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -92,6 +106,9 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
   height: 44px;
   flex-shrink: 0;
   font-size: 1.1rem;
+}
+.bell {
+  position: relative;
 }
 .bell-dot {
   position: absolute;
@@ -108,14 +125,20 @@ const canSubscribe = computed(() => userPermissions.value.includes("push:subscri
   .topbar {
     padding: 0 0.75rem;
   }
-  .topbar-left strong {
-    font-size: 0.8rem;
+  /* The brand word gives way on a phone, so the page title keeps its room (S103, CR1-01) */
+  .topbar-left {
+    display: none;
   }
   .topbar-center {
     font-size: 0.85rem;
   }
   .topbar-right {
     font-size: 0.8rem;
+  }
+  /* The name is capped so the page title keeps at least 60 px at 360 px (S103) */
+  .user-name {
+    max-width: 4.5rem;
+    margin-right: 0.25rem !important;
   }
 }
 </style>

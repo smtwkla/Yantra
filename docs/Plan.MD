@@ -945,6 +945,8 @@ browser); the conventions in `docs/schema.md` (S078, 30-10-2026).
 - Every form (dialogs and the *Raise ticket* page): a refused save scrolls to the first message and puts the cursor in its field, so a refusal is never out of sight on a phone (S026, 22-10-2026; `SMTW-WebApp-Base.md` § Form / Modal Pattern).
 - PM job: checklist and readings one item per row, out-of-limit flagged as you type, photos, "done".
 
+- *Help* (S103, 02-11-2026, by KLA): a question-mark button in the top bar, beside the bell, on every screen, for everyone logged in, opens the Help home in a new tab. Help is app documentation, kept in `help/` (never `docs/`) as plain web pages with their screenshots, and delivered through SMTW's gallery (<https://gallery.mspv.app/yantra/home/>, Yantra's Keycloak roles only); the app only links to it. Three pages: the Help home, the user guide (one page: a slide show on a wide screen, a reading page on a phone) and *Documents and photos* (what goes on a model and on a machine, and how to add, rename, remove and restore them).
+
 **Desktop (engineer, manager, admin):**
 
 - Dashboard: open tickets by age, equipment down now, PMs due/overdue, out-of-limit readings.

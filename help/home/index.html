@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yantra Help</title>
+<style>
+/* Layout: one narrow column, a header band in the app's slate, guide cards below. */
+:root {
+  --bg: #f6f8fb; --surface: #ffffff; --fg: #1e293b; --muted: #526072; --line: #dbe2ea;
+  --accent: #1d4ed8; --band: #1e293b; --band-fg: #f1f5f9; --band-muted: #a9b6c7;
+  --display: "Segoe UI", Roboto, Arial, sans-serif; --body: "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f172a; --surface: #172236; --fg: #e2e8f0; --muted: #a3b1c4; --line: #2a3a52;
+  --accent: #8db4ff; --band: #0b1222; --band-fg: #f1f5f9; --band-muted: #93a3b8; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f172a; --surface: #172236; --fg: #e2e8f0; --muted: #a3b1c4; --line: #2a3a52;
+  --accent: #8db4ff; --band: #0b1222; --band-fg: #f1f5f9; --band-muted: #93a3b8; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.55; }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { background: var(--band); color: var(--band-fg); }
+header .wrap { padding-block: 40px 36px; display: grid; gap: 10px; }
+.eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--band-muted); margin: 0; }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(32px, 6vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 0; max-width: 62ch; color: var(--band-muted); }
+main .wrap { padding-block: 32px 48px; display: grid; gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: grid; gap: 14px; min-width: 0; }
+.card h2 { font-family: var(--display); font-weight: 600; font-size: 24px; margin: 0; }
+.card p { margin: 0; color: var(--muted); }
+.who { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.who li { font-size: 14px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 12px; color: var(--muted); }
+.sections { margin: 0; padding-left: 1.2em; columns: 2 260px; column-gap: 32px; }
+.sections li { break-inside: avoid; margin-bottom: 4px; }
+.open { justify-self: start; display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: var(--surface);
+  text-decoration: none; font-weight: 600; border-radius: 10px; padding: 12px 20px; min-height: 44px; box-sizing: border-box; }
+.open:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+.later { border-style: dashed; }
+footer { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Plant maintenance app</p>
+    <h1>Yantra Help</h1>
+    <p>What is where in Yantra, and how to do the daily work. Each guide shows the real screens, who uses them, and the steps with the app’s own button names.</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="card" aria-labelledby="guide">
+      <h2 id="guide">User guide</h2>
+      <ul class="who" aria-label="For">
+        <li>Operators</li><li>Technicians</li><li>Engineers</li><li>Managers</li><li>IT admin</li>
+      </ul>
+      <p>72 slides of real screens, on the phone and on the desktop. On a laptop it opens as a slide show: use the arrow keys or swipe. On a phone it opens as a page you scroll.</p>
+      <ol class="sections">
+        <li>Getting around: who uses what, the Me page</li>
+        <li>Equipment: find a machine, QR labels</li>
+        <li>Tickets: raise, work and close</li>
+        <li>Improvements: root cause, countermeasures</li>
+        <li>One-point lessons</li>
+        <li>Meter readings</li>
+        <li>Preventive maintenance: plans and jobs</li>
+        <li>Contracts: AMC and warranty</li>
+        <li>Masters: onboarding equipment</li>
+        <li>Notifications and settings</li>
+      </ol>
+      <a class="open" href="../guide/">Open the user guide</a>
+    </section>
+
+    <section class="card" aria-labelledby="onboard">
+      <h2 id="onboard">Entering equipment</h2>
+      <p>For the team that sets up machines in Masters: how sites, units, classes, models and documents fit together, and a checklist for one new machine. This is section 9 of the user guide (slides 57–66).</p>
+      <a class="open" href="../guide/#mt1">Open the onboarding slides</a>
+    </section>
+
+    <section class="card" aria-labelledby="docs">
+      <h2 id="docs">Documents and photos</h2>
+      <ul class="who" aria-label="For">
+        <li>Engineers</li><li>IT admin</li><li>Managers</li>
+      </ul>
+      <p>How to add a manual, a drawing or a photo to a machine or a model, open or download it, and remove or restore it. A page to read top to bottom beside the app.</p>
+      <a class="open" href="../documents/">Open Documents and photos</a>
+    </section>
+
+    <footer>Screens of Yantra v0.1.15 with preventive maintenance, taken 02-11-2026 on a test copy with sample data.</footer>
+  </div>
+</main>
+</body>
+</html>

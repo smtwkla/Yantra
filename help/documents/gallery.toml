@@ -1,0 +1,7 @@
+contract = 1
+title = "Documents and photos"
+description = "How to add, open, download, remove and restore documents and photos on machines and models."
+
+[access]
+client = "vel-yantra-master"
+roles = ["maintenance_team", "it_admin"]

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents and photos</title>
+<style>
+/* Yantra Help: Documents and photos. A reading page; the classes are those of the user guide's
+   reading view (help/guide/index.html), copied here so the page stands alone. */
+:root { --ink: #1e293b; --muted: #475569; --accent: #1d4ed8; --line: #cbd5e1; --page: #e5eaf0;
+  --font: "Segoe UI", Roboto, Arial, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 17px/1.5 var(--font); }
+h1, h2, h3 { font-weight: 600; line-height: 1.15; margin: 0; }
+p, ol, ul { margin: 0; }
+img { display: block; max-width: 100%; height: auto; }
+.bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  background: #1e293b; color: #f1f5f9; }
+.bar a { color: #f1f5f9; font-weight: 600; text-decoration: none; min-height: 44px; display: inline-flex;
+  align-items: center; }
+.bar a:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.deck { padding: 8px 12px 48px; }
+.slide { max-width: 820px; margin: 16px auto; padding: 20px 16px 24px; border-radius: 12px; display: flex;
+  flex-direction: column; gap: 14px; scroll-margin-top: 72px; overflow-wrap: anywhere; }
+.light { background: #f6f8fb; }
+.alt { background: #fff; }
+.kick { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.slide h1 { font-size: 34px; }
+.slide h2 { font-size: 24px; }
+.who { color: var(--muted); font-size: 15px; }
+.note { color: #64748b; font-size: 15px; }
+ol, ul { padding-left: 1.3em; display: grid; gap: 6px; }
+.box { background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.box.hl { background: #dbeafe; border-color: #2563eb; }
+.ph, .dk { border-radius: 10px; box-shadow: 0 4px 16px rgba(15,23,42,.2); }
+.ph { max-width: min(100%, 412px); margin: 0 auto; }
+.dk { margin: 0 auto; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+figcaption { color: var(--muted); font-size: 15px; text-align: center; }
+nav.contents ol { gap: 2px; }
+nav.contents a { color: var(--accent); display: inline-block; min-height: 32px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <a href="../home/">Yantra Help</a>
+</header>
+<main class="deck">
+
+<section id="top" class="slide light">
+  <p class="kick">Documents and photos</p>
+  <h1>Add a manual, a drawing or a photo, and find it again</h1>
+  <p class="who">For the team that enters equipment, and for anyone who keeps a machine's papers · phone or desktop</p>
+  <p>A machine page and a model have two cards: <b>Documents</b> (PDF files) and <b>Photos</b>. This page shows each step with the app's own button names.</p>
+  <nav class="contents" aria-label="On this page">
+    <ol>
+      <li><a href="#where">Where each goes: the model or the machine</a></li>
+      <li><a href="#add-document">Add a document to a machine</a></li>
+      <li><a href="#add-photo">Add a photo</a></li>
+      <li><a href="#model">The model's documents</a></li>
+      <li><a href="#open">Open, download, rename, remove</a></li>
+      <li><a href="#removed">Removed documents</a></li>
+      <li><a href="#rules">The rules</a></li>
+    </ol>
+  </nav>
+</section>
+
+<section id="where" class="slide alt">
+  <p class="kick">1 · Where each goes</p>
+  <h2>The model, or the machine</h2>
+  <p class="who">Everyone who enters equipment · Masters and the machine's page</p>
+  <ul>
+    <li>The <b>maker's</b> papers (manual, drawings, spare-parts list) go on the <b>model</b>. Upload them once. Every machine of that model shows them under <b>From model …</b>, at every site.</li>
+    <li>This machine's <b>own</b> papers (a test report, an invoice, a drawing of a change to this machine only) and the nameplate photo go on the <b>machine</b>.</li>
+    <li>Put no confidential paper on a machine or a model (a contract, a price). Everyone who can see the machine can see its documents. Contracts keep their own documents, which only managers see.</li>
+  </ul>
+  <figure>
+    <img class="ph" src="shots/doc-04-machine-documents-empty-phone.webp" alt="The Documents card of a machine on a phone: the Add document button, and the model's manual under the group From model Atlas Copco GA37" width="728" height="550" loading="lazy">
+    <figcaption>A machine that has no document of its own yet. The model's manual shows under <b>From model …</b>.</figcaption>
+  </figure>
+</section>
+
+<section id="add-document" class="slide light">
+  <p class="kick">2 · Add a document to a machine</p>
+  <h2>Equipment › the machine › Documents › Add document</h2>
+  <p class="who">Engineer, manager, IT admin · phone or desktop · not on a scrapped machine</p>
+  <ol>
+    <li>Tap <b>Equipment</b>, then tap the machine.</li>
+    <li>In the <b>Documents</b> card, tap <b>Add document</b>.</li>
+    <li>Under <b>File</b>, choose the PDF. The dialog shows the largest size allowed.</li>
+    <li>Check the <b>Title</b>. It starts as the file's name. Write a name people will know, for example “Compressor 1 test report”.</li>
+    <li>Tap <b>Upload</b>. If the button is grey, hover or tap it: it says what is missing (“Choose a file” or “Enter a title”).</li>
+  </ol>
+  <figure>
+    <img class="ph" src="shots/doc-05-add-document-dialog-phone.webp" alt="The Add document dialog on a phone, with a PDF chosen and its title filled in" width="824" height="1678" loading="lazy">
+    <figcaption>The Add document dialog.</figcaption>
+  </figure>
+  <p>The new row shows the title, the file name, the size, who added it and when. The newest document is first.</p>
+  <figure>
+    <img class="ph" src="shots/doc-06-machine-documents-phone.webp" alt="The Documents card of a machine with two documents of its own and, below them, the group From model Atlas Copco GA37" width="728" height="1216" loading="lazy">
+    <figcaption>The machine's own documents first, then the model's group.</figcaption>
+  </figure>
+</section>
+
+<section id="add-photo" class="slide alt">
+  <p class="kick">3 · Add a photo</p>
+  <h2>Equipment › the machine › Photos › Add photo</h2>
+  <p class="who">Engineer, manager, IT admin · best on a phone, at the machine</p>
+  <ol>
+    <li>Open the machine's page. In the <b>Photos</b> card, tap <b>Add photo</b>.</li>
+    <li>Under <b>File</b>, a phone offers the camera or the gallery. Take the photo or choose one. It must be JPEG, PNG or WebP.</li>
+    <li>Under <b>Title</b>, say what the photo shows, for example “Nameplate”. When the photo has a camera's own name, the field is empty and asks “What does the photo show?”.</li>
+    <li>Tap <b>Upload</b>.</li>
+  </ol>
+  <figure>
+    <img class="ph" src="shots/doc-09-add-photo-dialog-phone.webp" alt="The Add photo dialog on a phone, with a photo chosen and the title Nameplate" width="824" height="1678" loading="lazy">
+    <figcaption>The Add photo dialog.</figcaption>
+  </figure>
+  <p>The photo shows as a small picture with its title. Tap it to see it large; the arrows step through the photos.</p>
+  <figure>
+    <img class="ph" src="shots/doc-10-machine-photos-phone.webp" alt="The Photos card of a machine with one photo titled Nameplate" width="728" height="476" loading="lazy">
+    <figcaption>The Photos card after the upload.</figcaption>
+  </figure>
+</section>
+
+<section id="model" class="slide light">
+  <p class="kick">4 · The model's documents</p>
+  <h2>Masters › Models › Documents</h2>
+  <p class="who">Engineer, manager, IT admin · desktop</p>
+  <ol>
+    <li>Click <b>Masters</b>, then the <b>Models</b> tab.</li>
+    <li>On the model's row, click the paperclip button (its tooltip says <b>Documents</b>). The model's <b>Documents</b> and <b>Photos</b> cards open in place.</li>
+    <li>Click <b>Add document</b>, choose the PDF, check the <b>Title</b>, click <b>Upload</b>. A photo works the same with <b>Add photo</b>.</li>
+    <li>Click <b>Models</b> (the arrow at the top left of the card) to go back to the list.</li>
+  </ol>
+  <figure>
+    <img class="dk" src="shots/doc-01-models-documents-button-desktop.webp" alt="Masters, Models tab: the list of models, each row with a paperclip button for its documents" width="2049" height="1152" loading="lazy">
+    <figcaption>The paperclip button on each model's row.</figcaption>
+  </figure>
+  <figure>
+    <img class="ph" src="shots/doc-02-model-add-document-dialog-desktop.webp" alt="The Add document dialog for a model, with the note that it is visible at every site" width="750" height="1068" loading="lazy">
+    <figcaption>The dialog says the file is visible at every site.</figcaption>
+  </figure>
+  <figure>
+    <img class="dk" src="shots/doc-03-model-documents-desktop.webp" alt="The Documents and Photos cards of the model Atlas Copco GA37, with one document" width="2049" height="1152" loading="lazy">
+    <figcaption>The model's cards, with its first document.</figcaption>
+  </figure>
+  <p>Now open any machine of that model. Its <b>Documents</b> card shows the group <b>From model …</b> under the machine's own documents (see section 2). On the machine you can open and download it; to change or remove it, go back to <b>Masters › Models</b>. When you remove a model's document, the question says: “Remove this document? It disappears from every machine of this model.”</p>
+</section>
+
+<section id="open" class="slide alt">
+  <p class="kick">5 · Open, download, rename, remove</p>
+  <h2>One row, four actions</h2>
+  <p class="who">Everyone opens and downloads · engineer, manager and IT admin change · phone or desktop</p>
+  <ul>
+    <li><b>Open</b>: tap the title. The PDF opens in a new tab.</li>
+    <li><b>Download</b>: tap <b>Download</b> to keep the file on the phone or the computer.</li>
+    <li><b>Rename</b>: tap the <b>⋯</b> button (<b>More actions</b>), then <b>Edit title</b>, change the title, save.</li>
+    <li><b>Remove</b>: tap <b>⋯</b>, then <b>Remove</b>. The row asks “Remove this document?”. Tap <b>Yes</b> to remove it, or <b>No</b> to keep it.</li>
+  </ul>
+  <figure>
+    <img class="ph" src="shots/doc-07-document-more-actions-phone.webp" alt="The Documents card with the More actions menu open, showing Edit title and Remove" width="728" height="1216" loading="lazy">
+    <figcaption>The <b>⋯</b> menu on a document.</figcaption>
+  </figure>
+  <figure>
+    <img class="ph" src="shots/doc-08-remove-document-confirm-phone.webp" alt="The Documents card asking Remove this document? with the buttons Yes and No" width="728" height="1294" loading="lazy">
+    <figcaption>The question before a document is removed.</figcaption>
+  </figure>
+  <p>A removed file is not lost. It leaves the machine's page, but a manager or IT admin can bring it back (next section). To replace a file, remove the old one and add the new one.</p>
+</section>
+
+<section id="removed" class="slide light">
+  <p class="kick">6 · Removed documents</p>
+  <h2>Settings › Removed documents</h2>
+  <p class="who">Manager, IT admin · desktop</p>
+  <ol>
+    <li>Click <b>Settings</b>. Find the <b>Removed documents</b> card.</li>
+    <li>Search by machine code, model, ticket, improvement, lesson number, contract, title or file name, or choose <b>Documents</b> or <b>Photos</b> in the list beside the search.</li>
+    <li>Click <b>Restore</b> to put the file back where it was. Restore is grey when the owner cannot be changed any more (a scrapped machine, a closed ticket); point at it to read why.</li>
+    <li>Click <b>Delete for good</b> to erase the file. The row asks “Delete for good? The file cannot be recovered.” Click <b>Delete for good</b> again to confirm, or <b>No</b>.</li>
+  </ol>
+  <figure>
+    <img class="dk" src="shots/doc-11-removed-documents-desktop.webp" alt="The Removed documents card in Settings, listing one removed document with the buttons Restore and Delete for good" width="1887" height="345" loading="lazy">
+    <figcaption>A removed document waits here.</figcaption>
+  </figure>
+  <figure>
+    <img class="dk" src="shots/doc-12-removed-delete-confirm-desktop.webp" alt="The Removed documents card asking Delete for good? The file cannot be recovered." width="1887" height="345" loading="lazy">
+    <figcaption>The question before a file is erased.</figcaption>
+  </figure>
+</section>
+
+<section id="rules" class="slide alt">
+  <p class="kick">7 · The rules</p>
+  <h2>What may be uploaded, and by whom</h2>
+  <table>
+    <tr><th>Rule</th><th>What it says</th></tr>
+    <tr><td>File type</td><td>Documents are PDF only. Photos are JPEG, PNG or WebP.</td></tr>
+    <tr><td>iPhone photos</td><td>An iPhone photo in HEIC form is refused. Set Camera › Formats › Most Compatible on the iPhone, or share the photo as JPEG.</td></tr>
+    <tr><td>Size</td><td>The largest file is set in <b>Settings › Uploads</b>, “Largest file for documents and photos”. It starts at 20 MB. IT admin can change it, from 1 to 100 MB. A larger file is refused before it is sent.</td></tr>
+    <tr><td>Who adds to a machine or a model</td><td>Engineer, manager and IT admin. Everyone else can open and download.</td></tr>
+    <tr><td>Who restores or erases</td><td>Manager and IT admin.</td></tr>
+  </table>
+  <p>Documents and photos also live in other places, each with its own rule:</p>
+  <ul>
+    <li><b>Tickets</b>: photos are added while raising a ticket or on the ticket's page, and a technician can add documents to a ticket.</li>
+    <li><b>Countermeasures</b> of an improvement, and <b>one-point lessons</b>: the person who owns them, or an engineer, adds files.</li>
+    <li><b>Contracts</b>: documents such as a quote or an agreement. Only managers see a contract's documents, because they can show a price.</li>
+  </ul>
+  <p class="note">The shots on this page were taken on a test copy of Yantra with sample data.</p>
+</section>
+
+</main>
+</body>
+</html>
