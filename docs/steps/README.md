@@ -5,12 +5,13 @@ implemented and reviewed again across separate Claude Code terminals:
 
 | Role | Model | Writes |
 |---|---|---|
-| Roadmapper | Opus | `docs/roadmap/R0N-<feature>.md`: a big feature cut into items `R0N.n`, the seed of steps (gate R; `docs/roadmap/README.md`) |
+| Planner | Opus | `docs/roadmap/R0N-<feature>.md`: a big feature cut into items `R0N.n`, the seed of steps (gate R; `docs/roadmap/README.md`) |
 | Advisor | Fable | `0-advice-<topic>.md` (on request) |
-| Orchestrator | Opus | `1-brief.md` |
+| Brief writer | Opus; Fable or Sonnet per brief | `1-brief.md` |
 | Brief reviewer | Fable | `2-brief-review-rN.md` |
 | Coder | Opus or Sonnet | the code + `3-impl-report.md` |
 | Code reviewer | Opus | `4-code-review-rN.md` |
+| Architect | Fable | the repo's architecture doc (§ The architecture doc) |
 
 The files are the hand-over between terminals. Each terminal reads the files
 it needs and does not rely on another terminal's chat.
@@ -36,19 +37,19 @@ progress:
 | File | Written by | Purpose |
 |---|---|---|
 | `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the orchestrator, a coder or a reviewer through the orchestrator (25-10-2026). Optional; a step may have none or several. |
-| `1-brief.md` | Orchestrator | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
+| `1-brief.md` | Brief writer | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
 | `2-brief-review-r1.md`, `-r2.md`, … | Brief reviewer | One file per review round |
 | `2-brief-review-s1.md`, `-s2.md`, … | Brief reviewer | A staleness review: does the approved brief still hold for code changed since its baseline (§ Stale brief check) |
 | `3-impl-report.md` | Coder | The mandatory post-implementation report (CLAUDE-COMMON "Report after implementation"). Its **Docs updated** section lists every doc the step changed (the docs pass, standing rule 24-10-2026; which docs: `.claude/CLAUDE.md` § Docs to keep current), or says why none; its **Fix rounds** section answers each code-review finding. |
 | `4-code-review-r1.md`, `-r2.md`, … | Code reviewer | One file per review round, reviewing the working-tree diff against the brief |
 
-**Feedback** (25-10-2026, by KLA). Every file an agent writes — advice, brief review, impl report,
+**Feedback** (25-10-2026, by KLA). Every file an agent writes — advice, brief, brief review, impl report,
 code review — ends with `## Feedback`: at most 5 items, one bullet each, labelled `waste`, `hindrance`,
 `rule` or `idea`, each with its evidence, or `- none` (the agents' instructions give the form).
 `/step feedback` collects them across steps (`tooling/step-feedback.bat`), by default only the
 items not yet in the repo's **feedback log** `docs/steps/feedback-log.md` (27-10-2026): one row
 per item read, with its theme and what was decided (`acted`, `dropped` or `noted`). The log is the
-repo's own file, like the index; the step skill § Feedback gives its form.
+repo's own file, like the index; `.claude/skills/step/reference/feedback.md` gives its form.
 
 ## Header block
 
@@ -99,9 +100,9 @@ the index row (`INDEX.md`) are updated, and the user is told. A finding that onl
 "belongs on the full track" is `minor` (23-10-2026, S029): it switches the
 track, and the user may keep light at approval.
 
-**Facts run.** Before brief review round 1, the orchestrator runs
+**Facts run.** Before brief review round 1, the brief writer runs
 `tooling/step-brief-facts.bat S0NN`: where each file, test, route and code name
-the brief cites exists, and which tests use it. The orchestrator fixes the brief
+the brief cites exists, and which tests use it. The brief writer fixes the brief
 from it; the brief reviewer gets the output (23-10-2026, S029). Its *Cited lines*
 section shows the text of each `file:line` the brief cites, and where a named
 function or constant is now when it has moved (30-10-2026).
@@ -207,7 +208,7 @@ The rules:
   - `Rejected`, with why;
   - `Deferred`, with the step it goes to.
 
-  The orchestrator answers in the brief's Review log, and the coder in the impl report's Fix rounds.
+  The brief writer answers in the brief's Review log, and the coder in the impl report's Fix rounds.
 
 ## Gates
 
@@ -239,7 +240,7 @@ Whoever changes a step's status also updates its row in `INDEX.md`.
 A change requested after a brief is approved, while the step is not yet `Done`,
 becomes an **amendment** rather than a new step:
 
-1. **Write it.** The orchestrator adds the amendment under the brief's **§ 10
+1. **Write it.** The brief writer adds the amendment under the brief's **§ 10
    Amendments** as `A1`, `A2`, … It has its own header (requested by, status
    `Proposed` / `Approved DD-MM-YYYY by <user>`) and its own what, rules, where,
    tests and open points.
@@ -279,6 +280,75 @@ between approval and coding. The check catches it before the coder starts.
    - after the check, `Baseline:` is set to the code just checked.
 3. **Skipped** only when the user says so; the orchestrator records it in the brief.
 
+## Rules for every agent
+
+Every agent of the step workflow follows this section; its own file adds only what is specific to
+its role. The orchestrator follows it too, where it applies.
+
+**What needs no approval.** These are routine, and an agent does them without asking or holding
+back: read any file in the repo; run read-only commands and git queries; run the repo's own tests,
+tooling and step tools (`tooling/`, the facts run, the snapshot diff, the claim tool, the diagram
+check); retry a command or tool that failed or timed out, after finding why, when running it again
+is safe; write the files its role owns. A limit in the agent's own file names any exception.
+
+**What goes back to the orchestrator.** Subagents cannot ask the user anything, so an agent that
+needs the user or another agent stops and puts a heading at the top of its final message:
+
+- **QUESTIONS FOR THE USER**: a decision only the user can make (a gap that changes the design,
+  behaviour the user would notice, a conflict between the brief and the code), or a check that
+  needs something outside the repo. Each question with its options, what each does, and the one
+  recommended.
+- **ADVICE NEEDED**: a fact about how a library, browser, operating system or device really
+  behaves that a few minutes of reading and a small check do not settle. The question in one
+  sentence, why it matters, and what was tried with its result. The orchestrator runs the advisor
+  and resumes the agent with the answer; nobody builds on a guess.
+- **ARCHITECTURE UPDATE NEEDED**: a change to the structure the architecture doc describes (§ The
+  architecture doc): what changes and why. Only the architect edits that doc.
+
+**Outside the repo.** The CLAUDE-COMMON invariant *Agents change nothing outside the repo* holds:
+an agent changes only the repo's working tree, plus `scratch/` and the session scratchpad for its
+own scripts. What the repo's own tooling does when run is allowed (installing the browser tests'
+browsers, starting their containers, the release tests' worktree). Anything else a check would
+need (pulling an image, installing a tool, a setting, another repo) is neither done nor skipped
+silently: it goes back as a question for the user, with what it would do and why the step needs
+it.
+
+**Commits.** No agent commits, pushes, builds images, deploys or releases: the user does, or asks
+the orchestrator for it in so many words. The snapshot tool's refs (`refs/steps/`) are not commits
+of a branch and are the orchestrator's.
+
+**Own test run name.** Every backend or full test run sets the repo's test run name variable
+(settings: *Unit tests*) to a short name of letters and digits: the one the orchestrator gives, or
+else the step, the role and the round (`s061cr2`). Each name gets its own test databases, so
+agents running tests at the same time never share one. The reserved names (settings: *Unit
+tests*) are never used.
+
+**Shell.** Read § Shell on Windows before the first Bash call: it holds the rules for scripts,
+`.bat` wrappers, chained commands and line endings.
+
+**The user's own edits.** The IDE may re-pad tables, re-wrap lines or switch line endings (§ IDE
+reformatting). Keep those changes, never report them, read diffs with
+`git diff -w --ignore-cr-at-eol`, and re-read a file before editing it.
+
+**Writing style** (CLAUDE-COMMON § Writing style). Scope A for every step file and every message:
+the point first, one term for one thing, questions with their options and the recommended one.
+Scope B for the text users see in the app: labels, buttons, messages, confirmations. Developer
+text (logs, code comments, exceptions a user never sees) stays technical and exact. Quoted text,
+such as the user's own words, is exempt. A reviewer raises text that breaks scope A or B as a
+finding: `nit`, or `minor` when the wording can mislead the coder or the user.
+
+**Feedback.** Each file an agent writes ends with `## Feedback`: what in the workflow, the tools
+or the rules cost time or got in the way during this run, so the workflow can be improved. Not
+the step's findings, and no praise. At most 5 items, one bullet each (a long one may wrap onto
+indented lines): `- <label>: <what happened> (<evidence>)`, the label one of `waste` (time or
+tokens spent for nothing), `hindrance` (a tool failed or was slow, a command was hard to get
+right, something was hard to find), `rule` (a rule unclear, contradicting another, or no longer
+fitting) or `idea` (a concrete improvement); the evidence names the file, the command or the
+minutes lost. Nothing to report: `- none`. A fix round, a later round or an amendment adds its own
+`## Feedback` under its own section heading; the brief instead keeps one section at its end, which
+each of the brief writer's runs appends to. Themes the user has dropped (the newest section of
+`feedback-log.md`, as the spawn prompt names them) are not reported again.
+
 ## IDE reformatting
 
 The user reads the step files in PyCharm, which can re-pad Markdown tables,
@@ -294,9 +364,9 @@ of content. That is expected and never needs the user's attention:
 
 ## Shell on Windows
 
-Every agent reads this before its first Bash call (29-10-2026, from the agents' feedback on S048–S064:
-runs lost to quoting, to a `cd` that stayed, and to a chain that stopped on an empty `grep`). The
-Bash tool is Git Bash on Windows.
+Every agent reads this before its first Bash call: these are the ways runs got lost to quoting, to a
+`cd` that stayed, and to a chain that stopped on an empty `grep`. The Bash tool is Git Bash on
+Windows; on Linux or macOS, rules 1, 4, 6 and 7 still apply.
 
 1. **Text and scripts go to a file first.** Change a file with the Edit or Write tool. For a script
    (a one-off fix over several files, a check), write it with the Write tool to the session
@@ -313,14 +383,11 @@ Bash tool is Git Bash on Windows.
    (`git show refs/steps/S0NN:<file>`); Git Bash turns it into a Windows path otherwise.
 6. **Read the summary line** of a test run before you call it green: it must name the tests that
    ran. A run that ran nothing failed.
-7. **Line endings** (31-10-2026, from the agents' feedback): write a file with the Write or Edit
+7. **Line endings**: write a file with the Write or Edit
    tool, or in Python with `open(path, "w", newline="")` or `Path.write_bytes`. Never a plain
    text-mode write (`open(path, "w")`, `Path.write_text`): on Windows it turns every LF into CRLF.
    Check a file's line endings by its bytes (`b"\r\n" in Path(path).read_bytes()`), not with
    `grep -c $'\r'`: Git Bash counts every line there.
-8. **Leave the git index alone** (01-11-2026, from the agents' feedback on S087 and S088): delete a
-   file with plain `rm`, never `git rm`, and never `git add`. `git rm` stages the deletion, and the
-   index is the user's, as the commit is.
 
 ## Orchestrated mode (one terminal)
 
@@ -329,9 +396,11 @@ terminal, with each role as a subagent (`.claude/agents/`):
 
 | Role | Subagent | Model |
 |---|---|---|
-| Brief reviewer | `brief-reviewer` | Fable |
+| Brief writer | `brief-writer` | Opus by default; Fable or Sonnet chosen per brief (criteria in the skill) |
+| Brief reviewer | `brief-reviewer` | Fable; Opus when the brief writer ran on Fable |
 | Coder | `coder` | Sonnet by default; Opus chosen per step when complex (criteria in the skill) |
 | Code reviewer | `code-reviewer` | Opus |
+| Architect | `architect` | Fable; Opus for a small update |
 
 - **Commands:**
   - `/step plan <topic>`
@@ -353,7 +422,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
   ends, after 30 minutes with no command and no agent, or 15 minutes after a
   running agent's budget. A background `watch` wakes the orchestrator when
   an agent passes its budget; it never stops the agent. The skill's
-  § Claims and the watchdog has the commands and the budgets. `scratch/`
+  `reference/claims.md` has the commands and the budgets. `scratch/`
   must be ignored by git, as it is for the browser-test lock.
 - **Snapshot rounds** (27-10-2026): every coder hand-back is snapshotted, and
   each snapshot keeps a round ref (`refs/step-rounds/S00N-<n>`), so a verify
@@ -376,6 +445,48 @@ terminal, with each role as a subagent (`.claude/agents/`):
 - Brief reviewer: `Review docs/steps/S00N-<slug>/1-brief.md, write 2-brief-review-rN.md`
 - Coder: `Implement S00N per the approved brief, write 3-impl-report.md`
 - Code reviewer: `Review the S00N implementation (git diff) against 1-brief.md, write 4-code-review-rN.md`
+
+## The architecture doc
+
+The repo's architecture doc (settings: *Architecture*; usually `docs/Architecture.md`) holds the
+agreed and evolving architecture: how the code is built now, and how the approved steps change it.
+It is the repo's own file, committed with the steps that change it; it never syncs. Only the
+**architect** (`.claude/agents/architect.md`) edits it; everyone else reads it.
+
+**Sections**, in this order:
+1. *Status* line (`Draft, DD-MM-YYYY` or `Agreed, DD-MM-YYYY`), and a short reading guide.
+2. *Context*: the app's users, its services and the outside systems (a context diagram).
+3. *Module map*: the backend modules and frontend areas, what each owns, and which way the
+   dependencies go (a module diagram); where the pure core ends and the shell begins.
+4. *Data areas*: which module owns which group of tables and how the groups link (a small
+   diagram); the column-level ER diagram is the repo's generated schema page where it has one.
+5. *Cross-cutting patterns*: permissions, transactions and locks, files, background work, alerts,
+   migrations, the database being down — each as the repo does it, pointing to the
+   `SMTW-WebApp-Base.md` section it follows, with a flow diagram where one helps.
+6. *Departures from the base*: each deliberate departure and its reason.
+7. *Decision log*: one row per structural decision — date, decision, reason, step, status
+   (`proposed`, `agreed` — the user agreed it and the code does not follow it everywhere yet,
+   `built`, `withdrawn`, `superseded by <row>`); rows are never deleted.
+8. *Known drift*: where the code departs from this doc or from CLAUDE-COMMON's principles, with
+   the candidate step that would fix it.
+
+**Diagrams** are Mermaid blocks in the doc: text in the diff, a picture on GitHub, in the IDE and
+on the artifact page. One idea per diagram, about 12 boxes at most. `tooling/check-diagrams.bat
+<doc>` (any OS: `node tooling/architecture/check_diagrams.mjs <doc>`) renders each block in the browser tests' Chromium (exit 0 all rendered, 1 a diagram
+failed, 2 not completed).
+
+**When it changes.** A step whose design changes the structure — a new module, table group,
+boundary, dependency direction or cross-cutting pattern, or a change to one — runs the architect
+twice: at the brief, it records the change marked `(proposed, S0NN)`, which the user approves with
+the brief at gate A; at gate B, it makes the doc match the code as built. A dropped step's
+proposed changes are withdrawn. Any agent that finds such a change (the brief writer, a reviewer,
+the coder) hands back **ARCHITECTURE UPDATE NEEDED** with what changes and why; the orchestrator
+runs the architect. `/step architecture review` compares the whole codebase with the doc
+(`docs/architecture/review-DD-MM-YYYY.md`).
+
+**Who checks it.** The brief writer reads the doc and states every departure from it in the
+brief's design decisions. The brief reviewer and the code reviewer raise an unstated departure
+from the doc as a `major` finding. The coder never edits it.
 
 ## The repo's settings and index
 
@@ -404,10 +515,11 @@ the message above when the section is missing: `brief_facts.py` and
 | *Browser tests* | the browser-test tool and its rules; the targeted run, a new test alone, the quick whole-app run, the whole-suite run, the release level; the device projects and the logic device; the layout tag and its rule; the test conventions; the spec-to-step map; the lock | no browser runs and no `[auto]` checks: every manual check is a device check |
 | *Plan and domain docs* | the repo's product plan (where gate A and gate R record lasting decisions), the domain docs, the schema doc | the generic text only |
 | *Standards* | the repo's standards rule (a pointer), the standards to name, and why they are explained | no standards section in the brief; the reviews do not ask for one |
-| *Self-check, repo items* | the repo's part of the skill's self-check, by item number; the repo's permission tables and security-sensitive code for the fix-lane criteria | the generic text only |
+| *Self-check, repo items* | the repo's part of the brief writer's self-check (`.claude/agents/brief-writer.md`), by item number; the repo's permission tables and security-sensitive code for the fix-lane criteria | the generic text only |
 | *Shared code* | the shared frontend files (a change runs the whole browser suite again), the migrations module and schema docs, the shared test fixtures | the generic text only |
 | *Device checks* | the device-check list, the named person, the kinds of check a browser cannot judge, the machines (where), an example Done status | device checks go to the user |
 | *Roadmap mock-ups* | the app's look (the style sheets to link, the views to copy from) and the sample data | the generic text only |
+| *Architecture* | the architecture doc's path, then the repo's generated schema page the doc links to instead of drawing tables | no architecture doc: the architect is not run and nobody checks against one |
 | *Use on the floor* | the docs to judge screens against, the repo's missing-record states, the users' language | the generic text only |
 | *Code folders* | the folders the repo's code lives in, backticked: where `brief_facts.py` searches (`git grep`), then looks up a module `x.py` (and `tooling/steps`) and a test id's file (at the root, then `<folder>/<file>` and `<folder>/tests/<file>`) | the whole repo except `docs/`; modules in `tooling/steps` only; test files at the root only |
 | *Browser-test wrapper* | the file name of the command that starts a browser-test run, e.g. `run-e2e-tests.bat` | no browser runs counted; `/step stats` has no E2E columns (the other four `Browser-test` entries are then ignored) |

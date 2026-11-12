@@ -55,8 +55,10 @@ AGENT_GRACE = timedelta(minutes=15)   # an agent past its budget by this much: i
 WATCH_POLL_SECONDS = 30
 # Budgets in minutes, about twice each role's usual time (/step stats, 27-10-2026: an Opus coder
 # 23-24 min, a review 2-7 min, a fix round 5 min). A fix round passes its own budget (20).
-BUDGETS = {"coder": 60, "fix": 20, "code-reviewer": 20, "brief-reviewer": 20, "advisor": 30,
-           "roadmapper": 45}
+# The brief writer: a new brief or amendment (brief-writer) and answers to a review (brief-answer).
+BUDGETS = {"coder": 60, "fix": 20, "code-reviewer": 20, "brief-writer": 45, "brief-answer": 20,
+           "brief-reviewer": 20, "advisor": 30, "planner": 45,
+           "architect": 30, "architect-full": 60}
 
 EXIT_REFUSED = 1
 EXIT_USAGE = 2

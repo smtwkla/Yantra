@@ -60,8 +60,11 @@ FILES = [
     ("tooling/step-snapshot.bat", "tooling/step-snapshot.bat"),
     ("tooling/step-stats.bat", "tooling/step-stats.bat"),
     ("tooling/render-mockups.bat", "tooling/render-mockups.bat"),
+    ("tooling/check-diagrams.bat", "tooling/check-diagrams.bat"),
     ("docs/steps/README.md", "docs/steps/README.md"),
     ("docs/roadmap/README.md", "docs/roadmap/README.md"),
+    # The gallery app contract: any repo with a gallery/ folder follows it
+    ("docs/SMTW-Utils-Gallery.md", "docs/SMTW-Utils-Gallery.md"),
 ]
 
 # Source directories in smtw-common repo to recursively sync into the project
@@ -72,6 +75,7 @@ DIRS = [
     (".claude/agents", ".claude/agents"),
     ("tooling/steps", "tooling/steps"),
     ("tooling/roadmap", "tooling/roadmap"),
+    ("tooling/architecture", "tooling/architecture"),
 ]
 
 # Files this repo once synced and has since renamed or dropped:
@@ -84,6 +88,11 @@ REMOVED = [
     # Renamed to tooling/common/run_test_suite.py
     ("tooling/common/run_logged.py", {
         "1429b45df726b460ed34e82c2a4aeb2e22e1ba824ab8a302f8ffd6aaceb6d52b",  # a2147bd
+    }),
+    # Renamed to .claude/agents/planner.md
+    (".claude/agents/roadmapper.md", {
+        "351b65792313801640f7fb4534778925f64a5c057991b0f808dc91948b60dddf",  # a2147bd
+        "b495ddd31ee76e45f8609ea1746fcda76cf77c736fa1f7586eb16383085f0ffd",  # 17272f6
     }),
 ]
 
@@ -171,6 +180,16 @@ def file_hash(path: Path) -> str:
     """SHA-256 of a file's content, with CRLF read as LF: write_text() saves CRLF on
     Windows, so the same synced file has different bytes on different machines."""
     return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+# The last lines of a sync name each old file it kept, so the warning is not lost in the output;
+# sync_all.py reads them by this prefix.
+KEPT_PREFIX = "KEPT, delete by hand if not needed: "
+
+
+def kept_report(kept: list[str]) -> list[str]:
+    """The closing lines that repeat the old files a sync kept because this repo changed them."""
+    return [f"{KEPT_PREFIX}{rel}" for rel in kept]
 
 
 def remove_old_files(root: Path, removed=None) -> list[str]:
@@ -284,9 +303,14 @@ def main():
             report_fetch_error(src_dir, e)
             failures += 1
 
-    remove_old_files(PROJECT_ROOT)
+    kept = remove_old_files(PROJECT_ROOT)
 
     check_claude_md_banner()
+
+    if kept:
+        print()
+        for line in kept_report(kept):
+            print(line)
 
     if failures:
         print(f"\n{failures} of {attempts} fetches failed.")

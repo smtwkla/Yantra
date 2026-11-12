@@ -186,9 +186,7 @@ release notes of § 3a.
 ## 5a. How the result is shown (with a person)
 
 Standing rule (01-11-2026, by KLA). The result of § 4 or § 5 is one card, and nothing else is in the
-message. It is normal Markdown text, never a code block (a code block shows in a fixed-width font;
-the step skill § Messages to the user gives the form): a bold title line
-`**Pre-flight <short sha> · <green | red | flaky>**`, then *Summary* (1–2
+message: a frame line `━━ Pre-flight <short sha> · <green | red | flaky> ━━`, then *Summary* (1–2
 lines: stamped or not, and why), *Details* (short labelled lines: the suites' counts, each failure with
 its verdict, the bug-report file, the release notes and their file), *Pending* (at most 3 lines, e.g.
 the § 2 information), and *Decide* last: the questions of § 5, numbered, options `(a) … ★ (b) …`, each

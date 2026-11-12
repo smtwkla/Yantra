@@ -26,7 +26,6 @@ Shared development rules across all repos, in two kinds:
   is fixed and the mark has to come off. A test that also passes now and then is no known fault: fix
   the test. The mark's syntax for each test tool is the repo's `## Pre-flight` setting *Known fault*
   (`SMTW-WebApp-Base.md` § Pre-flight Before Every Release); this rule does not repeat it.
-  (Yantra, S049, 25-10-2026.)
 - **Edge cases**: Consider nulls, empty inputs, boundary values, concurrent access. Clarify ambiguous requirements.
 - **Error handling**: Handle errors at the right level with meaningful messages. Never silently swallow exceptions.
 - **Deprecation**: Never use deprecated APIs/functions/modules. If found in existing code, rewrite to avoid them after consulting me.
@@ -38,7 +37,7 @@ Shared development rules across all repos, in two kinds:
   looks every library up in OSV and flags direct dependencies with no release in 12 months, as *Dependency
   health* asks. Exit codes: **0** clean, **1** a critical, high or unknown-severity vulnerability, **2** the
   check could not be completed. Run it before a release; keep it out of the normal test run (it needs the
-  network). Its report goes to `scratch/dependency-report.md`. (Yantra, S022, 18-10-2026.)
+  network). Its report goes to `scratch/dependency-report.md`.
 - **Idle connections**: Pooled DB/HTTP connections die after long idle periods (overnight). Detect a dead connection on first use (`OperationalError`/`InterfaceError` or equivalent) and reconnect, rather than returning a 500 after a quiet night.
 
 ### Migrations & dev databases
@@ -58,7 +57,7 @@ Shared development rules across all repos, in two kinds:
   Tests and examples use reserved names (`example.test`). A person's address comes from the login
   token, is never typed in, and is shown only to its owner and the administrator. A background-task
   payload carries the person's id, never the address, so the queue and the logs hold no address.
-  (Yantra, S032, 24-10-2026.) This covers the mail relay and people's addresses only; other service
+  This covers the mail relay and people's addresses only; other service
   URLs, realm names and deployment paths may be in a repo.
 - **Data directories**: App-owned data in a gitignored `data/` folder, organized by tenant/company if multi-tenant. Support env-var overrides for default paths.
 - **Git commit messages**: One line, feature-focused — what changed, brief context after a dash or semicolon. No multi-line bodies or bullet lists.
@@ -71,13 +70,14 @@ Write in the spirit of ASD-STE100 Simplified Technical English, without its full
 **A. Reports to me** — briefs, plans, bug reports, issue lists, questions, summaries. Not code, code comments, or quoted tool output.
 
 1. **Lead with the point.** First line: the result, the decision needed, or the main finding. Details after.
-2. **One idea per sentence.** Aim for 20 words or fewer. Split long sentences unless a split loses the logic.
+2. **One idea per sentence.** Split a sentence that carries two ideas. Where ideas build on each other, a short paragraph of connected sentences reads better than a list.
 3. **Active voice, plain verbs.** "The job fails because X", not "Failure is caused by X". Use "use", "start", "check", "fix" — not "utilize", "initiate", "ascertain", "remediate".
 4. **One term for one thing.** Do not alternate synonyms (task / job / run) for the same object. Keep exact names for files, functions, flags, and errors.
 5. **Imperative for actions.** One action per step: "Run X.", "Set Y to Z." Number steps that must run in order.
 6. **No noun stacks or hedges.** Avoid 3+ nouns in a row ("user session token refresh failure"). Cut "might possibly", "it seems that", "in order to".
-7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label each item as fact, assumption, or recommendation.
+7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label an item as fact, assumption, or recommendation where the difference matters.
 8. **Questions to me:** state the question first, then the options with the consequence of each. Mark the recommended option.
+9. **Write for a reader who hasn't seen the work.** Each message stands alone. Say what a thing is the first time you name it; don't use a term, ID or abbreviation invented during the work (a finding ID, a step number, "D1") without saying what it refers to.
 
 Keep full sentences with articles — no telegraphic text. Keep technical depth: plain wording must not remove detail, reasons, or caveats.
 
@@ -125,7 +125,7 @@ Keep it proportionate: a few lines for a small change, a structured list for a f
 
 ### Report after implementation
 
-Every implementation ends with a written summary — this is mandatory, even when the plan was pre-approved and the work went exactly as planned. Cover:
+Every implementation ends with a written summary — this is mandatory, even when the plan was pre-approved and the work went exactly as planned. Write it for a reader who hasn't seen the diff or the session; start with the outcome. Cover:
 
 - **What was built** — features/behaviour now present or changed.
 - **How it works** — what the new or changed code actually does, walked through at a level I can follow without reading the diff.
@@ -137,7 +137,7 @@ I should never discover a feature, abstraction, or design choice by reading the 
 
 ### Agents change nothing outside the repo
 
-- **Agents change nothing outside the repo** (standing rule, 25-10-2026, by KLA). Every
+- **Agents change nothing outside the repo.** Every
   agent — orchestrator, advisor, reviewers, coder — changes only the repo's working tree and
   Claude's memory:
   - no installing software, packages, browsers, drivers or scripts on the machine; no global
@@ -151,7 +151,9 @@ I should never discover a feature, abstraction, or design choice by reading the 
     the release tests' temporary worktree), installing the repo's own lockfiles when a step
     changes dependencies, and temporary git worktrees the agent removes itself;
   - anything else outside the repo: ask the user first.
-  Put this limit in every spawn prompt that runs experiments.
+  Put this limit in every spawn prompt that runs experiments. Inside the repo, reading files, running
+  the repo's own tests and tooling, and retrying a failed command once its cause is found are
+  routine: they need no approval.
 
 ### Release & deployment authorization
 
@@ -198,16 +200,19 @@ Every SPA must tell an open tab when a newer build is deployed and prompt the us
 ### Working in numbered steps (optional)
 
 A repo may work in numbered steps with `/step`: a brief, a brief review, the code with an impl report,
-and a code review, each in `docs/steps/S0NN-<slug>/`. The skill (`.claude/skills/step/`), the agents
-(`.claude/agents/`), the tools (`tooling/steps/`, `tooling/roadmap/` and the `tooling/step-*.bat` and
-`tooling/render-mockups.bat` wrappers) and the two READMEs (`docs/steps/README.md`,
+and a code review, each in `docs/steps/S0NN-<slug>/`. The orchestrator runs the loop and the gates;
+subagents write the brief, review it, code, review the code, give advice, plan roadmaps and keep the
+architecture doc. The skill (`.claude/skills/step/`, with its `reference/` files), the agents
+(`.claude/agents/`), the tools (`tooling/steps/`, `tooling/roadmap/`, `tooling/architecture/` and the
+`tooling/step-*.bat`, `tooling/render-mockups.bat` and `tooling/check-diagrams.bat` wrappers) and the
+two READMEs (`docs/steps/README.md`,
 `docs/roadmap/README.md`) come from `smtw-common` and are edited there, never in the repo. A repo opts
 in with two things of its own: a `## Step workflow` section in its `.claude/CLAUDE.md` (the entries
 are listed in `docs/steps/README.md` § The repo's settings and index; one line each, in the form of
 `## Pre-flight`) and its `docs/steps/INDEX.md`. The tools' tests live and run in `smtw-common` only
 (`tooling/common/tests`, `tooling/run-common-tests.bat`). One orchestrator session at a time works on a
 step: the skill takes a claim on it (`tooling/step-claim.bat`) and refuses a second session, and its
-watchdog tells the user when an agent runs past its budget (27-10-2026, by KLA; no hook enforces it).
+watchdog tells the user when an agent runs past its budget (no hook enforces it).
 
 ### RBAC Pattern
 
@@ -226,6 +231,10 @@ Canonical description — repo `CLAUDE.md` links here, doesn't restate. When a p
 To connect to, run commands on, or diagnose production servers (VMs, switches, OS), use the provided tooling scripts and skills — the `prod-vm` skill may apply; verify before connecting.
 
 **Claude Code is read-only on production.** Connections go through `tooling/common/ccssh.py` (restricted `claude_ro` account) for diagnostics only. Any change on a prod machine — config edit, service restart, deploy, cleanup — is executed by the user: prepare the exact ready-to-paste commands with a one-line reason and expected outcome each, state risks, then wait for the user to run them and report back. Never attempt a change via another credential, session, or workaround.
+
+### Gallery apps — `docs/SMTW-Utils-Gallery.md`
+
+A repo that ships a gallery app (a `gallery/` folder) follows `docs/SMTW-Utils-Gallery.md` (synced): the manifest, the file rules and the limits the gallery's collector checks.
 
 ### Reference architecture — `SMTW-WebApp-Base.md`
 
