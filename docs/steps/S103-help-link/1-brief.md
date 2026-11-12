@@ -5,7 +5,7 @@ Author: Orchestrator (Opus)
 Date: 02-11-2026
 Track: light
 Baseline: refs/steps/S102 (c9cd091 + S095–S102, uncommitted)
-Status: Gate B 02-11-2026 (code review r1: 5 minor, 5 nits; r2: 2 nits; all fixed in fix rounds 1–2; CR1-01 by KLA (a); verify review r3: no finding; device checks rows 69–70); was: In code review; was approved 02-11-2026 by KLA (1a HTML, 2: the documents page, 3a Yantra's users only, 4a light; review r1: 0 blocker, 0 major, 10 minor, 4 nits, all accepted; revised the same day on KLA's word: plain web pages on gallery.mspv.app, no claude.ai artifacts)
+Status: Committed 82d38ac (02-11-2026, by KLA; important checks pending: the two views by eye, and device-checks row 69 after the release; row 70 plain); was: Gate B 02-11-2026 (code review r1: 5 minor, 5 nits; r2: 2 nits; all fixed in fix rounds 1–2; CR1-01 by KLA (a); verify review r3: no finding; device checks rows 69–70); was: In code review; was approved 02-11-2026 by KLA (1a HTML, 2: the documents page, 3a Yantra's users only, 4a light; review r1: 0 blocker, 0 major, 10 minor, 4 nits, all accepted; revised the same day on KLA's word: plain web pages on gallery.mspv.app, no claude.ai artifacts)
 ```
 
 # S103 — Help: a link in the app to the user guide in the gallery
