@@ -252,15 +252,15 @@ Who uses PM and what each can do (in the app's words):
 
 | Item | Goal | Size | Track | Depends on | Status |
 |---|---|---|---|---|---|
-| R03.1 | Scheduling core: when a plan's next job is due, upcoming, overdue, on time (pure functions) | M | full | — | → S095, 01-11-2026 (held) |
-| R03.2 | PM plans on a machine, written by hand: items, triggers, performer, assignee | L | full | — | → S096, 01-11-2026 (held; reworked by R03.18) |
-| R03.3 | Jobs come due: the daily run, `PM-` serials, the *PM* list, due jobs on the equipment page | L | full | R03.1, R03.2 | → S097, 01-11-2026 (held) |
-| R03.4 | Do the job on the phone: start, fill items, readings to meters, done; *Open work* on *Me* | L | full | R03.3 | → S098, 01-11-2026 (held) |
-| R03.5 | Verify and send back: the engineer's sign-off | M | full | R03.4 | → S099, 02-11-2026 (held) |
+| R03.1 | Scheduling core: when a plan's next job is due, upcoming, overdue, on time (pure functions) | M | full | — | → S095, 01-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
+| R03.2 | PM plans on a machine, written by hand: items, triggers, performer, assignee | L | full | — | → S096, 01-11-2026, done 13-11-2026 (committed with S104 b6e11f9; reworked by R03.18) |
+| R03.3 | Jobs come due: the daily run, `PM-` serials, the *PM* list, due jobs on the equipment page | L | full | R03.1, R03.2 | → S097, 01-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
+| R03.4 | Do the job on the phone: start, fill items, readings to meters, done; *Open work* on *Me* | L | full | R03.3 | → S098, 01-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
+| R03.5 | Verify and send back: the engineer's sign-off | M | full | R03.4 | → S099, 02-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
 | R03.6 | Photos on job items, and the photo setting enforced | M | full | R03.4, R03.18 | open |
-| R03.7 | Alerts: PM job due, PM job overdue | S–M | full | R03.3 | → S102, 02-11-2026 (held) |
+| R03.7 | Alerts: PM job due, PM job overdue | S–M | full | R03.3 | → S102, 02-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
 | R03.8 | PM templates: write once, apply to a class | L | full | R03.2 | dropped — merged into R03.18–R03.20 (02-11-2026) |
-| R03.9 | Reschedule and skip, each with a reason | S | full | R03.3 | → S101, 02-11-2026 (held) |
+| R03.9 | Reschedule and skip, each with a reason | S | full | R03.3 | → S101, 02-11-2026, done 13-11-2026 (committed with S104 b6e11f9) |
 | R03.10 | A ticket from what the technician finds: a Not OK item, a *Measurement* out of its limits. **Changed 12-11:** a *Meter reading* item never asks; the meter's rules handle its reading (R03.23) | M | full | R03.4, R03.18 | open |
 | R03.11 | Labour and parts on PM jobs | M | full | R03.4, R03.18 | open |
 | R03.12 | CIL by operators: Clean / Inspect / Lubricate, the supervisor's *CIL today* | L | full | R03.5, R03.6, R03.19 | open |
@@ -269,7 +269,7 @@ Who uses PM and what each can do (in the app's words):
 | R03.15 | PM routes: one walk, many machines | L | full | R03.4, R03.12 | open |
 | R03.16 | A ticket's target by meter value (deferred work); the machine's own meter of the type, checked on every reading save | M | full | R03.1, R03.21 | open |
 | R03.17 | Reference photos on template items: what good looks like | M | full | R03.6, R03.18 | open |
-| R03.18 | **One path:** templates hold the work in *Masters › PM templates*; a machine's plans are rows linked to them; *Attach PM template* on a machine; one migration replaces v51–v56. **Changed:** two reading kinds (*Measurement*, *Meter reading*); meters matched by type on the machine's own meters; a template that needs a missing meter does not apply | L | full | R03.1–R03.5, R03.7, R03.9 (held code) | → S104, 02-11-2026 |
+| R03.18 | **One path:** templates hold the work in *Masters › PM templates*; a machine's plans are rows linked to them; *Attach PM template* on a machine; one migration replaces v51–v56. **Changed:** two reading kinds (*Measurement*, *Meter reading*); meters matched by type on the machine's own meters; a template that needs a missing meter does not apply | L | full | R03.1–R03.5, R03.7, R03.9 (held code) | → S104, 02-11-2026, done 13-11-2026 (b6e11f9) |
 | R03.19 | **Links by class, type and model**, kept in step when a link, a machine, or its class, type or model changes; *Not for this machine* | M–L | full | R03.18 | open |
 | R03.20 | **The engineer's lists:** PM plans without an assignee, PM plans that **do not apply** (changed: a missing meter, no meter to pick); assign many at once | S–M | full | R03.19 | open |
 | R03.21 | **Act on a reading at once:** every saved reading queues one check after its commit; it settles the PM plans that use the meter (the meter trigger no longer waits for 05:00), and is the hook for the meter's rules (R03.23) and ticket targets (R03.16) | M | full | R03.18 | open |
@@ -284,7 +284,7 @@ mechanical; its split point is named in its section. R03.3, R03.15 each add a re
 R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Masters › Models ›
 *Meters*) plus a line on the ticket page; its split point is named in its section.
 
-### R03.1 — Scheduling core (→ S095, held)
+### R03.1 — Scheduling core (→ S095, done 13-11-2026 with S104)
 
 - **Goal:** one pure module decides, for a plan, when its next job is due and how a job stands.
   Built as `pm_schedule_core.py` (Plan § 4.3, *Built (S095)*).
@@ -292,7 +292,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
   now come from the template and the machine's plan row together; the core does not change.
   (12-11-2026: `KINDS` gains no `condition`; R03.22 is dropped.)
 
-### R03.2 — PM plans on a machine (→ S096, held; reworked by R03.18)
+### R03.2 — PM plans on a machine (→ S096, done 13-11-2026 with S104; reworked by R03.18)
 
 - **Goal as built:** an engineer writes a PM plan by hand on any node: title, items, trigger,
   performer, assignee, verification flag, *Last done* seed (Plan § 4.3, *Built (S096)*).
@@ -304,7 +304,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
   machine's own meters, R03.18), the assignee rule (`ASSIGNABLE_ROLES` at the node's site), the plan
   row lock (6e) first, then the node shared, scrapped refused.
 
-### R03.3 — Jobs come due (→ S097, held)
+### R03.3 — Jobs come due (→ S097, done 13-11-2026 with S104)
 
 - **Goal as built:** a plan's job appears by itself when it falls due (Plan § 4.3, *Built (S097)*).
 - **In the re-plan:** `settle_plan_job` and the daily `pm_generate` read the trigger through the
@@ -312,7 +312,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
   template active, its machine not scrapped. A plan that stops being in force cancels its open, not
   started job with a timeline line, as S097's deactivation does (D7).
 
-### R03.4 — Do the job on the phone (→ S098, held)
+### R03.4 — Do the job on the phone (→ S098, done 13-11-2026 with S104)
 
 - **Goal as built:** start, fill item by item, readings to meters, done (Plan § 4.3, *Built (S098)*).
 - **In the re-plan (KLA, 2a):** *Start* copies the **template's** active items into
@@ -324,7 +324,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
 - **12-11-2026:** a *Meter reading* item's value is checked by the meter's rules like any reading
   (R03.21's task, R03.23), because it goes through `write_reading`. Nothing on the job decides.
 
-### R03.5 — Verify and send back (→ S099, held)
+### R03.5 — Verify and send back (→ S099, done 13-11-2026 with S104)
 
 - **In the re-plan:** *Mark job done* copies the template's *An engineer verifies each job* into
   `pm_jobs.needs_verification`. Nothing else changes.
@@ -339,7 +339,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
 - **Standards:** ISO 9001 § 7.5.3. **Migrations:** one. **Device check:** a real camera on an
   Android phone and the iPhone.
 
-### R03.7 — Alerts: PM job due, PM job overdue (→ S102, held)
+### R03.7 — Alerts: PM job due, PM job overdue (→ S102, done 13-11-2026 with S104)
 
 - **In the re-plan:** unchanged. A plan with no assignee sends *PM job due* to nobody, and *overdue*
   to the unit's verifiers only (S102's rule); R03.20's list is where the engineer fixes it.
@@ -355,7 +355,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
   live link. The *Apply* dialog with the property filter (mock-up 05) is dropped: a link reaches the
   whole class, and the engineer opts a machine out.
 
-### R03.9 — Reschedule and skip (→ S101, held)
+### R03.9 — Reschedule and skip (→ S101, done 13-11-2026 with S104)
 
 - **In the re-plan:** a change of the template's schedule clears a due job's move on every plan of
   the template (S101: "a schedule edit of the plan clears it"). A plan-row edit (assignee, meter,
@@ -448,7 +448,7 @@ R03.23 adds one table (the rules) and changes two screens (the *Meters* card, Ma
   approved: there are no plan items any more, so one owner, not two.)
 - **Migrations:** one (an owner in `equipment_documents`).
 
-### R03.18 — One path: templates hold the work, a machine's plans are rows (→ S104, 02-11-2026)
+### R03.18 — One path: templates hold the work, a machine's plans are rows (→ S104, 02-11-2026, done 13-11-2026, b6e11f9)
 
 - **Goal:** the work is written once, on a template in *Masters › PM templates*; a machine gets a
   PM plan only by a template linked to it. This item builds the template, the plan rows, the links
