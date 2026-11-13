@@ -29,7 +29,7 @@ import pymysql
 from company_settings import WORKER_POLL_SECONDS
 from config import DB_CONFIG
 from db_helpers import transaction
-from local_db import LOCK_WORKER, describe_error, ensure_schema, get_local_db, is_connection_lost, named_lock
+from local_db import LOCK_WORKER, connection_lost, describe_error, ensure_schema, get_local_db, named_lock
 from scheduled_tasks import SCHEDULE, due_tasks
 from task_handlers import BadTask, NoRetry, RetryLater, run_task
 from task_queue import claim_next, enqueue, last_enqueued, mark_done, mark_failed, requeue_stale
@@ -131,7 +131,7 @@ class Worker:
                 run_task(self.conn, task, self.should_stop)
                 mark_done(cur, task["id"])
         except pymysql.err.OperationalError as exc:
-            if self._connection_lost(exc):
+            if connection_lost(self.conn, exc):   # local_db: closed, or a 2xxx / dropped-session code
                 self._log_lost(task, exc)
                 raise   # the claim is requeued (or failed) once its lock expires
             self._task_failed(task, exc)   # e.g. deadlock, lock wait timeout: the connection is fine
@@ -144,13 +144,6 @@ class Worker:
             return task["id"]
         logger.info("Task %s (%s) done", task["id"], task["task_type"])
         return task["id"]
-
-    def _connection_lost(self, exc):
-        """True for a real loss: the connection is closed, a client-side error code (2xxx:
-        gone away, lost, can't connect) or the server shutting it down / killing the session.
-        PyMySQL's OperationalError also covers deadlock (1213) and lock wait timeout (1205)."""
-        code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
-        return not self.conn.open or is_connection_lost(code)
 
     @staticmethod
     def _log_lost(task, exc):

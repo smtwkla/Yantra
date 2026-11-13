@@ -1,11 +1,12 @@
+import { formatDate } from "./datetime.js";
 import { ageText } from "./ticketLabels.js";
 
 /**
  * Display words for meters — one vocabulary for every screen (S037 § 9.1, S038 § 1, § 3; readings:
- * S039). Pure: the only import is ticketLabels' ageText, so a reading's age reads as a ticket's
- * (S052). The limits wording ("Limits: 10–60 °C") comes from the API (meters_core), so it lives
- * once; here are the kinds, where a node's meter comes from, and a Yes / No meter's
- * expected answer.
+ * S039; meter links: S104 A1). Pure: the imports are ticketLabels' ageText, so a reading's age reads
+ * as a ticket's (S052), and datetime's formatDate. The limits wording ("Limits: 10–60 °C") comes from
+ * the API (meters_core), so it lives once; here are the kinds, where a node's meter comes from, and a
+ * Yes / No meter's expected answer.
  */
 
 export const KIND_LABELS = {
@@ -54,6 +55,66 @@ export function limitsBody(form, meterType) {
 export function unitAndKind(meterType) {
   const kind = kindLabel(meterType.kind);
   return meterType.unit ? `${meterType.unit} · ${kind}` : kind;
+}
+
+// ---------------------------------------------------------------------------
+// Meter links (S104 A1.6.7): a part uses the meter of a node above it; readings stay there
+// ---------------------------------------------------------------------------
+
+/** A card row's badge: "From the model", "This machine only", or "From PR-07" for a linked meter. */
+export function sourceBadge(meter) {
+  return meter.source === "linked" ? `From ${meter.linked_from.code}` : SOURCE_LABELS[meter.source];
+}
+
+/** A card row's key: its type and its source, since a link not in use can sit beside an own meter. */
+export function meterRowKey(meter) {
+  return `${meter.meter_type.id}-${meter.source === "linked" ? meter.linked_from.id : "own"}`;
+}
+
+/** Why a link counts for nothing now (the API's not_in_use), on the part `partCode`; null while in use. */
+export function notInUseText(meter, partCode) {
+  const source = meter.linked_from.code;
+  const type = meter.meter_type.name;
+  switch (meter.not_in_use) {
+    case "own":
+      return `Not in use: ${partCode} has its own ${type} meter.`;
+    case "not_above":
+      return `Not in use: ${source} is not above ${partCode}.`;
+    case "no_source_meter":
+      return `Not in use: ${source} has no ${type} meter now.`;
+    default:
+      return null;
+  }
+}
+
+/** Remove link's question (asked in the row), naming the PM plans that use the link (`used_by`). */
+export function removeLinkQuestion(meter, partCode) {
+  const source = meter.linked_from.code;
+  const type = meter.meter_type.name;
+  const plans = meter.used_by?.length
+    ? ` These PM plans use it and make no job until ${partCode} has a ${type} meter again: ${meter.used_by.join(", ")}.`
+      + " A Last done meter value entered for this meter is no longer used."
+    : "";
+  return `Stop using ${source}'s ${type} on ${partCode}?${plans} Readings stay on ${source}.`;
+}
+
+const joinAnd = (items) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+/** An own meter's Remove, when parts use it through a link (`linked_by`): what it stops; null when none does. */
+export function linkedByText(meter) {
+  const codes = (meter.linked_by ?? []).map((part) => part.code);
+  if (!codes.length) return null;
+  const one = codes.length === 1;
+  return `${joinAnd(codes)} ${one ? "uses" : "use"} this meter through a link. `
+    + `${one ? "Its" : "Their"} PM plans that need it make no job until it is back.`;
+}
+
+/** One choice of the link dialog: "PR-07 — Press 7 · Run hours (h) · last 12,345 h on 12-11-2026". */
+export function linkChoiceText(choice) {
+  const { equipment, meter_type: meterType, last } = choice;
+  const parts = [`${equipment.code} — ${equipment.name}`, meterHeader(meterType)];
+  if (last) parts.push(`last ${formatReading(last.value, meterType)} on ${formatDate(last.taken_at)}`);
+  return parts.join(" · ");
 }
 
 // ---------------------------------------------------------------------------

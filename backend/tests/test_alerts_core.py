@@ -2,6 +2,7 @@
 *What you will get* (S021 § 5.1–5.3, § 8 Pure, § 10 A1; S032 *ticket closed*)."""
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -15,9 +16,12 @@ from alerts_core import (
     escalation_minutes, excluded_people, given_alert, improvement_facts, improvement_message, improvement_text,
     message, overdue_alert_due, raise_alert, ready_alert_due, regrade_alert, send_back_alert, should_escalate,
     should_send, should_send_improvement, message_for_test, ticket_facts, you_get,
+    PM_JOB_DUE, PM_JOB_OVERDUE, PM_KINDS, due_point_alerted, pm_alert_due, pm_job_facts, pm_job_message,
+    pm_job_text, pm_markers, should_send_pm,
 )
 
 OWNER_LINE = "Countermeasures given to you, and when they are overdue"
+PM_LINE = "PM jobs assigned to you, when due and when overdue"   # S102
 LEAD_LINE = "Overdue countermeasures of improvements you lead"
 
 MINUTES = {"A": 10, "B": 30, "C": 60}
@@ -65,7 +69,7 @@ class TestChannels:
             assert CHANNELS[kind] == ("push",)
 
     def test_every_kind_has_channels_and_the_improvement_kinds_are_push_only(self):
-        assert KINDS == TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS
+        assert KINDS == TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS + PM_KINDS
         assert set(CHANNELS) == set(KINDS)
         for kind in IMPROVEMENT_KINDS:
             assert CHANNELS[kind] == ("push",)
@@ -75,6 +79,11 @@ class TestChannels:
         assert CONTRACT_KINDS == (CONTRACT_ENDING,)
         assert CHANNELS[CONTRACT_ENDING] == ("push", "email")
         assert CONTRACT_AUDIENCE_KEY == {"push": "contract:read", "email": "contract:read_senior"}
+
+    def test_the_pm_kinds_push_only(self):
+        """S102 § 3: both PM kinds by push only."""
+        assert PM_KINDS == (PM_JOB_DUE, PM_JOB_OVERDUE)
+        assert CHANNELS[PM_JOB_DUE] == CHANNELS[PM_JOB_OVERDUE] == ("push",)
 
     def test_the_reminder_days(self):
         """S084 § 5.1: the first reminder starts with S080's *Ends in N days* badge."""
@@ -232,7 +241,8 @@ class TestYouGet:
     def test_engineer_all_units(self):
         assert you_get([_membership("SMTW", "maint_engineer")]) == [
             "Breakdowns and defects at SMTW, escalations", "Improvements ready to verify at SMTW",
-            "Contracts ending for machines at SMTW", "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Overdue PM jobs at SMTW", "Contracts ending for machines at SMTW", "Jobs assigned to you", PM_LINE,
+            OWNER_LINE, LEAD_LINE]
 
     def test_supervisor_at_two_units(self):
         assert you_get([_membership("SMTW", "maint_supervisor", ["MCC2", "MCC1"])]) == [
@@ -242,20 +252,22 @@ class TestYouGet:
         """S032: each manager membership adds its closed-ticket email line; S074: and its verify line."""
         assert you_get([_membership("SMTW", "maint_manager"), _membership("BRICKS", "maint_manager")]) == [
             "Breakdowns at BRICKS, escalations", "Improvements ready to verify at BRICKS",
+            "Overdue PM jobs at BRICKS",
             "Contracts ending for machines at BRICKS", "Closed tickets at BRICKS, by email",
             "Contracts ending for machines at BRICKS, by email",
-            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW",
+            "Breakdowns at SMTW, escalations", "Improvements ready to verify at SMTW", "Overdue PM jobs at SMTW",
             "Contracts ending for machines at SMTW",
             "Closed tickets at SMTW, by email", "Contracts ending for machines at SMTW, by email",
-            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Jobs assigned to you", PM_LINE, OWNER_LINE, LEAD_LINE]
 
     def test_manager_at_one_unit(self):
         """S084 § 5.7: the contract lines name the site, not the unit."""
         assert you_get([_membership("SMTW", "maint_manager", ["MCC2"])]) == [
             "Breakdowns at SMTW.MCC2, escalations", "Improvements ready to verify at SMTW.MCC2",
+            "Overdue PM jobs at SMTW.MCC2",
             "Contracts ending for machines at SMTW", "Closed tickets at SMTW.MCC2, by email",
             "Contracts ending for machines at SMTW, by email",
-            "Jobs assigned to you", OWNER_LINE, LEAD_LINE]
+            "Jobs assigned to you", PM_LINE, OWNER_LINE, LEAD_LINE]
 
     def test_a_manager_without_units_gets_the_contract_lines(self):
         """S084 § 5.7, BR1-07: the reminders reach a site member whatever their units; no
@@ -268,7 +280,7 @@ class TestYouGet:
         assert not [line for line in you_get([_membership("SMTW", "maint_engineer")]) if "email" in line]
 
     def test_technician_gets_assigned_jobs(self):
-        assert you_get([_membership("SMTW", "maint_technician")]) == ["Jobs assigned to you", OWNER_LINE]
+        assert you_get([_membership("SMTW", "maint_technician")]) == ["Jobs assigned to you", PM_LINE, OWNER_LINE]
 
     def test_operator_gets_the_countermeasure_line(self):
         """S074: an operator can own a countermeasure (S070 D3), so the dot now shows for them."""
@@ -602,3 +614,159 @@ class TestContractTexts:
         """D8: even a row that holds them gives facts without them."""
         facts = _contract_facts(callout_number="1800-000", cost_note="9809")
         assert "callout_number" not in facts and "cost_note" not in facts
+
+
+# ---------------------------------------------------------------------------
+# PM jobs (S102 § 5.1, § 5.6, § 8.1)
+# ---------------------------------------------------------------------------
+
+PM_DUE_ON = date(2026, 11, 20)    # a monthly job, grace 3: on time until 23-11-2026, overdue from the 24th
+
+
+def _pm_job(**overrides):
+    job = {"id": 12, "state": "due", "due_on": PM_DUE_ON, "due_meter": None, "due_alert_on": None,
+           "due_alert_meter": None, "overdue_alert_on": None, "overdue_alert_meter": None}
+    job.update(overrides)
+    return job
+
+
+def _pm_row(**overrides):
+    row = {**_pm_job(), "serial": "PM-2026-11-004", "pl_title": "Monthly press check", "pl_active": 1,
+           "e_lifecycle": "in_service", "site_code": "SMTW", "unit_code": "MCC2", "e_code": "HP003", "t_unit": None,
+           "grace_days": 3, "meter_window": None, "a_name": "Ravi Kumar"}
+    row.update(overrides)
+    return row
+
+
+def _pm_facts(**overrides):
+    return pm_job_facts(_pm_row(**overrides), "https://vel-yantra.mspv.app")
+
+
+class TestDuePointAlerted:
+
+    def test_never_sent(self):
+        assert not due_point_alerted(None, None, PM_DUE_ON, None)
+
+    def test_the_same_date(self):
+        assert due_point_alerted(PM_DUE_ON, None, PM_DUE_ON, None)
+
+    def test_the_same_date_another_meter(self):
+        assert not due_point_alerted(PM_DUE_ON, Decimal("1500"), PM_DUE_ON, Decimal("1600"))
+
+    def test_decimals_compare_by_value(self):
+        assert due_point_alerted(None, Decimal("1500.000"), None, Decimal("1500"))
+
+    def test_a_moved_date(self):
+        assert not due_point_alerted(PM_DUE_ON, None, PM_DUE_ON + timedelta(days=7), None)
+
+
+class TestPmAlertDue:
+
+    def test_due_never_sent(self):
+        assert pm_alert_due(_pm_job(), "due", True, False) == PM_JOB_DUE
+
+    def test_due_sent_for_this_point(self):
+        assert pm_alert_due(_pm_job(due_alert_on=PM_DUE_ON), "due", True, False) is None
+
+    def test_due_sent_for_an_older_date(self):
+        job = _pm_job(due_alert_on=PM_DUE_ON - timedelta(days=30))
+        assert pm_alert_due(job, "due", True, False) == PM_JOB_DUE
+
+    def test_overdue_nothing_sent(self):
+        assert pm_alert_due(_pm_job(), "overdue", True, False) == PM_JOB_OVERDUE
+
+    def test_overdue_after_due(self):
+        assert pm_alert_due(_pm_job(due_alert_on=PM_DUE_ON), "overdue", True, False) == PM_JOB_OVERDUE
+
+    def test_overdue_sent(self):
+        job = _pm_job(due_alert_on=PM_DUE_ON, overdue_alert_on=PM_DUE_ON)
+        assert pm_alert_due(job, "overdue", True, False) is None
+
+    @pytest.mark.parametrize("standing", ["upcoming", "not_yet"])
+    def test_not_yet_due(self, standing):
+        assert pm_alert_due(_pm_job(), standing, True, False) is None
+
+    @pytest.mark.parametrize("state", ["in_progress", "done", "verified", "skipped", "cancelled"])
+    def test_not_a_due_job(self, state):
+        assert pm_alert_due(_pm_job(state=state), "overdue", True, False) is None
+
+    def test_plan_inactive(self):
+        assert pm_alert_due(_pm_job(), "overdue", False, False) is None
+
+    def test_node_scrapped(self):
+        assert pm_alert_due(_pm_job(), "due", True, True) is None
+
+    def test_the_markers(self):
+        """§ 5.4 step 6: *overdue* marks both, so a standing that falls back sends no late *due*."""
+        job = _pm_job(due_meter=Decimal("1500"))
+        assert pm_markers(PM_JOB_DUE, job) == {"due_alert_on": PM_DUE_ON, "due_alert_meter": Decimal("1500")}
+        assert pm_markers(PM_JOB_OVERDUE, job) == {
+            "due_alert_on": PM_DUE_ON, "due_alert_meter": Decimal("1500"),
+            "overdue_alert_on": PM_DUE_ON, "overdue_alert_meter": Decimal("1500")}
+
+
+class TestShouldSendPm:
+
+    def test_as_queued(self):
+        assert should_send_pm(PM_JOB_DUE, _pm_row(due_alert_on=PM_DUE_ON))
+        assert should_send_pm(PM_JOB_OVERDUE, _pm_row(due_alert_on=PM_DUE_ON, overdue_alert_on=PM_DUE_ON))
+
+    def test_started(self):
+        assert not should_send_pm(PM_JOB_DUE, _pm_row(state="in_progress", due_alert_on=PM_DUE_ON))
+
+    def test_plan_inactive(self):
+        assert not should_send_pm(PM_JOB_DUE, _pm_row(pl_active=0, due_alert_on=PM_DUE_ON))
+
+    def test_node_scrapped(self):
+        assert not should_send_pm(PM_JOB_DUE, _pm_row(e_lifecycle="scrapped", due_alert_on=PM_DUE_ON))
+
+    def test_due_point_moved_since(self):
+        row = _pm_row(due_on=PM_DUE_ON + timedelta(days=7), due_alert_on=PM_DUE_ON)
+        assert not should_send_pm(PM_JOB_DUE, row)
+
+
+class TestPmTexts:
+
+    def test_due(self):
+        assert pm_job_text(PM_JOB_DUE, _pm_facts()) == (
+            "PM job due · SMTW.MCC2 · HP003",
+            "PM-2026-11-004 · Monthly press check — due on 20-11-2026, on time until 23-11-2026.")
+
+    def test_overdue(self):
+        assert pm_job_text(PM_JOB_OVERDUE, _pm_facts()) == (
+            "PM job overdue · SMTW.MCC2 · HP003",
+            "PM-2026-11-004 · Monthly press check — was due on 20-11-2026, assigned to Ravi.")
+
+    def test_a_meter_job(self):
+        facts = _pm_facts(due_on=None, grace_days=None, due_meter=Decimal("1500.000"), meter_window=Decimal("150"),
+                          t_unit="h")
+        assert pm_job_text(PM_JOB_DUE, facts)[1] == (
+            "PM-2026-11-004 · Monthly press check — due at 1500 h, on time until 1650 h.")
+        assert pm_job_text(PM_JOB_OVERDUE, facts)[1] == (
+            "PM-2026-11-004 · Monthly press check — was due at 1500 h, assigned to Ravi.")
+
+    def test_a_both_job(self):
+        facts = _pm_facts(due_meter=Decimal("1500"), meter_window=Decimal("150"), t_unit="h")
+        assert pm_job_text(PM_JOB_DUE, facts)[1] == (
+            "PM-2026-11-004 · Monthly press check — due on 20-11-2026 or at 1500 h,"
+            " on time until 23-11-2026 or 1650 h.")
+
+    def test_a_both_job_with_no_reading_reads_as_a_date_job(self):
+        """BR1-06: the values decide, not the plan's kind."""
+        facts = _pm_facts(due_meter=None, meter_window=Decimal("150"), t_unit="h")
+        assert pm_job_text(PM_JOB_DUE, facts)[1] == (
+            "PM-2026-11-004 · Monthly press check — due on 20-11-2026, on time until 23-11-2026.")
+
+    def test_overdue_not_assigned(self):
+        assert pm_job_text(PM_JOB_OVERDUE, _pm_facts(a_name=None))[1] == (
+            "PM-2026-11-004 · Monthly press check — was due on 20-11-2026, not assigned.")
+
+    def test_the_title_cut_at_80(self):
+        assert _pm_facts(pl_title="x" * 100)["title"] == "x" * 80
+
+    @pytest.mark.parametrize("kind", [PM_JOB_DUE, PM_JOB_OVERDUE])
+    def test_message_one_tag_per_job_quiet(self, kind):
+        """BR1-09: one tag for both kinds, so *overdue* replaces *due* on the phone."""
+        sent = pm_job_message(kind, _pm_facts())
+        assert sent["path"] == "/pm/jobs/12" and sent["tag"] == "pm-job-12" and sent["quiet"] is True
+        assert _pm_facts()["url"] == "https://vel-yantra.mspv.app/pm/jobs/12"

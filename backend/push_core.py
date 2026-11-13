@@ -44,6 +44,8 @@ IMPROVEMENT_TTL_SECONDS = 86400
 # S084 D6: a contract reminder is quiet planned work too, and sent once, so a phone off for an hour
 # must still get it.  Its own name, so a change to the improvements' TTL does not move it by accident.
 CONTRACT_TTL_SECONDS = IMPROVEMENT_TTL_SECONDS
+# S102 D7: a PM alert is quiet planned work, sent once per due point, so it waits a day as well; its own name too
+PM_TTL_SECONDS = IMPROVEMENT_TTL_SECONDS
 TEST_TTL_SECONDS = 300
 
 BROWSER_CANNOT = ("This browser cannot get notifications. Use Chrome on Android, or open Yantra from the "

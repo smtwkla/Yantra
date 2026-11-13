@@ -49,4 +49,4 @@ and the conventions.
   `fk_…` is the one MariaDB made for the foreign key of that name. Two names break
   the rule: the older `ux_access_log_sighting`, and the column-level check
   `payload` on `task_queue`, which MariaDB names after its column. All foreign
-  keys are `RESTRICT` today (75 of 75).
+  keys are `RESTRICT` today (88 of 88, at v51).

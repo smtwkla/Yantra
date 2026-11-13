@@ -22,7 +22,8 @@ from tests.test_migration_v36 import _foreign_keys, _keys
 from tests.test_migration_v38 import _add_document, _documents_of_three_owners, _owner_check_clause
 from tests.test_migration_v41 import _add_lesson
 
-V50 = local_db._MIGRATIONS
+# v50 alone after v41 (S096 BR1-01): later migrations have their own test files
+V50 = [m for m in local_db._MIGRATIONS if m[0] <= 50]
 V43 = [*SQUASHED, *[m for m in MIGRATIONS_V42_V47 if m[0] <= 43]]
 V47 = [*SQUASHED, *MIGRATIONS_V42_V47]
 

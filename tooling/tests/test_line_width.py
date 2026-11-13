@@ -20,6 +20,7 @@ MIGRATIONS_END = "]"
 FROZEN_FILES = (
     "backend/tests/fixtures/migrations_v41.py",
     "backend/tests/fixtures/migrations_v47.py",
+    "backend/tests/fixtures/migrations_v56.py",   # S104: v51–v56, frozen
 )
 # Synced from smtw-common (tooling/common/sync_common.py FILES and DIRS).
 SYNCED_PREFIXES = (

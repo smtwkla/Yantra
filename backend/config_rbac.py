@@ -166,6 +166,24 @@ PERMISSIONS = {
     "contract:read_senior": ("maint_manager",),
     "contract:edit": ("maint_engineer", "it_admin"),
 
+    # PM plans (S096, R03.2): written by the engineer (so the manager) at the node's site; not IT
+    # admin, who reads PM only (R03 Q2.2 a, ISO 27001 A.8.2); not the supervisor.  Plans are read
+    # with equipment:read, as one-point lessons (S075 D5); jobs get pm_job:read (R03.3).
+    "pm_plan:edit": ("maint_engineer",),
+    # PM jobs (S097, R03.3): read by the operator and up, as tickets, so the floor sees the planned
+    # work at its units; and by IT admin, who reads PM only (R03 Q2.2 a).  Not the storekeeper.
+    # Doing a job is pm_job:work (R03.4).
+    "pm_job:read": ("maint_operator", "it_admin"),
+    # Doing a PM job (S098, R03.4): start it, fill its items, mark it done.  The technician, so the engineer and
+    # the manager; any holder at the job's site may work any job there, assigned to him or not, as tickets
+    # (ticket:work).  Not IT admin, who reads PM only (R03 Q2.2 a).  Plan § 3 grants it to the operator too:
+    # R03.12 widens it, with the rule that an operator works CIL jobs at his units.
+    "pm_job:work": ("maint_technician",),
+    # Verifying a PM job (S099, R03.5): sign off a done job, or send it back with a remark (Plan § 4.3).  The
+    # engineer, so the manager.  He may verify a job he performed (R03 Q5.2 a), a recorded departure from ISO 27001
+    # A.5.3: the verified event names him, and the job page says so.  Not IT admin, who reads PM only (R03 Q2.2 a).
+    "pm_job:verify": ("maint_engineer",),
+
     # Meter readings (S039): the operator logs the readings of the machines at the unit (TPM
     # autonomous maintenance), so the supervisor and the maintenance ladder inherit it, as
     # ticket:raise.  Not IT admin (U2): logging is plant work.  Removing a reading is a
@@ -229,4 +247,12 @@ SITE_SCOPED = frozenset({
     "report:read",
     # S075: at the lesson's machine's site; held at any site for a class lesson (procedures.py)
     "procedure:edit",
+    # S096: at the plan's node's current site
+    "pm_plan:edit",
+    # S097: at the job's node's current unit (the list) and site (the PM card)
+    "pm_job:read",
+    # S098: at the job's node's current site
+    "pm_job:work",
+    # S099: at the job's node's current site, as pm_job:work
+    "pm_job:verify",
 })

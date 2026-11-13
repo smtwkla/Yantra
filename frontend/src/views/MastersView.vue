@@ -4,9 +4,11 @@
  * properties (S043), meter types (S037), failure codes, trades, vendors (S079), vendor contracts (S080), Team with each person's roles per
  * site (docs/steps/S001-basic-masters, S004, S010, S011, S012, S016; S011 A1 moved unit access
  * into Team).
- * The level-2 toolbar switches sections as local state, not routes.
+ * The level-2 toolbar switches sections as local state, not routes. S104: PM templates; a page outside Masters (the
+ * template page) links back to its section with `?section=<key>`, which picks the first section shown.
  */
 import { computed, ref } from "vue";
+import { useRoute } from "vue-router";
 import ModuleToolbar from "../components/layout/ModuleToolbar.vue";
 import { userPermissions } from "../stores/auth";
 import { canSeeNavItem } from "../stores/navigation";
@@ -20,6 +22,7 @@ import MeterTypesPanel from "./masters/MeterTypesPanel.vue";
 import ModelsPanel from "./masters/ModelsPanel.vue";
 import SitesPanel from "./masters/SitesPanel.vue";
 import PeoplePanel from "./masters/PeoplePanel.vue";
+import PmTemplatesPanel from "./masters/PmTemplatesPanel.vue";
 import PropertiesPanel from "./masters/PropertiesPanel.vue";
 import TradesPanel from "./masters/TradesPanel.vue";
 import UnitsPanel from "./masters/UnitsPanel.vue";
@@ -41,6 +44,8 @@ const sections = [
   { key: "vendors", icon: "fa-solid fa-handshake", label: "Vendors", perm: "masters:read" },
   { key: "people", icon: "fa-solid fa-people-group", label: "Team", perm: "masters:read" },
   { key: "contracts", icon: "fa-solid fa-file-signature", label: "Contracts", perm: "contract:read_basic" },
+  // S104: the PM standards; read by every role that reads equipment (§ 5.8)
+  { key: "pm_templates", icon: "fa-solid fa-clipboard-list", label: "PM templates", perm: "equipment:read" },
 ];
 const panels = {
   sites: SitesPanel,
@@ -57,9 +62,11 @@ const panels = {
   vendors: VendorsPanel,
   people: PeoplePanel,
   contracts: ContractsPanel,
+  pm_templates: PmTemplatesPanel,
 };
 
-const chosen = ref("sites");
+const route = useRoute();
+const chosen = ref(panels[route.query.section] ? route.query.section : "sites");
 // Fall back to the first visible section if the chosen one is not permitted (e.g. permissions arrive late)
 const active = computed(() => {
   const visible = sections.filter((s) => canSeeNavItem(s, userPermissions.value));

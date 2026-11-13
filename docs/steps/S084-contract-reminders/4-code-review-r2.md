@@ -1,4 +1,4 @@
-```
+!```
 Step: S084 — Contract reminders
 Doc: code-review r2
 Author: Code reviewer (Opus)

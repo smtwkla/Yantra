@@ -70,6 +70,12 @@ describe("describeEvent", () => {
       .toBe("Meter limits: Oil temperature: 10–60 °C → up to 55 °C");
   });
 
+  it("the meter link events name the meter and its node (S104 A1)", () => {
+    expect(describeEvent(ev("meter_linked", null, "Run hours from PR-07"))).toBe("Meter linked: Run hours from PR-07");
+    expect(describeEvent(ev("meter_unlinked", "Run hours from PR-07", null)))
+      .toBe("Meter link removed: Run hours from PR-07");
+  });
+
   it("a property name with a colon keeps its whole name (S044 CR1-02)", () => {
     expect(describeEvent(ev("property", "Power: rated: 7.5 kW", "Power: rated: 5.5 kW")))
       .toBe("Property: Power: rated: 7.5 kW → 5.5 kW");

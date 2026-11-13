@@ -9,6 +9,8 @@ export const navItems = [
   { name: "me", path: "/me", icon: "fa-solid fa-user", label: "Me", perm: "ticket:read" },
   { name: "equipment", path: "/equipment", icon: "fa-solid fa-gears", label: "Equipment", perm: "equipment:read" },
   { name: "tickets", path: "/tickets", icon: "fa-solid fa-triangle-exclamation", label: "Tickets", perm: "ticket:read" },
+  // S097: the PM list, for the operator and up and IT admin (pm_job:read); not the storekeeper
+  { name: "pm", path: "/pm", icon: "fa-solid fa-calendar-check", label: "PM", perm: "pm_job:read" },
   // S050: every equipment:read holder; the storekeeper and IT admin see only the Register tab
   { name: "readings", path: "/readings", icon: "fa-solid fa-gauge", label: "Readings", perm: "equipment:read" },
   // S064 UX-12: only the people who maintain masters data see the item (and may open the route);

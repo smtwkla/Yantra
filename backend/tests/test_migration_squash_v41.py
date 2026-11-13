@@ -105,7 +105,8 @@ def test_production_s_v41_gets_v50():
     before = _all_rows(columns=columns)
 
     _migrate(CURRENT)
-    assert _versions() == [*range(20, 42), 50]
+    # The later migrations all follow (S096 BR1-01): production's v41 reaches the latest version untouched
+    assert _versions() == [*range(20, 42), *[m[0] for m in CURRENT if m[0] > 41]]
     assert _run("SELECT description FROM db_version WHERE version = 41")[0]["description"] == old_description
     assert old_description == "One-point lessons and their photos (S075)"
     assert _all_rows(columns=columns) == before

@@ -41,6 +41,34 @@ export async function meterMachine(testInfo, tag, { unit = "SMTW.MCC1", modelMet
   }
 }
 
+/** The id of the meter type named `name` (Masters › Meter types), read as admin. */
+export async function meterTypeIdByApi(name) {
+  const api = await apiAs("admin");
+  try {
+    return (await (await api.get("/api/masters/meter-types")).json()).items.find((t) => t.name === name).id;
+  } finally {
+    await api.dispose();
+  }
+}
+
+/**
+ * S104 A1: `part` uses `source`'s meter (its parent's or grandparent's) through a meter link, set through the API as
+ * the engineer (*Use a meter from above*). `meter` is the meter type's name, or its id. -> the part's meters.
+ */
+export async function linkMeterByApi(part, source, meter, { as = "engineer" } = {}) {
+  const meterTypeId = typeof meter === "string" ? await meterTypeIdByApi(meter) : meter;
+  const api = await apiAs(as);
+  try {
+    const res = await api.post(`/api/equipment/${part.id}/meter-links`, {
+      data: { meter_type_id: meterTypeId, source_equipment_id: source.id },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    return await res.json();
+  } finally {
+    await api.dispose();
+  }
+}
+
 /**
  * A reading of the machine's meter `name`, logged through the API as the operator (a test's own
  * set-up; S039 CR1-02).  `takenAt` is the time string the test computed once (`istLocal(...)`), so

@@ -25,6 +25,21 @@ only when the write needs it:
         improvement (6b)
     (6d) the one-point lesson row (procedures, procedures.py, S075): one at a time, first in its
         transaction, never with (6) or (6b)
+    (6e) a machine's PM plan row (pm_plans, pm_plans.py; S096, S104): one at a time, first in its
+        transaction; its jobs' rows (pm_jobs.py, S097) only under it, and the PM: counter (6) after
+        it.  S104: it holds only the machine's own facts, and its template is read plainly after
+        it; a new plan row (pm_plans.sync_node's make) takes the node (1) shared and inserts
+    (6f) the PM job row (pm_jobs, S098): always right after its plan (6e); one job per transaction,
+        except S099's send back, which also cancels the plan's open, not started job by a plain
+        UPDATE under the same (6e).  S102's alert scan takes it the same way, one job per
+        transaction.
+    (6g) the PM template row (pm_templates, pm_templates.py, S104): FOR UPDATE only by a template
+        save, first in its transaction, with no other row lock but its items' writes and the
+        shared foreign-key locks on meter types (a lower number after a higher one, one way only:
+        masters.py's meter-type writes never wait on a template); LOCK IN SHARE MODE by Attach,
+        after the node (1) shared.  Nothing that holds (6g) exclusive waits on a plan, a job, a
+        node or a counter, and a template save settles its plans only after its commit, so it
+        closes no cycle
     (7) the ticket row (tickets.py, S017)
 
 A write with a model never locks a type: it comes from the model, whose type never changes
@@ -79,6 +94,30 @@ A write with a model never locks a type: it comes from the model, whose type nev
   old contract FOR UPDATE first, then the vendor and the covered nodes (1) LOCK IN SHARE
   MODE, the nodes in id order; it inserts the new contract and its lines, so it never waits on a
   second existing contract row.
+- (6e) the PM plan row (pm_plans.py, S096, S104): one at a time, first in its transaction, then the
+  node (1) LOCK IN SHARE MODE; a new plan row (sync_node's make) takes the node LOCK IN SHARE MODE
+  and locks no plan row.  The inserts and updates take shared foreign-key locks on the node, the
+  template, a person and the seed's meter node and type.  No other module locks a pm_plans row, so
+  it adds no lock cycle beyond the accepted scrap case.  Its own note gives the check, path by path.
+  S104: (6g) the template row (pm_templates.py): a template save holds it FOR UPDATE first in its
+  transaction and writes only the template and its items, then settles each plan of the template
+  after its commit, one plan per transaction (pm_jobs.settle_one: (6e) → (1) shared); Attach takes
+  the node (1) shared, then (6g) LOCK IN SHARE MODE, then inserts a link row.  No path holds a plan,
+  a job or a node and then waits on (6g) exclusive, so no cycle.
+  S097: every pm_jobs and pm_job_events write holds its plan (6e) first, then the node (1) shared,
+  then, for a new job, (6) the PM:YYYY-MM counter.  (6) after (6e) and (1) is a departure from the
+  number order: the PM: counter row is taken by nothing else, and a plan transaction that only
+  refreshes must not bump it.  The daily run (pm_generate, pm_jobs.py) takes one plan per transaction
+  and commits before the next; no module reads a job FOR UPDATE by open_plan_id.
+  S098: start, an item, the performer and done take (6e), then (6f), then a node: Start and done its
+  node LOCK IN SHARE MODE, an item with a meter the meter's node FOR UPDATE through
+  meters.lock_node; all before any plain read; the job's plan_id is read before the
+  transaction (it never changes).  The scrap counts started jobs plainly (_check_no_started_pm_jobs)
+  while it holds the node and its parts; pm_work.py's note gives the check, path by path.
+  S099: verify takes (6e), (6f); send back (6e), (6f), the node LOCK IN SHARE MODE, then may cancel
+  the plan's open job (above).
+  S102: the daily pm_job_alert_scan (pm_jobs.alert_scan) takes (6e) then (6f), one job per
+  transaction, and writes only the job's four alert columns and a task_queue row; no node or counter.
 - meters.py (S038) writes a node's meters under (1) the node (load_node_for_user, which
   checks equipment:edit at its site; scrapped refused from the locked row) → (4b) the meter
   type → the node_meters row (by its unique key, FOR UPDATE, or an insert).  It reads the
@@ -93,6 +132,27 @@ A write with a model never locks a type: it comes from the model, whose type nev
   second sees the first one's row; a removal then locks only its meter_readings row.  The insert
   share-locks the node (held already) and the meter type through its FKs; a meter type update
   counts link rows, never readings, so it never waits on a reading.  No cycle.
+- Meter links (S104 A1, node_meter_links): no new lock number; a link write is a meters.py write
+  under (1).  Add: (1) the part FOR UPDATE (lock_node) → each node above it up to the source,
+  nearest first, one row each LOCK IN SHARE MODE (two rows at most) → plain reads (the meter type,
+  the part's meters in force and links, the source's meters) → the insert (foreign-key shared locks
+  on the part and the source, both held, and the meter type) → the event.  Remove: (1) → plain read
+  of the link → DELETE by id → the event.  add_node_meter and change_node_meter read the part's link
+  plainly after their locks.  "Above" is decided from locking reads; whether the part has a type or
+  a link from plain reads after (1), which every writer of the part's node_meters and
+  node_meter_links rows holds first.  A link write holds the part and waits only on nodes above
+  it, child first, the order of a re-parent ((1) then (2)); the writers holding a node above never
+  wait on the part.  A move (update_equipment with a new parent): (1) → (2) as before → plain reads
+  of the node's parts, their links, the parts' parents and grandparents with their meters in force (to judge
+  which links are in use, meters_on_paths) and the plans that use them (pm_links_core.LINK_PLANS_SQL) →
+  the 409, or the DELETE of the broken links → the update → the events (a meter_unlinked line on
+  each link's part takes that part's row shared through its foreign key).  Two accepted deadlocks of
+  the scrap's kind (top-down against bottom-up; InnoDB rolls one back, 1213): a scrap of a node above
+  against a link write on a part, and a move of a component unit (its meter_unlinked insert on a
+  part) against a link write on that part.  A move reads its parts plainly: a component moved out of
+  the unit by another request in the same instant still has its links to nodes outside the unit
+  removed (the engineer sets them again).  Neither the link routes nor the move lock or write a
+  plan, a job or a template row, so no node writer waits on a plan.
 - properties.py (S043) locks a class (5) or a model (4), never both, then only its own
   property and option rows, and never equipment; the detail reads its card plainly.  So it
   adds no lock cycle.  An item's own property values (S044) are written in item_properties.py
@@ -157,18 +217,24 @@ from asset_list_core import build_asset_list
 from auth_utils import permissions_at_site, require_perm, require_perm_at, user_unit_ids
 # The pure contracts rules only: contracts.py imports this module (S082 B10)
 from contracts_core import COVERAGE_FILTERS, covered_sql
-from db_helpers import count, get_db, insert_row, next_counter, row_to_dict, rows_to_list, transaction, update_row
+from db_helpers import (
+    count, get_db, insert_row, marks, next_counter, row_to_dict, rows_to_list, transaction, update_row,
+)
 from equipment_core import (
     CRITICALITIES, LEVELS, LIFECYCLES, SCRAPPED, check_parent, derive_from_model, effective_criticality,
     format_equipment_code, full_path, tracked_changes, validate_equipment,
 )
 from labels_core import MAX_LABELS_PER_REQUEST, TOO_MANY_LABELS, expand_selection, label_url, parse_code, qr_svg
-from masters import lock_type_of_class
+from masters import lock_type_of_class, read_models_meters
 from masters_core import model_label
+from meters_core import broken_links, effective_meters, link_states, link_text, meter_type_of, move_warning
 from properties import equipment_properties, filter_properties
 from properties_core import moving_hint
 from property_filter_core import check_property_filter, filter_condition, read_property_filter
 from settings import label_base_url
+from pm_jobs_core import IN_PROGRESS
+from pm_links_core import LINK_PLANS_SQL
+from pm_work_core import finish_jobs_first
 from tickets_core import BREAKDOWN_INTENSITY, CLOSED, DOWN_STATES, close_tickets_first
 
 equipment_bp = Blueprint("equipment", __name__)
@@ -550,6 +616,172 @@ def _check_no_open_tickets(cur, node_ids):
         raise ApiError(close_tickets_first(open_tickets), 409, "lifecycle")
 
 
+# ---------------------------------------------------------------------------
+# Meter links (S104 A1; meters.py writes them, pm_jobs.py reads them; here because both import this module, AD9)
+# ---------------------------------------------------------------------------
+
+_LINKS_SELECT = (
+    "SELECT l.id, l.equipment_id, l.meter_type_id, l.source_equipment_id, pe.code AS part_code,"
+    " se.code AS source_code, se.name AS source_name, t.name AS type_name,"
+    " t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
+    " t.expected_answer AS t_expected_answer"
+    " FROM node_meter_links l JOIN equipment pe ON pe.id = l.equipment_id"
+    " JOIN equipment se ON se.id = l.source_equipment_id JOIN meter_types t ON t.id = l.meter_type_id"
+)
+
+
+def read_meter_links(cur, node_ids):
+    """The meter links of the nodes, plain, one query -> ``{node_id: [row, …]}`` (every node given has a list),
+    each row with id, equipment_id, meter_type_id, source_equipment_id, part_code, source_code, source_name,
+    type_name and the meter type's columns with the ``t_`` prefix (meters_core.meter_type_of), by meter type
+    name."""
+    out = {node_id: [] for node_id in node_ids}
+    if not out:
+        return out
+    cur.execute(f"{_LINKS_SELECT} WHERE l.equipment_id IN ({marks(out)}) ORDER BY t.name, l.id", list(out))
+    for row in cur.fetchall():
+        out[row["equipment_id"]].append(row)
+    return out
+
+
+def link_plan_names(cur, link_ids):
+    """The PM plans in force that use each link (pm_links_core.LINK_PLANS_SQL), plain, one query ->
+    ``{link_id: [{name, code}, …]}`` by template name; a link no plan uses has an empty list."""
+    out = {link_id: [] for link_id in link_ids}
+    if not out:
+        return out
+    cur.execute(LINK_PLANS_SQL.format(ids=marks(out)), list(out))
+    for row in cur.fetchall():
+        out[row["link_id"]].append({"name": row["name"], "code": row["code"]})
+    return out
+
+
+_NODE_METER_SELECT = (
+    "SELECT nm.id, nm.equipment_id, nm.own, nm.min_value, nm.max_value, nm.active,"
+    " t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
+    " t.expected_answer AS t_expected_answer"
+    " FROM node_meters nm JOIN meter_types t ON t.id = nm.meter_type_id"
+)
+
+
+def nodes_meter_rows(cur, node_ids):
+    """The node_meters rows of several nodes in one query -> {node_id: [row, ...]}."""
+    out = {node_id: [] for node_id in node_ids}
+    if not out:
+        return out
+    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id IN ({marks(out)})", list(out))
+    for row in cur.fetchall():
+        out[row["equipment_id"]].append({
+            "id": row["id"], "own": row["own"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
+            "max_value": row["max_value"], "active": row["active"]})
+    return out
+
+
+def meters_in_force(cur, nodes):
+    """Each node's meters in force (meters_core.effective_meters: its model's and its own) -> ``{node_id: [meter,
+    …]}``.  ``nodes`` are rows with ``id`` and ``model_id``.  Two queries for any number of nodes, none per node: a
+    PM template's meter match (S104 § 5.3, meters_on_paths below), meters_with_last and the move's judgement of
+    its broken links (also through meters_on_paths) share it."""
+    models = read_models_meters(cur, sorted({n["model_id"] for n in nodes if n["model_id"] is not None}))
+    node_rows = nodes_meter_rows(cur, [n["id"] for n in nodes])
+    return {node["id"]: effective_meters(models.get(node["model_id"], []), node_rows[node["id"]]) for node in nodes}
+
+
+def nodes_by_id(cur, node_ids):
+    """Plain rows ``{id: {id, code, name, level, model_id, parent_id}}`` of the nodes, one query."""
+    if not node_ids:
+        return {}
+    cur.execute("SELECT id, code, name, level, model_id, parent_id FROM equipment"
+                f" WHERE id IN ({marks(node_ids)})", list(node_ids))
+    return {row["id"]: row for row in cur.fetchall()}
+
+
+def meters_on_paths(cur, node_ids):
+    """The nodes, their parents and grandparents with their meters in force, and the nodes' meter links in use
+    (S104 A1.6.2), in four queries for any number of nodes -> ``{paths: {node_id: [node, parent, grandparent] ids},
+    codes: {id: code}, meters: {id: [meter, …]}, links: {node_id: {meter_type_id: source id}}}``.  A link's source
+    is its part's parent or grandparent, so its meters are among those read; meters_core.link_states judges each
+    link.  Every node of a path is in the root's unit, so the access to the node is the access to its path (the
+    ancestors' meters are read with the node's own check, as S096's meter choices were).  The one rule of which
+    links are in use is meters_core.link_states: the Meters card calls it directly, and the PM card, Start, the
+    settle (pm_jobs.plan_resolutions) and the move's question (_links_a_move_removes) reach it through here.
+    Plain reads."""
+    paths, codes, rows = {}, {}, {}
+    if node_ids:
+        cur.execute("SELECT e.id, e.code, e.model_id, p.id AS p_id, p.code AS p_code, p.model_id AS p_model_id,"
+                    " g.id AS g_id, g.code AS g_code, g.model_id AS g_model_id FROM equipment e"
+                    " LEFT JOIN equipment p ON p.id = e.parent_id LEFT JOIN equipment g ON g.id = p.parent_id"
+                    f" WHERE e.id IN ({marks(node_ids)})", list(node_ids))
+        for row in cur.fetchall():
+            path = []
+            for prefix in ("", "p_", "g_"):
+                node_id = row["id" if not prefix else f"{prefix}id"]
+                if node_id is None:
+                    break
+                path.append(node_id)
+                codes[node_id] = row[f"{prefix}code"]
+                rows[node_id] = {"id": node_id, "model_id": row[f"{prefix}model_id"]}
+            paths[row["id"]] = path
+    meters = meters_in_force(cur, list(rows.values())) if rows else {}
+    types = types_by_node(meters)
+    links = {}
+    for node_id, each in read_meter_links(cur, list(paths)).items():
+        states = link_states(types.get(node_id, set()), each, paths[node_id][1:], types)
+        links[node_id] = {link["meter_type_id"]: link["source_equipment_id"] for link in each
+                          if states[link["meter_type_id"]] is None}
+    return {"paths": paths, "codes": codes, "meters": meters, "links": links}
+
+
+def types_by_node(meters):
+    """``{node_id: {meter type id, …}}`` from meters_in_force's answer."""
+    return {node_id: {meter["meter_type"]["id"] for meter in each} for node_id, each in meters.items()}
+
+
+def _subtree_ids(cur, node_id):
+    """The node's parts, two levels down (plain reads)."""
+    cur.execute("SELECT id FROM equipment WHERE parent_id = %s", (node_id,))
+    children = [row["id"] for row in cur.fetchall()]
+    if not children:
+        return []
+    cur.execute(f"SELECT id FROM equipment WHERE parent_id IN ({marks(children)})", children)
+    return [*children, *(row["id"] for row in cur.fetchall())]
+
+
+def _links_a_move_removes(cur, node_id, new_parent, confirmed):
+    """A re-parent's broken meter links (A1.6.4): those of the node and its parts whose source is no longer above
+    their part.  None broken: nothing.  Some, not ``confirmed``: 409 on ``remove_meter_links`` naming the links and
+    the plans that use them, nothing written.  Confirmed: the rows are deleted -> the lines to write on each link's
+    part, ``[(part_id, ("meter_unlinked", text, None))]``.  ``new_parent`` is the locked parent row (2)."""
+    links = read_meter_links(cur, [node_id, *_subtree_ids(cur, node_id)])
+    kept = {node_id, new_parent["id"], new_parent["parent_id"]}
+    broken = broken_links([link for each in links.values() for link in each], kept)
+    if not broken:
+        return []
+    if not confirmed:
+        # only a link in use feeds a plan: a link the part's own meter overrides (or whose source lost the meter)
+        # is still listed and removed, but no plan is named for it
+        in_use = meters_on_paths(cur, sorted({link["equipment_id"] for link in broken}))["links"]
+        used = [link["id"] for link in broken
+                if in_use.get(link["equipment_id"], {}).get(link["meter_type_id"]) == link["source_equipment_id"]]
+        plans = link_plan_names(cur, used)
+        names = [plan for link in broken for plan in plans.get(link["id"], [])]
+        raise ApiError(move_warning(broken, names), 409, "remove_meter_links", "meter_links")
+    cur.execute(f"DELETE FROM node_meter_links WHERE id IN ({marks(broken)})", [link["id"] for link in broken])
+    return [(link["equipment_id"], ("meter_unlinked", link_text(link["type_name"], link["source_code"]), None))
+            for link in broken]
+
+
+def _check_no_started_pm_jobs(cur, node_ids):
+    """Scrapping waits until the started PM jobs on the node and its parts are done (S098 § 5.8, D15): a scrapped
+    record is read-only, so a started job on it could never be finished.  A plain count, for the reason
+    _check_no_open_tickets gives: Start takes the node's lock (shared) before it writes.  A due job does not block:
+    S097 cancels it in the next run or plan save."""
+    started = count(cur, f"SELECT COUNT(*) AS n FROM pm_jobs WHERE state = %s AND equipment_id IN ({marks(node_ids)})",
+                    [IN_PROGRESS, *node_ids])
+    if started:
+        raise ApiError(finish_jobs_first(started), 409, "lifecycle")
+
+
 def _tracked_state(node):
     return {**node, "full_path": node_path(node),
             "model_label": model_label(node["manufacturer_name"], node["model_designation"])}
@@ -898,9 +1130,9 @@ def update_equipment(node_id):
         for field in ("parent_id", "unit_id", "model_id", "class_id", "type_id"):
             if field in clean and clean[field] == locked[field]:
                 del clean[field]
-        unit = equipment_model = equipment_class = None
+        unit = equipment_model = equipment_class = new_parent = None
         if "parent_id" in clean:
-            _load_target_node(cur, clean["parent_id"], locked["level"], "equipment:edit")   # (2)
+            new_parent = _load_target_node(cur, clean["parent_id"], locked["level"], "equipment:edit")   # (2)
         if "unit_id" in clean:
             unit = _lock_target_unit(cur, clean["unit_id"], "equipment:edit")               # (3)
         # Another class is a reclassification: the code is kept (S002)
@@ -909,11 +1141,20 @@ def update_equipment(node_id):
         else:
             equipment_class = _pick_class_and_type(cur, clean, locked["class_id"])          # (5), (5a)
         if clean.get("lifecycle") == SCRAPPED:
-            _check_no_open_tickets(cur, [node_id, *_check_parts_scrapped(cur, node_id)])
+            scrapped_ids = [node_id, *_check_parts_scrapped(cur, node_id)]
+            _check_no_open_tickets(cur, scrapped_ids)
+            _check_no_started_pm_jobs(cur, scrapped_ids)
+        unlinked = []
+        if new_parent is not None:
+            # S104 A1.6.4: only JSON true confirms; validate_equipment ignores the field (it is not a column)
+            confirmed = (request.get_json(silent=True) or {}).get("remove_meter_links") is True
+            unlinked = _links_a_move_removes(cur, node_id, new_parent, confirmed)
         before = _tracked_state(node)
         update_row(cur, "equipment", node_id, clean, actor())
         after = _written_state(cur, node_id, unit, equipment_class, equipment_model)
         write_events(cur, node_id, tracked_changes(before, after))
+        for part_id, line in unlinked:
+            write_events(cur, part_id, [line])
     with conn.cursor() as cur:
         # Committed already: "try again" would mislead, so the message says reload
         return jsonify(_detail(cur, _reread(cur, node_id, SAVED_BUT_UNREADABLE)))

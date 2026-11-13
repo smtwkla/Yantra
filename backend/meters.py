@@ -29,6 +29,23 @@ readings and the same-minute row are then read plainly, so two writers on one no
 on (1) and the second sees the first one's row (its snapshot starts after the lock).  No
 locking range read: gap locks on ix_meter_readings_meter_time could deadlock two inserts.  A
 removal checks equipment:edit (IT admin removes, but does not log), then locks the reading row.
+A PM job's reading item (S098) takes the same path: (6e), (6f), then (1) the meter's node, before
+any plain read; write_reading does the checks and the insert for both callers (lock_node,
+meter_in_force, reading_at_minute, write_reading and remove_reading_row are public for it).
+
+Meter links (S104 A1, docs/steps/S104-pm-templates-one-path/1-brief.md § 10 A1.6): a part with no meter of a type
+may use its parent's or grandparent's meter of that type (node_meter_links, one per part and type).  The card shows
+it read-only with the source's limits and last reading; readings and limits stay on the source, so no reading path
+and no limits write here ever touches a linked type on the part (log_reading finds no meter in force: NOT_ON_NODE;
+change_node_meter refuses with linked_limits).  Whether a link is in use is judged live (meters_core.link_states).
+Locks: add takes (1) the part (lock_node, the first statement) → each node above it up to the source, nearest first,
+LOCK IN SHARE MODE (_lock_up_to, two rows at most; "above" is decided from these rows) → plain reads: the meter type,
+the part's meters in force and its link of the type, the source's meters in force → the insert → the history line.
+Remove takes (1) → the link, plain → DELETE by id → the line.  add_node_meter and change_node_meter read the part's
+link plainly after their locks.  The part's meters and links are written only under its (1), and the snapshot
+starts at lock_node's plain read, after the lock, so the plain reads see every committed write of them (the
+reading write's argument above).  A link write waits only on nodes above the part, child first, the order of a
+re-parent; it never locks a plan, a job or a template.  equipment.py's LOCK ORDER note gives the deadlock check.
 
 The reading register (S050, docs/steps/S050-reading-register/1-brief.md § 5, § 6): one node's
 active readings as a table, a row per minute and a column per meter; a plain read under
@@ -46,16 +63,20 @@ from flask import Blueprint, jsonify, request
 from api_common import MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, int_arg
 from auth_utils import has_perm_at, require_perm
 from db_helpers import count, get_db, insert_row, marks, row_to_dict, rows_to_list, transaction, update_row
-from equipment import IST, SCRAPPED_MESSAGE, accessible_unit_ids, load_node_for_user, node_path, write_events
+from equipment import (
+    IST, SCRAPPED_MESSAGE, accessible_unit_ids, link_plan_names, load_node_for_user, meters_in_force, node_path,
+    nodes_by_id, nodes_meter_rows, read_meter_links, write_events,
+)
 from equipment_core import SCRAPPED
-from masters import checked_limits, lock_meter_type, read_model_meters, read_models_meters
+from masters import checked_limits, lock_meter_type, read_model_meters
 from masters_core import model_label
 from meters_core import (
-    ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, MARK_WINDOW_DAYS, NO_LIMITS, PICK_A_METER, YES_NO, answer_state,
-    answer_word, counter_error, effective_meters, format_number, in_force_pair, limit_state, mark_window, may_remove,
-    meter_type_of, parse_change_action, parse_meter_type_id, parse_meter_type_ids, parse_reading_request,
-    readings_at_ticket, register_columns, register_rows, reset_removal_error, same_limits, shown_meter_ids, to_minute,
-    tracked_meter_change, validate_reading,
+    ACTION_REMOVE, ACTION_USE_MODEL, COUNTER, GAUGE, MACHINE_HAS_NONE_ABOVE, MARK_WINDOW_DAYS, NO_LIMITS,
+    PICK_A_METER, PICK_A_NODE_ABOVE, SOURCE_LINKED, YES_NO, already_links, answer_state, answer_word, counter_error,
+    effective_meters, format_number, in_force_pair, limit_state, link_states, link_text, linked_limits, mark_window,
+    may_remove, meter_type_of, no_source_meter, parse_change_action, parse_link_body, parse_meter_type_id,
+    parse_meter_type_ids, parse_reading_request, readings_at_ticket, register_columns, register_rows,
+    reset_removal_error, same_limits, shown_meter_ids, to_minute, tracked_meter_change, uses_link, validate_reading,
 )
 from tickets import read_ticket
 from tickets_core import machine_and_component
@@ -73,31 +94,15 @@ HISTORY_PER_PAGE = 30
 
 UNIQUE_KEY_ERRORS.update({
     "uq_node_meters": ("meter_type_id", ALREADY_ON_NODE),
+    # A guard only: every link write holds the part (1) and reads its links first (S104 A1.6.1)
+    "uq_node_meter_links": ("meter_type_id", "This part already uses a meter of this type. Reload the page."),
 })
 
-_NODE_METER_SELECT = (
-    "SELECT nm.id, nm.equipment_id, nm.own, nm.min_value, nm.max_value, nm.active,"
-    " t.id AS t_id, t.name AS t_name, t.unit AS t_unit, t.kind AS t_kind, t.decimals AS t_decimals,"
-    " t.expected_answer AS t_expected_answer"
-    " FROM node_meters nm JOIN meter_types t ON t.id = nm.meter_type_id"
-)
-
-
-def _nodes_rows(cur, node_ids):
-    """The node_meters rows of several nodes in one query -> {node_id: [row, ...]}."""
-    out = {node_id: [] for node_id in node_ids}
-    if not out:
-        return out
-    cur.execute(f"{_NODE_METER_SELECT} WHERE nm.equipment_id IN ({marks(out)})", list(out))
-    for row in cur.fetchall():
-        out[row["equipment_id"]].append({
-            "id": row["id"], "own": row["own"], "meter_type": meter_type_of(row), "min_value": row["min_value"],
-            "max_value": row["max_value"], "active": row["active"]})
-    return out
-
+# (S104 A1.6.6) A node above the part, shared, one row at a time, nearest first: "above" is decided from these rows
+_SHARE_ABOVE = "SELECT id, code, parent_id, level, model_id FROM equipment WHERE id = %s LOCK IN SHARE MODE"
 
 def _node_rows(cur, node_id):
-    return _nodes_rows(cur, [node_id])[node_id]
+    return nodes_meter_rows(cur, [node_id])[node_id]
 
 
 def _meters_of(cur, node_id, model_id):
@@ -107,20 +112,95 @@ def _meters_of(cur, node_id, model_id):
     return effective_meters(model_meters, _node_rows(cur, node_id))
 
 
-def _meters_out(cur, node_id, model_id):
-    """The node's meters as the card shows them: each with ``last``, its newest active reading
-    ``{value, taken_at, limit_state}``, or None before any reading (§ 6)."""
-    meters = _meters_of(cur, node_id, model_id)
-    _add_last(meters, _last_readings(cur, [node_id]), node_id)
+def above_ids(node):
+    """The node's parent and grandparent ids, nearest first, from a plain node row (parent_id, gp_id)."""
+    return [node_id for node_id in (node["parent_id"], node["gp_id"]) if node_id is not None]
+
+
+def _meters_out(cur, node):
+    """The node's meters as the card shows them (§ 6; S104 A1.7), by meter type name: its model's and its own,
+    each with ``last``, its newest active reading ``{value, taken_at, limit_state}`` or None before any reading,
+    and ``linked_by``, the parts that use it through a link in use; then its linked meters (``source`` "linked"),
+    each with the source's limits and last reading while the link is in use, and ``used_by``, the names of the PM
+    templates whose plans on this node use it.  ``node`` is a plain node row with id, model_id, parent_id, gp_id."""
+    node_id = node["id"]
+    meters = _meters_of(cur, node_id, node["model_id"])
+    links = read_meter_links(cur, [node_id])[node_id]
+    sources = nodes_by_id(cur, sorted({link["source_equipment_id"] for link in links}))
+    source_meters = meters_in_force(cur, list(sources.values())) if sources else {}
+    types = {source_id: {m["meter_type"]["id"] for m in each} for source_id, each in source_meters.items()}
+    states = link_states({m["meter_type"]["id"] for m in meters}, links, above_ids(node), types)
+    in_use = [link for link in links if states[link["meter_type_id"]] is None]
+    last = last_readings(cur, [node_id, *sorted({link["source_equipment_id"] for link in in_use})])
+    _add_last(meters, last, node_id)
+    linked_by = _linked_by(cur, node_id, {m["meter_type"]["id"] for m in meters})
+    for meter in meters:
+        meter["linked_by"] = linked_by.get(meter["meter_type"]["id"], [])
+    used_by = link_plan_names(cur, [link["id"] for link in in_use])
+    for link in links:
+        source_meter = None
+        if states[link["meter_type_id"]] is None:
+            source_meter = next(m for m in source_meters[link["source_equipment_id"]]
+                                if m["meter_type"]["id"] == link["meter_type_id"])
+        meters.append(_linked_out(link, states[link["meter_type_id"]], source_meter, last,
+                                  [plan["name"] for plan in used_by.get(link["id"], [])]))
+    meters.sort(key=lambda m: (m["meter_type"]["name"].casefold(), m["meter_type"]["id"], m["source"] == SOURCE_LINKED))
     return meters
 
 
+def _linked_out(link, state, source_meter, last, used_by):
+    """A linked meter as the card shows it (A1.7): the source's limits in force and last reading while in use, else
+    null with the reason (``not_in_use``: own, not_above, no_source_meter)."""
+    meter_type = meter_type_of(link)
+    in_use = state is None
+    return {
+        "meter_type": meter_type, "source": SOURCE_LINKED,
+        "linked_from": {"id": link["source_equipment_id"], "code": link["source_code"], "name": link["source_name"]},
+        "in_use": in_use, "not_in_use": state,
+        "min_value": source_meter["min_value"] if in_use else None,
+        "max_value": source_meter["max_value"] if in_use else None,
+        "limits_text": source_meter["limits_text"] if in_use else None,
+        "model_min": None, "model_max": None, "model_limits_text": None, "overridden": False,
+        "last": _last_out(last.get((link["source_equipment_id"], meter_type["id"])), meter_type) if in_use else None,
+        "used_by": used_by if in_use else [], "linked_by": [],
+    }
+
+
+def _linked_by(cur, node_id, type_ids):
+    """The parts that use the node's meters through a link in use -> ``{meter_type_id: [{id, code}, …]}`` by code:
+    a part below the node (its child or grandchild), not scrapped, without a meter of that type of its own
+    (meters_core.link_states' order; the node has the type, since only its meters in force are asked)."""
+    if not type_ids:
+        return {}
+    cur.execute(
+        "SELECT l.meter_type_id, e.id, e.code, e.model_id FROM node_meter_links l"
+        " JOIN equipment e ON e.id = l.equipment_id LEFT JOIN equipment p ON p.id = e.parent_id"
+        f" WHERE l.source_equipment_id = %s AND l.meter_type_id IN ({marks(type_ids)}) AND e.lifecycle <> %s"
+        " AND (e.parent_id = %s OR p.parent_id = %s) ORDER BY e.code, e.id",
+        [node_id, *sorted(type_ids), SCRAPPED, node_id, node_id])
+    rows = cur.fetchall()
+    if not rows:
+        return {}
+    parts = {row["id"]: {"id": row["id"], "model_id": row["model_id"]} for row in rows}
+    own = meters_in_force(cur, list(parts.values()))
+    out = {}
+    for row in rows:
+        if row["meter_type_id"] not in {m["meter_type"]["id"] for m in own[row["id"]]}:
+            out.setdefault(row["meter_type_id"], []).append({"id": row["id"], "code": row["code"]})
+    return out
+
+
+def _last_out(row, meter_type):
+    """A newest reading ``{value, taken_at, limit_state}`` as the card shows it, or None."""
+    if row is None:
+        return None
+    return {key: reading_out(row, meter_type["kind"])[key] for key in ("value", "taken_at", "limit_state")}
+
+
 def _add_last(meters, last, node_id):
-    """Put ``last`` on each of the node's meters, from ``_last_readings``' {(node, type): row}."""
+    """Put ``last`` on each of the node's meters, from ``last_readings``' {(node, type): row}."""
     for meter in meters:
-        row = last.get((node_id, meter["meter_type"]["id"]))
-        meter["last"] = None if row is None else {
-            key: reading_out(row, meter["meter_type"]["kind"])[key] for key in ("value", "taken_at", "limit_state")}
+        meter["last"] = _last_out(last.get((node_id, meter["meter_type"]["id"])), meter["meter_type"])
 
 
 def _model_meter(cur, model_id, meter_type_id):
@@ -130,7 +210,7 @@ def _model_meter(cur, model_id, meter_type_id):
     return next((m for m in read_model_meters(cur, model_id) if m["meter_type"]["id"] == meter_type_id), None)
 
 
-def _lock_node(cur, node_id, key):
+def lock_node(cur, node_id, key):
     """(1): 404 outside the user's units, 403 without ``key`` at the node's site (equipment:edit
     for a meter write or a reading's removal, reading:log for a reading), 409 when scrapped
     (from the locked row)."""
@@ -155,22 +235,37 @@ def _is_own_meter(row):
 def list_node_meters(node_id):
     with get_db().cursor() as cur:
         _, node = load_node_for_user(cur, node_id, for_update=False, key="equipment:read")
-        return jsonify(_meters_out(cur, node_id, node["model_id"]))
+        return jsonify(_meters_out(cur, node))
+
+
+def _written_node(locked, node):
+    """The node as a write left it, for _meters_out after the commit: the model from the locked row (BR1-17)."""
+    return {**node, "model_id": locked["model_id"]}
+
+
+def _link_of(cur, node_id, meter_type_id):
+    """The part's link of that type (plain, after (1)), or None."""
+    return next((link for link in read_meter_links(cur, [node_id])[node_id]
+                 if link["meter_type_id"] == meter_type_id), None)
 
 
 @meters_bp.route("/equipment/<int:node_id>/meters", methods=["POST"])
 @require_perm("equipment:edit")
 def add_node_meter(node_id):
-    """Add an own meter: an active type not already in force on the node (§ 5.3)."""
+    """Add an own meter: an active type not already in force on the node (§ 5.3), and not one it links (S104
+    A1.6.1: one meter per type on a node; replacing a link is *Remove link*, then *Add meter*)."""
     meter_type_id = clean_body(lambda body, _creating: parse_meter_type_id(body), creating=True)
     body = request.get_json(silent=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked, _ = _lock_node(cur, node_id, "equipment:edit")                # (1)
+        locked, node = lock_node(cur, node_id, "equipment:edit")              # (1)
         meter_type = lock_meter_type(cur, meter_type_id, adding=True)         # (4b)
         row = _lock_node_meter(cur, node_id, meter_type_id)
         if _model_meter(cur, locked["model_id"], meter_type_id) is not None or _is_own_meter(row):
             raise ApiError(ALREADY_ON_NODE, 409, "meter_type_id")
+        link = _link_of(cur, node_id, meter_type_id)
+        if link is not None:
+            raise ApiError(uses_link(link["source_code"], link["type_name"]), 409, "meter_type_id")
         low, high = checked_limits(body, meter_type, NO_LIMITS)
         values = {"min_value": low, "max_value": high, "active": 1}
         if row is not None and row["own"]:
@@ -183,7 +278,7 @@ def add_node_meter(node_id):
                        {"equipment_id": node_id, "meter_type_id": meter_type_id, "own": 1, **values}, actor())
         write_events(cur, node_id, [("meter_added", None, meter_type["name"])])
     with conn.cursor() as cur:
-        return jsonify(_meters_out(cur, node_id, locked["model_id"])), 201
+        return jsonify(_meters_out(cur, _written_node(locked, node))), 201
 
 
 @meters_bp.route("/equipment/<int:node_id>/meters/<int:meter_type_id>", methods=["PUT"])
@@ -195,17 +290,123 @@ def change_node_meter(node_id, meter_type_id):
     body = request.get_json(silent=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked, node = _lock_node(cur, node_id, "equipment:edit")             # (1)
+        locked, node = lock_node(cur, node_id, "equipment:edit")              # (1)
         meter_type = lock_meter_type(cur, meter_type_id, adding=False)        # (4b)
         row = _lock_node_meter(cur, node_id, meter_type_id)
         model_meter = _model_meter(cur, locked["model_id"], meter_type_id)
+        if model_meter is None and not _is_own_meter(row):
+            # S104 A1.6.1: a linked meter's limits are the source's
+            link = _link_of(cur, node_id, meter_type_id)
+            if link is not None:
+                raise ApiError(linked_limits(link["source_code"]), 409)
         if action == ACTION_REMOVE:
             events = _remove(cur, node, meter_type, model_meter, row)
         else:
             events = _set_limits(cur, node_id, body, action == ACTION_USE_MODEL, meter_type, model_meter, row)
         write_events(cur, node_id, events)
     with conn.cursor() as cur:
-        return jsonify(_meters_out(cur, node_id, locked["model_id"]))
+        return jsonify(_meters_out(cur, _written_node(locked, node)))
+
+
+# ---------------------------------------------------------------------------
+# Meter links (S104 A1, docs/steps/S104-pm-templates-one-path/1-brief.md § 10 A1.6, A1.7)
+# ---------------------------------------------------------------------------
+
+@meters_bp.route("/equipment/<int:node_id>/meter-links/choices")
+@require_perm("equipment:read")
+def meter_link_choices(node_id):
+    """The meters a part may link (A1.7): the meters in force on its parent and grandparent, nearest first, without
+    the types the part has or links; none for a machine."""
+    with get_db().cursor() as cur:
+        _, node = load_node_for_user(cur, node_id, for_update=False, key="equipment:read")
+        ids = above_ids(node)
+        if not ids:
+            return jsonify({"items": []})
+        above = nodes_by_id(cur, ids)
+        meters = meters_in_force(cur, [above[above_id] for above_id in ids])
+        taken = {m["meter_type"]["id"] for m in _meters_of(cur, node_id, node["model_id"])}
+        taken |= {link["meter_type_id"] for link in read_meter_links(cur, [node_id])[node_id]}
+        last = last_readings(cur, ids)
+    items = []
+    for above_id in ids:
+        source = above[above_id]
+        for meter in meters[above_id]:
+            meter_type = meter["meter_type"]
+            if meter_type["id"] in taken:
+                continue
+            items.append({
+                "equipment": {key: source[key] for key in ("id", "code", "name", "level")},
+                "meter_type": meter_type, "limits_text": meter["limits_text"],
+                "last": _last_out(last.get((above_id, meter_type["id"])), meter_type),
+            })
+    return jsonify({"items": items})
+
+
+def _lock_up_to(cur, locked, source_id):
+    """Share-lock each node above the part, nearest first, until ``source_id`` (A1.6.6 step 1) -> its locked row
+    {id, code, parent_id, level, model_id}, or None when it is not the part's parent or grandparent."""
+    current = locked
+    for _ in range(2):          # the tree has three levels (equipment_core._ALLOWED_PARENTS)
+        if current["parent_id"] is None:
+            return None
+        cur.execute(_SHARE_ABOVE, (current["parent_id"],))
+        current = cur.fetchone()
+        if current is None:
+            return None
+        if current["id"] == source_id:
+            return current
+    return None
+
+
+@meters_bp.route("/equipment/<int:node_id>/meter-links", methods=["POST"])
+@require_perm("equipment:edit")
+def add_meter_link(node_id):
+    """*Use a meter from above* (A1.6.1): the part uses its parent's or grandparent's meter of a type.  The source
+    has the meter itself (its model's or its own, never a linked one: no chains); the part has no meter of that type
+    and no link of it."""
+    clean = clean_body(lambda body, _creating: parse_link_body(body), creating=True)
+    type_id, source_id = clean["meter_type_id"], clean["source_equipment_id"]
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, node = lock_node(cur, node_id, "equipment:edit")              # (1); 404; 403; 409 scrapped
+        if locked["parent_id"] is None:
+            raise ApiError(MACHINE_HAS_NONE_ABOVE, 400)
+        source = _lock_up_to(cur, locked, source_id)                          # the nodes above, shared
+        if source is None:
+            raise ApiError(PICK_A_NODE_ABOVE, 400, "source_equipment_id")
+        cur.execute("SELECT id, name FROM meter_types WHERE id = %s", (type_id,))
+        meter_type = cur.fetchone()
+        if meter_type is None:
+            raise ApiError(PICK_A_METER, 400, "meter_type_id")
+        if meter_in_force(cur, node_id, locked["model_id"], type_id) is not None:
+            raise ApiError(ALREADY_ON_NODE, 409, "meter_type_id")
+        link = _link_of(cur, node_id, type_id)
+        if link is not None:
+            raise ApiError(already_links(link["source_code"], link["type_name"]), 409, "meter_type_id")
+        if meter_in_force(cur, source_id, source["model_id"], type_id) is None:
+            raise ApiError(no_source_meter(source["code"], meter_type["name"]), 409, "source_equipment_id")
+        insert_row(cur, "node_meter_links",
+                   {"equipment_id": node_id, "meter_type_id": type_id, "source_equipment_id": source_id}, actor())
+        write_events(cur, node_id, [("meter_linked", None, link_text(meter_type["name"], source["code"]))])
+    with conn.cursor() as cur:
+        return jsonify(_meters_out(cur, _written_node(locked, node))), 201
+
+
+@meters_bp.route("/equipment/<int:node_id>/meter-links/<int:meter_type_id>", methods=["DELETE"])
+@require_perm("equipment:edit")
+def remove_meter_link(node_id, meter_type_id):
+    """*Remove link* (A1.6.1): the row is deleted; the part's history keeps both lines.  Readings stay on the
+    source."""
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        locked, node = lock_node(cur, node_id, "equipment:edit")              # (1); 404; 403; 409 scrapped
+        link = _link_of(cur, node_id, meter_type_id)
+        if link is None:
+            raise ApiError("Not found", 404)
+        cur.execute("DELETE FROM node_meter_links WHERE id = %s", (link["id"],))
+        write_events(cur, node_id, [("meter_unlinked", link_text(link["type_name"], link["source_code"]), None)])
+    with conn.cursor() as cur:
+        return jsonify(_meters_out(cur, _written_node(locked, node)))
 
 
 def _remove(cur, node, meter_type, model_meter, row):
@@ -274,7 +475,7 @@ def reading_out(row, kind):
     return out
 
 
-def _last_readings(cur, node_ids, until=None):
+def last_readings(cur, node_ids, until=None):
     """The newest active reading of each meter of the nodes → {(node_id, meter_type_id): row};
     newest by (taken_at, id), the history's order.  One query for any number of nodes.
 
@@ -296,6 +497,27 @@ def _last_readings(cur, node_ids, until=None):
         f"  AND n.meter_type_id = r.meter_type_id AND n.removed_at IS NULL{neighbour_bound}"
         "  AND (n.taken_at > r.taken_at OR (n.taken_at = r.taken_at AND n.id > r.id)))", params)
     return {(row["equipment_id"], row["meter_type_id"]): row for row in cur.fetchall()}
+
+
+def first_reading_after(cur, equipment_id, meter_type_id, after):
+    """The meter's earliest active reading taken after ``after`` (a naive IST datetime) -> ``{value, taken_at}`` or
+    None; earliest by (taken_at, id).  PM's start value when no reading was taken by the plan's start (S097 § 5.3,
+    S095 D9)."""
+    cur.execute(f"SELECT value, taken_at FROM meter_readings WHERE {_ACTIVE} AND taken_at > %s"
+                " ORDER BY taken_at, id LIMIT 1", (equipment_id, meter_type_id, after))
+    return cur.fetchone()
+
+
+def readings_across_reset(cur, equipment_id, meter_type_id, after):
+    """The meter's active readings taken after ``after``, in (taken_at, id) order, as ``[{value, is_reset}]`` —
+    only when one of them is a counter reset, else ``[]`` (S097 § 5.4: PM carries the usage across a reset).  One
+    query: without a reset the EXISTS fails and no row is read."""
+    cur.execute(f"SELECT value, is_reset FROM meter_readings WHERE {_ACTIVE} AND taken_at > %s"
+                " AND EXISTS (SELECT 1 FROM meter_readings x WHERE x.equipment_id = %s AND x.meter_type_id = %s"
+                " AND x.removed_at IS NULL AND x.taken_at > %s AND x.is_reset = 1)"
+                " ORDER BY taken_at, id",
+                (equipment_id, meter_type_id, after, equipment_id, meter_type_id, after))
+    return [{"value": row["value"], "is_reset": bool(row["is_reset"])} for row in cur.fetchall()]
 
 
 def _mark_counts(cur, node_ids, since, until):
@@ -381,36 +603,67 @@ def log_reading(node_id):
     body = request.get_json(silent=True)
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        locked, _ = _lock_node(cur, node_id, "reading:log")                  # (1), the first statement
-        meter = next((m for m in _meters_of(cur, node_id, locked["model_id"])
-                      if m["meter_type"]["id"] == clean["meter_type_id"]), None)
+        locked, _ = lock_node(cur, node_id, "reading:log")                   # (1), the first statement
+        meter = meter_in_force(cur, node_id, locked["model_id"], clean["meter_type_id"])
         if meter is None:
             raise ApiError(NOT_ON_NODE, 409, "meter_type_id")
-        meter_type = meter["meter_type"]
-        reading, errors = validate_reading(body.get("value"), meter_type["kind"], meter_type["decimals"],
-                                           body.get("is_reset", False), body.get("note"))
-        if errors:
-            raise ApiError(errors[0]["message"], 400, errors[0]["field"])
-        taken_at = clean["taken_at"]
-        key = (node_id, meter_type["id"])
-        if count(cur, f"SELECT COUNT(*) AS n FROM meter_readings WHERE {_ACTIVE} AND taken_at = %s",
-                 (*key, taken_at)):
-            raise ApiError(SAME_MINUTE, 409, "taken_at")
-        if meter_type["kind"] == COUNTER:
-            refusal = counter_error(reading["value"], reading["is_reset"],
-                                    _neighbour(cur, *key, taken_at, later=False),
-                                    _neighbour(cur, *key, taken_at, later=True), meter_type)
-            if refusal:
-                field, message, code = refusal
-                raise ApiError(message, 400, field, code)
-        reading_id = insert_row(cur, "meter_readings", {
-            "equipment_id": node_id, "meter_type_id": meter_type["id"], "value": reading["value"],
-            "taken_at": taken_at, "is_reset": reading["is_reset"], "limit_state": _limit_state(meter, reading["value"]),
-            "note": reading["note"],
-        }, actor())
-        cur.execute(f"SELECT {_READING_COLUMNS} FROM meter_readings WHERE id = %s", (reading_id,))
-        row = cur.fetchone()
-    return jsonify(reading_out(row, meter_type["kind"])), 201
+        row = write_reading(cur, node_id, meter, body, clean["taken_at"], "manual")
+    return jsonify(reading_out(row, meter["meter_type"]["kind"])), 201
+
+
+def meter_in_force(cur, node_id, model_id, meter_type_id):
+    """The node's meter of that type in force (meters_core.effective_meters), or None.  ``model_id`` comes from
+    the locked node row (BR1-17).  The readings route and a PM job's reading item (S098) share it."""
+    return next((m for m in _meters_of(cur, node_id, model_id) if m["meter_type"]["id"] == meter_type_id), None)
+
+
+def reading_at_minute(cur, node_id, meter_type_id, taken_at):
+    """The meter's active reading at that minute (plain read, after (1)) -> the row with ``source``, or None."""
+    cur.execute(f"SELECT {_READING_COLUMNS}, source FROM meter_readings WHERE {_ACTIVE} AND taken_at = %s"
+                " ORDER BY id LIMIT 1", (node_id, meter_type_id, taken_at))
+    return cur.fetchone()
+
+
+def write_reading(cur, node_id, meter, raw, taken_at, source):
+    """Check and insert one reading of ``meter`` (meter_in_force's) on the node -> the stored row (§ 5.1, § 5.2).
+
+    The one insert path of meter_readings (S039; S098 § 5.5): the caller holds the node (1) FOR UPDATE through
+    ``lock_node`` before any plain read of its transaction, so the neighbours read here are the newest.  ``raw``
+    holds the body's ``value``, ``is_reset`` (default false) and ``note``.  Raises ApiError: 400 (the value, the
+    reset mark, the note; a counter against its neighbours, with its code), 409 SAME_MINUTE."""
+    meter_type = meter["meter_type"]
+    reading, errors = validate_reading(raw.get("value"), meter_type["kind"], meter_type["decimals"],
+                                       raw.get("is_reset", False), raw.get("note"))
+    if errors:
+        raise ApiError(errors[0]["message"], 400, errors[0]["field"])
+    key = (node_id, meter_type["id"])
+    if reading_at_minute(cur, *key, taken_at) is not None:
+        raise ApiError(SAME_MINUTE, 409, "taken_at")
+    if meter_type["kind"] == COUNTER:
+        refusal = counter_error(reading["value"], reading["is_reset"],
+                                _neighbour(cur, *key, taken_at, later=False),
+                                _neighbour(cur, *key, taken_at, later=True), meter_type)
+        if refusal:
+            field, message, code = refusal
+            raise ApiError(message, 400, field, code)
+    reading_id = insert_row(cur, "meter_readings", {
+        "equipment_id": node_id, "meter_type_id": meter_type["id"], "value": reading["value"],
+        "taken_at": taken_at, "is_reset": reading["is_reset"], "limit_state": _limit_state(meter, reading["value"]),
+        "source": source, "note": reading["note"],
+    }, actor())
+    cur.execute(f"SELECT {_READING_COLUMNS} FROM meter_readings WHERE id = %s", (reading_id,))
+    return cur.fetchone()
+
+
+def remove_reading_row(cur, node_id, reading, field=None):
+    """Remove an active reading of the node (``reading`` has id, meter_type_id, is_reset), the node held (1): 409
+    RESET_HAS_LATER (on ``field``) for a reset with a later active reading, else removed_at / removed_by set.  The
+    readings route and a PM job's own reading (S098 § 5.5 step 3) share it."""
+    message = reset_removal_error(reading, _newest_active_id(cur, node_id, reading["meter_type_id"]) != reading["id"])
+    if message:
+        raise ApiError(message, 409, field)
+    cur.execute("UPDATE meter_readings SET removed_at = NOW(), removed_by = %s WHERE id = %s",
+                (actor(), reading["id"]))
 
 
 @meters_bp.route("/equipment/<int:node_id>/readings/<int:reading_id>", methods=["DELETE"])
@@ -419,7 +672,7 @@ def remove_reading(node_id, reading_id):
     """Remove a wrong reading (§ 1.4, § 5.2.6): it is hidden, with who and when kept."""
     conn = get_db()
     with transaction(conn), conn.cursor() as cur:
-        _lock_node(cur, node_id, "equipment:edit")                           # (1); 404; 403; 409 scrapped
+        lock_node(cur, node_id, "equipment:edit")                            # (1); 404; 403; 409 scrapped
         cur.execute(f"SELECT {_READING_COLUMNS} FROM meter_readings WHERE id = %s AND equipment_id = %s FOR UPDATE",
                     (reading_id, node_id))
         reading = cur.fetchone()
@@ -427,11 +680,7 @@ def remove_reading(node_id, reading_id):
             raise ApiError("Not found", 404)
         if not may_remove(reading, can_edit=True):
             raise ApiError(ALREADY_REMOVED, 409)
-        message = reset_removal_error(reading, _newest_active_id(cur, node_id, reading["meter_type_id"]) != reading_id)
-        if message:
-            raise ApiError(message, 409)
-        cur.execute("UPDATE meter_readings SET removed_at = NOW(), removed_by = %s WHERE id = %s",
-                    (actor(), reading_id))
+        remove_reading_row(cur, node_id, reading)
     return "", 204
 
 
@@ -484,6 +733,17 @@ def _sheet_nodes(cur, unit_ids):
     return machines, parts
 
 
+def meters_with_last(cur, nodes):
+    """Each node's meters in force, each with ``last`` as on the card -> ``{node_id: [meter, …]}``.  ``nodes`` are
+    rows with ``id`` and ``model_id``.  A few queries for any number of nodes, none per node: the reading sheet
+    (S040) uses it."""
+    out = meters_in_force(cur, nodes)
+    last = last_readings(cur, [n["id"] for n in nodes])
+    for node in nodes:
+        _add_last(out[node["id"]], last, node["id"])
+    return out
+
+
 @meters_bp.route("/readings/sheet")
 @require_perm("reading:log")
 def readings_sheet():
@@ -495,14 +755,10 @@ def readings_sheet():
         site, units = _sheet_units(cur, site_id)
         machines, parts = _sheet_nodes(cur, [u["id"] for u in units])
         nodes = [*machines, *(p for group in parts.values() for p in group)]
-        models = read_models_meters(cur, sorted({n["model_id"] for n in nodes if n["model_id"] is not None}))
-        node_rows = _nodes_rows(cur, [n["id"] for n in nodes])
-        last = _last_readings(cur, [n["id"] for n in nodes])
+        meters_by_node = meters_with_last(cur, nodes)
 
     def meters_of(node):
-        meters = effective_meters(models.get(node["model_id"], []), node_rows[node["id"]])
-        _add_last(meters, last, node["id"])
-        return meters
+        return meters_by_node[node["id"]]
 
     out_units = []
     for unit in units:
@@ -629,7 +885,7 @@ def ticket_meters(ticket_id):
             if meters:
                 nodes.append((node, meters))
         node_ids = [node["id"] for node, _ in nodes]
-        last = _last_readings(cur, node_ids, until=at)
+        last = last_readings(cur, node_ids, until=at)
         counts = _mark_counts(cur, node_ids, mark_window(at), at)
     out = []
     for node, meters in nodes:

@@ -1,7 +1,7 @@
 /**
  * Display labels for the equipment register — one vocabulary for every screen
  * (docs/steps/S003-equipment-screens/1-brief.md § 5.4–5.5; type events: S004; model events:
- * S012; meter events: S038; property events: S044). Pure: no imports.
+ * S012; meter events: S038; property events: S044; meter link events: S104 A1). Pure: no imports.
  */
 
 export const LEVEL_LABELS = {
@@ -100,6 +100,11 @@ export function describeEvent(event) {
       return `Meter removed: ${oldValue}`;
     case "meter_limits":
       return change("Meter limits", oldValue, secondSide(oldValue, newValue));
+    // A meter link (S104 A1): the backend writes "<meter> from <node code>"
+    case "meter_linked":
+      return `Meter linked: ${newValue}`;
+    case "meter_unlinked":
+      return `Meter link removed: ${oldValue}`;
     // An item's own property value (S044 § 5.4): "<property>: <value>" on each side, the model's
     // value in force marked "(model)"
     case "property":

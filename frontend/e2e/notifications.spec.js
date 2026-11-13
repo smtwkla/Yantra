@@ -202,9 +202,12 @@ test("S021 A1: What you will get — the engineer's breakdowns and defects, the 
   await expect(lines).toContainText("Jobs assigned to you");
   await expect(lines).toContainText("Improvements ready to verify at SMTW");   // S074
   await expect(lines).toContainText("Contracts ending for machines at SMTW");   // S084
+  await expect(lines).toContainText("Overdue PM jobs at SMTW");   // S102
+  await expect(lines).toContainText("PM jobs assigned to you, when due and when overdue");   // S102
   await asPerson(page, "technician", "/notifications");
   await expect(lines.getByRole("listitem")).toHaveText([
-    "Jobs assigned to you", "Countermeasures given to you, and when they are overdue"]);
+    "Jobs assigned to you", "PM jobs assigned to you, when due and when overdue",
+    "Countermeasures given to you, and when they are overdue"]);
   await asPerson(page, "storekeeper", "/notifications");
   await expect(lines).toContainText("Nothing yet. Ask your engineer.");
 });

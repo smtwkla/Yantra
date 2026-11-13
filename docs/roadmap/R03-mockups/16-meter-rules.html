@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R03 mock-up 16 — Rules on the meter (the equipment page's Meters card)</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span class="active"><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit" style="mask-image:url('../../../frontend/src/assets/icons/table_edit.svg')"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Equipment</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="text-secondary small mb-1">Equipment › SMTW.MCC1</div>
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <h5 class="mb-0">EOT02 — EOT crane 5 t</h5>
+      <span class="badge text-bg-success">In use</span>
+      <span class="text-secondary small">Model: Crane maker A · 5 t double girder</span>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-6">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Meters</span>
+            <span class="d-flex gap-1">
+              <button class="btn btn-outline-secondary btn-sm"><i class="fa-solid fa-table me-1"></i>Open register</button>
+              <button class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-plus me-1"></i>Add meter</button>
+            </span>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="fw-semibold">Run hours</span>
+                <span class="text-secondary small">h · Counter</span>
+                <span class="badge text-bg-light border">From the model</span>
+                <span class="ms-auto"><button class="btn btn-sm btn-outline-primary">Log reading</button></span>
+              </div>
+              <div class="small mt-1">1,238.0 h · 05-11-2026 17:50</div>
+            </li>
+            <li class="list-group-item" style="background:#fffbea">
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="fw-semibold">Brake air gap</span>
+                <span class="text-secondary small">mm · Gauge</span>
+                <span class="badge text-bg-light border">From the model</span>
+                <span class="ms-auto d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary">Log reading</button>
+                  <button class="btn btn-sm btn-outline-secondary">Set limits</button>
+                  <button class="btn btn-sm btn-primary">Set rules</button>
+                </span>
+              </div>
+              <div class="small">Limits: 0.4–1.2 mm</div>
+              <div class="small mt-1">
+                <div class="text-secondary">Rules (set on this machine):</div>
+                <div><i class="fa-solid fa-bell text-warning me-1"></i>Above 1.5 mm → condition ticket</div>
+                <div><i class="fa-solid fa-bell text-danger me-1"></i>Above 2.0 mm → condition ticket · <em>Pads near the end</em></div>
+              </div>
+              <div class="small mt-1">1.6 mm · 05-11-2026 17:50 <span class="badge text-bg-warning">High</span></div>
+              <div class="small mt-1"><i class="fa-solid fa-triangle-exclamation text-secondary me-1"></i>Open condition ticket: <a href="17-condition-ticket.html">TK-2026-11-031</a></div>
+            </li>
+            <li class="list-group-item">
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="fw-semibold">Brake holds test load</span>
+                <span class="text-secondary small">Yes / No</span>
+                <span class="badge text-bg-info">This machine only</span>
+                <span class="ms-auto d-flex gap-1">
+                  <button class="btn btn-sm btn-outline-primary">Log reading</button>
+                  <button class="btn btn-sm btn-outline-secondary">Set rules</button>
+                </span>
+              </div>
+              <div class="small">Expected: Yes</div>
+              <div class="small mt-1"><i class="fa-solid fa-bell text-warning me-1"></i>Not the expected answer → condition ticket</div>
+              <div class="small mt-1">Yes · 01-11-2026 10:15</div>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="col-6">
+        <div class="card shadow">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Rules for Brake air gap on EOT02</span>
+            <i class="fa-solid fa-xmark text-secondary"></i>
+          </div>
+          <div class="card-body">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="whose">
+              <label class="form-check-label">Use the model's rules (1): above 1.5 mm</label>
+            </div>
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="radio" name="whose" checked>
+              <label class="form-check-label fw-semibold">Set rules for this machine</label>
+            </div>
+
+            <table class="table table-sm align-middle mb-2">
+              <thead><tr><th>When a reading is</th><th>Value</th><th>Note on the ticket (optional)</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><select class="form-select form-select-sm"><option>above</option></select></td>
+                  <td><div class="input-group input-group-sm"><input class="form-control" value="1.5"><span class="input-group-text">mm</span></div></td>
+                  <td><input class="form-control form-control-sm" placeholder="e.g. Adjust soon"></td>
+                  <td><button class="btn btn-sm btn-outline-danger">Remove</button></td>
+                </tr>
+                <tr>
+                  <td><select class="form-select form-select-sm"><option>above</option></select></td>
+                  <td><div class="input-group input-group-sm"><input class="form-control" value="2.0"><span class="input-group-text">mm</span></div></td>
+                  <td><input class="form-control form-control-sm" value="Pads near the end"></td>
+                  <td><button class="btn btn-sm btn-outline-danger">Remove</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <button class="btn btn-sm btn-outline-primary mb-3"><i class="fa-solid fa-plus me-1"></i>Add rule</button>
+
+            <div class="mk-note mb-2">A reading that crosses a rule raises a <strong>condition ticket</strong> on EOT02, found by condition monitoring. The engineer decides the work on the ticket. While that ticket is open, a later crossing adds a line to it. Every reading is checked: the Readings sheet, the equipment page and PM jobs.</div>
+            <div class="small text-secondary mb-3">The limits 0.4–1.2 mm only mark a reading <span class="badge text-bg-warning">High</span> or <span class="badge text-bg-warning">Low</span>. They raise no ticket.</div>
+
+            <div class="d-flex justify-content-end gap-2">
+              <button class="btn btn-outline-secondary">Cancel</button>
+              <button class="btn btn-primary">Save rules</button>
+            </div>
+          </div>
+        </div>
+        <div class="small text-secondary mt-2">The model's rules are set in Masters › Models › Meters, and reach every crane of the model.</div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

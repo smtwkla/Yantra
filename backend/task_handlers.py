@@ -13,8 +13,12 @@ How a task reports its outcome (S021 § 5.1, decision 9; S023's telegram_send wo
 too): a task that must keep a failure record on its own row (push_send: the subscription's
 last_error) writes it and commits before it raises — the only write before the raise, on
 every failed attempt, so it needs no attempt number.  That commit is the second documented
-exception, beside the purge's.  The exception raised says what happens next: BadTask (the
-task itself is malformed) and NoRetry (the other side refused it as given) fail at once;
+exception, beside the purge's.  The third is pm_generate (S097 D6): it commits after its
+candidates' read, then runs one transaction per plan, so each plan's locks are short, a failed
+plan does not hold back the others, and the run never deadlocks with a plan save.  The fourth
+is pm_job_alert_scan (S102 § 5.4): the same, one transaction per job.  The
+exception raised says what happens next: BadTask (the task itself is malformed) and NoRetry
+(the other side refused it as given) fail at once;
 RetryLater retries after its own delay (capped by mark_failed); any other exception retries
 with the back-off.  email_send (S032) has no row of its own to write on: its failure is kept in
 task_queue.last_error and the log only.
@@ -27,24 +31,30 @@ import requests
 
 import alerts
 import mail_sender
+import pm_jobs
 import push_sender
 from alerts_core import (
     ACTION_GIVEN, ACTION_OVERDUE, ASSIGNED, CHANNELS, CONTRACT_KINDS, EMAIL, ESCALATION, FIRST, IMPROVEMENT_KINDS,
-    PAYLOAD_DATE, PAYLOAD_TIME, PUSH, SECOND, TICKET_KINDS, VERIFY_READY, contract_facts, contract_message,
-    contract_reminder_due, improvement_message, message, overdue_alert_due, ready_alert_due, should_escalate,
-    should_send, should_send_contract, should_send_improvement,
+    PAYLOAD_DATE, PAYLOAD_TIME, PM_JOB_DUE, PM_JOB_OVERDUE, PM_KINDS, PUSH, SECOND, TICKET_KINDS, VERIFY_READY,
+    contract_facts, contract_message, contract_reminder_due, improvement_message, message, overdue_alert_due,
+    pm_job_facts, pm_job_message, ready_alert_due, should_escalate, should_send, should_send_contract,
+    should_send_improvement, should_send_pm,
 )
 from company_settings import ACCESS_LOG_RETENTION_DAYS, DONE_TASK_RETENTION_DAYS, PURGE_BATCH_ROWS
 from improvements_core import watch_until
 from push_core import (
-    ALERT_TTL_SECONDS, CONTRACT_TTL_SECONDS, GONE, IMPROVEMENT_TTL_SECONDS, REFUSED, RETRY_LATER, SENT, push_data,
-    refused_host, send_outcome, send_task_payload,
+    ALERT_TTL_SECONDS, CONTRACT_TTL_SECONDS, GONE, IMPROVEMENT_TTL_SECONDS, PM_TTL_SECONDS, REFUSED, RETRY_LATER,
+    SENT, push_data, refused_host, send_outcome, send_task_payload,
 )
 from email_core import closed_email, contract_ending_email, smtp_outcome
 from settings import label_base_url
 from task_queue import enqueue
 
 logger = logging.getLogger(__name__)
+
+PM_GENERATE = "pm_generate"
+# A stopped pm_generate retries this soon, so the plans not yet settled are settled when the worker is back
+PM_STOPPED_RETRY_SECONDS = 60
 
 
 class BadTask(Exception):
@@ -474,8 +484,71 @@ def email_send(conn, payload, should_stop, send=None):
     logger.info("email_send: sent to person %s", person_id)
 
 
+def pm_generate(conn, payload, should_stop):
+    """Daily (scheduled_tasks.SCHEDULE, 05:00 IST): make, refresh or cancel each plan's PM job
+    (pm_jobs.generate, S097 § 5.6), one transaction per plan.  A plan that failed makes the task
+    retry with the back-off (the settled plans are found settled again); a stop leaves the rest to
+    the retry, soon, not tomorrow."""
+    _expect_no_payload(PM_GENERATE, payload)
+    result = pm_jobs.generate(conn, should_stop)
+    logger.info("pm_generate: %d created, %d refreshed, %d cancelled, %d failed%s", result["created"],
+                result["refreshed"], result["cancelled"], len(result["failed"]),
+                "; stopped" if result["stopped"] else "")
+    if result["stopped"]:
+        raise RetryLater("pm_generate stopped; the rest runs on restart", PM_STOPPED_RETRY_SECONDS)
+    if result["failed"]:
+        raise RuntimeError(f"pm_generate: plans {', '.join(map(str, result['failed']))} failed")
+
+
+# ---------------------------------------------------------------------------
+# PM alerts (S102, R03.7): pm_job_alert_scan queues them once a day, pm_job_alert sends one by push
+# ---------------------------------------------------------------------------
+
+def pm_job_alert_scan(conn, payload, should_stop):
+    """Daily (scheduled_tasks.SCHEDULE, 08:00 IST): queue *PM job due* and *PM job overdue* once per due point
+    (pm_jobs.alert_scan, S102 § 5.4), one transaction per job, as pm_generate: a job that failed makes the task
+    retry with the back-off (the marked jobs are no candidates then); a stop leaves the rest to the retry, soon."""
+    _expect_no_payload(alerts.PM_JOB_SCAN, payload)
+    result = pm_jobs.alert_scan(conn, should_stop)
+    logger.info("pm_job_alert_scan: %d due, %d overdue, %d failed%s", result["due"], result["overdue"],
+                len(result["failed"]), "; stopped" if result["stopped"] else "")
+    if result["stopped"]:
+        raise RetryLater("pm_job_alert_scan stopped; the rest runs on restart", PM_STOPPED_RETRY_SECONDS)
+    if result["failed"]:
+        raise RuntimeError(f"pm_job_alert_scan: jobs {', '.join(map(str, result['failed']))} failed")
+
+
+def pm_job_alert(conn, payload, should_stop):
+    """One PM alert -> one push_send per device of its recipients (S102 § 5.6), in this transaction (all or nothing,
+    so a retry never doubles them).  Plain reads.  Sent only while still true (should_send_pm, from the job as it is
+    now); push only (CHANNELS)."""
+    (job_id,) = _ids(alerts.PM_JOB_ALERT, payload, "job_id")
+    kind = payload.get("kind")
+    if kind not in PM_KINDS:
+        raise BadTask(f"pm_job_alert: unknown kind {kind!r}")
+    with conn.cursor() as cur:
+        row = pm_jobs.job_row(cur, job_id)
+        if row is None:
+            raise BadTask(f"pm_job_alert: no PM job {job_id}")
+        if not should_send_pm(kind, row):
+            logger.info("pm_job_alert %s for %s: not sent, no longer true (state %s, plan active %s, node %s, due %s"
+                        " / %s)", kind, row["serial"], row["state"], row["pl_active"], row["e_lifecycle"],
+                        row["due_on"], row["due_meter"])
+            return
+        if not push_sender.enabled():
+            logger.info("pm_job_alert %s for %s: push is not set up, no channel", kind, row["serial"])
+            return
+        people = alerts.pm_job_recipients(cur, kind, row)
+        devices = _push_to_people(cur, people, pm_job_message(kind, pm_job_facts(row, label_base_url(cur))),
+                                  PM_TTL_SECONDS)
+    logger.info("pm_job_alert %s for %s: %d people, %d devices", kind, row["serial"], len(people), devices)
+
+
 HANDLERS = {
     "purge_access_log": purge_access_log,
+    PM_GENERATE: pm_generate,
+    alerts.PM_JOB_SCAN: pm_job_alert_scan,
+    alerts.PM_JOB_ALERT: pm_job_alert,
     alerts.TICKET_ALERT: ticket_alert,
     alerts.TICKET_ESCALATE: ticket_escalate,
     alerts.IMPROVEMENT_ALERT: improvement_alert,

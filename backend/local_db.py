@@ -1254,6 +1254,345 @@ _MIGRATIONS = [
             CHECK ((equipment_id IS NOT NULL) + (model_id IS NOT NULL) + (ticket_id IS NOT NULL)
                    + (action_id IS NOT NULL) + (procedure_id IS NOT NULL) + (contract_id IS NOT NULL) = 1)""",
     ]),
+    # S104 — PM's whole shape, one path (docs/steps/S104-pm-templates-one-path/1-brief.md § 4.1; R03.18).  It replaces
+    # v51–v56 (S096–S102, held, never released; their texts live frozen in tests/fixtures/migrations_v56.py), as
+    # S087's v50 replaced v42–v47.  Numbered 57, above every version a dev or test database holds.  Three shapes:
+    #   - fresh (a new install, e2e, the tests) and production at v50: the drops find nothing, the creates make all;
+    #   - dev and test at any of v51–v56 (test and trial rows only; KLA, 02-11-2026: "no trial data to keep, drop
+    #     them"): step 1 drops the five PM tables, then the creates make the final shape.  Their v51–v56 rows of
+    #     db_version stay as history.
+    # No precondition: production holds none of these tables.  Every statement is safe to run twice (DROP … IF
+    # EXISTS, CREATE … IF NOT EXISTS), so a half-applied v57 re-runs; a re-run drops the PM tables v57 made, which
+    # hold no rows yet.  What each table holds:
+    #   - pm_templates: the standard work, written once (TPM): name (unique, active or not), who does it, whether an
+    #     engineer verifies each job, the trigger.  The trigger names a meter TYPE (each machine uses its own meter
+    #     of that type; meter_from_parent: else the nearest node above that has one).  trigger_kind takes
+    #     pm_schedule_core.KINDS, calendar_unit its CALENDAR_UNITS (test_migration_v57 pins both);
+    #   - pm_template_items: Task / Check / Reading; a reading is a measurement (its own unit and limits, the value
+    #     stays on the job) or a meter reading (a meter type; the machine's meter's unit and limits, D6);
+    #   - pm_template_links: which machines a template reaches.  S104 writes 'equipment' links only; R03.19 adds
+    #     class, type and model with no migration.  open_target_id: the target while the link is active, else NULL,
+    #     so its unique key keeps one active link per template and target and lets removed links pile up as history;
+    #   - pm_plans: one row per machine and template, the machine's own facts only (assignee, Last done with the
+    #     meter its value was entered for, linked, Not for this machine); kept by pm_plans.sync_node, never deleted.
+    #     linked_at: when the row was (re)linked, the schedule's start without a base job or a seed (BR1-05);
+    #   - pm_jobs: v52–v56's shape, plus the trigger meter its due point was computed on (meter_equipment_id,
+    #     meter_type_id, copied with the due copies; kept on a done job as its base's meter, BR1-01) and title (the
+    #     template's name, copied at Start, D8);
+    #   - pm_job_events: v52's;
+    #   - pm_job_results: v53's, naming the template item, with the reading kind copied at Start; meter_equipment_id
+    #     is the node whose meter the reading is saved on, resolved at Start (D7).
+    # Nothing is deleted: a template, an item, a link or a plan row is set inactive or unlinked (ISO 9001 § 7.5.3).
+    (57, "PM templates, their links and plans, jobs and results (S104; replaces v51–v56)", [
+        "DROP TABLE IF EXISTS pm_job_results, pm_job_events, pm_jobs, pm_plan_items, pm_plans",
+        """CREATE TABLE IF NOT EXISTS pm_templates (
+            id                  INT AUTO_INCREMENT PRIMARY KEY,
+            name                VARCHAR(100) NOT NULL,
+            performer           ENUM('maintenance','operator') NOT NULL DEFAULT 'maintenance',
+            needs_verification  TINYINT(1) NOT NULL DEFAULT 1,
+            trigger_kind        ENUM('calendar','meter','both','before_use') NOT NULL,
+            calendar_every      SMALLINT NULL,
+            calendar_unit       ENUM('day','week','month','year') NULL,
+            meter_type_id       INT NULL,
+            meter_every         DECIMAL(14,3) NULL,
+            meter_from_parent   TINYINT(1) NOT NULL DEFAULT 0,
+            active              TINYINT(1) NOT NULL DEFAULT 1,
+            created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by          VARCHAR(100) NOT NULL,
+            updated_at          DATETIME NULL,
+            updated_by          VARCHAR(100) NULL,
+            CONSTRAINT uq_pm_templates_name UNIQUE (name),
+            CONSTRAINT fk_pm_templates_meter_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT chk_pm_templates_calendar CHECK (
+                (calendar_every IS NOT NULL) = (trigger_kind IN ('calendar','both'))
+                AND (calendar_unit IS NOT NULL) = (calendar_every IS NOT NULL)
+                AND (calendar_every IS NULL OR calendar_every BETWEEN 1 AND 3650)),
+            CONSTRAINT chk_pm_templates_meter CHECK (
+                (meter_type_id IS NOT NULL) = (trigger_kind IN ('meter','both'))
+                AND (meter_every IS NOT NULL) = (meter_type_id IS NOT NULL)
+                AND (meter_every IS NULL OR meter_every > 0)
+                AND (meter_from_parent = 0 OR meter_type_id IS NOT NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_template_items (
+            id                  INT AUTO_INCREMENT PRIMARY KEY,
+            template_id         INT NOT NULL,
+            position            SMALLINT NOT NULL,
+            item_type           ENUM('task','check','reading') NOT NULL,
+            text                VARCHAR(200) NOT NULL,
+            help_text           VARCHAR(500) NULL,
+            photo               ENUM('none','optional','required') NOT NULL DEFAULT 'optional',
+            reading_kind        ENUM('measurement','meter') NULL,
+            unit                VARCHAR(20) NULL,
+            min_value           DECIMAL(14,3) NULL,
+            max_value           DECIMAL(14,3) NULL,
+            meter_type_id       INT NULL,
+            meter_from_parent   TINYINT(1) NOT NULL DEFAULT 0,
+            active              TINYINT(1) NOT NULL DEFAULT 1,
+            created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by          VARCHAR(100) NOT NULL,
+            updated_at          DATETIME NULL,
+            updated_by          VARCHAR(100) NULL,
+            INDEX ix_pm_template_items_template (template_id, active, position),
+            CONSTRAINT fk_pm_template_items_template FOREIGN KEY (template_id) REFERENCES pm_templates (id),
+            CONSTRAINT fk_pm_template_items_meter_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT chk_pm_template_items_position CHECK (position >= 1),
+            CONSTRAINT chk_pm_template_items_reading CHECK ((reading_kind IS NOT NULL) = (item_type = 'reading')),
+            CONSTRAINT chk_pm_template_items_kind CHECK (
+                (reading_kind IS NULL AND unit IS NULL AND min_value IS NULL AND max_value IS NULL
+                    AND meter_type_id IS NULL AND meter_from_parent = 0)
+                OR (reading_kind = 'measurement' AND meter_type_id IS NULL AND meter_from_parent = 0)
+                OR (reading_kind = 'meter' AND meter_type_id IS NOT NULL AND unit IS NULL AND min_value IS NULL
+                    AND max_value IS NULL)),
+            CONSTRAINT chk_pm_template_items_limits CHECK (
+                min_value IS NULL OR max_value IS NULL OR min_value <= max_value)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_template_links (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            template_id     INT NOT NULL,
+            target_kind     ENUM('class','type','model','equipment') NOT NULL,
+            class_id        INT NULL,
+            type_id         INT NULL,
+            model_id        INT NULL,
+            equipment_id    INT NULL,
+            active          TINYINT(1) NOT NULL DEFAULT 1,
+            target_id       INT AS (COALESCE(class_id, type_id, model_id, equipment_id)) PERSISTENT,
+            open_target_id  INT AS (CASE WHEN active = 1 THEN COALESCE(class_id, type_id, model_id, equipment_id) END)
+                                PERSISTENT,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            removed_at      DATETIME NULL,
+            removed_by      VARCHAR(100) NULL,
+            CONSTRAINT uq_pm_template_links_open UNIQUE (template_id, target_kind, open_target_id),
+            INDEX ix_pm_template_links_target (target_kind, target_id, active),
+            CONSTRAINT fk_pm_template_links_template FOREIGN KEY (template_id) REFERENCES pm_templates (id),
+            CONSTRAINT fk_pm_template_links_class FOREIGN KEY (class_id) REFERENCES equipment_classes (id),
+            CONSTRAINT fk_pm_template_links_type FOREIGN KEY (type_id) REFERENCES equipment_types (id),
+            CONSTRAINT fk_pm_template_links_model FOREIGN KEY (model_id) REFERENCES equipment_models (id),
+            CONSTRAINT fk_pm_template_links_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT chk_pm_template_links_target CHECK (
+                (class_id IS NOT NULL) = (target_kind = 'class')
+                AND (type_id IS NOT NULL) = (target_kind = 'type')
+                AND (model_id IS NOT NULL) = (target_kind = 'model')
+                AND (equipment_id IS NOT NULL) = (target_kind = 'equipment')),
+            CONSTRAINT chk_pm_template_links_removed CHECK (
+                (removed_at IS NOT NULL) = (active = 0) AND (removed_by IS NOT NULL) = (active = 0))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_plans (
+            id                       INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id             INT NOT NULL,
+            template_id              INT NOT NULL,
+            assignee_id              INT NULL,
+            last_done_on             DATE NULL,
+            last_done_meter          DECIMAL(14,3) NULL,
+            seed_meter_equipment_id  INT NULL,
+            seed_meter_type_id       INT NULL,
+            linked                   TINYINT(1) NOT NULL DEFAULT 1,
+            linked_at                DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            not_for_machine          TINYINT(1) NOT NULL DEFAULT 0,
+            not_for_reason           VARCHAR(500) NULL,
+            not_for_by               VARCHAR(100) NULL,
+            not_for_at               DATETIME NULL,
+            created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by               VARCHAR(100) NOT NULL,
+            updated_at               DATETIME NULL,
+            updated_by               VARCHAR(100) NULL,
+            CONSTRAINT uq_pm_plans_template UNIQUE (equipment_id, template_id),
+            CONSTRAINT fk_pm_plans_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_pm_plans_template FOREIGN KEY (template_id) REFERENCES pm_templates (id),
+            CONSTRAINT fk_pm_plans_assignee FOREIGN KEY (assignee_id) REFERENCES people (id),
+            CONSTRAINT fk_pm_plans_seed_meter_equipment FOREIGN KEY (seed_meter_equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_pm_plans_seed_meter_type FOREIGN KEY (seed_meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT chk_pm_plans_seed CHECK (
+                (last_done_meter IS NULL OR last_done_meter >= 0)
+                AND (seed_meter_equipment_id IS NOT NULL) = (last_done_meter IS NOT NULL)
+                AND (seed_meter_type_id IS NOT NULL) = (last_done_meter IS NOT NULL)),
+            CONSTRAINT chk_pm_plans_not_for CHECK (
+                (not_for_reason IS NOT NULL) = (not_for_machine = 1)
+                AND (not_for_by IS NOT NULL) = (not_for_machine = 1)
+                AND (not_for_at IS NOT NULL) = (not_for_machine = 1))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_jobs (
+            id                   INT AUTO_INCREMENT PRIMARY KEY,
+            serial               VARCHAR(16) NOT NULL,
+            plan_id              INT NOT NULL,
+            equipment_id         INT NOT NULL,
+            title                VARCHAR(100) NULL,
+            state                ENUM('due','in_progress','done','verified','skipped','cancelled') NOT NULL
+                                     DEFAULT 'due',
+            created_why          ENUM('calendar','meter') NOT NULL,
+            due_on               DATE NULL,
+            due_meter            DECIMAL(14,3) NULL,
+            grace_days           SMALLINT NULL,
+            upcoming_days        SMALLINT NULL,
+            meter_window         DECIMAL(14,3) NULL,
+            meter_offset         DECIMAL(14,3) NOT NULL DEFAULT 0,
+            meter_equipment_id   INT NULL,
+            meter_type_id        INT NULL,
+            rescheduled_on       DATE NULL,
+            rescheduled_meter    DECIMAL(14,3) NULL,
+            assignee_id          INT NULL,
+            performed_by_id      INT NULL,
+            started_at           DATETIME NULL,
+            done_at              DATETIME NULL,
+            done_meter           DECIMAL(14,3) NULL,
+            timeliness           ENUM('on_time','late') NULL,
+            needs_verification   TINYINT(1) NULL,
+            due_alert_on         DATE NULL,
+            due_alert_meter      DECIMAL(14,3) NULL,
+            overdue_alert_on     DATE NULL,
+            overdue_alert_meter  DECIMAL(14,3) NULL,
+            open_plan_id         INT AS (CASE WHEN state IN ('due','in_progress') THEN plan_id END) PERSISTENT,
+            created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by           VARCHAR(100) NOT NULL,
+            updated_at           DATETIME NULL,
+            updated_by           VARCHAR(100) NULL,
+            CONSTRAINT uq_pm_jobs_serial UNIQUE (serial),
+            CONSTRAINT uq_pm_jobs_open_plan UNIQUE (open_plan_id),
+            INDEX ix_pm_jobs_plan (plan_id, state, done_at),
+            INDEX ix_pm_jobs_state (state, due_on),
+            INDEX ix_pm_jobs_assignee (assignee_id, state),
+            INDEX ix_pm_jobs_performer (performed_by_id, state),
+            CONSTRAINT fk_pm_jobs_plan FOREIGN KEY (plan_id) REFERENCES pm_plans (id),
+            CONSTRAINT fk_pm_jobs_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_pm_jobs_meter_equipment FOREIGN KEY (meter_equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_pm_jobs_meter_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT fk_pm_jobs_assignee FOREIGN KEY (assignee_id) REFERENCES people (id),
+            CONSTRAINT fk_pm_jobs_performer FOREIGN KEY (performed_by_id) REFERENCES people (id),
+            CONSTRAINT chk_pm_jobs_windows CHECK (
+                (due_on IS NULL) = (grace_days IS NULL) AND (grace_days IS NULL) = (upcoming_days IS NULL)
+                AND (due_on IS NOT NULL OR meter_window IS NOT NULL)
+                AND (due_meter IS NULL OR meter_window IS NOT NULL)
+                AND meter_offset >= 0
+                AND (due_meter IS NULL OR meter_equipment_id IS NOT NULL)
+                AND (meter_equipment_id IS NULL) = (meter_type_id IS NULL)),
+            CONSTRAINT chk_pm_jobs_done CHECK (
+                (state NOT IN ('done','verified') OR done_at IS NOT NULL)
+                AND (done_at IS NULL OR state IN ('done','verified','skipped'))
+                AND (done_meter IS NULL OR done_at IS NOT NULL)
+                AND (timeliness IS NULL OR state IN ('done','verified'))),
+            CONSTRAINT chk_pm_jobs_started CHECK (
+                (state NOT IN ('in_progress','done','verified')
+                    OR (started_at IS NOT NULL AND performed_by_id IS NOT NULL))
+                AND (started_at IS NOT NULL OR performed_by_id IS NULL)
+                AND (done_at IS NULL OR started_at IS NULL OR done_at >= started_at)),
+            CONSTRAINT chk_pm_jobs_verification CHECK (
+                (needs_verification IS NULL OR state IN ('done','verified'))
+                AND (state <> 'verified' OR needs_verification <=> 1)),
+            CONSTRAINT chk_pm_jobs_rescheduled CHECK (
+                (rescheduled_on IS NULL OR rescheduled_on <=> due_on)
+                AND (rescheduled_meter IS NULL OR rescheduled_meter <=> due_meter))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_job_events (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            job_id          INT NOT NULL,
+            event           VARCHAR(30) NOT NULL,
+            from_state      VARCHAR(20) NULL,
+            to_state        VARCHAR(20) NULL,
+            occurred_at     DATETIME NOT NULL,
+            person_id       INT NULL,
+            due_on          DATE NULL,
+            due_meter       DECIMAL(14,3) NULL,
+            remark          VARCHAR(1000) NULL,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            INDEX ix_pm_job_events_job (job_id, occurred_at, id),
+            CONSTRAINT fk_pm_job_events_job FOREIGN KEY (job_id) REFERENCES pm_jobs (id),
+            CONSTRAINT fk_pm_job_events_person FOREIGN KEY (person_id) REFERENCES people (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """CREATE TABLE IF NOT EXISTS pm_job_results (
+            id                  INT AUTO_INCREMENT PRIMARY KEY,
+            job_id              INT NOT NULL,
+            template_item_id    INT NOT NULL,
+            position            SMALLINT NOT NULL,
+            item_type           ENUM('task','check','reading') NOT NULL,
+            text                VARCHAR(200) NOT NULL,
+            help_text           VARCHAR(500) NULL,
+            photo               ENUM('none','optional','required') NOT NULL,
+            reading_kind        ENUM('measurement','meter') NULL,
+            unit                VARCHAR(20) NULL,
+            min_value           DECIMAL(14,3) NULL,
+            max_value           DECIMAL(14,3) NULL,
+            meter_equipment_id  INT NULL,
+            meter_type_id       INT NULL,
+            outcome             ENUM('ok','not_ok','na','done','not_done') NULL,
+            value               DECIMAL(14,3) NULL,
+            limit_state         ENUM('low','high') NULL,
+            remark              VARCHAR(500) NULL,
+            reading_id          INT NULL,
+            filled_at           DATETIME NULL,
+            filled_by           VARCHAR(100) NULL,
+            created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by          VARCHAR(100) NOT NULL,
+            CONSTRAINT uq_pm_job_results_item UNIQUE (job_id, template_item_id),
+            CONSTRAINT uq_pm_job_results_position UNIQUE (job_id, position),
+            CONSTRAINT fk_pm_job_results_job FOREIGN KEY (job_id) REFERENCES pm_jobs (id),
+            CONSTRAINT fk_pm_job_results_item FOREIGN KEY (template_item_id) REFERENCES pm_template_items (id),
+            CONSTRAINT fk_pm_job_results_meter_equipment FOREIGN KEY (meter_equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_pm_job_results_meter_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT fk_pm_job_results_reading FOREIGN KEY (reading_id) REFERENCES meter_readings (id),
+            CONSTRAINT chk_pm_job_results_outcome CHECK (
+                (item_type = 'check' AND (outcome IS NULL OR outcome IN ('ok','not_ok','na')) AND value IS NULL)
+                OR (item_type = 'task' AND (outcome IS NULL OR outcome IN ('done','not_done')) AND value IS NULL)
+                OR (item_type = 'reading' AND (outcome IS NULL OR outcome = 'na')
+                    AND (outcome IS NULL OR value IS NULL))),
+            CONSTRAINT chk_pm_job_results_reading CHECK (
+                (limit_state IS NULL OR value IS NOT NULL)
+                AND (reading_id IS NULL OR (value IS NOT NULL AND meter_type_id IS NOT NULL))
+                AND ((meter_equipment_id IS NOT NULL) = (meter_type_id IS NOT NULL))
+                AND ((reading_kind <=> 'meter') = (meter_type_id IS NOT NULL))),
+            CONSTRAINT chk_pm_job_results_filled CHECK (
+                (filled_at IS NULL) = (outcome IS NULL AND value IS NULL)
+                AND (filled_at IS NULL) = (filled_by IS NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+    ]),
+    # S104 A1 — meter links on the part replace the template's parent tick (docs/steps/S104-pm-templates-one-path/
+    # 1-brief.md § 10 A1.5).  Appended: v57 has run on the dev and test databases and is never edited (AD2).
+    #   - node_meter_links: a part (a component unit or a component) uses the meter of its parent or grandparent
+    #     (source_equipment_id), one link per part and meter type.  Readings and limits stay on the source.  A link
+    #     is never changed: a removed one is deleted, and the part's history (equipment_events) keeps both lines,
+    #     as contract_equipment does (S081).  Whether a link is in use is judged live (meters_core.link_states);
+    #   - equipment_events gains 'meter_linked' and 'meter_unlinked' (v50's list plus the two, v50's form);
+    #   - the two meter_from_parent columns go, with their CHECKs rewritten without them: the CHECK names the
+    #     column, so it is dropped first, then the column, then the CHECK is added back (MariaDB refuses to drop a
+    #     column a CHECK names).
+    # Shapes: production at v50 runs v57 then v58 on empty PM tables; a dev or test database at v57 keeps its rows
+    # (a template that had the tick loses it).  No precondition: a dropped column and a weaker CHECK refuse no row.
+    # Every statement is safe to run twice (IF [NOT] EXISTS), so a half-applied v58 re-runs to the same shape.
+    (58, "Meter links on the part; the PM templates' parent tick removed (S104 A1)", [
+        """CREATE TABLE IF NOT EXISTS node_meter_links (
+            id                   INT AUTO_INCREMENT PRIMARY KEY,
+            equipment_id         INT NOT NULL,
+            meter_type_id        INT NOT NULL,
+            source_equipment_id  INT NOT NULL,
+            created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by           VARCHAR(100) NOT NULL,
+            CONSTRAINT uq_node_meter_links UNIQUE (equipment_id, meter_type_id),
+            INDEX ix_node_meter_links_source (source_equipment_id, meter_type_id),
+            CONSTRAINT fk_node_meter_links_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id),
+            CONSTRAINT fk_node_meter_links_meter_type FOREIGN KEY (meter_type_id) REFERENCES meter_types (id),
+            CONSTRAINT fk_node_meter_links_source FOREIGN KEY (source_equipment_id) REFERENCES equipment (id),
+            CONSTRAINT chk_node_meter_links_source CHECK (source_equipment_id <> equipment_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE equipment_events MODIFY event
+            ENUM('created','moved_unit','moved_parent','lifecycle','criticality','class','type','model',
+                 'meter_added','meter_removed','meter_limits','property','contract_added','contract_removed',
+                 'meter_linked','meter_unlinked')
+            NOT NULL""",
+        "ALTER TABLE pm_templates DROP CONSTRAINT IF EXISTS chk_pm_templates_meter",
+        "ALTER TABLE pm_templates DROP COLUMN IF EXISTS meter_from_parent",
+        """ALTER TABLE pm_templates ADD CONSTRAINT IF NOT EXISTS chk_pm_templates_meter CHECK (
+            (meter_type_id IS NOT NULL) = (trigger_kind IN ('meter','both'))
+            AND (meter_every IS NOT NULL) = (meter_type_id IS NOT NULL)
+            AND (meter_every IS NULL OR meter_every > 0))""",
+        "ALTER TABLE pm_template_items DROP CONSTRAINT IF EXISTS chk_pm_template_items_kind",
+        "ALTER TABLE pm_template_items DROP COLUMN IF EXISTS meter_from_parent",
+        """ALTER TABLE pm_template_items ADD CONSTRAINT IF NOT EXISTS chk_pm_template_items_kind CHECK (
+            (reading_kind IS NULL AND unit IS NULL AND min_value IS NULL AND max_value IS NULL
+                AND meter_type_id IS NULL)
+            OR (reading_kind = 'measurement' AND meter_type_id IS NULL)
+            OR (reading_kind = 'meter' AND meter_type_id IS NOT NULL AND unit IS NULL AND min_value IS NULL
+                AND max_value IS NULL))""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]
@@ -1301,6 +1640,25 @@ SERVER_DROPPED_CONNECTION_CODES = (1053, 1927)   # server shutdown, connection k
 def is_connection_lost(code):
     """True when a pymysql error code means the connection is gone, not that the SQL failed."""
     return code in CLIENT_ERROR_CODES or code in SERVER_DROPPED_CONNECTION_CODES
+
+
+def connection_lost(conn, exc):
+    """True for a real loss while ``conn`` ran a task: the connection is closed, or ``exc`` is an InterfaceError, or
+    an OperationalError whose code is a client-side error (2xxx: gone away, lost, can't connect) or the server
+    shutting the session down.  PyMySQL's OperationalError also covers deadlock (1213) and lock wait timeout (1205):
+    not a loss.  Shared by the worker and pm_generate's per-plan loop (S097 CR1-03), and a template save's loop over
+    its plans (S104), whose request connection comes from the pool: DBUtils' wrapper has no ``open``, so there the
+    error alone decides (the pool replaces a dead connection at the next checkout).  PyMySQL raises InterfaceError
+    (0, "") only on a closed socket, and DBUtils' rollback after a lost connection raises it in place of the 2013
+    (S104 CR5-01), so it counts as a loss; on a raw connection (the worker's) ``open`` is already False then."""
+    if not getattr(conn, "open", True):
+        return True
+    if isinstance(exc, pymysql.err.InterfaceError):
+        return True
+    if not isinstance(exc, pymysql.err.OperationalError):
+        return False
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
+    return is_connection_lost(code)
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,7 @@ module before each is built.
 | Hosting | customer7 (10.24.0.112), web container published on port **8990**. Front-proxy vhost is public (Keycloak is the gate); live since 11-10-2026. |
 | Access from outside | Shop-floor phones use **mobile data**, so every role works from anywhere (decided 11-10-2026), **except IT admin, which works only from the plant network** (S013, 18-10-2026; ISO 27001 A.8.2). Managers work from anywhere too. Admin (`mspv-apps-admin`) bypasses the gate, so a wrong network list can be fixed from anywhere; protect it with Keycloak two-factor login. The VPN pool counts as internal. Internal ranges are set in Settings › Network. The real client IP comes from `X-Real-IP`; every sighting is in the access log (365 days, purged by the worker). |
 | Security hardening | Roadmap R01 (gate R, 26-10-2026; `docs/roadmap/R01-auth-hardening.md`). **Every API route declares its permission check** (`@require_perm`, "checked in route" with a reason, or "public" with a reason); a route with no declaration is refused (fail-closed, OWASP ASVS V8 deny by default). **Every Keycloak role is a network-gate decision**: plant network only, or allowed from outside with a dated reason (a test enforces it). A failed sign-in renewal after a network drop **keeps the page and its typing**; after a real end of session, *Sign in again* discards it. Raise ticket and the Readings sheet ask "Discard your changes?" before you leave; Settings does not. Database details in Settings › Database are for **IT admin only**. A **Content Security Policy** is enforced from its release, checked right after the deploy. **Sign-in tokens** (S059, R01.2): only RS256, the issuer must be the public realm URL, `exp`, `iat` and `iss` are required (30 s clock allowance), the token type must be `Bearer`; no retry on a bad token (PyJWT re-fetches keys itself, 5 s limit); Keycloak down answers 503 "Sign-in cannot be checked right now", logged as a failed sign-in with reason `login_server_down`. Dev servers listen on 127.0.0.1 (a "Frontend (LAN)" run config for phone checks). Uploads up to 100 MB pass the front proxy (101 MB there, devops). **Access changes are log lines, not a table**: KLA will ship the logs to Loki, whose retention sets how far back an access review can look (ISO 27001 A.5.18, A.8.15). |
-| Preventive maintenance | Roadmap R03 (gate R, 27-10-2026; `docs/roadmap/R03-pm.md`), 17 items in three milestones; all 20 answers at the recommendation. **Scheduling:** a job is on time when done within 10 % of its interval (at least 1 day); a meter plan's next job counts from the reading when last done, plus the interval; one open job per plan, shown as *Upcoming* a little before it is due; meter-triggered jobs appear in the daily run; a job nobody does stays overdue until done or skipped; a rescheduled job is on time against its new date, and reschedules are counted; an engineer may skip a due job with a reason, and it counts as not done. **Items:** § 4.3's Task / Check / Reading, a photo setting per item. **Sign-off:** verification is a flag per plan (default yes for maintenance, no for CIL); an engineer may verify a job they did, recorded. **Findings:** at *Mark job done* each Not OK item without a ticket asks *Raise defect ticket* or *No ticket* with a remark (a departure from § 4.3 / § 4.4's optional "can raise"). **Templates:** plans keep a copy; *Update plans* sends a change to the plans the engineer ticks. **Other:** IT admin reads PM only (new key `pm_job:read`); the overdue alert goes to the assignee and the unit's engineers; labour minutes and parts on PM jobs; CIL is in R03; the genset round pilots routes (not the fleet); the hydraulic presses pilot PM; ticket targets by meter value in R03; certification, calibration, fitness-for-use and extinguishers go to a follow-on roadmap R04, after R03.8. |
+| Preventive maintenance | Roadmap R03 (gate R, 27-10-2026; `docs/roadmap/R03-pm.md`), 17 items in three milestones; all 20 answers at the recommendation. **Scheduling:** a job is on time when done within 10 % of its interval (at least 1 day); a meter plan's next job counts from the reading when last done, plus the interval; one open job per plan, shown as *Upcoming* a little before it is due; meter-triggered jobs appear in the daily run; a job nobody does stays overdue until done or skipped; a rescheduled job is on time against its new date, and reschedules are counted; an engineer may skip a due job with a reason, and it counts as not done. **Items:** § 4.3's Task / Check / Reading, a photo setting per item. **Sign-off:** verification is a flag per plan (default yes for maintenance, no for CIL); an engineer may verify a job they did, recorded. **Findings:** at *Mark job done* each Not OK item without a ticket asks *Raise defect ticket* or *No ticket* with a remark (a departure from § 4.3 / § 4.4's optional "can raise"). **Templates:** plans keep a copy; *Update plans* sends a change to the plans the engineer ticks. **Other:** IT admin reads PM only (new key `pm_job:read`); the overdue alert goes to the assignee and the unit's engineers; labour minutes and parts on PM jobs; CIL is in R03; the genset round pilots routes (not the fleet); the hydraulic presses pilot PM; ticket targets by meter value in R03; certification, calibration, fitness-for-use and extinguishers go to a follow-on roadmap R04, after R03.8. **Re-plans approved 02-11-2026** (one path; readings and conditions): templates linked live to a class, type, model or machine replace hand-written plans and the copy with *Update plans*; meters matched by type on the machine's own meters (a part may link its parent's or grandparent's meter on its Meters card, S104 A1 13-11-2026; the template's parent tick is gone); two reading kinds; condition rules on every saved reading make a PM job or a ticket; release after R03.24; R04 now follows R03.20. Details: § 4.3 "Decided 02-11-2026". |
 | Improvement (RCA) | Roadmap R05 (gate R, 30-10-2026; `docs/roadmap/R05-rca.md`), from closed ticket TK-2026-10-002 (a dusty contactor). TPM focused improvement with why-why; ISO 9001 § 10.2. Items R05.1–R05.6 and R05.10 are built now, before R03's milestone 1; R05.7 (who was shown a lesson), R05.8 (*Suggested* improvements) and R05.9 (a countermeasure becomes a PM plan) are deferred. All other answers at the recommendation. **Record:** *Improvement*, serial `IM-YYYY-MM-NNN`, started by an engineer from one or more tickets that are back in service or closed; a ticket is in at most one open improvement; a tab *Improvements* on the Tickets page, no new nav item. **Keys** (site-scoped): `improvement:read` operator and up and IT admin (read only); `improvement:edit` engineers and managers; notes for every reader; `improvement:verify` engineers and managers, the lead too (recorded; a departure from ISO 27001 A.5.3). **Analysis:** one why-why chain with optional evidence; the root cause is a text plus one cause from the failure-cause list, required before *Watching*; the closed ticket's cause is never changed. **Countermeasures:** six kinds (Correction, Corrective, Preventive, Design-out, Lesson, Spread); an owner with a membership at the site, a person without a login too. **Verified close:** a watch of 90 days (30–365, per improvement) from the last countermeasure done; a repeat during the watch shows a warning, the verifier decides. **Alerts:** push only (given to you, overdue, ready to verify). **Lessons:** one-point lessons as the first kind of the Procedures master, on the machine and, when ticked, its class; written by engineers and managers. **Register:** printable, in R05 (S076). |
 | Standards | **ISO 9001 certification is a future goal; Yantra is built to be compliant and to nudge the plant towards it** (decided 20-10-2026). The clauses that touch maintenance and measurement, and where Yantra serves them: **§ 7.1.3** infrastructure is maintained (equipment register, PM); **§ 7.1.5** monitoring and measuring resources (calibration, § 4.3); **§ 7.5** documented information (who changed what and when; retention); **§ 8.5.1** production under controlled conditions (suitable equipment and instruments); **§ 9.1** monitoring and measurement (KPIs, § 4.6); **§ 10.2** nonconformity and corrective action (tickets with cause and action codes). Each brief names the clause it serves, as it already does for ISO 14224 and ISO 55001. |
 | Schema and releases | **One squashed migration v20** replaces v1–v13 (S025, decided 21-10-2026; production was on v0.1.3 with masters only and is the one instance); later migrations continue from v21. A release is verified by the deploy: `/api/health` must report `schema_ready` within 3 minutes, else the deploy fails with the rollback lines. A backup before every deploy and guards for migrations that touch existing data are queued (*Safe migrations*). |
@@ -44,7 +44,7 @@ module before each is built.
 5. **Meter readings** — manual entry on the phone.
 6. **History and reports** — equipment history card, downtime, MTBF/MTTR, PM compliance.
 7. **Notifications** — web push, Telegram, email.
-8. **Me** (S031, 23-10-2026) — one page per person, a nav item, first in the nav since S035 (24-10-2026), three tabs: *Open work* (open tickets assigned to me and, since S071, my open countermeasures above them, each with *Mark done*), *Raised by me* (tickets I raised or that name me as the reporter) and *My activity* (timeline lines I recorded). Read-only. Not on it: time booked, another person's work (a team report, later), notifications (they stay under the bell). The landing page for every role with `ticket:read` (S035, 24-10-2026; it was Equipment until then); the storekeeper still lands on Equipment.
+8. **Me** (S031, 23-10-2026) — one page per person, a nav item, first in the nav since S035 (24-10-2026), three tabs: *Open work* (open tickets assigned to me and, since S071, my open countermeasures above them, each with *Mark done*; since S098 my due, overdue and in-progress PM jobs above those), *Raised by me* (tickets I raised or that name me as the reporter) and *My activity* (timeline lines I recorded). Read-only. Not on it: time booked, another person's work (a team report, later), notifications (they stay under the bell). The landing page for every role with `ticket:read` (S035, 24-10-2026; it was Equipment until then); the storekeeper still lands on Equipment.
 9. **Maintenance contracts** (roadmap R02, gate R 27-10-2026) — a register of vendor contracts (Warranty, AMC, CMC, On call), each covering machines of any site (S087, KLA 31-10-2026: the contract has no site, each machine keeps its own; the four contract keys are company-wide; reminders go to the people at the machines' sites; this replaces "one site per contract", Q1.5 a): vendor (from the *Vendors* master in Masters, shared by all sites: name, phone, note; a contractor's Team record may name its vendor, optional; re-plan 30-10-2026), period, the equipment nodes covered (any level; two contracts on one node allowed, a warning when two of one type overlap), what is covered (ticks: labour, spare parts, consumables, breakdown calls; plus free text *Covered* / *Not covered*), PM visits agreed per year, response time, a call-out number (shown on the contract and the machine card to engineers, managers and admin; `contract:read`), an *Only the vendor may repair* tick (the card then warns "Do not repair"), a price per machine before GST (the total is their sum) and a cost note. One coverage per contract: a vendor quote that mixes coverages is entered as two contracts. A *Contracts* tab in Masters. Keys: `contract:read_basic` (the holders of `equipment:read`) reads everything except the call-out number, the price, the cost note and the documents; `contract:read` (engineers and managers, of any site: the keys are company-wide, S087) adds the call-out number; `contract:read_senior` (managers; admin by the bypass) adds those; `contract:edit` engineers (so managers) and IT admin, an editor without `read_senior` never sees or sends the price. The signed contract, its annexures and the vendor's quotes are attached to the contract (documents and photos, `contract:read_senior` to read; `contract:edit` with `read_senior` to add; S083). Renewal makes a new record linked to the old one (one per contract), with its terms and machines; prices and the cost note start empty, documents stay on the old contract (S085). Reminders 60 and 15 days before the end (push to engineers and managers, email to managers), not once renewed. Breakdown calls are the tickets on which a Team record linked to the vendor is an assignee or has a labour row on the covered nodes in the period, derived, never re-entered; listed on the contract page with downtime and the wait on the vendor, and the contract shows on the ticket (S086); no vendor-arrival time for now. The agreed PM visits become PM plans with a Team record linked to the vendor as assignee and an optional contract on the plan (§ 4.3), when PM is built; ISO 55001 § 8.3 and ISO 9001 § 8.4.
 
 ### Not in v1
@@ -138,6 +138,7 @@ with each module. First cut of the main keys:
 | `contract:read_senior` | | | | | ✓ | |
 | `contract:edit` | | | | ✓ | ✓ | ✓ |
 | `pm_plan:edit` | | | | ✓ | ✓ | |
+| `pm_job:read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `pm_job:work` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `pm_job:verify` | | | | ✓ | ✓ | |
 | `reading:log` | ✓ | ✓ | ✓ | ✓ | ✓ | |
@@ -226,6 +227,37 @@ after a QR scan included. A lesson on a machine is written and changed at the ma
 lesson ticked for the machine's whole class is site-less and may be changed (and its photos
 restored or purged with `equipment:purge_documents`) by a holder of the key at any site, as model
 documents. Ticking or unticking the class always needs the key at the machine's site.
+
+`pm_plan:edit` (S096, R03.2, 01-11-2026; site-scoped, checked at the plan's node's current site)
+writes PM plans: engineer and manager, not IT admin (who reads PM only, R03 Q2.2 a) and not the
+supervisor. Plans need no read key of their own: whoever may open the node reads its plans with
+`equipment:read`, IT admin and the storekeeper included, as one-point lessons. PM jobs get their
+own read key with R03.3 (`pm_job:read`).
+
+`pm_job:read` (S097, R03.3, 02-11-2026; site-scoped, checked at the job's node's current unit on
+the PM list and at its site on the equipment page's PM card) reads PM jobs: the operator and up
+(so the supervisor, technician, engineer and manager), as tickets, so the floor sees the planned
+work at its units; and IT admin, who reads every unit and changes nothing (R03 Q2.2 a). Not the
+storekeeper: no *PM* nav item and no job line on the card, though he still reads the plans.
+Doing a job is `pm_job:work` (R03.4).
+
+`pm_job:work` (S098, R03.4, 02-11-2026; site-scoped, checked at the job's node's current site)
+starts a PM job, fills its items and marks it done: the technician, so the engineer and the
+manager. Any holder at the site works any job there, assigned to him or not, as `ticket:work`
+(D3); *Performed by* records who did it. Not IT admin, who reads PM only (R03 Q2.2 a), not the
+storekeeper. **Departure, stated:** the table below grants it to the operator and the supervisor
+too; S098 grants it to the technician and up only, as R03.4 says, and R03.12 widens it with the
+rule that an operator works CIL jobs at his units.
+
+`pm_job:verify` (S099, R03.5, 02-11-2026; site-scoped, checked at the job's node's current site)
+signs off a done PM job, or sends it back to *In progress* with a remark: the engineer, so the
+manager. Not the technician, the supervisor, the operator, the storekeeper or IT admin, who reads PM
+only (R03 Q2.2 a). Any holder at the site verifies any job there. **Departure from ISO 27001 A.5.3
+(segregation of duties), recorded (R03 Q5.2 a):** an engineer may verify a job he performed,
+because the plant has few engineers (tickets already allow self-close, improvements let the lead
+verify). The record says so: the *Verified* line names the verifier's person, and the job page and
+its history say "the person who did the work" when he is the job's *Performed by*, so an auditor
+can find and count those jobs.
 
 The vendor contract keys (S080, R02.1, 30-10-2026; all four site-scoped, checked at the contract's
 site, never by unit) follow the base's three read levels (ISO 27001 A.5.15). `contract:read_basic`,
@@ -387,7 +419,8 @@ record, owns none and reads only.
 - **Meters on the equipment page** (S038, built 24-10-2026): a *Meters* card, after the
   details and parts and before the notes, lists the node's meters: its model's and its own
   (§ 4.5). Any level may carry meters: an alternating pump (a component-unit) has its own
-  hour meter, a die its own strokes; a gearbox's oil change runs on its machine's hours.
+  hour meter, a die its own strokes; a gearbox's oil change runs on its machine's hours. A
+  part may show a meter of a node above it, read-only, through a meter link (S104 A1, § 4.5).
 - **QR label** (S014, decided 18-10-2026): 52 mm square, printed on A4 paper (15 per sheet) for now, for any node of the tree. It shows the QR, the **code**, the **site** code and the name. The QR holds a short link `<label address>/e/<code>` (address a setting, default `https://vel-yantra.mspv.app`), so a label never goes out of date; error correction level Q for dirty paper. Scanning it with a phone camera opens the equipment page, from where an operator can raise a ticket or log a reading in one tap. QR made in the backend with `qrcode` (python-qrcode).
 - **Under contract on the machine** (S082, built 31-10-2026; R02.2): the equipment page has an *Under contract* card after *Lessons* and before *Open tickets*, on every width (a departure from the roadmap's "after *Open tickets*", so the technician who scans the label reads the warning first). It lists each active vendor contract with a line on the node, its parent or its grandparent (a machine's contract shows on its parts, naming the machine; a part's contract does not show on the machine), in force or ended in the last 90 days, never one that starts later: "Under AMC with Atlas Copco until 31-03-2027", the response time, what is covered and not, and *Open contract*. A contract with *Only the vendor may repair* (D9) shows "Do not repair. Call the engineer; the vendor repairs this machine." in yellow. The call-out number is a tap-to-call link for `contract:read` holders; others read "To call the vendor, ask the engineer." (D10), left out under the warning. An ended contract reads "AMC with … ended on …." in grey. A reader with no contract on the node sees no card; a `contract:edit` holder at the node's site sees "No contract on this machine." The card never shows a price, a total or a cost note. The equipment list has a *Contract* filter (*Any contract status*, *Under contract*, *Not under contract*; API `?contract=under|not_under`): a contract counts when active and in force today, on the row's node or an ancestor, at a site where the reader holds `contract:read_basic`; the printed asset list ignores it, as it ignores *Tickets*.
 
@@ -598,6 +631,59 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
 
 ### 4.3 Preventive maintenance
 
+**Decided 02-11-2026 (R03 re-plans "one path" and "readings and conditions", gate R, KLA; roadmap
+`docs/roadmap/R03-pm.md` § Decisions and § Log). These supersede the lines of this section they
+contradict; the coded S096–S102 are reworked by R03.18–R03.24 before anything is committed.**
+- **One path:** the work is written only on a **PM template** (site-less master, written by
+  `pm_plan:edit` held at any site). A template links live to a **class, type, model or one
+  machine**; a machine's PM plans are the templates that reach it, one plan row per machine and
+  template, holding only that machine's facts (assignee, *Last done*, *Not for this machine*). No
+  plans written by hand, no *Apply to equipment*, no copy with *Update plans* (§ 9 question 6 is
+  now a live link). A link reaches every site. *Not for this machine* (with a reason) wins over
+  every link; only *Use for this machine* lifts it. A template that stops reaching a machine stops
+  its plan (open, not started job cancelled; history kept). Engineers may assign many plans at
+  once. One migration v57 replaces the unreleased v51–v56.
+- **Meters:** a template names a meter **type**; it is matched among the machine's own meters (its
+  model's plus its own; one per type, so one or none). A missing type makes the template **not
+  apply** to that machine (listed with the reason), for every meter it names, trigger included.
+  *Changed 13-11-2026 (KLA, S104 A1):* the template's tick *use the meter from a parent node* is
+  gone. A part with no meter of a type may **link** that meter of its parent or grandparent, set
+  explicitly on the part's *Meters* card ("MOT014 uses PR-07's Run hours"; one meter per type on a
+  node: the model's, its own or a linked one). Readings and limits stay on the source meter. A
+  template matches the part's own meter, else its link in use; nothing walks up the tree. A
+  *Last done* meter value entered for a meter the plan no longer uses stays stored, hidden and
+  unused.
+- **Reading items, two kinds:** *Measurement* (unit and limits, kept on the job only) and *Meter
+  reading* (saved as an ordinary meter reading). A meter reading logged anywhere after the job was
+  made meets the item; a person still taps *Mark job done*.
+- **Condition rules (condition-based maintenance, EN 13306; changed 12-11-2026, KLA):** the rules
+  of a **mapped** reading live **on the meter only**, never on a template, so one meter has one
+  configuration; a template's *Meter reading* item carries no limits or rules. A meter's rule
+  (above / below a threshold; several per meter) is checked on **every saved reading** of that
+  meter, from any source. A crossing raises a **condition-based maintenance ticket**, handled like
+  a breakdown ticket (detection *condition monitoring*, ISO 14224); the meter holds no corrective
+  steps, the engineer decides the work on the ticket; a crossing never makes a PM job from a
+  template. Such a ticket is not a breakdown: the breakdown KPIs do not count it. A **one-off**
+  reading (*Measurement* item) keeps its limits on the template item, and a value outside them only
+  asks for a defect ticket at *Mark job done* (Q10.1, planned in R03.10; S098 built only the red
+  mark). Replaces the 02-11-2026 text (rules on the
+  template, a PM job or a ticket, *Do within N days*); R03.21–R03.23 are re-planned to match.
+- **Release:** after R03.24, with the condition rules (milestones 1b and 1c), not after R03.20.
+
+**Decided 04-11-2026 (S104 gate A, KLA; brief `docs/steps/S104-pm-templates-one-path/1-brief.md`
+§ 7).** Templates live in *Masters › PM templates*, read with `equipment:read`, written with
+`pm_plan:edit` held at any site; never deleted (set inactive). A plan row stays when its link goes
+(`linked` = 0), so a relink brings back its assignee, *Last done* and jobs. Whether a template
+applies, and which meter it uses, is worked out live, never stored on the plan; a job copies its
+trigger meter (node and type), and a done job is a base for the next only on the same meter. A
+*Meter reading* item has no limits of its own (the meter's are the one source). *Start* copies the
+template's name onto the job, so a renamed template does not rename an old record. A template save
+settles each of its plans after its commit, one plan per transaction; a schedule change on a
+template used by more than one machine asks first. When the trigger and an item name the same meter
+type, the stricter parent tick wins (one meter per type on a machine; *replaced 13-11-2026 by S104 A1: the tick is gone, a part links a meter on its Meters card*). The plan settings refuse
+unknown fields. *Attach PM template* allows a template that does not apply, and says why. The help
+tour and the guide's PM slides are updated at the guide's retake before the release.
+
 **PM template** (the work, e.g. "Press — monthly hydraulic check"): checklist and
 reading items, triggers, photo required. A class usually has several templates
 (monthly, annual); a template may also span classes (e.g. motor greasing).
@@ -610,7 +696,31 @@ question 6. CIL plans can come from templates the same way.
 
 - Checklist items: OK / Not OK / NA, with remarks.
 - Reading items: a measured value with unit of measure and limits (min/max), e.g. temperature, vibration, roller clearance, wear in mm.
-- Photo required: yes/no per plan.
+- Photo required: yes/no per plan. *(Superseded by S096: the photo setting is per item, below.)*
+- **Built (S104, 12-11-2026; in the words of "Decided 02-11-2026" above):** the work is written
+  only on a **PM template** in *Masters › PM templates* (tables `pm_templates`,
+  `pm_template_items`, `pm_template_links`, `pm_plans`, migration v57, which replaces the
+  unreleased v51–v56; read with `equipment:read`, written with `pm_plan:edit` held at any site). A
+  template has a name (unique), its items (*Task*, *Check*, *Reading*; up to 50, in order, moved
+  with *Move up* / *Move down*; a reading is a *Measurement* with its own unit and limits, kept on
+  the job, or a *Meter reading* of a counter or gauge meter type, saved as a reading of the
+  machine's own meter of that type, with that meter's unit and limits), its trigger (every N days,
+  weeks, months or years, at most 10 years; every N units of a counter meter **type**; or both,
+  whichever first), the performer and *An engineer verifies each job* (the per-meter tick *use the
+  meter from a parent node* was replaced by meter links on the part, 13-11-2026, S104 A1). A machine gets a plan only
+  by a template linked to it: S104 links one machine at a time (*Attach PM template* on the
+  equipment page's *PM plans* card; R03.19 adds class, type and model). The machine's plan row
+  holds only its own facts: *Assign jobs to* (a technician, engineer or manager at the site; none
+  on an operator template), *Last done (before Yantra)* (date, and a value of the meter the plan
+  uses), linked or removed. A template that needs a meter type the machine lacks **does not
+  apply** there: it makes no job, and the card says why ("Does not apply: no Run hours meter on
+  HP003"). A template change reaches every machine at its next job: after the save, each plan is
+  settled (a changed interval moves its open, not started job at once; a schedule change on
+  several machines is confirmed first); a started job keeps the items and the name it started
+  with. *Remove from this machine* stops the plan (its job not started is cancelled) and keeps its
+  history; attaching the template again brings it back. Nothing is deleted: a template is
+  deactivated, an item, a link or a plan row set inactive. *Before use* is in the record but not
+  offered until R03.13.
 - **Item types** (*Proposed*, 20-10-2026; supersedes the three lines above once built). One
   **item shape** is shared by PM template items, PM plan items, procedure steps (§ 4.3a) and
   steps attached to a ticket, with one result row per item. Types:
@@ -633,8 +743,9 @@ question 6. CIL plans can come from templates the same way.
     certificate on certification plans. Rejected: a separate checkbox type beside task (same
     thing); photo as a type of its own (a photo is evidence on a step, not a step).
 - **Triggers** — one or both:
-  - **Calendar:** every N days / weeks / months. **The next job is due from the completion date of the last one.** If a plan needs a different rhythm, the engineer edits the plan.
-  - **Meter:** every N units of a meter (run hours, production count), or when a reading crosses a limit. **Crossing creates a PM job automatically** and notifies, just like a calendar job falling due.
+  - **Calendar:** every N days / weeks / months / years. **The next job is due from the completion date of the last one.** If a plan needs a different rhythm, the engineer edits the plan.
+  - **Meter:** every N units of a meter (run hours, production count). **Reaching the due value creates a PM job automatically** and notifies, just like a calendar job falling due. A reading that crosses a gauge's limit raises a ticket, not a PM job (condition-based, § 4.5; R03.10).
+  - **Built (S095, 01-11-2026):** the scheduling rules, as the pure module `backend/pm_schedule_core.py` (`next_due`, `job_state`, `timeliness`; no screen yet). Months add to the same day of the month, or the month's last day when it is shorter, with no snap back (31-01 → 28-02 → 28-03). The first job counts from the engineer's *Last done* seed (date, meter value), else from the plan's creation date; a done job always wins over the seed. With both triggers, whichever comes first, and a done job restarts both. Windows: the on-time window is 10 % of the interval after the due point, rounded down to whole days, at least 1 (a meter's is exact); *Upcoming* starts 7 days or 10 % before, the shorter. **Departure from R03.1's "Overdue: past due"** (S095 D4): a job reads *Due* through its on-time window and *Overdue* after it, so *Overdue* means "it counts late now". Two consequences: (1) R03.3's list must show the due date and the days past it, as a job past due reads *Due* for up to its grace (3 days monthly, 36 yearly); (2) R03.7's *PM job overdue* alert, if it follows the state, fires only when the job already counts late, so R03.7 chooses to alert at the due point (with *Due* in the text) or at the grace end.
 - **Performer:** maintenance (team or technician, the default for generated jobs) or operator (CIL plans). An **AMC vendor** is a row of the *Vendors* master; its technician, or a service record such as 'Atlas Copco service', is a contractor in Team linked to it and can be the plan's assignee (16-10-2026; vendor master 30-10-2026); the engineer verifies the job with the vendor's report attached. Calibration of instruments: see **Calibration** below (20-10-2026; supersedes "an ordinary calendar plan with the certificate attached").
 - **Both triggers, whichever first** (16-10-2026): standby equipment gathers hours slowly, so its plans use calendar and meter together, as OEM schedules are written.
 - **Fitness-for-use inspection** (*Proposed*, 16-10-2026): a PM template applied to every
@@ -721,7 +832,7 @@ question 6. CIL plans can come from templates the same way.
   plant's document, drafted alongside the step. Verifying the presses' transducers and
   proportional valves in-house against a reference gauge also addresses their known drift
   (Plant-Facts § 4).
-- **Needs-verification flag per plan** (*Proposed*, 17-10-2026): default yes for maintenance
+- **Needs-verification flag per plan** (Built (S096, S099); decided 17-10-2026): default yes for maintenance
   work, no for routine checks (a quarterly extinguisher check) and CIL. Settles open question 10.
 - **Fire extinguishers** (17-10-2026): equipment with a code and QR label, class *fire
   extinguisher*, types CO2 / dry powder / foam / water, grade A. One PM template per type,
@@ -744,18 +855,21 @@ question 6. CIL plans can come from templates the same way.
   quarterly extinguisher check all become routes, so no third special case is built. Genset
   plans follow the OEM schedule (daily visual, periodic test run, battery, oil by hours); the
   calendar-and-meter rule above fits them, as standby sets gather hours slowly.
-- **Which meter a plan uses** (*Proposed*, 16-10-2026): no inheritance logic. A meter trigger
-  names one meter, and the picker offers the node's own meters and its ancestors'. A gearbox
-  plan picks the extruder's run hours; an alternating pump with its own hour meter picks its own.
-  ISO 14224: record run hours at the level where they differ.
-- **Rescheduling** (*Proposed*, 16-10-2026): the engineer may push a due job to a new date or meter value with a reason kept on the job (e.g. oil change extended after a good oil analysis). Settles the philosophy doc's "may a PM be skipped and by whom"; SMRP tracks it as PM rescheduled.
+- **Which meter a plan uses** (Decided 02-11-2026, built S104): a template names a meter type,
+  matched on the machine's own meters; a meter of a node above only through a link set on the
+  part's Meters card (13-11-2026, S104 A1). A gearbox's greasing is a template on the extruder,
+  or the gearbox uses the extruder's run hours through a link, or gets its own hour meter where
+  its hours differ; an alternating pump with its own hour meter uses its own. ISO 14224: record
+  run hours at the level where they differ.
+- **Rescheduling** (Built, S101, 02-11-2026): the engineer may move a due job to a new date or meter value, or skip it, with a reason kept on the job (e.g. oil change extended after a good oil analysis). Settles the philosophy doc's "may a PM be skipped and by whom"; SMRP tracks it as PM rescheduled. How it works (S101 D1–D6): only a job in state *due* is moved or skipped (any standing; a started job is finished with *Not done* answers and marked done); the move is kept on the job (`rescheduled_on`, `rescheduled_meter`, migration v55), so the daily run and a plan save keep it, and each move is a `rescheduled` line on the job's history, from which the PM report counts the moves; a move may be earlier or later (a departure from "push … later": a planned shutdown next week may bring a job forward), from today to a year ahead, and a meter value above the latest reading and at most one interval past it, a guard against typing errors; a change of the plan's schedule drops the move, any other plan edit keeps it; skipped jobs are listed on the *Done* tab ("10 done · 2 skipped"); a skip is recorded at the moment it is made, with the meter value then, counts as not done, and the plan's next job counts from it. Who: holders of `pm_job:verify` (the engineer and the manager).
 
 **PM job** (generated from a plan):
 
 ```
 due ──► in progress ──► done ──► verified
-        (technician)    (technician)  (engineer)
-                                └─ engineer can send back to "in progress"
+ │      (technician)    (technician)  (engineer)
+ │                              └─ engineer can send back to "in progress"
+ └──► skipped (engineer, with a reason; S101)
 ```
 
 - The technician fills checklist, readings and photos on the phone.
@@ -765,6 +879,73 @@ due ──► in progress ──► done ──► verified
 - A reading outside its limits is flagged on the job; the technician can raise a breakdown ticket from it in one tap.
 - Overdue jobs show on dashboards and are notified.
 - Serial: `PM-YYYY-MM-NNN`.
+- **Built (S097, R03.3, 02-11-2026):** jobs come due by themselves. `pm_jobs` (v52) holds one row per occurrence
+  of a plan, against the plan's node (ISO 14224), serial `PM-YYYY-MM-NNN` in the IST month of creation;
+  `pm_job_events` is its timeline (created, due changed, assignee changed, cancelled). **When a job is made**
+  (D1): when the plan enters its *Upcoming* window (S095: 7 days or 10 % of the interval before the due date,
+  the shorter; 10 % of N before the due meter value), or later. **At most one open job per plan** (`due` or
+  `in_progress`): the plan's row lock and a unique key on the generated `open_plan_id`. The state column holds
+  the whole life now (`due`, `in_progress`, `done`, `verified`, `skipped`, `cancelled`; D2). **The daily run**
+  `pm_generate` (worker, 05:00 IST, one transaction per plan, D6, D13) makes the job that came into its window,
+  refreshes the open job's due point when the plan or the readings moved it, and cancels the open job of a
+  deactivated plan or a scrapped machine. **The plan save** does the same for its plan in its transaction (D5),
+  so a plan saved inside its window gets its job at once. **Cancellation** (D7, a new rule): a deactivated plan
+  or a scrapped machine cancels its open, not started job, with a timeline line; a job is never deleted. **A
+  counter reset** (D8): the usage is carried across it (the offset is stored on the job), so a meter job comes
+  due early, never late. The job's **standing** (*Not yet due*, *Upcoming*, *Due*, *Overdue*) is judged live
+  from the due point stored on the job and the meter's latest reading, never stored (D4): a reading typed at
+  10:00 turns an upcoming job *Due* at once. The assignee is the plan's while still assignable at the node's
+  site, else none. A machine out of use keeps making jobs. **Screens:** the PM list (`/pm`, nav item *PM*
+  after *Tickets*, key `pm_job:read`): tabs *Due* and *Upcoming* (*Done* comes with R03.4, D10), filters *All my
+  units* and *Assigned to me*; a row opens the plan page until R03.4's job page (D11). The equipment page's PM
+  card shows each active plan's open job, or "Next due …" without one (`pm_job:read` at the node's site, D16).
+- **Built (S098, R03.4, 02-11-2026):** the job is done on the phone. **Start** (`pm_job:work` at the site)
+  names *Performed by* (anyone with a membership at the site, default me, also a person without a login:
+  recorded on behalf) and *Started* (now, or up to 7 days back), and **copies the plan's active items** into
+  `pm_job_results` (v53) in one transaction under the plan's and the job's locks (D1): a job not started
+  follows plan edits, a started one keeps its copy, its due point and its assignee (D2), and a plan edit or
+  deactivation never touches it; it stays open to be finished. **Each item is saved as it is filled** (one
+  save per item; a network drop loses at most the item being saved, which says so): a check *OK* / *Not OK*
+  / *NA*, a task *Done* / *Not done*, a reading a value judged by the item's limits (*High* / *Low* shown as
+  it is typed) or *NA*; *Not OK*, *Not done* and a reading's *NA* need a remark. A filled item can be changed
+  while the job is in progress, never emptied (D7). **A reading that names a meter** also logs a meter
+  reading (source `pm`) at the job's *Started* time (D6), through the readings' own locked path (the node
+  lock, both neighbours checked); a value the meter refuses saves nothing on the job (D4), with the *Meter
+  reset* tick for a real reset; a changed value replaces the job's own reading (D8); a meter gone since
+  *Start* keeps the value on the job only (D9). **Mark job done** needs every item filled; *Done* is now or up
+  to 7 days back (not before *Started*, D5); the job stores `done_at`, `done_meter` (the plan's meter at that
+  time) and `timeliness` against the due point it carried, and every job reaches `done`, also one whose
+  plan needs verification, until R03.5 adds `verified` (D10). Two rare cases are accepted: a counter reset
+  between *Start* and *Done* leaves the stored offset low, so a late job may read *On time* by meter; and a
+  plan whose meter changed while the job was open judges the new meter's value against the old due value.
+  **Scrapping a machine waits for its started PM jobs** (D15), as for open tickets. **Screens:** the job page
+  (`/pm/jobs/<id>`), the PM list's *Done* tab and *In progress* badge (a started job sits first on *Due*),
+  *Me* › *Open work*'s PM jobs (D11). D1–D15: `docs/steps/S098-pm-job-phone/1-brief.md` § 7.
+- **Built (S099, R03.5, 02-11-2026):** the engineer signs off a done job, or sends it back. **The setting is
+  copied at Mark done** (D2): the job stores its plan's *An engineer verifies each job* in
+  `pm_jobs.needs_verification` (v54), so a later change of the plan never moves a finished job in or out of
+  the queue. A job copied with 1 **waits** at `done` on the PM list's new tab *To verify (n)* (between
+  *Upcoming* and *Done*, the oldest done first, with its findings: "All OK", "1 Not OK · 1 Not done"); a job
+  copied with 0, and a job done before S099, is **final at `done`** and never becomes `verified` (D1: that
+  would record a check nobody made). *Done* lists the finished jobs only (verified, or final). **Verify job**
+  (`pm_job:verify` at the site; an optional remark): `done` → `verified`, final; the done time, meter and
+  judgement stay, so the next job does not move. Allowed on a scrapped machine (D7). **Send back** (a required
+  remark, "Say what must be done again."): `done` → `in_progress`; the done time, meter, judgement and copy are
+  cleared, and the technician fixes the job and marks it done again. **A send-back changes the item answers in
+  place: the first round's answers and item remarks are not kept; the timeline keeps the send-back remark and
+  both done times.** The second *Done* may not be dated before the send-back (D4); its judgement is made again
+  against the job's own due point, so rework can turn an on-time job late (SMRP PM compliance), and the next job
+  counts from the plan's latest done time. **The plan's open job** (D3): a waiting job does not hold back the
+  next job, so the plan may already have one; send back cancels it when it is not started (a timeline line names
+  the sent-back job; the run makes it again from the latest done time), and is refused when it is started (verify
+  it and raise a ticket instead). Refused on a scrapped machine (D7). **Self-verification** is allowed and
+  recorded (D5, Q5.2 a; § 3): "Performed by" decides it, not who recorded the job. Each action opens one dialog
+  with the facts, the consequence and the remark (D6, a departure from the mock-up's inline buttons). Both
+  actions take the plan's lock, then the job's, and write their timeline line (*Verified*, *Sent back*) in the
+  same transaction. **Screens:** the job page's *Verify* card (*Send back*, *Verify job*) for an engineer;
+  "Waiting for an engineer to verify." for the others; the verifier and time on a verified job; the send-back
+  remark above the items of a sent-back job, which shows *Sent back* on *Due* and in *Me* › *Open work*.
+  D1–D9: `docs/steps/S099-pm-verify/1-brief.md` § 7.
 
 ### 4.3a Procedures (*Proposed*, 16-10-2026)
 
@@ -848,6 +1029,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
   - **Built (S040, 24-10-2026):** the *Readings* page (`/readings`, nav item after *Tickets*, `reading:log`; the storekeeper and IT admin do not see it). `GET /api/readings/sheet?site_id=` gives the site's active units where the user logs (`accessible_unit_ids(cur, "reading:log")`; 404 for an unknown, inactive or foreign site, admin too), each with the machines that have meters in force on the machine or a part (not scrapped; tree order; parts nested), each meter with its last reading; a few queries for the whole site, none per node. `GET /api/equipment/my-units` gains `reading_unit_ids` (null = every unit), from which the screen builds the site picker (shown only to a user who logs at several sites; the last site is remembered in the browser under `yantra.readings.site_id`). One *Time of reading* for the sheet ("Now" sends no time). One card per machine with its parts' meters as titled blocks; a Yes / No meter is two large buttons (pick, then save); a meter read today reads "Today 17:50 · 12,345.6 h" with a tick, and the header counts "9 of 48 read today". *Save readings* (a sticky bar above the bottom nav on a phone) posts each filled row in turn with S039's POST: a refusal shows on its row and the others go on; a 502 / 503 / 504 or no answer stops the loop and the remaining rows read "Not saved. Try again in a minute." with their values kept; a refused *Time of reading* (it is the sheet's) shows once on that field and stops the loop. Switching the site with typed readings asks first ("Discard 3 typed readings?"), and the picker waits while a save runs. The *Meter reset* tick appears on a counter row only after the `counter_lower` refusal. A saved row is read-only; *Undo* (S039's remove route) shows only for `equipment:edit` holders at the row's unit; for others one line, "A wrong reading is removed by an engineer. Ask one.", shows after the first save. Machines out of use sit behind *Show out of use* at the end of each unit. After a full save the round is read-only (rows and *Time of reading*), the button reads *Saved* and is disabled, and *Enter more readings* starts a new round (rows empty, time now, last readings reloaded); a partial save keeps the refused rows editable, and *Enter more readings* shows there too once no filled row is left to retry (A1, 25-10-2026). No migration. **Time field (S051, 25-10-2026):** the shared time field shows the date and time at once, with a *Now* tick to its right: ticked, it is read-only and follows the phone's clock (every 30 s) while the server's clock still decides; unticked, it is editable.
   - **Built (S050, 25-10-2026):** the *Readings* page has two tabs, *Sheet* (S040's sheet, the default for `reading:log` holders) and *Register*; the tab is in the URL (`?tab=register`). The page opens to every `equipment:read` holder: the storekeeper and IT admin see only *Register*, with no tab bar, and a typed `?tab=sheet` opens *Register* for them (a departure from S040, where they did not see the page). Each tab mounts the first time it shows and then stays mounted, so readings typed on the sheet survive a look at the register. *Register* shows every active reading of one node (equipment, component-unit or component): the node is found with the raise screen's equipment search (*Which equipment?*, now the shared `EquipmentPicker.vue`) or opened from *Open register* on the *Meters* card (shown while the node has a meter in force); then a node card (the name with an X beside it, *Clear and choose another*, and *Open equipment page*), *Meters: All* with a check box per meter (one, some or all; the last tick cannot be cleared; the choice in the URL as `&meters=3,7`), and the table: a row per exact minute, newest first, 30 a page with *Show more*; a column per meter in the *Meters* card's order headed "Run hours (h)", then meters no longer on the node that have active readings ("No longer on this machine"); cells hold the number only, Indian grouping, with *High* / *Low* / *Not OK* / *Reset*. On a phone the time column stays fixed and the meter columns scroll sideways inside the table's frame. Removed readings and who logged a reading stay in the per-meter *History*. `GET /api/equipment/<id>/readings/register?meter_type_ids=&page=&per_page=` (`equipment:read`; ids that are not a column are ignored, the answer's `shown` lists the ones used; a malformed list is 400). Read-only; no migration.
   - **Built (S052, 25-10-2026):** the ticket page has a *Meters* card after *Details*, *Times* and *Assigned*: one heading per node of the path from the ticket's machine down to its part (machine → component-unit → component) that has a meter in force, each with *Open register* (S050's register for that node). Each meter shows the last active reading taken **at or before the ticket's time** (*When it happened*), never a later one, with its marks and its age ("23-10-2026 06:00 · 8 h before"; "at that time" in the same minute), or "No reading before this time"; a gauge marked *High* / *Low* or a Yes / No *Not OK* in the 7 days before (`MARK_WINDOW_DAYS`, the window (at − 7 d, at]) gets a warning line ("High or Low 3 times in the 7 days before"). On every ticket, defects too. The card draws nothing while loading and is hidden when no node has a meter; a part moved to another machine since the raise is left out, and a reader who sees the ticket only through its own unit (the machine moved to a unit outside theirs) gets no card. Worked out on each view, nothing stored: `GET /api/tickets/<id>/meters` (`ticket:read`; the path checked under `equipment:read`), plain reads, no migration. Saving the run hours at failure for MTBF in operating units (ISO 14224, SMRP 3.5.1) waits for the KPI work (phase 5).
+- **Meter links** (built S104 A1, 13-11-2026; migration v58, `node_meter_links`): a part (a component-unit or a component) with no meter of a type of its own may use the meter of its parent or grandparent: *Use a meter from above* on its *Meters* card (`equipment:edit`). One meter per type on a node: its model's, its own, or a linked one. The linked meter shows on the part's card read-only, "From PR-07", with the source's limits and last reading and "Read on PR-07 — Press 7. Log readings there."; readings and limits stay on the source, so the reading paths are unchanged. A PM template finds it by type when the part has no meter of its own. *Remove link* asks first, naming the PM plans that use it; a move of a part to another parent asks before it removes the links to nodes no longer above it. Each link set and removed is a line in the part's history. A link the part's own meter overrides, or whose source lost the meter, stays and shows why it is not in use (ISO 14224: operating time is recorded on the item it is measured on).
 - Readings are entered by hand — from a "log reading" screen (via the equipment's QR) or as part of a PM job. A reading carries the time it was **taken**, entered by the user and defaulting to now (16-10-2026): operators read run hours off the HMI into a notebook and type them in at the end of the day.
 - **Press end-of-day meters** (16-10-2026): strokes and run hours (counters), energy meter kWh
   (counter; kWh per stroke later is the energy performance indicator of ISO 50001), maximum
@@ -911,7 +1093,8 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 | Countermeasure overdue (the morning after its due date, still open) | the owner and the improvement's lead, quietly, once per due date (S074; daily at 08:00) | | |
 | Ready to verify (the morning after the watch ends) | the site's holders of `improvement:verify` (engineers, managers) covering the unit, quietly, once per watch end (S074; daily at 08:00) | | |
 | Contract ending (the morning it has 60 days left, and again at 15 days; not for an inactive or renewed contract) | the site's holders of `contract:read` (engineers, managers), quietly, once per reminder per To date (S084; daily at 08:00) | | the site's holders of `contract:read_senior` (managers) with an address (S084) |
-| PM job due / overdue | assigned technician | maintenance group (overdue only) | |
+| PM job due (the morning it turns *Due*, by date or by a meter reading; not started) | the job's assignee, quietly, once per due point (S102; daily at 08:00) | | |
+| PM job overdue (the morning after its on-time window, still not started) | the job's assignee and the unit's holders of `pm_job:verify` (engineers, managers), quietly, once per due point (S102; daily at 08:00); Telegram's maintenance group was planned here, push takes its place while Telegram is parked (R03 Q7.1 a) | | |
 | Reading out of limits | engineers | | |
 | Daily summary (open tickets, overdue PMs, yesterday's downtime and work done) | | | engineers, manager |
 
@@ -921,6 +1104,7 @@ separate module. Each equipment's CIL checklist is defined with its maintenance 
 - All sends go through the DB-backed job queue, so a slow channel never blocks a request.
 - **Improvement alerts** (S074, 30-10-2026; R05.5): push only (gate R Q5.1 a). An alert goes only to people who may open the improvement (`improvement:read`, or `improvement:verify`, at its site, covering its unit); a person without a login or a device gets nothing, and the lead still gets the overdue alert of such an owner's work. They are quiet (no sound, Urgency low, kept 24 hours by the push service), as a defect: no machine is down. A daily task (`improvement_alert_scan`, 08:00 IST, Settings › Background tasks) finds the overdue countermeasures and the ended watches; two columns (v40) remember the due date and the watch end alerted, so each alert is sent once, and a moved date alerts again. The ticket and improvement alerts share the channels, the push fan-out and the recipient query, so PM (R03.7) adds its kinds on the same pieces.
 - **Contract reminders** (S084, 31-10-2026; R02.5): two reminders per vendor contract, 60 and 15 days before its To date (Plan § 2 item 9; the days are constants, the first is the *Ends in N days* badge's 60). Push, quiet and kept 24 hours, to the holders of `contract:read` at the sites of the contract's machines (S087; every site for a contract with no machine; their engineers and managers, whatever their units); email to the holders of `contract:read_senior` there with an address (their managers: renewing is a buying decision). A tap opens the contract page. The texts hold only what every site role may read: no price, no cost note, no call-out number. A daily task (`contract_reminder_scan`, 08:00 IST, Settings › Background tasks) queues them; two columns on `contracts` (v46) remember the To date each reminder was sent for, so each is sent once per To date and a changed To date sends them again. None for an inactive contract, nor once renewed (another active contract names it in `renewal_of_id`, set by R02.4).
+- **PM alerts** (S102, 02-11-2026; R03.7): push only (gate R Q7.1 a). *PM job due* goes to the job's assignee the morning the job turns *Due* (its due date, or the first morning after a reading reached the due value); *PM job overdue* goes once, the morning after its on-time window (the moment the job starts to count late, SMRP PM compliance), to the assignee and to the unit's holders of `pm_job:verify` (its engineers and managers, who can reschedule or skip it). Only people who may open the job (`pm_job:read` at its site, covering its unit) get them; a contractor without a login has no device, and a job with no assignee sends *due* to nobody. Quiet, kept 24 hours; one tag per job, so *overdue* replaces *due* on the phone; the tap opens the job page. None for a started, done, skipped or cancelled job, nor for a job of an inactive plan or a scrapped machine. A daily task (`pm_job_alert_scan`, 08:00 IST, Settings › Background tasks) queues them; four columns on `pm_jobs` (v56) hold the due point each alert was sent for, so each is sent once per due point and a moved due point (a plan edit, a reschedule) sends them again. A change of assignee sends nothing (the job shows in the new assignee's *Me › Open work*).
 
 ## 5. Data model
 
@@ -933,10 +1117,10 @@ browser); the conventions in `docs/schema.md` (S078, 30-10-2026).
 
 **Phone (operator, technician):**
 
-- *Me* (S031): open work assigned to me, tickets I raised, my activity; my open countermeasures sit above the tickets in *Open work* (S071, 30-10-2026; overdue ones on a red row, *Mark done* with photos from the phone); PM jobs due and CIL jobs join *Open work* in phase 4 (R03.4); first in the nav and the landing page for roles with `ticket:read` (S035, 24-10-2026; S031 U1 had kept Equipment).
+- *Me* (S031): open work assigned to me, tickets I raised, my activity; my open countermeasures sit above the tickets in *Open work* (S071, 30-10-2026; overdue ones on a red row, *Mark done* with photos from the phone); PM jobs due, overdue and in progress sit above the tickets in *Open work* (S098); CIL jobs join in R03.12; first in the nav and the landing page for roles with `ticket:read` (S035, 24-10-2026; S031 U1 had kept Equipment).
 - Equipment page (from QR): status, open tickets, due PMs; buttons "raise breakdown", "log reading", "start CIL" (before-use equipment). The card *Lessons* (S077, 30-10-2026; R05.6) stands first, before *Open tickets*, on every width, so an operator who scans a press's label sees what to do first: the machine's own one-point lessons and its class's, newest first, each with its first photo (64 px), its title in large type, its number `OPL-007` and, for a class lesson, the badge "Every Hydraulic press". A reader of a machine with no lessons sees no card. Engineers and managers of the site see *Add lesson* (title, the lesson text, the tick "Show on every machine of class …", and photos taken with the camera or picked from the gallery; after *Save lesson* the page opens the lesson) and, under *Retired lessons (n)*, the lessons retired earlier.
 - One-point lesson page (S077; `/equipment/lessons/<id>`, no nav item; the Equipment item stays lit): the machine and class it is for, the number, date and writer, the title, the photos with their captions at full width and the text in large type (line breaks kept; Tamil or English as typed), then "From improvement IM-… · …" when the reader may open it and "Last changed …". *Print lesson* (the browser's print, one A4 page where it fits, no menu or button) is for every reader: the lesson is posted at the machine (TPM). Engineers and managers also see *Change lesson*, *Edit photos* (the photo and document cards), and *Retire lesson* (asks first) or *Bring back lesson*. A retired lesson shows a "Retired" banner. A lesson of a *Lesson* countermeasure shows as "Lesson OPL-007 · title" on the countermeasure's row, or *Write lesson* (the dialog opens with the countermeasure's text; the page stays on the improvement). Settings › Removed documents shows a removed lesson photo as "Lesson OPL-007" with the machine's code and unit.
-- *Readings* (S040, 24-10-2026; S050, 25-10-2026): fourth in the nav for every role with `equipment:read` (*Me*, *Equipment*, *Tickets*, *Readings*, *Masters*, *Settings*). Two tabs: *Sheet*, the end-of-day sheet for roles with `reading:log` (one site, every meter grouped by unit, *Save readings* in a bar above the bottom nav), and *Register*, every reading of one node as a table (the only tab for the storekeeper and IT admin) (§ 4.5).
+- *Readings* (S040, 24-10-2026; S050, 25-10-2026): fourth in the nav for every role with `equipment:read` (*Me*, *Equipment*, *Tickets*, *Readings*, *Masters*, *Settings*); fifth since S097 for the holders of `pm_job:read`, whose order is *Me*, *Equipment*, *Tickets*, *PM*, *Readings*, *Masters*, *Settings*. Two tabs: *Sheet*, the end-of-day sheet for roles with `reading:log` (one site, every meter grouped by unit, *Save readings* in a bar above the bottom nav), and *Register*, every reading of one node as a table (the only tab for the storekeeper and IT admin) (§ 4.5).
 - Raise breakdown or defect: equipment, intensity (critical = breakdown, else defect), symptom, remark, photo — four taps for the common case.
 - Ticket: timeline, act on the next step, add photos, labour.
 - *Improvements* (S068, 30-10-2026; R05.1): a second tab of *Tickets*, shown to `improvement:read` holders (no new nav item). The list shows open or closed improvements with a *Unit* filter; each row has the serial, the state, the lead, the title and the loss. The improvement page (`/tickets/improvements/<id>`) has the header, the card *The problem* (where, what happened, loss) and the card *Tickets* (add a ticket, remove one the server allows). A back-in-service or closed ticket gets a *Start improvement* button (title, problem and lead filled from the ticket) and, once analysed, the line "Analysed in IM-… · Analysing". The why-why (S069, 30-10-2026; R05.2): the page's right half on a wide screen (after *Tickets* on a phone) has the card *Why-why* (the help line "Ask why until the answer is something the plant can change.", one row per *Why? / Because* with its evidence and writer; *Add why*, *Edit why n* with the place in the chain, *Remove why n* with a confirmation on the row; up to 20 whys) and the card *Root cause* (a cause from the failure-cause list with its group, the text and the other causes; *Set root cause* fills the text with the last why's answer; never cleared), with the linked tickets' own causes under it. The card *Countermeasures* (S071, 30-10-2026; R05.3) runs across the full width under both columns: the header "Countermeasures (2 of 6 done)" (cancelled ones in neither number), *Add countermeasure* for engineers and managers while the improvement is open, one row per countermeasure with its kind, state (*Open*, *Done*, *Cancelled*, or *Overdue n days* in red), text, owner, due date and buttons, and the six kinds with their plain sentence under the card. *Add / Change countermeasure* is one dialog (kind, what will be done, owner, due date two weeks ahead). The owner, or an engineer or manager, taps *Mark done* (what was done, the time with *Now*, photos of the work; the done is saved first, a failed photo leaves the dialog open to add it again). *Cancel countermeasure n* asks for a reason on the row. *Photos (n)* or *Add photos* opens the photo cards under the row. Settings › Removed documents shows a removed countermeasure photo with its improvement. The state, the watch and the close (S073, 30-10-2026; R05.4, screens): the badge reads *Analysing*, *Actions open*, *Watching*, *Ready to verify*, *Closed: it worked*, *Closed: did not work* or *Dropped*. A line under the header says the watch ("Watch: 90 days after the last countermeasure is done" with *Change watch*; "Watching since … · until …"; "Closed 18-02-2027 by Arun (manager): it worked", with ", the lead" when the lead closed it, then the remark) and links "Follow-up of IM-…" and "Analysed again in IM-…". Once the watch has started the card *Did it come back?* shows the repeats of the symptom with a warning and the table of breakdowns and downtime before and after; for an engineer or manager of the site it ends with *Did not work — analyse again* and *Close: it worked*. Each opens one dialog with the facts, the consequence and the remark (needed for *did not work*, which goes to the new improvement). *Drop improvement* (reason; its open countermeasures are cancelled) sits at the page's foot. The card *Timeline* (newest first, the newest 10 and *Show all*) shows who did what and when, a changed text as "Was: …", and *Add note* for every reader at the site but IT admin. A closed or dropped improvement shows no button that writes. The register (S076, 30-10-2026; R05.10): a button

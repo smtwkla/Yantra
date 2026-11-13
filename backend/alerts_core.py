@@ -6,9 +6,10 @@ An alert is a message about a record.  About a ticket: a new breakdown, a new de
 again*, an escalation of a breakdown nobody acknowledged in time, *assigned to you*, or (S032)
 *ticket closed*.  About an improvement (S074, R05.5): *countermeasure for you*, *countermeasure
 overdue* and *ready to verify*.  About a vendor contract (S084, R02.5): *contract ending*, 60 and
-15 days before its To date, by push and by email.  Each record has its own kinds, rules and texts
-here and its own alert task (task_handlers); the channels, the push fan-out and the recipient
-query are shared (S074 D1), so PM (R03.7) adds its kinds the same way.  It answers ISO 55001 § 7.4 / ISO 9001
+15 days before its To date, by push and by email.  About a PM job (S102, R03.7): *PM job due* to
+its assignee and *PM job overdue* also to the unit's pm_job:verify holders, once per due point.
+Each record has its own kinds, rules and texts here and its own alert task (task_handlers); the
+channels, the push fan-out and the recipient query are shared (S074 D1).  It answers ISO 55001 § 7.4 / ISO 9001
 § 7.4 (what is communicated, when, to whom and how): the audience and channel tables below are
 that decision, and you_get shows each person their part of it.
 """
@@ -19,10 +20,14 @@ from datetime import timedelta
 from access_core import compute_permissions
 from config_rbac import ASSIGNABLE_ROLES
 from contracts_core import ENDING_SOON_DAYS, TYPE_SHORT, contract_status
-from equipment_core import effective_criticality
+from equipment_core import SCRAPPED, effective_criticality
 from improvements_core import (
     ACTION_OPEN, EDIT_KEY, IMPROVEMENT_OPEN_STATES, READ_KEY, VERIFY_KEY, WATCHING, watch_until,
 )
+from meters_core import format_number
+from pm_jobs_core import DUE_STATE, READ_KEY as PM_READ_KEY
+from pm_schedule_core import DUE, OVERDUE
+from pm_work_core import VERIFY_KEY as PM_VERIFY_KEY
 from tickets_core import (
     BREAKDOWN_INTENSITY, CLOSED as CLOSED_STATE, DOWN_STATES, MAX_BACKDATE_DAYS, OPEN_STATES, RAISED, SENT_BACK_EVENT,
 )
@@ -42,7 +47,11 @@ IMPROVEMENT_KINDS = (ACTION_GIVEN, ACTION_OVERDUE, VERIFY_READY)
 # S084: about a vendor contract
 CONTRACT_ENDING = "contract_ending"  # Contract ends in N days
 CONTRACT_KINDS = (CONTRACT_ENDING,)
-KINDS = TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS
+# S102: about a PM job
+PM_JOB_DUE = "pm_job_due"            # PM job due, to the assignee
+PM_JOB_OVERDUE = "pm_job_overdue"    # PM job overdue, to the assignee and the pm_job:verify holders
+PM_KINDS = (PM_JOB_DUE, PM_JOB_OVERDUE)
+KINDS = TICKET_KINDS + IMPROVEMENT_KINDS + CONTRACT_KINDS + PM_KINDS
 
 ENGINEER = "maint_engineer"
 SUPERVISOR = "maint_supervisor"
@@ -75,6 +84,9 @@ CHANNELS = {
     VERIFY_READY: (PUSH,),
     # S084 (Plan.MD § 2 item 9): push to the engineers and managers, email to the managers
     CONTRACT_ENDING: (PUSH, EMAIL),
+    # S102 (R03 Q7.1 a): push only; Plan.MD § 4.7's Telegram column waits for Telegram (parked)
+    PM_JOB_DUE: (PUSH,),
+    PM_JOB_OVERDUE: (PUSH,),
 }
 
 # S074 § 5.6, D6: an improvement alert goes to the holders of the key it is about, at the
@@ -114,6 +126,7 @@ REMARK_CUT = 80
 TICKET_PATH = "/tickets/{id}"
 IMPROVEMENT_PATH = "/tickets/improvements/{id}"
 CONTRACT_PATH = "/contracts/{id}"
+PM_PATH = "/pm/jobs/{id}"
 # How an improvement alert's payload carries its dates (S074 § 5.3): text, as JSON has no date
 PAYLOAD_DATE = "%Y-%m-%d"
 PAYLOAD_TIME = "%Y-%m-%d %H:%M:%S"
@@ -452,6 +465,126 @@ def contract_message(facts):
             "quiet": True}
 
 
+# ---------------------------------------------------------------------------
+# PM jobs (S102, R03.7; TPM planned maintenance, SMRP PM compliance)
+# ---------------------------------------------------------------------------
+
+# Each kind's two marker columns on pm_jobs (v56): the due point (due_on, due_meter) it was queued for
+_PM_MARKERS = {PM_JOB_DUE: ("due_alert_on", "due_alert_meter"),
+               PM_JOB_OVERDUE: ("overdue_alert_on", "overdue_alert_meter")}
+
+
+def due_point_alerted(marker_on, marker_meter, due_on, due_meter):
+    """Was an alert queued for this due point (§ 5.1)?  True when the marker is set and equals the due point.
+    Decimals compare by value (1500.000 equals 1500)."""
+    if marker_on is None and marker_meter is None:
+        return False
+    return marker_on == due_on and marker_meter == due_meter
+
+
+def _alerted(job, kind):
+    on, meter = _PM_MARKERS[kind]
+    return due_point_alerted(job[on], job[meter], job["due_on"], job["due_meter"])
+
+
+def pm_alert_due(job, standing_state, plan_active, node_scrapped):
+    """The PM alert due for a job now (§ 5.1) -> PM_JOB_OVERDUE, PM_JOB_DUE or None.  ``job``: a pm_jobs row (state,
+    due_on, due_meter and the four markers); ``standing_state``: pm_jobs_core.job_standing's state today.  Only a
+    job not started (D5) of an active plan on a node not scrapped; at most one per run: a job found already
+    *Overdue* gets only *overdue* (the shell then marks both)."""
+    if job["state"] != DUE_STATE or not plan_active or node_scrapped:
+        return None
+    if standing_state == OVERDUE:
+        return None if _alerted(job, PM_JOB_OVERDUE) else PM_JOB_OVERDUE
+    if standing_state == DUE:
+        return None if _alerted(job, PM_JOB_DUE) else PM_JOB_DUE
+    return None
+
+
+def pm_markers(kind, job):
+    """The marker columns the scan writes for ``kind`` (§ 5.4 step 6) -> ``{column: value}``: the job's due point
+    in the kind's two columns; *overdue* also in the due columns, so a standing that falls back sends no late
+    *due*."""
+    kinds = (PM_JOB_DUE, PM_JOB_OVERDUE) if kind == PM_JOB_OVERDUE else (PM_JOB_DUE,)
+    out = {}
+    for each in kinds:
+        on, meter = _PM_MARKERS[each]
+        out.update({on: job["due_on"], meter: job["due_meter"]})
+    return out
+
+
+def should_send_pm(kind, row):
+    """Is the queued PM alert still true when the task runs (§ 5.6 step 3)?  ``row``: pm_jobs.job_row's (state,
+    pl_active, e_lifecycle, due_on, due_meter, the markers).  The standing is not judged again: a due point moved
+    since the scan differs from the marker, and the next scan decides."""
+    return (row["state"] == DUE_STATE and bool(row["pl_active"]) and row["e_lifecycle"] != SCRAPPED
+            and _alerted(row, kind))
+
+
+def pm_job_facts(row, base_url):
+    """The one dict every PM alert text is built from (§ 5.6).  ``row``: pm_jobs.job_row's (id, serial, pl_title,
+    site_code, unit_code, e_code, due_on, due_meter, t_unit, grace_days, meter_window, a_name).  Only what every
+    recipient may read (pm_job:read at the unit): no result, remark or reading."""
+    path = PM_PATH.format(id=row["id"])
+    return {
+        "job_id": row["id"],
+        "serial": row["serial"],
+        "title": _cut(row["pl_title"], DESCRIPTION_CUT),
+        "site_code": row["site_code"],
+        "unit_code": row["unit_code"],
+        "machine_code": row["e_code"],
+        "due_on": row["due_on"],
+        "due_meter": row["due_meter"],
+        "meter_unit": row["t_unit"],
+        "grace_days": row["grace_days"],
+        "meter_window": row["meter_window"],
+        "assignee_name": first_name(row["a_name"]) if row["a_name"] else None,
+        "path": path,
+        "url": f"{base_url}{path}",
+    }
+
+
+def _meter_words(value, unit):
+    number = format_number(value)
+    return f"{number} {unit}" if unit else number
+
+
+def _point_words(on, meter, unit, date_word, meter_word):
+    """The words for a due point: "on 20-11-2026", "at 1500 h", or both joined by "or" (BR1-06: the values decide,
+    not the plan's kind)."""
+    parts = []
+    if on is not None:
+        parts.append(f"{date_word}{on:%d-%m-%Y}")
+    if meter is not None:
+        parts.append(f"{meter_word}{_meter_words(meter, unit)}")
+    return " or ".join(parts)
+
+
+def pm_job_text(kind, facts):
+    """-> ``(title, body)``, e.g. ("PM job due · SMTW.MCC2 · HP003", "PM-2026-11-004 · Monthly press check — due on
+    20-11-2026, on time until 23-11-2026.").  Dates DD-MM-YYYY; meter values with the meter type's unit."""
+    place = f"{facts['site_code']}.{facts['unit_code']} · {facts['machine_code']}"
+    lead = f"{facts['serial']} · {facts['title']}"
+    due_on, due_meter, unit = facts["due_on"], facts["due_meter"], facts["meter_unit"]
+    due_words = _point_words(due_on, due_meter, unit, "on ", "at ")
+    if kind == PM_JOB_OVERDUE:
+        who = f"assigned to {facts['assignee_name']}" if facts["assignee_name"] else "not assigned"
+        return f"PM job overdue · {place}", f"{lead} — was due {due_words}, {who}."
+    until_on = None if due_on is None or facts["grace_days"] is None else due_on + timedelta(days=facts["grace_days"])
+    until_meter = (None if due_meter is None or facts["meter_window"] is None
+                   else due_meter + facts["meter_window"])
+    until = _point_words(until_on, until_meter, unit, "", "")
+    tail = f", on time until {until}" if until else ""
+    return f"PM job due · {place}", f"{lead} — due {due_words}{tail}."
+
+
+def pm_job_message(kind, facts):
+    """The PM alert as a channel sends it: quiet (D7: planned work, no machine down), one tag per job for both kinds,
+    so *overdue* replaces *due* on the phone."""
+    title, body = pm_job_text(kind, facts)
+    return {"title": title, "body": body, "path": facts["path"], "tag": f"pm-job-{facts['job_id']}", "quiet": True}
+
+
 def _what_line(role, place):
     """One membership's line, built from AUDIENCE so the page and the fan-out cannot disagree."""
     kinds = [label for kind, label in ((BREAKDOWN, "Breakdowns"), (DEFECT, "defects")) if role in AUDIENCE[kind]]
@@ -472,13 +605,17 @@ def you_get(memberships):
     S087: the reminders follow the machines' sites; the site code even for a membership without
     units), then "Closed tickets at SMTW, by email" when the role gets *ticket closed* (S032), then
     "Contracts ending for machines at SMTW, by email" when the role holds contract:read_senior; then
-    "Jobs assigned to you" once for an assignable role; then, once each, the countermeasure
+    "Jobs assigned to you" once for an assignable role; S102: "Overdue PM jobs at SMTW" after the
+    verify line when the role holds pm_job:verify, and "PM jobs assigned to you, when due and when
+    overdue" after "Jobs assigned to you" once for an assignable role in a membership with a place
+    (people_at_unit needs a unit); then, once each, the countermeasure
     lines (S074 § 5.8) when a membership with a place holds improvement:read (the owner's alerts)
     or improvement:edit (who may lead gets the overdue alerts of the improvements they lead).
     The improvement lines follow config_rbac through compute_permissions.  Empty: nothing to get
     (IT admin, a storekeeper)."""
     lines = []
     keys_with_place = set()
+    assignable_with_place = False
     for membership in sorted(memberships, key=lambda m: m["site_code"]):
         if membership["all_units"]:
             place = membership["site_code"]
@@ -497,11 +634,14 @@ def you_get(memberships):
                 lines.append(f"Contracts ending for machines at {site}, by email")
             continue
         keys_with_place.update(keys)
+        assignable_with_place = assignable_with_place or membership["role"] in ASSIGNABLE_ROLES
         line = _what_line(membership["role"], place)
         if line:
             lines.append(line)
         if VERIFY_KEY in keys:
             lines.append(f"Improvements ready to verify at {place}")
+        if PM_VERIFY_KEY in keys:
+            lines.append(f"Overdue PM jobs at {place}")
         if contract_push:
             lines.append(f"Contracts ending for machines at {site}")
         if membership["role"] in AUDIENCE[CLOSED]:
@@ -510,6 +650,8 @@ def you_get(memberships):
             lines.append(f"Contracts ending for machines at {site}, by email")
     if any(m["role"] in ASSIGNABLE_ROLES for m in memberships):
         lines.append("Jobs assigned to you")
+    if assignable_with_place:
+        lines.append("PM jobs assigned to you, when due and when overdue")
     if READ_KEY in keys_with_place:
         lines.append("Countermeasures given to you, and when they are overdue")
     if EDIT_KEY in keys_with_place:

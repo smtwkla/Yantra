@@ -94,7 +94,7 @@ test("S068: the engineer edits the problem text", async ({ page }) => {
   await expect(page.locator(".problem-text")).toHaveText("S068 edit: the contactor chatters when the motor starts");
 });
 
-test("S068: the Improvements tab lists the improvement, the Unit filter narrows, Closed is empty", async ({ page }) => {
+test("S068: the Improvements tab lists the improvement, the Unit filter narrows, Closed leaves it out", async ({ page }) => {
   const ticket = await raiseFixed(seed.extruder.id, "S068 list: tab");
   const improvement = await startImprovementByApi(ticket, { title: "S068 list title" });
   await asPerson(page, "engineer", "/tickets");
@@ -119,7 +119,12 @@ test("S068: the Improvements tab lists the improvement, the Unit filter narrows,
   await expect(row).toBeVisible();
 
   await page.getByRole("combobox", { name: "State" }).selectOption({ label: "Closed improvements" });
-  await expect(page.getByText("No closed improvements yet.")).toBeVisible();
+  // Other tests may have closed improvements, so only this test's own row is checked
+  await expect(page.getByRole("combobox", { name: "State" }).locator("option:checked")).toHaveText("Closed improvements");
+  await expect(row).toHaveCount(0);
+  // The Closed list loaded (S100 CR1-01): its empty text or a row shows, and no error box
+  await expect(page.getByText("No closed improvements yet.").or(page.locator(".list-group-item").first())).toBeVisible();
+  await expect(page.locator(".alert-danger")).toHaveCount(0);
 
   // The row opens the page
   await page.getByRole("combobox", { name: "State" }).selectOption({ label: "Open improvements" });

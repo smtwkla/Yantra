@@ -3,6 +3,11 @@
  * Move dialog (docs/steps/S003-equipment-screens/1-brief.md § 4.4): equipment moves to
  * another unit, a part to another parent. Sends only unit_id or only parent_id.
  *
+ * S104 A1.6.4: a part's form also holds `remove_meter_links: false`. A move that would break meter links is
+ * refused with the server's words on that field (the links and the PM plans that use them); the dialog shows them
+ * in a warning box above the buttons, sets the flag, and the save button reads *Move and remove links*, so the next
+ * save sends `remove_meter_links: true`. Picking another parent clears the warning and the flag.
+ *
  * The parent calls open(node) through a template ref and handles @saved.
  */
 import { computed, ref, watch } from "vue";
@@ -34,8 +39,14 @@ const {
 } = useFormModal({
   path: "/api/equipment",
   blank: () => ({ unit_id: "" }),
-  fromRecord: (record) => (record.level === "equipment" ? { unit_id: "" } : { parent_id: null }),
+  fromRecord: (record) => (record.level === "equipment" ? { unit_id: "" } : { parent_id: null, remove_meter_links: false }),
   afterSave: (result) => emit("saved", result),
+});
+
+// The server's refusal of a move that breaks meter links (A1.6.4); the next save confirms
+const linksWarning = computed(() => fieldError("remove_meter_links"));
+watch(linksWarning, (warning) => {
+  if (warning) form.value.remove_meter_links = true;
 });
 
 // Units the user may move to, grouped by site; the current unit cannot be picked
@@ -91,6 +102,10 @@ watch(search, scheduleSearch);
 function choose(match) {
   chosen.value = match;
   form.value.parent_id = match.id;
+  if (form.value.remove_meter_links || linksWarning.value) {
+    form.value.remove_meter_links = false;
+    error.value = null;
+  }
 }
 
 async function open(target) {
@@ -121,6 +136,7 @@ defineExpose({ open });
     :dirty="dirty"
     :error="modalError"
     :save-disabled-reason="saveDisabledReason"
+    :save-label="form.remove_meter_links ? 'Move and remove links' : 'Save'"
     @save="save"
   >
     <template v-if="node && isEquipment">
@@ -176,6 +192,9 @@ defineExpose({ open });
         <div v-if="moreMatches && !searching" class="text-secondary small mt-2">
           More found — add a word, such as the model or class.
         </div>
+      </div>
+      <div v-if="linksWarning" class="alert alert-warning py-2 mt-3 mb-0" role="alert" data-testid="move-links-warning">
+        {{ linksWarning }}
       </div>
     </template>
   </FormModal>

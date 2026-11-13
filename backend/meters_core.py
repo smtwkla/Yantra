@@ -563,3 +563,105 @@ def readings_at_ticket(meters, at_readings, mark_counts, node_id):
         lines.append({"meter_type": meter["meter_type"], "at_ticket": at_readings.get(key),
                       "marked_count": mark_counts.get(key, 0)})
     return lines
+
+
+# ---------------------------------------------------------------------------
+# Meter links (S104 A1, docs/steps/S104-pm-templates-one-path/1-brief.md § 10 A1.6)
+# ---------------------------------------------------------------------------
+# A part (a component unit or a component) with no meter of its own uses the meter of its parent or its parent's
+# parent through a node_meter_links row.  The readings and the limits stay on that source node; the link only says
+# which count the part runs with (ISO 14224: operating time is recorded on the item it is measured on).
+
+SOURCE_LINKED = "linked"          # a card entry's ``source`` for a linked meter, beside SOURCE_MODEL / SOURCE_NODE
+# Why a link is not in use, in the order they are judged (A1.6.1)
+OWN, NOT_ABOVE, NO_SOURCE_METER = "own", "not_above", "no_source_meter"
+
+MACHINE_HAS_NONE_ABOVE = "A machine has no node above it. Add the meter on the machine itself."
+PICK_A_NODE_ABOVE = "Pick a node above this part."
+LINK_FIELDS = ("meter_type_id", "source_equipment_id")
+MOVE_NAMED_MAX = 5                # the move's refusal names the first 5 links and plans, then "and N more"
+
+
+def no_source_meter(source_code, type_name):
+    return f"{source_code} has no {type_name} meter. Reload the page."
+
+
+def already_links(source_code, type_name):
+    return f"This part already uses {source_code}'s {type_name}. Remove that link first."
+
+
+def uses_link(source_code, type_name):
+    return f"This part uses {source_code}'s {type_name}. Remove that link first."
+
+
+def linked_limits(source_code):
+    return f"This is {source_code}'s meter. Set its limits on {source_code}."
+
+
+def link_text(type_name, source_code):
+    """"Run hours from PR-07": the history line's value and the move's list."""
+    return f"{type_name} from {source_code}"
+
+
+def parse_link_body(body):
+    """A link's body -> ``(clean, errors)``: ``meter_type_id`` and ``source_equipment_id``, each an integer of 1 or
+    more (never a boolean); the first bad or missing field gives "Pick a meter" on it."""
+    clean = {}
+    for field in LINK_FIELDS:
+        raw = body.get(field)
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            return {}, [{"field": field, "message": PICK_A_METER}]
+        clean[field] = raw
+    return clean, []
+
+
+def link_states(own_type_ids, links, above_ids, types_by_node):
+    """Whether each of a part's links is in use, judged live (A1.6.1) -> ``{meter_type_id: None or reason}``.
+    ``own_type_ids`` are the types in force on the part itself; ``links`` its rows (meter_type_id,
+    source_equipment_id); ``above_ids`` the part's parent and grandparent ids; ``types_by_node`` the types in force
+    on each node (a source missing from it has none).  A link is in use unless, in this order: the part has the type
+    itself (OWN), the source is not above the part (NOT_ABOVE), the source has no meter of the type now
+    (NO_SOURCE_METER)."""
+    above = set(above_ids)
+    states = {}
+    for link in links:
+        type_id, source = link["meter_type_id"], link["source_equipment_id"]
+        if type_id in own_type_ids:
+            states[type_id] = OWN
+        elif source not in above:
+            states[type_id] = NOT_ABOVE
+        elif type_id not in types_by_node.get(source, ()):
+            states[type_id] = NO_SOURCE_METER
+        else:
+            states[type_id] = None
+    return states
+
+
+def broken_links(links, kept_ids):
+    """The links a move breaks (A1.6.4): those whose source is not among ``kept_ids`` (the moved node, its new
+    parent and the new parent's parent).  ``links`` are the moved node's and its parts'."""
+    return [link for link in links if link["source_equipment_id"] not in kept_ids]
+
+
+def _named(texts, separator):
+    """The first MOVE_NAMED_MAX texts, then "and N more"."""
+    shown = list(texts[:MOVE_NAMED_MAX])
+    if len(texts) > MOVE_NAMED_MAX:
+        shown.append(f"and {len(texts) - MOVE_NAMED_MAX} more")
+    return separator.join(shown)
+
+
+def move_warning(broken, plans):
+    """The move's refusal (A1.6.4): the links it removes (rows with part_code, type_name, source_code) and the PM
+    plans that use them (rows with name and the part's code).  The plans' sentences are left out when no plan uses
+    the links."""
+    one = len(broken) == 1
+    links = _named([f"{link['part_code']} — {link_text(link['type_name'], link['source_code'])}" for link in broken],
+                   "; ")
+    text = f"This move removes {len(broken)} meter link{'' if one else 's'}: {links}."
+    if plans:
+        names = _named([f"{plan['name']} ({plan['code']})" for plan in plans], ", ")
+        text += (f" PM plans that use {'it' if one else 'them'} make no job until the part has the meter again: "
+                 f"{names}. A Last done meter value entered for {'this meter' if one else 'these meters'} is no "
+                 "longer used.")
+    return text

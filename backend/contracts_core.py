@@ -57,6 +57,10 @@ def _iso_date(value):
         return None
 
 
+# The public name another core imports (pm_plans_core, S096 BR1-06), as masters_core's (S080 D9): no third copy
+iso_date = _iso_date
+
+
 def _date_parser(message):
     def parse(raw):
         value = _iso_date(raw)
@@ -354,8 +358,9 @@ def already_renewed(title):
     return f"This contract is already renewed: {title}. Open that contract to change it."
 
 
-def _add_months(day, months):
-    """``day`` plus whole months: the same day of the month, or the month's last day when the month is shorter."""
+def add_months(day, months):
+    """``day`` plus whole months: the same day of the month, or the month's last day when the month is shorter.
+    Public: pm_schedule_core uses it for the PM calendar intervals (S095 D6)."""
     index = day.month - 1 + months
     year, month = day.year + index // 12, index % 12 + 1
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
@@ -368,7 +373,7 @@ def renewal_period(from_date, to_date):
     new_from = to_date + timedelta(days=1)
     if new_from.day == from_date.day:
         months = max(1, (new_from.year - from_date.year) * 12 + new_from.month - from_date.month)
-        new_to = _add_months(new_from, months) - timedelta(days=1)
+        new_to = add_months(new_from, months) - timedelta(days=1)
     else:
         new_to = new_from + (to_date - from_date)
     if new_to > DATE_MAX:

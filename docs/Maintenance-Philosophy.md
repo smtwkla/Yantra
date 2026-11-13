@@ -250,9 +250,11 @@ has none (Plan § 4.1). A photographed sketch today beats a clean drawing nobody
 operations (press output relays, which weld near end of life and stop the press) are
 replaced on the stroke counter before they fail, until the failure mode is designed out.
 
-**Rescheduling** (**Proposed**, 16-10-2026): the engineer may push a due PM job
+**Rescheduling** (16-10-2026): the engineer may push a due PM job
 to a later date or meter value with a reason (e.g. oil life extended on a good
-analysis). Skipping without a reason is not allowed.
+analysis). Skipping without a reason is not allowed. Built (S101): the engineer
+moves a due job later or earlier, or skips it; a reason is required for both; a
+skip counts as not done and the next job counts from it.
 
 **Contracted maintenance** (16-10-2026): AMC vendors (compressors, pallet truck,
 moisture analyser) are contractor records in Team and perform PM plans like
@@ -285,8 +287,17 @@ are one effort, not two, or one of them stops being done. Odd jobs and new
 installations stay off Yantra and are written on the printout: EN 13306 keeps
 modification apart from maintenance, so the maintenance record is not diluted.
 
-TBD — how late a PM job may be before it is "overdue" (the SRS suggests a
-compliance window, e.g. ±10 % of the interval — **Proposed**); shutdown / annual-overhaul planning.
+**How late a PM job may be** (**Decided**, R03 Q1.1 (a), S095, 01-11-2026). A PM
+job is on time when it is done within 10 % of its interval after the due point, at
+least 1 day: the SMRP *PM compliance* practice, the "10 % rule". The 10 % is rounded
+down to whole days, from the actual days of the interval: a monthly job gets 2 or 3
+days (28 to 31 days), a yearly one 36, a weekly or daily one 1. A meter plan's window
+is 10 % of its meter interval, exact (250 h → 25 h). On a plan with both triggers the
+job is late when either trigger was past its window. A job reads *Due* from the due
+point through the window and *Overdue* only after it, so *Overdue* means "done now, it
+counts late"; a job done early is on time. The rules live in `backend/pm_schedule_core.py`.
+
+TBD — shutdown / annual-overhaul planning.
 
 ## 8. Meters, readings and production data
 
@@ -305,9 +316,13 @@ compliance window, e.g. ±10 % of the interval — **Proposed**); shutdown / ann
 - **Energy** (16-10-2026): a kWh counter per press, so kWh per stroke can be reported
   later — ISO 50001's energy performance indicator, and the cost of a press that is
   waiting with its power pack running.
-- **Which meter a plan uses** (**Proposed**, 16-10-2026): a plan names one meter, its
-  own node's or an ancestor's — a gearbox on the extruder's hours, an alternating
-  pump on its own. No inheritance logic (ISO 14224: hours at the level where they differ).
+- **Which meter a plan uses** (**Decided 02-11-2026**, built S104; links 13-11-2026, S104
+  A1): a PM template names a meter type, matched on the machine's own meters; a node
+  above's meter only through a meter link set on the part's Meters card. The gearbox's
+  greasing is a template on the extruder, or the gearbox uses the extruder's Run hours
+  through a link on the gearbox's Meters card, or gets its own hour meter where its hours
+  differ (ISO 14224: hours at the level where they differ); an alternating pump uses its
+  own. A machine without the type: the template does not apply there.
 - **Tooling** (16-10-2026): a die that moves between presses is a component with a
   serial; a fit or removal snapshots the press's stroke counter, so strokes per die
   per press follow from readings (Plan § 4.1).

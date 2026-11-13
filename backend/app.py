@@ -200,6 +200,22 @@ from contracts import contracts_bp
 # Vendor contracts (S080, R02.1): a site record with three read levels, not a site-less master
 app.register_blueprint(contracts_bp, url_prefix="/api/contracts")
 
+from pm_templates import pm_templates_bp
+# PM templates (S104, R03.18): the work of a PM plan, written once in Masters › PM templates
+app.register_blueprint(pm_templates_bp, url_prefix="/api/pm")
+
+from pm_plans import pm_plans_bp
+# PM plans (S096, R03.2; S104): a machine's plan rows, one per template linked to it; Attach, settings, Remove
+app.register_blueprint(pm_plans_bp, url_prefix="/api/pm")
+
+from pm_jobs import pm_jobs_bp
+# PM jobs (S097, R03.3): the PM list; the jobs are made by the plan save and the daily pm_generate
+app.register_blueprint(pm_jobs_bp, url_prefix="/api/pm")
+
+from pm_work import pm_work_bp
+# PM work (S098, R03.4): the job page, start, an item's result, the performer, mark done
+app.register_blueprint(pm_work_bp, url_prefix="/api/pm")
+
 from masters import masters_bp
 app.register_blueprint(masters_bp, url_prefix="/api/masters")
 

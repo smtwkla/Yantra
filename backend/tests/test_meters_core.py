@@ -14,6 +14,10 @@ from meters_core import (
     readings_at_ticket, register_columns, register_rows, reset_removal_error, same_limits, shown_meter_ids,
     to_minute, tracked_meter_change, validate_limits, validate_reading,
 )
+from meters_core import (
+    NO_SOURCE_METER, NOT_ABOVE, OWN, PICK_A_METER, broken_links, link_states, link_text, move_warning,
+    parse_link_body,
+)
 
 D = Decimal
 OIL = {"id": 6, "name": "Oil temperature", "unit": "°C", "kind": "gauge", "decimals": 1, "expected_answer": None}
@@ -598,3 +602,109 @@ class TestMarkWindow:
     def test_seven_days_before_exactly(self):
         assert MARK_WINDOW_DAYS == 7
         assert mark_window(datetime(2026, 10, 23, 14, 20, 30)) == datetime(2026, 10, 16, 14, 20, 30)
+
+
+# ---------------------------------------------------------------------------
+# Meter links (S104 A1.6.1, A1.6.4)
+# ---------------------------------------------------------------------------
+
+PART, UNIT_NODE, PRESS, OTHER = 30, 20, 10, 99
+
+
+def _link(meter_type_id, source, part=PART, link_id=None, part_code="MOT014", source_code="PR-07",
+          type_name="Run hours"):
+    return {"id": link_id or meter_type_id, "equipment_id": part, "meter_type_id": meter_type_id,
+            "source_equipment_id": source, "part_code": part_code, "source_code": source_code,
+            "type_name": type_name}
+
+
+class TestLinkStates:
+    ABOVE = [UNIT_NODE, PRESS]
+
+    def test_in_use(self):
+        states = link_states(set(), [_link(1, PRESS), _link(6, UNIT_NODE)], self.ABOVE, {PRESS: {1}, UNIT_NODE: {6}})
+        assert states == {1: None, 6: None}
+
+    def test_own_the_part_has_the_type_itself(self):
+        assert link_states({1}, [_link(1, PRESS)], self.ABOVE, {PRESS: {1}}) == {1: OWN}
+
+    def test_not_above_the_source_is_not_above_the_part(self):
+        assert link_states(set(), [_link(1, OTHER)], self.ABOVE, {OTHER: {1}}) == {1: NOT_ABOVE}
+
+    def test_no_source_meter_the_source_lost_the_type(self):
+        assert link_states(set(), [_link(1, PRESS)], self.ABOVE, {PRESS: {6}}) == {1: NO_SOURCE_METER}
+        assert link_states(set(), [_link(1, PRESS)], self.ABOVE, {}) == {1: NO_SOURCE_METER}
+
+    def test_the_order_of_the_reasons(self):
+        # own before not_above before no_source_meter
+        assert link_states({1}, [_link(1, OTHER)], self.ABOVE, {}) == {1: OWN}
+        assert link_states(set(), [_link(1, OTHER)], self.ABOVE, {}) == {1: NOT_ABOVE}
+
+    def test_no_links(self):
+        assert link_states({1}, [], self.ABOVE, {PRESS: {1}}) == {}
+
+
+class TestLinkWords:
+    def test_link_text(self):
+        assert link_text("Run hours", "PR-07") == "Run hours from PR-07"
+
+
+class TestBrokenLinks:
+    def test_links_to_nodes_no_longer_above_go(self):
+        keep = _link(1, UNIT_NODE, part=31, link_id=101)       # a component's link to the moved unit
+        gone = _link(6, PRESS, part=31, link_id=102)           # its link to the old machine
+        own = _link(1, PRESS, part=UNIT_NODE, link_id=103)     # the moved unit's own link to the old machine
+        assert broken_links([keep, gone, own], {UNIT_NODE, 11}) == [gone, own]
+
+    def test_a_component_moved_to_its_machine_keeps_its_link_there(self):
+        link = _link(1, PRESS)
+        assert broken_links([link], {PART, PRESS}) == []
+
+    def test_no_links(self):
+        assert broken_links([], {PART}) == []
+
+
+class TestMoveWarning:
+    def test_one_link_no_plan(self):
+        assert move_warning([_link(1, PRESS)], []) == "This move removes 1 meter link: MOT014 — Run hours from PR-07."
+
+    def test_links_and_a_plan(self):
+        links = [_link(1, PRESS), _link(6, PRESS, part=31, part_code="GBX003", type_name="Oil temperature")]
+        plans = [{"name": "Motor — 2,000 h greasing", "code": "MOT014"}]
+        assert move_warning(links, plans) == (
+            "This move removes 2 meter links: MOT014 — Run hours from PR-07; GBX003 — Oil temperature from PR-07. "
+            "PM plans that use them make no job until the part has the meter again: Motor — 2,000 h greasing "
+            "(MOT014). A Last done meter value entered for these meters is no longer used.")
+
+    def test_one_link_with_a_plan_reads_singular(self):
+        text = move_warning([_link(1, PRESS)], [{"name": "Greasing", "code": "MOT014"}])
+        assert text == ("This move removes 1 meter link: MOT014 — Run hours from PR-07. PM plans that use it make "
+                        "no job until the part has the meter again: Greasing (MOT014). A Last done meter value "
+                        "entered for this meter is no longer used.")
+
+    def test_more_than_five_names_the_first_five(self):
+        links = [_link(i, PRESS, link_id=i, part_code=f"C{i}") for i in range(1, 8)]
+        plans = [{"name": f"Plan {i}", "code": "C1"} for i in range(1, 7)]
+        text = move_warning(links, plans)
+        assert "C5 — Run hours from PR-07; and 2 more. " in text
+        assert "C6 —" not in text
+        assert "Plan 5 (C1), and 1 more. " in text
+        assert "Plan 6" not in text
+
+
+class TestParseLinkBody:
+    def test_both_ids(self):
+        assert parse_link_body({"meter_type_id": 1, "source_equipment_id": 10}) == (
+            {"meter_type_id": 1, "source_equipment_id": 10}, [])
+
+    @pytest.mark.parametrize("bad", [None, True, False, "1", 0, -1, 1.0])
+    @pytest.mark.parametrize("field", ["meter_type_id", "source_equipment_id"])
+    def test_each_bad_field(self, field, bad):
+        body = {"meter_type_id": 1, "source_equipment_id": 10, field: bad}
+        assert parse_link_body(body)[1] == [{"field": field, "message": PICK_A_METER}]
+
+    @pytest.mark.parametrize("field", ["meter_type_id", "source_equipment_id"])
+    def test_a_missing_field(self, field):
+        body = {"meter_type_id": 1, "source_equipment_id": 10}
+        del body[field]
+        assert parse_link_body(body)[1] == [{"field": field, "message": PICK_A_METER}]

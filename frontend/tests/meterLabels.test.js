@@ -4,6 +4,7 @@ import {
   expectedAnswerText, formatReading, goodReadingText, isToday, isUnavailable, KIND_LABELS, limitsBody, meterHeader,
   meterTypeOption, NOT_SAVED, notSavedOr, parseRegisterQuery, readingBadgeClass, readingBadges, registerQuery, savedMessage, SOURCE_LABELS,
   unitAndKind,
+  linkChoiceText, linkedByText, meterRowKey, notInUseText, removeLinkQuestion, sourceBadge,
 } from "../src/utils/meterLabels.js";
 
 const OIL = { id: 6, name: "Oil temperature", unit: "°C", kind: "gauge", decimals: 1, expected_answer: null };
@@ -184,5 +185,58 @@ describe("meter readings on the ticket (S052)", () => {
     expect(markWarningText("gauge", 0, 7)).toBeNull();
     expect(markWarningText("counter", 2, 7)).toBeNull();
     expect(markWarningText("amount", 2, 7)).toBeNull();
+  });
+});
+
+describe("meter links (S104 A1.6.7)", () => {
+  const PRESS = { id: 10, code: "PR-07", name: "Press 7" };
+  const linked = (fields = {}) => ({
+    meter_type: HOURS, source: "linked", linked_from: PRESS, in_use: true, not_in_use: null, used_by: [], ...fields,
+  });
+
+  it("the source badge: From the model, This machine only, From <node>", () => {
+    expect(sourceBadge({ source: "model" })).toBe("From the model");
+    expect(sourceBadge({ source: "node" })).toBe("This machine only");
+    expect(sourceBadge(linked())).toBe("From PR-07");
+  });
+
+  it("the three lines of a link not in use", () => {
+    expect(notInUseText(linked({ in_use: false, not_in_use: "own" }), "MOT014"))
+      .toBe("Not in use: MOT014 has its own Run hours meter.");
+    expect(notInUseText(linked({ in_use: false, not_in_use: "not_above" }), "MOT014"))
+      .toBe("Not in use: PR-07 is not above MOT014.");
+    expect(notInUseText(linked({ in_use: false, not_in_use: "no_source_meter" }), "MOT014"))
+      .toBe("Not in use: PR-07 has no Run hours meter now.");
+    expect(notInUseText(linked(), "MOT014")).toBeNull();
+  });
+
+  it("Remove link asks, naming the PM plans that use it", () => {
+    expect(removeLinkQuestion(linked(), "MOT014")).toBe("Stop using PR-07's Run hours on MOT014? Readings stay on PR-07.");
+    expect(removeLinkQuestion(linked({ used_by: ["Motor — 2,000 h greasing", "Motor — yearly check"] }), "MOT014")).toBe(
+      "Stop using PR-07's Run hours on MOT014? These PM plans use it and make no job until MOT014 has a Run hours "
+      + "meter again: Motor — 2,000 h greasing, Motor — yearly check. A Last done meter value entered for this meter "
+      + "is no longer used. Readings stay on PR-07.",
+    );
+  });
+
+  it("an own meter's Remove names the parts that link it", () => {
+    expect(linkedByText({ linked_by: [] })).toBeNull();
+    expect(linkedByText({ linked_by: [{ id: 1, code: "MOT014" }] }))
+      .toBe("MOT014 uses this meter through a link. Its PM plans that need it make no job until it is back.");
+    expect(linkedByText({ linked_by: [{ id: 1, code: "MOT014" }, { id: 2, code: "GBX003" }] }))
+      .toBe("MOT014 and GBX003 use this meter through a link. Their PM plans that need it make no job until it is back.");
+    expect(linkedByText({ linked_by: [{ id: 1, code: "A1" }, { id: 2, code: "B2" }, { id: 3, code: "C3" }] }))
+      .toMatch(/^A1, B2 and C3 use this meter/);
+  });
+
+  it("a choice in the link dialog", () => {
+    const choice = { equipment: PRESS, meter_type: HOURS, last: { value: "12345", taken_at: "2026-11-12T08:00:00+05:30" } };
+    expect(linkChoiceText(choice)).toBe("PR-07 — Press 7 · Run hours (h) · last 12,345.0 h on 12-11-2026");
+    expect(linkChoiceText({ ...choice, last: null })).toBe("PR-07 — Press 7 · Run hours (h)");
+  });
+
+  it("a row's key is its type and its source", () => {
+    expect(meterRowKey({ meter_type: HOURS, source: "model" })).toBe("1-own");
+    expect(meterRowKey(linked())).toBe("1-10");
   });
 });

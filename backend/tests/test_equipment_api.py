@@ -347,6 +347,126 @@ class TestReparent:
         assert (res.status_code, res.get_json()["field"]) == (400, "parent_id")
 
 
+def _own_meter(client, node, meter_type):
+    res = client.post(f"{EQUIPMENT}/{node['id']}/meters", json={"meter_type_id": meter_type["id"]})
+    assert res.status_code == 201, res.get_json()
+
+
+def _meter_link(client, part, source, meter_type):
+    res = client.post(f"{EQUIPMENT}/{part['id']}/meter-links",
+                      json={"meter_type_id": meter_type["id"], "source_equipment_id": source["id"]})
+    assert res.status_code == 201, res.get_json()
+
+
+def _link_rows(db_rows, node):
+    return [(r["meter_type_id"], r["source_equipment_id"]) for r in db_rows(
+        "SELECT meter_type_id, source_equipment_id FROM node_meter_links WHERE equipment_id = %s ORDER BY id",
+        (node["id"],))]
+
+
+def _meter_plan(keycloak_admin, node, meter_type):
+    """A PM template on a meter trigger, attached to the node -> the template.  IT admin (the admin fixture)
+    writes no template and no plan; the Keycloak admin bypasses."""
+    template = keycloak_admin.post("/api/pm/templates", json={
+        "name": f"Motor greasing {node['code']}", "trigger_kind": "meter", "meter_type_id": meter_type["id"],
+        "meter_every": "2000", "items": [{"item_type": "task", "text": "Grease"}]}).get_json()
+    assert keycloak_admin.post("/api/pm/plans", json={"equipment_id": node["id"],
+                                                      "template_id": template["id"]}).status_code == 201
+    return template
+
+
+class TestReparentMeterLinks:
+    """S104 A1.6.4: a move asks before it removes the meter links whose source is no longer above their part."""
+
+    @pytest.fixture
+    def hours(self, make_meter_type):
+        return make_meter_type(kind="counter", unit="h", decimals=0)
+
+    def test_a_link_not_in_use_is_removed_but_no_plan_is_named(self, admin, keycloak_admin, make_equipment, hours,
+                                                               db_rows):
+        # CR7-03: the part's model gained the type, so the plan runs on the part's own meter, not on the link
+        mill_a, mill_b = make_equipment(), make_equipment()
+        _own_meter(admin, mill_a, hours)
+        motor = make_equipment(parent=mill_a, level="component")
+        _meter_link(admin, motor, mill_a, hours)
+        template = _meter_plan(keycloak_admin, motor, hours)
+        res = _put(admin, motor, parent_id=mill_b["id"])
+        assert template["name"] in res.get_json()["error"]                       # in use: the plan is named
+        res = admin.post(f"{MASTERS}/equipment-models/{motor['model_id']}/meters", json={"meter_type_id": hours["id"]})
+        assert res.status_code == 201, res.get_json()
+        res = _put(admin, motor, parent_id=mill_b["id"])
+        body = res.get_json()
+        assert (res.status_code, body["field"]) == (409, "remove_meter_links")
+        assert body["error"] == (f"This move removes 1 meter link: {motor['code']} — {hours['name']} from "
+                                 f"{mill_a['code']}.")
+        assert _link_rows(db_rows, motor) == [(hours["id"], mill_a["id"])]
+        assert _put(admin, motor, parent_id=mill_b["id"], remove_meter_links=True).status_code == 200
+        assert _link_rows(db_rows, motor) == []
+
+    def test_a_component_with_a_link_moves_to_another_machine(self, admin, keycloak_admin, make_equipment, hours,
+                                                               db_rows):
+        mill_a, mill_b = make_equipment(), make_equipment()
+        _own_meter(admin, mill_a, hours)
+        motor = make_equipment(parent=mill_a, level="component")
+        _meter_link(admin, motor, mill_a, hours)
+        template = _meter_plan(keycloak_admin, motor, hours)
+        res = _put(admin, motor, parent_id=mill_b["id"])
+        body = res.get_json()
+        assert (res.status_code, body["field"], body["code"]) == (409, "remove_meter_links", "meter_links")
+        assert body["error"] == (
+            f"This move removes 1 meter link: {motor['code']} — {hours['name']} from {mill_a['code']}. PM plans that "
+            f"use it make no job until the part has the meter again: {template['name']} ({motor['code']}). A Last "
+            "done meter value entered for this meter is no longer used.")
+        assert _get(admin, motor)["parent_id"] == mill_a["id"] and _link_rows(db_rows, motor) == [
+            (hours["id"], mill_a["id"])]
+        for not_true in (False, "true", 1):
+            assert _put(admin, motor, parent_id=mill_b["id"], remove_meter_links=not_true).status_code == 409
+        res = _put(admin, motor, parent_id=mill_b["id"], remove_meter_links=True)
+        assert (res.status_code, res.get_json()["parent_id"]) == (200, mill_b["id"])
+        assert _link_rows(db_rows, motor) == []
+        events = _events(admin, motor)
+        assert {events[0][0], events[1][0]} == {"moved_parent", "meter_unlinked"}
+        assert ("meter_unlinked", f"{hours['name']} from {mill_a['code']}", None) in events[:2]
+
+    def test_a_component_unit_moves_with_its_component(self, admin, make_equipment, hours, make_meter_type,
+                                                       db_rows):
+        # the component's link to the old machine goes; its link to the unit it moves with stays
+        mill_a, mill_b = make_equipment(), make_equipment()
+        fuel = make_meter_type()
+        _own_meter(admin, mill_a, hours)
+        drive = make_equipment(parent=mill_a)
+        _own_meter(admin, drive, fuel)
+        motor = make_equipment(parent=drive, level="component")
+        _meter_link(admin, motor, mill_a, hours)
+        _meter_link(admin, motor, drive, fuel)
+        res = _put(admin, drive, parent_id=mill_b["id"])
+        assert res.status_code == 409 and "no job" not in res.get_json()["error"]   # no plan uses them
+        assert _put(admin, drive, parent_id=mill_b["id"], remove_meter_links=True).status_code == 200
+        assert _link_rows(db_rows, motor) == [(fuel["id"], drive["id"])]
+        assert _events(admin, motor)[0] == ("meter_unlinked", f"{hours['name']} from {mill_a['code']}", None)
+        assert _events(admin, drive)[0][0] == "moved_parent"
+
+    def test_a_component_moved_from_its_unit_to_its_machine_keeps_its_link(self, admin, make_equipment, hours,
+                                                                           db_rows):
+        mill = make_equipment()
+        _own_meter(admin, mill, hours)
+        drive = make_equipment(parent=mill)
+        motor = make_equipment(parent=drive, level="component")
+        _meter_link(admin, motor, mill, hours)
+        assert _put(admin, motor, parent_id=mill["id"]).status_code == 200
+        assert _link_rows(db_rows, motor) == [(hours["id"], mill["id"])]
+
+    def test_the_flag_with_nothing_to_remove_and_a_machine_moved_to_another_unit(self, admin, make_equipment,
+                                                                                 make_unit, hours, db_rows):
+        mill_a, mill_b = make_equipment(), make_equipment()
+        motor = make_equipment(parent=mill_a, level="component")
+        assert _put(admin, motor, parent_id=mill_b["id"], remove_meter_links=True).status_code == 200
+        _own_meter(admin, mill_b, hours)
+        _meter_link(admin, motor, mill_b, hours)
+        assert _put(admin, mill_b, unit_id=make_unit()["id"]).status_code == 200
+        assert _link_rows(db_rows, motor) == [(hours["id"], mill_b["id"])]
+
+
 class TestLifecycle:
 
     @pytest.mark.parametrize("old, new", [
@@ -377,6 +497,31 @@ class TestLifecycle:
         # The grandchild is scrapped now, but the child is not
         assert _put(admin, mill, lifecycle="scrapped").status_code == 409
         assert _put(admin, drive, lifecycle="scrapped").status_code == 200
+        assert _put(admin, mill, lifecycle="scrapped").status_code == 200
+
+    def test_scrapping_with_a_started_pm_job_is_409(self, admin, make_equipment, make_person, db_rows):
+        """S098 § 5.8 (D15): a started PM job on the node blocks the scrap; a due job does not (S097 cancels it in
+        the next run or plan save).  A part is scrapped before its machine, so a part's started job blocks there."""
+        mill = make_equipment()
+        person = make_person(name="Kannan")
+        # S104: the work is a template's; the plan row links it to the machine
+        name = f"Monthly check {mill['id']}"
+        db_rows("INSERT INTO pm_templates (name, trigger_kind, calendar_every, calendar_unit, created_by)"
+                " VALUES (%s, 'calendar', 1, 'month', 'kla')", (name,))
+        template_id = db_rows("SELECT id FROM pm_templates WHERE name = %s", (name,))[0]["id"]
+        db_rows("INSERT INTO pm_plans (equipment_id, template_id, created_by) VALUES (%s, %s, 'kla')",
+                (mill["id"], template_id))
+        plan_id = db_rows("SELECT id FROM pm_plans WHERE equipment_id = %s", (mill["id"],))[0]["id"]
+        serial = f"PM-2098-01-{mill['id']}"
+        db_rows("INSERT INTO pm_jobs (serial, plan_id, equipment_id, state, created_why, due_on, grace_days,"
+                " upcoming_days, performed_by_id, started_at, created_by)"
+                " VALUES (%s, %s, %s, 'in_progress', 'calendar', CURDATE(), 3, 3, %s, NOW(), 'kla')",
+                (serial, plan_id, mill["id"], person["id"]))
+        res = _put(admin, mill, lifecycle="scrapped")
+        assert (res.status_code, res.get_json()) == (409, {"error": "Finish its PM jobs first (1 in progress)",
+                                                           "field": "lifecycle"})
+        db_rows("UPDATE pm_jobs SET state = 'due', performed_by_id = NULL, started_at = NULL WHERE serial = %s",
+                (serial,))
         assert _put(admin, mill, lifecycle="scrapped").status_code == 200
 
     def test_a_live_grandchild_blocks_scrapping(self, admin, make_equipment):
@@ -1319,7 +1464,7 @@ class TestTypeFilterAndSearch:
         make_equipment(unit=unit, name="Other")
         assert _ids(admin, unit_id=unit["id"], q="press 250t") == [node["id"]]
         assert _ids(admin, unit_id=unit["id"], q="  250t\tpress ") == [node["id"]]
-        assert _ids(admin, unit_id=unit["id"], q="press 999") == []
+        assert _ids(admin, unit_id=unit["id"], q="press nomatch") == []
 
     def test_search_words_across_fields(self, admin, make_unit, make_manufacturer, make_model, make_equipment):
         unit = make_unit()

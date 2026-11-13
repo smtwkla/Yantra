@@ -8,12 +8,13 @@ server-wide, and a dev worker on the same MariaDB holds yantra_worker:vel_yantra
 import signal
 from datetime import datetime
 
+import pymysql
 import pytest
 
 import config
 import task_handlers
 import worker as worker_module
-from local_db import LOCK_WORKER, get_local_db, named_lock
+from local_db import LOCK_WORKER, connection_lost, get_local_db, named_lock
 from task_handlers import purge_access_log
 from tests.db_names import TEST_WORKER_LOCK as TEST_LOCK
 from worker import Worker
@@ -122,6 +123,30 @@ class TestMainLoop:
                 signal.signal(s, handler)
         assert len(calls) == 2
         assert any("ValueError" in (r.exc_text or "") or r.exc_info for r in caplog.records)
+
+
+class TestConnectionLost:
+    """local_db.connection_lost on a raw connection (the worker) and on the pool's wrapper (a request, S104)."""
+
+    class Raw:
+        def __init__(self, is_open):
+            self.open = is_open
+
+    class Pooled:   # DBUtils' wrapper has no ``open``
+        pass
+
+    def test_a_closed_raw_connection_is_lost(self):
+        assert connection_lost(self.Raw(False), ValueError("any"))
+
+    def test_a_pooled_connection_is_judged_by_the_error(self):
+        assert connection_lost(self.Pooled(), pymysql.err.OperationalError(2013, "Lost connection"))
+        assert not connection_lost(self.Pooled(), RuntimeError("one plan fails"))
+        assert not connection_lost(self.Pooled(), pymysql.err.OperationalError(1213, "Deadlock"))
+
+    def test_an_interface_error_on_a_pooled_connection_is_lost(self):
+        """DBUtils' rollback on a closed socket swaps the 2013 for PyMySQL's InterfaceError(0, "") (S104 CR5-01)."""
+        assert connection_lost(self.Pooled(), pymysql.err.InterfaceError(0, ""))
+        assert connection_lost(self.Raw(True), pymysql.err.InterfaceError(0, ""))   # only a closed socket raises it
 
 
 class TestSchedule:

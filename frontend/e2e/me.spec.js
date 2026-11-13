@@ -4,9 +4,11 @@
 import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { addActionByApi, raiseFixed, startImprovementByApi, TEST_PHOTO } from "./support/improvements.js";
-import { apiAs, asPerson, seedIds } from "./support/people.js";
+import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
 import { navItem } from "./support/nav.js";
-import { causeId, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
+import { meterMachine } from "./support/meters.js";
+import { pmPlanByApi } from "./support/pm.js";
+import { causeId, istDay, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
 
 // S071: the overdue test answers the countermeasures call with page.route.  WebKit does not route a
 // request while the app's service worker (S021) controls the page, so none is started (as readings.spec.js).
@@ -200,4 +202,37 @@ test("S071: an overdue countermeasure shows Overdue 2 days on a red row", async 
   const row = page.locator(`li[data-action="${action.id}"]`);
   await expect(row).toContainText("Overdue 2 days");
   await expect(row).toHaveClass(/list-group-item-danger/);
+});
+
+// S098: the technician's started PM job; other specs in the lane assign him PM jobs too, so the count is not fixed
+test("S098: Me › Open work lists my started PM job above the tickets", async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "S098 me", { unit: "SMTW.MCC2" });
+  // S104: a template of the work, attached to the machine (support/pm.js)
+  await pmPlanByApi(machine, { title: "S098 me plan", trigger_kind: "calendar", calendar_every: 10,
+    calendar_unit: "day", last_done_on: istDay(-20), items: [{ item_type: "check", text: "No oil leaks" }] });
+  const engineer = await apiAs("engineer");
+  const technician = await apiAs("technician");
+  let job;
+  try {
+    job = (await (await engineer.get("/api/pm/jobs")).json()).items.find((j) => j.equipment.id === machine.id);
+    const started = await technician.post(`/api/pm/jobs/${job.id}/start`,
+      { data: { performed_by_id: await personId("technician"), started_at: null } });
+    expect(started.status(), await started.text()).toBe(200);
+  } finally {
+    await engineer.dispose();
+    await technician.dispose();
+  }
+  await asPerson(page, "technician", "/me");
+  const heading = page.getByTestId("me-pm-jobs");
+  await expect(heading).toHaveText(/^PM jobs \(\d+\)$/);
+  const shown = Number((await heading.textContent()).match(/\((\d+)\)/)[1]);
+  await expect(page.locator(".job-row")).toHaveCount(shown);
+  const row = page.locator(`.job-row[data-equipment="${machine.code}"]`);
+  await expect(row).toContainText("In progress");
+  const tickets = page.getByRole("heading", { name: "Tickets", exact: true });
+  await expect(tickets).toBeVisible();
+  expect((await heading.boundingBox()).y).toBeLessThan((await tickets.boundingBox()).y);
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`/pm/jobs/${job.id}$`));
+  await expect(page.getByRole("heading", { name: job.serial })).toBeVisible();
 });

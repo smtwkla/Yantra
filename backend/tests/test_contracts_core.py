@@ -16,7 +16,7 @@ from contracts_core import (
     CALLS_USED_MAX_DAYS, CALLS_WITHOUT_TICK, CARD_ENDED_DAYS, CONTRACT_TYPES, COVERAGE_FILTERS, ENDING_SOON_DAYS,
     FROM_AFTER_TO, LINE_GATED_FIELDS, LINE_SITE_JOINS, LINE_SITES_SQL, PRICE_FORMAT, PRICE_MAX, PRICE_TOO_LARGE,
     RENEW_INACTIVE, RENEWAL_RACE,
-    STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, _add_months, already_renewed,
+    STATUS_FILTERS, TITLE_MAX, TO_BEFORE_FROM, TYPE_SHORT, VENDOR_MISSING, add_months, already_renewed,
     breakdown_calls_error, call_figures, calls_total, calls_used, card_items, contract_status, covered_sql,
     event_text, newest_end_first, parse_price, period_error, renewal_lines, renewal_period,
     status_bounds, validate_contract, validate_line, vendor_warning,
@@ -385,9 +385,9 @@ class TestRenewal:
         assert renewal_period(_d("01-01-2098"), _d("31-12-2098")) == (_d("01-01-2099"), _d("31-12-2099"))
 
     def test_add_months_keeps_the_month_end(self):
-        assert _add_months(_d("31-01-2027"), 1) == _d("28-02-2027")
-        assert _add_months(_d("31-01-2028"), 1) == _d("29-02-2028")
-        assert _add_months(_d("15-11-2027"), 3) == _d("15-02-2028")
+        assert add_months(_d("31-01-2027"), 1) == _d("28-02-2027")
+        assert add_months(_d("31-01-2028"), 1) == _d("29-02-2028")
+        assert add_months(_d("15-11-2027"), 3) == _d("15-02-2028")
 
     def test_renewal_lines(self):
         """S087 § 5.5: only a scrapped machine is skipped; a line at another site is copied (F6)."""

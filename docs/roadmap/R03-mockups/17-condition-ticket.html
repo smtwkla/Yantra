@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="phone">
+<title>R03 mock-up 17 — A condition ticket raised by a meter rule</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-phone">
+<header class="mk-topbar">
+  <strong>Yantra</strong>
+  <span class="mk-title">Ticket</span>
+  <span class="mk-user"><i class="fa-solid fa-bell me-2"></i>Engineer A</span>
+</header>
+<main class="mk-content">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h5 class="mb-0 me-1">TK-2026-11-031</h5>
+    <span class="badge text-bg-secondary">Defect · initial</span>
+    <span class="badge text-bg-light border">Raised</span>
+    <span class="badge text-bg-info"><i class="fa-solid fa-gauge me-1"></i>Condition monitoring</span>
+  </div>
+
+  <div class="alert alert-light border small mb-2">
+    <div class="fw-semibold mb-1"><i class="fa-solid fa-bell text-warning me-1"></i>Raised by a meter rule</div>
+    <div>Brake air gap <strong>1.6 mm</strong> at 05-11-2026 17:50 is above 1.5 mm.</div>
+    <div class="text-secondary">Logged on the Readings sheet by Supervisor A. Rule set on EOT02.</div>
+    <a href="16-meter-rules.html">Open meters</a>
+  </div>
+
+  <div class="d-grid gap-2 mb-3">
+    <button class="btn btn-primary btn-lg">Acknowledge</button>
+    <button class="btn btn-danger btn-lg"><i class="fa-solid fa-circle-stop me-2"></i>Machine stopped</button>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-primary flex-fill"><i class="fa-regular fa-comment me-1"></i>Add note</button>
+      <button class="btn btn-outline-primary flex-fill"><i class="fa-regular fa-calendar me-1"></i>Defer</button>
+    </div>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header">Details</div>
+    <div class="card-body py-2 small">
+      <dl class="row mb-0">
+        <dt class="col-5">Machine</dt><dd class="col-7">EOT02 — EOT crane 5 t</dd>
+        <dt class="col-5">Unit</dt><dd class="col-7">SMTW.MCC1</dd>
+        <dt class="col-5">Symptom</dt><dd class="col-7">—</dd>
+        <dt class="col-5">When it happened</dt><dd class="col-7">05-11-2026 17:50</dd>
+        <dt class="col-5">Found by</dt><dd class="col-7">Supervisor A</dd>
+        <dt class="col-5">Raised by</dt><dd class="col-7 mb-0">Meter rule, 05-11-2026 17:50</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card mb-2">
+    <div class="card-header">Timeline</div>
+    <ul class="list-group list-group-flush small">
+      <li class="list-group-item">
+        <div class="text-secondary">07-11-2026 08:10 · Meter rule</div>
+        Brake air gap 2.1 mm is above 2.0 mm: <em>Pads near the end</em>. Added to this ticket.
+      </li>
+      <li class="list-group-item">
+        <div class="text-secondary">05-11-2026 17:50 · Meter rule</div>
+        Raised: Brake air gap 1.6 mm is above 1.5 mm.
+      </li>
+    </ul>
+  </div>
+
+  <div class="mk-note">Found by condition monitoring. The crane still runs, so this is a defect, not a breakdown. If the crane stops, tap <em>Machine stopped</em>.</div>
+</main>
+<nav class="app-bottom-nav">
+  <span class="bottom-nav-item"><i class="fa-solid fa-user"></i><span>Me</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gears"></i><span>Equipment</span></span>
+  <span class="bottom-nav-item active"><i class="fa-solid fa-triangle-exclamation"></i><span>Tickets</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-calendar-check"></i><span>PM</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-gauge"></i><span>Readings</span></span>
+  <span class="bottom-nav-item"><i class="fa-solid fa-table"></i><span>Masters</span></span>
+</nav>
+</body>
+</html>

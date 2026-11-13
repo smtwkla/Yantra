@@ -5,8 +5,12 @@
 import { test, expect } from "./support/test.js";
 import { raiseFixed, startImprovementByApi } from "./support/improvements.js";
 import { writeLessonByApi } from "./support/lessons.js";
+import { expectDialogFits, openDialog } from "./support/dialogs.js";
 import { meterMachine } from "./support/meters.js";
+import { pmPlanByApi } from "./support/pm.js";
+import { noModelPart } from "./support/properties.js";
 import { apiAs, asPerson, seedIds } from "./support/people.js";
+import { istDay } from "./support/tickets.js";
 
 const EVERYONE = ["operator", "supervisor", "technician", "engineer", "manager", "storekeeper", "it_admin"];
 // ticket:read and ticket:raise: every site role but the storekeeper, and IT admin (config_rbac)
@@ -19,6 +23,9 @@ let seed;
 let ticket;
 let improvement; // S068: started from a second ticket, which is back in service (the first is not)
 let lesson; // S077: on a machine this file makes, so the extruder pages of other specs gain no Lessons card
+let pmMachine; // S096: the same machine carries a PM plan, so no other spec's page gains a PM card row
+let pmPlan;
+let pmJob; // S098: the plan's job (its last_done_on 40 days back, so the save makes it), for the job page
 
 test.beforeAll(async ({}, testInfo) => {
   seed = await seedIds();
@@ -30,7 +37,16 @@ test.beforeAll(async ({}, testInfo) => {
   ticket = await res.json();
   await operator.dispose();
   improvement = await startImprovementByApi(await raiseFixed(seed.extruder.id, "Screens test: contactor chatters"));
-  lesson = await writeLessonByApi(await meterMachine(testInfo, "screens", { unit: "SMTW.MCC2" }), { title: "Screens test: keep the door shut" });
+  pmMachine = await meterMachine(testInfo, "screens", { unit: "SMTW.MCC2" });
+  lesson = await writeLessonByApi(pmMachine, { title: "Screens test: keep the door shut" });
+  pmPlan = await pmPlanByApi(pmMachine, { title: "Screens test: monthly check", trigger_kind: "calendar",
+    calendar_every: 1, calendar_unit: "month", last_done_on: istDay(-40),
+    items: [{ item_type: "check", text: "No oil leaks" }] });
+  const engineer = await apiAs("engineer");
+  const jobs = (await (await engineer.get("/api/pm/jobs")).json()).items;
+  pmJob = jobs.find((j) => j.equipment.id === pmMachine.id);
+  expect(pmJob, "the plan save made no job").toBeTruthy();
+  await engineer.dispose();
 });
 
 /** The visible top bar's title (route meta.title): the screen's heading on every page. */
@@ -52,6 +68,11 @@ const screens = () => [
     shows: (page) => page.getByRole("heading", { name: `${seed.extruder.code} — ${seed.extruder.name}` }), who: EVERYONE,
   },
   { path: "/tickets", title: "Tickets", shows: (page) => page.getByRole("combobox", { name: "State" }), who: TICKET_ROLES },
+  // S097: the PM list, for the holders of pm_job:read (the ticket roles: every role but the storekeeper)
+  {
+    path: "/pm", title: "PM", shows: (page) => page.locator(".nav-tabs").getByRole("link", { name: "Due" }),
+    who: TICKET_ROLES,
+  },
   // S031: the My activity tab is there for every role, whatever its default tab
   // S040: the site heading (code first) for a one-site user, the site picker for the manager; both hold with
   // no meters in the lane's database (empty state, BR1-12).  S050: every role opens it; the storekeeper and
@@ -75,6 +96,25 @@ const screens = () => [
   {
     path: `/equipment/lessons/${lesson.id}`, title: "Lesson",
     shows: (page) => page.getByRole("heading", { name: "Screens test: keep the door shut" }), who: EVERYONE,
+  },
+  // S096: a PM plan's page for every reader of the machine (equipment:read); S104: its heading is the template's
+  {
+    path: `/equipment/pm/${pmPlan.id}`, title: "PM plan",
+    shows: (page) => page.getByRole("heading", { name: pmPlan.template.name }), who: EVERYONE,
+  },
+  // S098: a PM job's page, for the holders of pm_job:read (the ticket roles)
+  {
+    path: `/pm/jobs/${pmJob.id}`, title: "PM job",
+    shows: (page) => page.getByRole("heading", { name: pmJob.serial }), who: TICKET_ROLES,
+  },
+  // S104: a PM template's page, read by every reader of equipment (BR1-15); a new template for its writers
+  {
+    path: `/masters/pm-templates/${pmPlan.template.id}`, title: "PM template",
+    shows: (page) => page.getByRole("heading", { name: pmPlan.template.name }), who: EVERYONE,
+  },
+  {
+    path: "/masters/pm-templates/new", title: "PM template",
+    shows: (page) => page.getByRole("heading", { name: "New PM template" }), who: ["engineer", "manager"],
   },
   // S076: the register's print page (report:read: the engineer and the manager)
   {
@@ -128,13 +168,14 @@ test("a request that lost its test headers gets no access, never admin", { tag: 
   await expect(page.getByText("You have no access yet")).toBeVisible();
 });
 
-// S040 (S039 BR1-14): the manager has six nav items; on a phone the bottom bar shows them all, inside the screen
-test("S040: the manager's bottom bar shows all six items without sideways scroll", { tag: ["@smoke", "@device"] }, async ({ page }) => {
+// S040 (S039 BR1-14): the manager has seven nav items since S097 (PM); on a phone the bottom bar shows them all,
+// inside the screen
+test("S040, S097: the manager's bottom bar shows all seven items without sideways scroll", { tag: ["@smoke", "@device"] }, async ({ page }) => {
   await asPerson(page, "manager");
   const nav = page.locator(".app-bottom-nav");
   test.skip(!(await nav.isVisible()), "the bottom bar is a phone screen");
   const items = nav.locator(".bottom-nav-item");
-  await expect(items).toHaveText(["Me", "Equipment", "Tickets", "Readings", "Masters", "Settings"]);
+  await expect(items).toHaveText(["Me", "Equipment", "Tickets", "PM", "Readings", "Masters", "Settings"]);
   const viewport = page.viewportSize();
   for (const box of await Promise.all((await items.all()).map((item) => item.boundingBox()))) {
     expect(box.x, "an item starts left of the screen").toBeGreaterThanOrEqual(0);
@@ -142,4 +183,22 @@ test("S040: the manager's bottom bar shows all six items without sideways scroll
   }
   const overflow = await nav.evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(overflow, "the bottom bar scrolls sideways").toBeLessThanOrEqual(1);
+});
+
+// S104 A1.6.7: Use a meter from above fits the screen, each choice a 44 px tap target, two choices nearest first
+test("S104: the Use a meter from above dialog fits the screen", { tag: "@device" }, async ({ page }, testInfo) => {
+  const machine = await meterMachine(testInfo, "S104 link fit", {
+    modelMeters: [["Run hours", {}], ["Oil temperature", { min_value: "10", max_value: "60" }]],
+  });
+  const part = await noModelPart(machine, { id: machine.class_id }, `S104 link fit gearbox ${testInfo.project.name}`);
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
+  await page.getByRole("button", { name: "Use a meter from above" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  const choices = dialog.getByTestId("meter-link-choice");
+  await expect(choices).toHaveCount(2);
+  for (const box of await Promise.all((await choices.all()).map((choice) => choice.boundingBox()))) {
+    expect(box.height, "a tap target of 44 px or more").toBeGreaterThanOrEqual(44);
+  }
+  await expect(dialog.locator(".modal-footer")).toContainText("Pick a meter");
 });

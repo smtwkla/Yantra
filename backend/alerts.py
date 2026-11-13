@@ -37,6 +37,13 @@ locking read's gap lock on uq_contracts_renewal_of (v47, S085) could block the r
 while the scan waits on the old contract that insert holds.  contract_alert reads
 plain.  This module never imports contracts.py; it imports the pure contracts_core for the one copy
 of the line-sites query (S087 § 5.2).
+
+PM jobs (S102, R03.7).  Worker side only: the daily pm_job_alert_scan lives in pm_jobs.py
+(pm_jobs.alert_scan; this module cannot import pm_jobs.py or meters.py, which import tickets.py,
+which imports this one): per job, (6e) its plan then (6f) the job FOR UPDATE, the markers written
+and one pm_job_alert queued here (enqueue_pm_alert).  pm_job_alert reads plain and sends by push to
+pm_job_recipients: *due* to the assignee, *overdue* also to the pm_job:verify holders, each covering
+the job's unit with pm_job:read.
 """
 
 from datetime import timedelta
@@ -44,7 +51,8 @@ from datetime import timedelta
 from access_core import roles_holding
 from alerts_core import (
     ACTION_GIVEN, ACTION_OVERDUE, AUDIENCE, CONTRACT_AUDIENCE_KEY, CONTRACT_ENDING, EMAIL, FIRST,
-    FIRST_REMINDER_DAYS, IMPROVEMENT_AUDIENCE_KEY, PAYLOAD_DATE, PAYLOAD_TIME, SECOND, SECOND_REMINDER_DAYS,
+    FIRST_REMINDER_DAYS, IMPROVEMENT_AUDIENCE_KEY, PAYLOAD_DATE, PAYLOAD_TIME, PM_JOB_OVERDUE, PM_READ_KEY,
+    PM_VERIFY_KEY, SECOND, SECOND_REMINDER_DAYS,
     display_name, escalation_minutes, excluded_people, first_name, improvement_facts, ticket_facts,
 )
 from contracts_core import LINE_SITES_SQL
@@ -60,6 +68,8 @@ IMPROVEMENT_ALERT = "improvement_alert"
 IMPROVEMENT_SCAN = "improvement_alert_scan"
 CONTRACT_ALERT = "contract_alert"
 CONTRACT_SCAN = "contract_reminder_scan"
+PM_JOB_ALERT = "pm_job_alert"
+PM_JOB_SCAN = "pm_job_alert_scan"
 PUSH_SEND = "push_send"
 # A send is internal and idempotent, so it may retry (base pattern); a push resent after a
 # timeout shows twice at worst
@@ -514,3 +524,26 @@ def contract_recipients(cur, contract, channel):
         site_ids = [row["id"] for row in cur.fetchall()]
     return people_with_role_at_sites(cur, site_ids, roles_holding(CONTRACT_AUDIENCE_KEY[channel]),
                                      with_email=(channel == EMAIL))
+
+
+# ---------------------------------------------------------------------------
+# PM jobs (S102) — worker side
+# ---------------------------------------------------------------------------
+
+def enqueue_pm_alert(cur, kind, job_id):
+    """One pm_job_alert task (S102 § 5.6), in the scan's per-job transaction.  No due point (the job's marker
+    holds it), no person, no address."""
+    return enqueue(cur, PM_JOB_ALERT, {"kind": kind, "job_id": job_id})
+
+
+def pm_job_recipients(cur, kind, row):
+    """S102 § 5.6: at the job's site covering its node's current root unit (``row``: pm_jobs.job_row's site_id,
+    unit_id, assignee_id), among the holders of pm_job:read: *due* the assignee only ([] without one); *overdue*
+    the assignee and every pm_job:verify holder (engineers, and managers by key), each once, in id order."""
+    site, units = row["site_id"], [row["unit_id"]]
+    people = set()
+    if row["assignee_id"] is not None:
+        people.update(people_at_unit(cur, site, units, roles_holding(PM_READ_KEY), only_ids=[row["assignee_id"]]))
+    if kind == PM_JOB_OVERDUE:
+        people.update(people_at_unit(cur, site, units, roles_holding(PM_VERIFY_KEY)))
+    return sorted(people)

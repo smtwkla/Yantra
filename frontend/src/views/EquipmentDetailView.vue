@@ -61,6 +61,7 @@ import EquipmentLifecycleModal from "./equipment/EquipmentLifecycleModal.vue";
 import LessonsCard from "./equipment/LessonsCard.vue";
 import MetersCard from "./equipment/MetersCard.vue";
 import PartsTree from "./equipment/PartsTree.vue";
+import PmPlansCard from "./equipment/PmPlansCard.vue";
 import UnderContractCard from "./equipment/UnderContractCard.vue";
 import ItemPropertiesModal from "./equipment/ItemPropertiesModal.vue";
 import ModelPropertiesModal from "./masters/ModelPropertiesModal.vue";
@@ -155,6 +156,14 @@ async function load() {
 // Vue Router reuses this component when only :id changes, so follow the route
 watch(() => route.params.id, load, { immediate: true });
 
+// A meter or meter link write (S104 A1): the history gains a line, and the PM card's "Does not apply" follows the
+// node's meters at once
+const pmCard = ref(null);
+function metersChanged() {
+  load();
+  pmCard.value?.load();
+}
+
 // Each dialog fetches its stored values first; a failed fetch leaves it closed with the message
 async function openPropertiesDialog(open) {
   propertiesError.value = "";
@@ -240,7 +249,7 @@ function onSaved({ result, created }) {
         </div>
       </div>
 
-      <!-- On a phone the order is Lessons (S077), Under contract (S082), Open tickets, then Documents and Photos, above the long
+      <!-- On a phone the order is Lessons (S077), Under contract (S082), Open tickets, PM plans (S096), then Documents and Photos, above the long
            cards (S064 UX-07): one flex column, ordered below md; from md up every order is reset to the
            page order -->
       <div class="d-flex flex-column">
@@ -298,6 +307,9 @@ function onSaved({ result, created }) {
           </router-link>
         </div>
       </div>
+
+      <!-- PM plans (S096): planned work, after what the technician at the machine needs now -->
+      <PmPlansCard ref="pmCard" :node="node" />
 
       <div class="row g-3 order-2 order-md-0">
         <div class="col-lg-6">
@@ -374,7 +386,7 @@ function onSaved({ result, created }) {
         :can-edit="canEdit"
         :can-log="canLogReading"
         :can-see-removed="canSeeRemovedReadings"
-        @changed="load"
+        @changed="metersChanged"
       />
 
       <div v-if="node.notes" class="card mt-3 order-2 order-md-0">

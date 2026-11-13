@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R03 mock-up 14 — Two kinds of reading, and the machines a template fits</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span class="active"><i class="yi-icon yi-table-edit" style="mask-image:url('../../../frontend/src/assets/icons/table_edit.svg')"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Masters</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="text-secondary small mb-1">Masters › PM templates</div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">EOT crane — check hoist brake air gap</h5>
+      <span class="text-secondary small">Every 1 month or 300 h of Run hours · linked to class <em>EOT crane</em></span>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-5">
+        <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Change item 1</span>
+            <i class="fa-solid fa-xmark text-secondary"></i>
+          </div>
+          <div class="card-body">
+            <label class="form-label">Type</label>
+            <select class="form-select mb-2"><option>Reading</option></select>
+            <label class="form-label">Item</label>
+            <input class="form-control mb-3" value="Brake air gap, measured with the feeler gauge">
+
+            <label class="form-label mb-1">What kind of reading?</label>
+            <div class="border rounded p-2 mb-2">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="kind">
+                <label class="form-check-label fw-semibold">Measurement</label>
+              </div>
+              <div class="small text-secondary ps-4">A value with its own unit and limits. It stays on the job only.</div>
+            </div>
+            <div class="border border-primary rounded p-2 mb-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="kind" checked>
+                <label class="form-check-label fw-semibold">Meter reading</label>
+              </div>
+              <div class="small text-secondary ps-4 mb-2">Saved as a reading of the machine's own meter of this type, as if logged on the Readings sheet.</div>
+              <div class="ps-4">
+                <label class="form-label mb-1">Meter type</label>
+                <select class="form-select form-select-sm mb-1"><option>Brake air gap (mm) · gauge</option></select>
+                <div class="small text-secondary">Unit and limits come from each machine's meter.</div>
+              </div>
+            </div>
+
+            <label class="form-label">Help text</label>
+            <input class="form-control mb-2" value="Measure at the brake drum, hoist at rest.">
+            <label class="form-label">Photo</label>
+            <select class="form-select mb-3"><option>None</option></select>
+            <div class="d-flex justify-content-end gap-2">
+              <button class="btn btn-outline-secondary">Cancel</button>
+              <button class="btn btn-primary">Save item</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-7">
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Machines this template reaches (4)</span>
+            <span class="small text-secondary">3 apply · 1 does not apply</span>
+          </div>
+          <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>Machine</th><th>Unit</th><th>Run hours</th><th>Brake air gap</th><th>Next job</th></tr></thead>
+            <tbody>
+              <tr><td>EOT01 — EOT crane 5 t</td><td>SMTW.MCC1</td><td><i class="fa-solid fa-check text-success me-1"></i>From the model</td><td><i class="fa-solid fa-check text-success me-1"></i>From the model · 1.2 mm</td><td><span class="badge text-bg-warning">Due</span> 06-11-2026</td></tr>
+              <tr><td>EOT02 — EOT crane 5 t</td><td>SMTW.MCC1</td><td><i class="fa-solid fa-check text-success me-1"></i>From the model</td><td><i class="fa-solid fa-check text-success me-1"></i>From the model · 0.9 mm</td><td>Next due 21-11-2026</td></tr>
+              <tr><td>EOT04 — Gantry crane 10 t</td><td>SSVT.SHOP</td><td><i class="fa-solid fa-check text-success me-1"></i>This machine only</td><td><i class="fa-solid fa-check text-success me-1"></i>This machine only · 1.0 mm</td><td>Next due 02-12-2026</td></tr>
+              <tr class="table-warning"><td>EOT03 — EOT crane 3 t</td><td>SSVT.SHOP</td><td><i class="fa-solid fa-check text-success me-1"></i>From the model</td><td><i class="fa-solid fa-xmark text-danger me-1"></i>None</td><td><i class="fa-solid fa-triangle-exclamation me-1"></i>Does not apply</td></tr>
+            </tbody>
+          </table>
+          <div class="card-body border-top small">
+            <div class="fw-semibold mb-1">EOT03 — does not apply</div>
+            <div>No <em>Brake air gap</em> meter on EOT03: its model has none, and the crane has none of its own. No job comes due.</div>
+            <div class="mt-1"><a href="#">Add a Brake air gap meter on EOT03</a> · <a href="#">Add it to the model</a> · <a href="#">Set Not for this machine</a></div>
+          </div>
+        </div>
+
+        <div class="mk-note">
+          Each machine's own meters only: the meters of its model and the ones added to it. Yantra never takes a meter from the machine a part is fitted in. A machine has at most one meter of a type, so there is nothing to pick.
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

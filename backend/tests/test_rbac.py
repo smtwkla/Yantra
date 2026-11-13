@@ -121,6 +121,42 @@ class TestRoleSources:
         assert editors == {"maint_engineer", "maint_manager"}
         assert "procedure:edit" in SITE_SCOPED
 
+    def test_pm_plan_keys(self):
+        """S096 § 5.6, R03 Q2.2 a: PM plans are written by the engineer (so the manager); not IT admin, who reads
+        only, not the supervisor or the floor roles.  Site-scoped, checked at the node's site."""
+        editors = {role for role in ROLES if "pm_plan:edit" in compute_permissions([role])}
+        assert editors == {"maint_engineer", "maint_manager"}
+        assert "pm_plan:edit" in SITE_SCOPED
+
+    def test_pm_job_keys(self):
+        """S097 § 5.8, R03 Q2.2 a: PM jobs are read by the operator and up (the supervisor and the maintenance
+        ladder) and by IT admin, who reads PM only; not the storekeeper.  Site-scoped, checked at the job's
+        node's current unit."""
+        readers = {role for role in ROLES if "pm_job:read" in compute_permissions([role])}
+        assert readers == {"maint_operator", "maint_supervisor", "maint_technician", "maint_engineer",
+                           "maint_manager", "it_admin"}
+        assert "pm_job:read" in SITE_SCOPED
+
+    def test_pm_job_work_key(self):
+        """S098 § 5.2: a PM job is worked by the technician, so the engineer and the manager; not the operator or
+        the supervisor yet (R03.12), not the storekeeper, not IT admin (R03 Q2.2 a).  Site-scoped, checked at the
+        job's node's site; every holder reads PM jobs too, so a worker never meets a 404 for a job his unit has."""
+        workers = {role for role in ROLES if "pm_job:work" in compute_permissions([role])}
+        assert workers == {"maint_technician", "maint_engineer", "maint_manager"}
+        assert "pm_job:work" in SITE_SCOPED
+        for role in workers:
+            assert "pm_job:read" in compute_permissions([role]), role
+
+    def test_pm_job_verify_key(self):
+        """S099 § 5.2: a PM job is verified by the engineer, so the manager; not the technician, the supervisor, the
+        operator, the storekeeper or IT admin (R03 Q2.2 a).  Site-scoped, checked at the job's node's site; every
+        holder reads PM jobs too (A3), so the 404 by the reader's units is safe after require_perm."""
+        verifiers = {role for role in ROLES if "pm_job:verify" in compute_permissions([role])}
+        assert verifiers == {"maint_engineer", "maint_manager"}
+        assert "pm_job:verify" in SITE_SCOPED
+        for role in verifiers:
+            assert "pm_job:read" in compute_permissions([role]), role
+
     def test_contract_keys(self):
         """S080 § 5.5: the terms for every role, the call-out number for the engineer (so the manager), the cost
         note for the manager; added and edited by the engineer and IT admin.  All four site-scoped, each read
@@ -237,22 +273,29 @@ class TestComputePermissions:
         # S076: report:read to the engineer (so the manager); not IT admin, not the supervisor
         # S080: contract:read_basic to every role; contract:read and contract:edit to the engineer (so the
         # manager); contract:read_senior to the manager; contract:edit to IT admin, who reads neither gated field
+        # S096: pm_plan:edit to the engineer (so the manager); not IT admin, not the supervisor
+        # S097: pm_job:read to the operator (so the supervisor and the ladder) and IT admin; not the storekeeper
+        # S098: pm_job:work to the technician (so the engineer and manager); R03.12 widens it to the operator
+        # S099: pm_job:verify to the engineer (so the manager)
         ("maint_operator",    {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise",
                                "ticket:restore",
-                               "reading:log", "improvement:read", "improvement:note", "contract:read_basic"}),
+                               "reading:log", "improvement:read", "improvement:note", "contract:read_basic",
+                               "pm_job:read"}),
         ("maint_technician",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise",
                                "ticket:restore",
                                "ticket:work", "reading:log", "improvement:read", "improvement:note",
-                               "contract:read_basic"}),
+                               "contract:read_basic", "pm_job:read", "pm_job:work"}),
         ("maint_supervisor",  {"equipment:read", "masters:read", "push:subscribe", "ticket:read", "ticket:raise",
                                "ticket:restore",
-                               "reading:log", "improvement:read", "improvement:note", "contract:read_basic"}),
+                               "reading:log", "improvement:read", "improvement:note", "contract:read_basic",
+                               "pm_job:read"}),
         ("maint_engineer",    {"equipment:read", "masters:read", "push:subscribe", "equipment:edit", "people:edit",
                                "people:assign_technicians", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
                                "ticket:edit_notes", "reading:log", "improvement:read", "improvement:edit",
                                "improvement:note", "improvement:verify", "procedure:edit", "report:read",
-                               "contract:read_basic", "contract:read", "contract:edit"}),
+                               "contract:read_basic", "contract:read", "contract:edit", "pm_plan:edit",
+                               "pm_job:read", "pm_job:work", "pm_job:verify"}),
         # S011: the manager's breadth is "all units of the site" in the membership, not read_all_units
         ("maint_manager",     {"equipment:read", "masters:read", "push:subscribe", "equipment:edit",
                                "equipment:purge_documents", "settings:read", "people:edit",
@@ -261,14 +304,16 @@ class TestComputePermissions:
                                "ticket:close", "ticket:edit_notes", "reading:log", "improvement:read",
                                "improvement:edit", "improvement:note", "improvement:verify", "procedure:edit",
                                "report:read",
-                               "contract:read_basic", "contract:read", "contract:read_senior", "contract:edit"}),
+                               "contract:read_basic", "contract:read", "contract:read_senior", "contract:edit",
+                               "pm_plan:edit", "pm_job:read", "pm_job:work", "pm_job:verify"}),
         ("it_admin",          {"equipment:read", "equipment:read_all_units", "masters:read", "push:subscribe",
                                "masters:edit",
                                "masters:read_senior", "equipment:edit", "equipment:purge_documents",
                                "settings:read", "settings:edit", "people:edit", "people:assign_technicians",
                                "access_log:view", "failure_codes:edit", "ticket:read", "ticket:raise",
                                "ticket:restore", "ticket:work", "ticket:assign", "ticket:close",
-                               "ticket:edit_notes", "improvement:read", "contract:read_basic", "contract:edit"}),
+                               "ticket:edit_notes", "improvement:read", "contract:read_basic", "contract:edit",
+                               "pm_job:read"}),
         ("maint_storekeeper", {"equipment:read", "masters:read", "push:subscribe", "contract:read_basic"}),
     ])
     def test_role_matrix(self, role, expected):

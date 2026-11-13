@@ -56,8 +56,10 @@ class TestConfig:
         assert len(body["public_key"]) == 87
         assert body["you_get"] == [
             f"Breakdowns and defects at {site['code']}, escalations", f"Improvements ready to verify at {site['code']}",
+            f"Overdue PM jobs at {site['code']}",                  # S102
             f"Contracts ending for machines at {site['code']}",    # S084, S087
-            "Jobs assigned to you", "Countermeasures given to you, and when they are overdue",
+            "Jobs assigned to you", "PM jobs assigned to you, when due and when overdue",   # S102
+            "Countermeasures given to you, and when they are overdue",
             "Overdue countermeasures of improvements you lead"]
 
     def test_push_off_without_keys(self, engineer_in_team, push_off):

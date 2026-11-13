@@ -8,7 +8,8 @@ import { test, expect } from "./support/test.js";
 import { expectDialogFits, expectFieldMessage, expectNoSidewaysScroll, openDialog } from "./support/dialogs.js";
 import { equipmentRow, equipmentRows, openFilters } from "./support/equipmentList.js";
 import { apiAs, asPerson } from "./support/people.js";
-import { logByApi, meterMachine } from "./support/meters.js";
+import { linkMeterByApi, logByApi, meterMachine, meterTypeIdByApi } from "./support/meters.js";
+import { pmPlanByApi } from "./support/pm.js";
 import { categorySetup, noModelPart, propertySetup, propertyTag } from "./support/properties.js";
 import { card, istLocal, raiseByApi, saveDialog, shownTime } from "./support/tickets.js";
 
@@ -1032,4 +1033,79 @@ test("S064: Add photo shows no Kind choice, and a camera's file name leaves the 
   await title.fill("Nameplate");
   await saveDialog(page, "Upload");
   await expect(page.getByRole("button", { name: "Nameplate" })).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// S104 A1: meter links. A part with no meter of its own uses the meter of a node above it; readings stay there.
+// Each test makes its own press (meterMachine) and part (noModelPart) through the API.
+// ---------------------------------------------------------------------------
+
+const pmCardRow = (page, name) => page.locator(`[data-testid="pm-card"] [data-plan="${name}"]`);
+
+test("S104: a part uses a meter from above: the dialog lists the press's Run hours, and the card shows it from the "
+  + "press with its last reading and no Log reading", async ({ page }, testInfo) => {
+  // MCC2: the operator's unit, so logByApi (as the operator) may log the press's reading
+  const machine = await meterMachine(testInfo, "S104 link", { unit: "SMTW.MCC2", modelMeters: [["Run hours", {}]] });
+  const part = await noModelPart(machine, { id: machine.class_id }, `S104 link gearbox ${testInfo.project.name}`);
+  await logByApi(machine, "Run hours", "1234", istLocal(60));
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
+  await metersCard(page).getByRole("button", { name: "Use a meter from above" }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  const choice = dialog.getByTestId("meter-link-choice");
+  await expect(choice).toHaveCount(1);
+  await expect(choice).toContainText(`${machine.code} — ${machine.name} · Run hours (h) · last 1,234`);
+  await expect(dialog.getByRole("radio")).toBeChecked();   // the one choice is picked: one tap to save
+  await expectTouchTarget(choice);
+  await saveDialog(page, "Use this meter");
+  const row = meterRow(page, "Run hours");
+  await expect(row).toContainText(`From ${machine.code}`);
+  await expect(row.getByTestId("last-reading")).toContainText("1,234");
+  await expect(row.getByTestId("linked-read-on")).toHaveText(`Read on ${machine.code} — ${machine.name}. Log readings there.`);
+  await expect(row.getByRole("button", { name: "Log reading" })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Set limits" })).toHaveCount(0);
+  await expect(card(page, "History")).toContainText(`Meter linked: Run hours from ${machine.code}`);
+});
+
+test("S104: Remove link names the plan that uses it; after it the row is gone and the PM card says Does not apply",
+  async ({ page }, testInfo) => {
+    const machine = await meterMachine(testInfo, "S104 unlink", { modelMeters: [["Run hours", {}]] });
+    const part = await noModelPart(machine, { id: machine.class_id }, `S104 unlink gearbox ${testInfo.project.name}`);
+    const plan = await pmPlanByApi(part, { title: "S104 unlink greasing", trigger_kind: "both", calendar_every: 6,
+      calendar_unit: "month", meter_every: "2000", meter_type_id: await meterTypeIdByApi("Run hours"),
+      meter_equipment_id: machine.id, items: [{ item_type: "task", text: "Grease the bearing" }] });
+    await asPerson(page, "engineer", `/equipment/${part.id}`);
+    await expect(pmCardRow(page, plan.template.name).getByTestId("pm-next-due")).toContainText("Next due");
+    const row = meterRow(page, "Run hours");
+    await row.getByRole("button", { name: "Remove link" }).click();
+    await expect(row.getByTestId("meter-remove-question")).toContainText(
+      `Stop using ${machine.code}'s Run hours on ${part.code}? These PM plans use it and make no job until `
+      + `${part.code} has a Run hours meter again: ${plan.template.name}. A Last done meter value entered for this `
+      + `meter is no longer used. Readings stay on ${machine.code}.`);
+    await row.getByRole("button", { name: "Remove link" }).click();
+    await expect(meterRow(page, "Run hours")).toHaveCount(0);
+    await expect(pmCardRow(page, plan.template.name).getByTestId("pm-stop-remark")).toHaveText(
+      `Does not apply: no Run hours meter on ${part.code}.`);
+    await expect(card(page, "History")).toContainText(`Meter link removed: Run hours from ${machine.code}`);
+  });
+
+test("S104: moving a part asks before it removes its meter links", async ({ page, consoleWatch }, testInfo) => {
+  const from = await meterMachine(testInfo, "S104 move from", { modelMeters: [["Run hours", {}]] });
+  const to = await meterMachine(testInfo, "S104 move to");
+  const part = await noModelPart(from, { id: from.class_id }, `S104 moved gearbox ${testInfo.project.name}`);
+  await linkMeterByApi(part, from, "Run hours");
+  consoleWatch.allowFailedRequest(`/api/equipment/${part.id}`, 409);   // the move's question is a 409 (A1.6.4)
+  await asPerson(page, "engineer", `/equipment/${part.id}`);
+  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await expectDialogFits(page);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("New parent").fill(to.code);
+  await dialog.locator(".list-group-item").filter({ hasText: to.name }).click();
+  await dialog.locator(".modal-footer button[type=submit]").click();
+  await expect(dialog.getByTestId("move-links-warning")).toHaveText(
+    `This move removes 1 meter link: ${part.code} — Run hours from ${from.code}.`);
+  await saveDialog(page, "Move and remove links");
+  await expect(page.getByText(to.code).first()).toBeVisible();
+  await expect(card(page, "History")).toContainText(`Meter link removed: Run hours from ${from.code}`);
+  await expect(meterRow(page, "Run hours")).toHaveCount(0);
 });

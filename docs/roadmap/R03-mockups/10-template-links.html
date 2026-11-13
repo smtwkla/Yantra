@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R03 mock-up 10 — A template's links and the machines it reaches</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span class="active"><i class="yi-icon yi-table-edit" style="mask-image:url('../../../frontend/src/assets/icons/table_edit.svg')"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Masters</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="text-secondary small mb-1">Masters › PM templates › <a href="09-pm-template.html">Press — monthly hydraulic check</a></div>
+    <h5 class="mb-1">Press — monthly hydraulic check</h5>
+    <div class="text-secondary mb-3">7 items · every 1 month or 250 h of Run hours, whichever comes first · Maintenance · an engineer verifies</div>
+
+    <div class="row g-3">
+      <div class="col-4">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>Links (2)</span>
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-link me-1"></i>Add link <i class="fa-solid fa-caret-down ms-1"></i></button>
+              <ul class="dropdown-menu show shadow" style="position:absolute; right:0; left:auto; top:2.1rem">
+                <li><span class="dropdown-item">To a class: every machine of the class</span></li>
+                <li><span class="dropdown-item">To a type of a class</span></li>
+                <li><span class="dropdown-item">To a model: the maker's schedule</span></li>
+                <li><span class="dropdown-item">To one machine</span></li>
+              </ul>
+            </div>
+          </div>
+          <div class="list-group list-group-flush">
+            <div class="list-group-item">
+              <div class="d-flex justify-content-between">
+                <span><span class="badge text-bg-primary me-1">Class</span><strong>Hydraulic press (HP)</strong></span>
+                <button class="btn btn-sm btn-link text-danger p-0">Remove link</button>
+              </div>
+              <div class="small text-secondary">14 presses at SSVT and SMTW · linked 02-11-2026 by Engineer A</div>
+            </div>
+            <div class="list-group-item">
+              <div class="d-flex justify-content-between">
+                <span><span class="badge text-bg-dark me-1">Machine</span><strong>PP001 — Spare power pack</strong></span>
+                <button class="btn btn-sm btn-link text-danger p-0">Remove link</button>
+              </div>
+              <div class="small text-secondary">SSVT.SHOP · a component-unit with no class link</div>
+            </div>
+          </div>
+          <div class="card-body border-top small text-secondary">
+            A machine reached twice has one plan. A new press of class HP gets this plan by itself, with no assignee yet.
+          </div>
+        </div>
+      </div>
+
+      <div class="col-8">
+        <div class="card">
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span>Machines (15)</span>
+            <span class="small">
+              <span class="badge text-bg-success me-1">12 running</span>
+              <span class="badge text-bg-warning me-1">2 need attention</span>
+              <span class="badge text-bg-secondary">1 not for this machine</span>
+            </span>
+          </div>
+          <table class="table table-sm mb-0 align-middle">
+            <thead><tr><th>Machine</th><th>Unit</th><th>From</th><th>Assign jobs to</th><th>Next job</th></tr></thead>
+            <tbody>
+              <tr><td>HP001 — Hydraulic press 1</td><td>SSVT.SHOP</td><td>class</td><td>Technician A</td><td><span class="badge text-bg-warning">Due</span> PM-2026-11-004 · 03-11-2026</td></tr>
+              <tr><td>HP002 — Hydraulic press 2</td><td>SSVT.SHOP</td><td>class</td><td>Technician A</td><td>Next due 18-11-2026 or at 4,310 h</td></tr>
+              <tr><td>HP003 — Hydraulic press 3</td><td>SSVT.SHOP</td><td>class</td><td>Technician B</td><td><span class="badge text-bg-info">Upcoming</span> PM-2026-11-006 · 09-11-2026</td></tr>
+              <tr class="table-warning"><td>HP007 — Hydraulic press 7</td><td>SSVT.SHOP</td><td>class</td><td>Technician B</td><td><i class="fa-solid fa-triangle-exclamation me-1"></i>Does not apply: no Run hours meter on this press</td></tr>
+              <tr class="text-secondary"><td>HP009 — Hydraulic press 9</td><td>SSVT.SHOP</td><td>class</td><td>—</td><td><span class="badge text-bg-secondary">Not for this machine</span> Out of use until the cylinder is rebuilt</td></tr>
+              <tr class="table-warning"><td>HP013 — Hydraulic press 13 <span class="badge text-bg-light border">New</span></td><td>SSVT.SHOP</td><td>class</td><td><em>No one yet</em></td><td>Next due 02-12-2026 or at 1,250 h</td></tr>
+              <tr><td>PP001 — Spare power pack</td><td>SSVT.SHOP</td><td>machine</td><td>Technician A</td><td>Next due 25-11-2026</td></tr>
+              <tr><td colspan="5" class="small text-secondary">… 8 more presses, running</td></tr>
+            </tbody>
+          </table>
+          <div class="card-body border-top small text-secondary">
+            A machine's assignee, last done date and <em>Not for this machine</em> are set on the machine's own PM plan. Its meters are its own. The work is set here only.
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

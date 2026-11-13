@@ -56,7 +56,7 @@ test("15 labels fill one sheet; 16 make two sheets", async ({ page }) => {
 
 test("labels printed from the equipment list's ticks", { tag: "@device" }, async ({ page }) => {
   test.skip(page.viewportSize().width < 768, "the label ticks and Print labels are hidden on a phone (S064 D12)");
-  await asPerson(page, "engineer", "/equipment");
+  await asPerson(page, "engineer", `/equipment?q=${encodeURIComponent(seed.extruder.code)}`);
   await page.getByLabel(`Select ${seed.extruder.code} for labels`).check();
   const [labelsTab] = await Promise.all([
     page.context().waitForEvent("page"),

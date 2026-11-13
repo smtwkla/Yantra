@@ -13,6 +13,10 @@ import MastersView from "../views/MastersView.vue";
 import MeView from "../views/MeView.vue";
 import NotFoundView from "../views/NotFoundView.vue";
 import NotificationsView from "../views/NotificationsView.vue";
+import PmJobView from "../views/PmJobView.vue";
+import PmJobsView from "../views/PmJobsView.vue";
+import PmPlanView from "../views/PmPlanView.vue";
+import PmTemplateView from "../views/PmTemplateView.vue";
 import ReadingsView from "../views/ReadingsView.vue";
 import RaiseTicketView from "../views/RaiseTicketView.vue";
 import SettingsView from "../views/SettingsView.vue";
@@ -44,6 +48,14 @@ const routes = [
     name: "lesson",
     component: LessonView,
     meta: { title: "Lesson" },
+  },
+  // A machine's PM plan (S096, S104), opened from the PM card. Under /equipment/ as the lesson's, so the Equipment
+  // nav item stays lit; not a nav item, so the API's 404 is the gate. S104: plans come only by Attach PM template
+  {
+    path: "/equipment/pm/:id(\\d+)",
+    name: "pm-plan",
+    component: PmPlanView,
+    meta: { title: "PM plan" },
   },
   // The link on a QR label (S014): the code, never the internal id
   {
@@ -93,6 +105,20 @@ const routes = [
     component: ImprovementDetailView,
     meta: { title: "Improvement" },
   },
+  // The PM list (S097): a nav item, so canOpenRoute guards a typed /pm with pm_job:read
+  {
+    path: "/pm",
+    name: "pm",
+    component: PmJobsView,
+    meta: { title: "PM" },
+  },
+  // A PM job (S098): under /pm/, so the PM nav item stays lit; not a nav item, so the API's 404 is the gate
+  {
+    path: "/pm/jobs/:id(\\d+)",
+    name: "pm-job",
+    component: PmJobView,
+    meta: { title: "PM job" },
+  },
   // Readings (S040, S050): the end-of-day sheet for reading:log holders, the register for every equipment:read holder
   {
     path: "/readings",
@@ -124,6 +150,20 @@ const routes = [
     name: "masters",
     component: MastersView,
     meta: { title: "Masters" },
+  },
+  // A PM template (S104): opened from Masters › PM templates and from a plan's *Open template*. Not nav items, so a
+  // technician (who has no Masters item) may open it read-only and the API's 404 / 403 is the gate (BR1-15)
+  {
+    path: "/masters/pm-templates/new",
+    name: "pm-template-new",
+    component: PmTemplateView,
+    meta: { title: "PM template" },
+  },
+  {
+    path: "/masters/pm-templates/:id(\\d+)",
+    name: "pm-template",
+    component: PmTemplateView,
+    meta: { title: "PM template" },
   },
   // A vendor contract with its machines (S081): opened from Masters › Contracts (and, with S082, from a
   // machine's page). Not a nav item, so no item is lit and the API's 404 is the gate (as the lesson page)

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mockup-viewport" content="desktop">
+<title>R03 mock-up 11 — A machine's PM plans: inherited and attached</title>
+<link rel="stylesheet" href="../../../frontend/node_modules/bootstrap/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="../../../frontend/node_modules/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="../../../frontend/src/assets/main.css">
+<link rel="stylesheet" href="mockup.css">
+<style>.mk-src { font-size: 0.75rem; } .plan-row.selected { background: #eef4fb; }</style>
+</head>
+<body class="mk-desktop">
+<aside class="mk-sidebar">
+  <span><i class="fa-solid fa-user"></i></span>
+  <span class="active"><i class="fa-solid fa-gears"></i></span>
+  <span><i class="fa-solid fa-triangle-exclamation"></i></span>
+  <span><i class="fa-solid fa-calendar-check"></i></span>
+  <span><i class="fa-solid fa-gauge"></i></span>
+  <span><i class="yi-icon yi-table-edit" style="mask-image:url('../../../frontend/src/assets/icons/table_edit.svg')"></i></span>
+</aside>
+<div class="mk-main">
+  <header class="mk-topbar">
+    <strong>Yantra</strong>
+    <span class="mk-title">Equipment</span>
+    <span class="mk-user"><i class="fa-solid fa-bell me-3"></i>Engineer A</span>
+  </header>
+  <main class="mk-content">
+    <div class="text-secondary small mb-1">Equipment › SSVT.SHOP</div>
+    <h5 class="mb-1">HP003 — Hydraulic press 3</h5>
+    <div class="mb-3">
+      <span class="badge text-bg-light border me-1">Hydraulic press · Pilot-operated with prefill</span>
+      <span class="badge text-bg-light border me-1">SMTW (in-house) SMTW-HYP-03</span>
+      <span class="badge text-bg-success">In service</span>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-7">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>PM plans (5)</span>
+            <button class="btn btn-sm btn-outline-primary"><i class="fa-solid fa-link me-1"></i>Attach PM template</button>
+          </div>
+          <div class="list-group list-group-flush">
+            <div class="list-group-item plan-row selected">
+              <div class="d-flex justify-content-between"><strong>Press — monthly hydraulic check</strong><span class="badge text-bg-primary mk-src">From class Hydraulic press</span></div>
+              <div>Every month or 250 h, whichever comes first</div>
+              <div class="small"><span class="badge text-bg-info me-1">Upcoming</span>PM-2026-11-006 · 09-11-2026 · Technician B</div>
+            </div>
+            <div class="list-group-item plan-row">
+              <div class="d-flex justify-content-between"><strong>HYP-03 — return filter element change</strong><span class="badge text-bg-success mk-src">From model SMTW-HYP-03</span></div>
+              <div>Every 1,000 h of Run hours</div>
+              <div class="small text-secondary">Next due at 2,840.0 h · Run hours now 1,996.4 h (01-11-2026) · Technician B</div>
+            </div>
+            <div class="list-group-item plan-row">
+              <div class="d-flex justify-content-between"><strong>Prefill valve check</strong><span class="badge text-bg-warning mk-src">From type Pilot-operated with prefill</span></div>
+              <div>Every 3 months</div>
+              <div class="small text-secondary">Next due 15-12-2026 · Technician B</div>
+            </div>
+            <div class="list-group-item plan-row">
+              <div class="d-flex justify-content-between"><strong>Auto-lube unit check</strong><span class="badge text-bg-dark mk-src">This machine</span></div>
+              <div>Every week</div>
+              <div class="small"><i class="fa-solid fa-triangle-exclamation text-warning me-1"></i>No assignee yet · next due 08-11-2026</div>
+            </div>
+            <div class="list-group-item plan-row">
+              <div class="d-flex justify-content-between"><strong>MOT014 · Motor — greasing</strong><span class="badge text-bg-primary mk-src">From class Electric motor</span></div>
+              <div>Every 3 months</div>
+              <div class="small text-secondary">On the main motor, a part of this press · next due 20-01-2027</div>
+            </div>
+            <div class="list-group-item text-secondary small">
+              <i class="fa-solid fa-chevron-down me-1"></i>Not for this machine (1): <strong>Press — weekly lubrication</strong> (from class) · "Auto-lube unit fitted; see Auto-lube unit check"
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-5">
+        <div class="card">
+          <div class="card-header">PM plan on HP003</div>
+          <div class="card-body">
+            <div class="fw-semibold">Press — monthly hydraulic check</div>
+            <div class="small text-secondary mb-2">7 items · Maintenance · an engineer verifies · <a href="09-pm-template.html">Open template</a></div>
+            <div class="small mb-3">Reaches this machine from: <span class="badge text-bg-primary">Class Hydraulic press</span></div>
+
+            <label class="form-label">Assign jobs to</label>
+            <select class="form-select mb-2"><option>Technician B</option></select>
+
+            <label class="form-label">Meters this plan uses</label>
+            <div class="small mb-2"><i class="fa-solid fa-check text-success me-1"></i>HP003's own <em>Run hours</em> · 1,996.4 h, 01-11-2026<br><i class="fa-solid fa-check text-success me-1"></i>HP003's own <em>Oil temperature</em> · 48.5 °C, 01-11-2026</div>
+
+            <label class="form-label">Last done (before Yantra)</label>
+            <div class="d-flex gap-2 mb-2">
+              <input class="form-control" value="09-10-2026">
+              <input class="form-control" value="1,790.0 h">
+            </div>
+            <div class="mk-note mb-3">The work comes from the template. To change it for this machine only, set this plan <em>Not for this machine</em> and attach a template of its own.</div>
+
+            <div class="d-flex justify-content-between">
+              <button class="btn btn-outline-danger"><i class="fa-solid fa-ban me-1"></i>Not for this machine</button>
+              <button class="btn btn-primary">Save plan</button>
+            </div>
+          </div>
+          <div class="card-footer small text-secondary">Jobs: PM-2026-11-006, upcoming (the first in Yantra; it counts from Last done)</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

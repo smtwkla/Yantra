@@ -11,10 +11,15 @@ from datetime import datetime, time, timedelta
 # (task_type, "HH:MM" IST), daily
 SCHEDULE = [
     ("purge_access_log", "02:30"),
+    # S097: the PM jobs that came due or into their Upcoming window, before the morning shift and after
+    # the evening sheet's readings; before the 08:00 alerts, so R03.7's alerts follow that morning's jobs (D13)
+    ("pm_generate", "05:00"),
     # S074: overdue countermeasures and ended watches, at the start of the working day (§ 9 Q1)
     ("improvement_alert_scan", "08:00"),
     # S084: contracts ending in 60 or 15 days, at the same hour, so every daily alert comes at one time
     ("contract_reminder_scan", "08:00"),
+    # S102: PM jobs that turned Due or Overdue, at the same hour, three hours after pm_generate (D4)
+    ("pm_job_alert_scan", "08:00"),
 ]
 
 # The Background tasks card calls a task overdue when its next run is this far in the past
