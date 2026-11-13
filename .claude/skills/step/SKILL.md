@@ -80,6 +80,13 @@ findings) first takes the step's claim, and a refused claim stops the command
   and majors, time, tokens and browser-test cost per step and per role, from the step
   files and the stored transcripts. Report the main numbers and what they
   suggest to cut (time, tokens) or to tighten (accuracy); change nothing.
+- `/step clean [S00N …]`: housekeeping for finished steps (`Committed`, `Done`,
+  `Dropped`). Run `uv run --no-project python tooling/steps/step_clean.py [S00N …]`
+  (a dry run), report its totals, then run it again with `--apply`. It deletes
+  the steps' `scratch/` entries that carry their id and their `refs/step-rounds/`
+  refs, and their `refs/steps/` ref once merged or stale; it never touches
+  `docs/steps/`. Report its last line, the scratch entries tied to no step, as a
+  list for the user to delete by hand or keep; never delete those yourself.
 
 When the user just says "go on" or "next", find where the step stands from its
 files and its Status, and continue from there.
@@ -408,6 +415,12 @@ reviews; you run the loop, talk to the user and keep the index. Its rules
    `[skipped] <reason>` in the user's words. Record the count in the status,
    e.g. `Done (committed abc123; checks: 6 auto, 2 done by <name>, 1 skipped —
    <reason>)` (settings: *Device checks*). Never tick a check yourself.
+
+   **Clean up**: once the status is `Committed`, `Done` or `Dropped`, run
+   `uv run --no-project python tooling/steps/step_clean.py S00N --apply` and add
+   its last line to the status report. It deletes the step's scratch files
+   (brief copies, facts files, test logs, builds, scripts) and its snapshot and
+   round refs, and never touches the step's folder (§ Commands, `/step clean`).
 
 ## Architecture
 

@@ -75,7 +75,7 @@ Write in the spirit of ASD-STE100 Simplified Technical English, without its full
 4. **One term for one thing.** Do not alternate synonyms (task / job / run) for the same object. Keep exact names for files, functions, flags, and errors.
 5. **Imperative for actions.** One action per step: "Run X.", "Set Y to Z." Number steps that must run in order.
 6. **No noun stacks or hedges.** Avoid 3+ nouns in a row ("user session token refresh failure"). Cut "might possibly", "it seems that", "in order to".
-7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label an item as fact, assumption, or recommendation where the difference matters.
+7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label assumptions and recommendations as such; leave facts unlabelled, so an unlabelled statement is one you checked.
 8. **Questions to me:** state the question first, then the options with the consequence of each. Mark the recommended option.
 9. **Write for a reader who hasn't seen the work.** Each message stands alone. Say what a thing is the first time you name it; don't use a term, ID or abbreviation invented during the work (a finding ID, a step number, "D1") without saying what it refers to.
 

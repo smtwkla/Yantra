@@ -9,6 +9,10 @@ own while the next step's coder carries on in the same working tree (decided 24-
                                                                 the change since round 1
     python tooling/steps/step_snapshot.py diff [S038] --base <commit> [--stat] [--all] [-- <path>…]
                                                                 the change since <commit>
+    python tooling/steps/step_snapshot.py diff S038 --worktree [--from-round 1] [--stat] [--all] [-- <path>…]
+                                    the working files against the snapshot (or round 1) itself;
+                                    "working tree equals refs/steps/S038" and exit 0, else exit 1
+    (any diff: --by-folder gives one line per top-level folder instead of the diff)
         (diff leaves out the step folders, docs/steps/INDEX.md, docs/steps/feedback-log.md and
         docs/roadmap/; --all shows them, and paths after -- replace that default)
     python tooling/steps/step_snapshot.py rounds S038
@@ -49,7 +53,16 @@ The device-check list (docs/steps/device-checks.md) stays: a coder's docs pass a
 Since 31-10-2026 (the agents' feedback): ``diff --base <commit>`` compares the working files with
 any commit, the same way and with the same exclusions: for a step with no snapshot yet whose base
 is not HEAD (a brief's baseline), or to override the step's base. The step id may then be left
-out; ``--base`` and ``--from-round`` do not go together."""
+out; ``--base`` and ``--from-round`` do not go together.
+
+Since 02-11-2026 (6 feedback items, S094–S102): ``diff S038 --worktree`` asks whether the working
+files still equal the step's snapshot (refs/steps/S038), or with ``--from-round n`` its round ref.
+A reviewer's ``git diff refs/steps/S038`` compares with the index, so every untracked new file
+showed as deleted. It is the same diff as above with the snapshot itself as the base: the same
+tree of the working files, the same exclusions and path filters. It prints "working tree equals
+refs/steps/S038" and exits 0 when nothing shown differs, else the diff and exits 1.
+``--by-folder`` (any diff) prints one line per top-level folder instead: files, lines added and
+removed."""
 
 import os
 import re
@@ -151,29 +164,66 @@ def step_base(repo, step_id):
 LEFT_OUT = ("docs/steps/*/**", "docs/steps/INDEX.md", "docs/steps/feedback-log.md", "docs/roadmap/**")  # git globs
 
 
-def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, base=None):
-    """The diff from the step's base (or the round named, or the commit ``base``) to the working
-    files: the paths named, or everything (``show_all``), or everything but LEFT_OUT, with a last line
-    that counts what was left out."""
+ROOT_FILES = "(top level)"   # --by-folder's name for the files at the repo's root
+
+
+def diff_base(repo, step_id, from_round=None, base=None, worktree=False):
+    """The commit a diff starts from: the commit ``base``, or the round named, or (``worktree``)
+    the step's snapshot itself, or the step's base. -> (sha, the ref's name or None)."""
     if base is not None:
         try:
-            base = git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
+            return git(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"), base
         except SnapshotError:
             raise SnapshotError(f"no such commit: {base}") from None
-    elif from_round is None:
-        base = step_base(repo, step_id)
-    else:
+    if from_round is not None:
         found = dict(rounds(repo, step_id))
         if from_round not in found:
             raise SnapshotError(f"{step_id} has no round {from_round}; it has: "
                                 + (", ".join(str(n) for n in found) or "none"))
-        base = found[from_round]
-    tree = working_tree(repo, base)
-    stat_flag = ["--stat"] if stat else []
+        return found[from_round], f"{ROUND_PREFIX}{step_id}-{from_round}"
+    if worktree:
+        existing = {row[0]: row[1] for row in snapshots(repo)}
+        if step_id not in existing:
+            raise SnapshotError(f"there is no snapshot of {step_id}")
+        return existing[step_id], f"{REF_PREFIX}{step_id}"
+    return step_base(repo, step_id), None
+
+
+def by_folder(numstat):
+    """``git diff --numstat`` lines -> one line per top-level folder (files, +added -removed), then
+    a total. A binary file counts as a file with no lines."""
+    folders = {}
+    for line in numstat.splitlines():
+        added, removed, path = line.split("\t", 2)
+        folder = path.split("/", 1)[0] + "/" if "/" in path else ROOT_FILES
+        files, plus, minus = folders.get(folder, (0, 0, 0))
+        folders[folder] = (files + 1, plus + int(added.replace("-", "0")), minus + int(removed.replace("-", "0")))
+    if not folders:
+        return ""
+    width = max(len(name) for name in folders)
+    lines = [f"{name.ljust(width)}  {files} file(s), +{plus} -{minus}" for name, (files, plus, minus) in
+             sorted(folders.items())]
+    total = [sum(values[i] for values in folders.values()) for i in range(3)]
+    lines.append(f"{total[0]} file(s) in {len(folders)} folder(s), +{total[1]} -{total[2]}")
+    return "\n".join(lines)
+
+
+def compare(repo, base, tree, stat=False, paths=(), show_all=False, folders=False):
+    """The diff from ``base`` to ``tree`` -> (the text shown, the left-out paths). The paths named,
+    or everything (``show_all``), or everything but LEFT_OUT."""
     if paths or show_all:
-        return git(repo, "diff", *stat_flag, base, tree, "--", *(paths or ["."]))
-    shown = git(repo, "diff", *stat_flag, base, tree, "--", ".", *(f":(exclude,glob){p}" for p in LEFT_OUT))
-    left_out = git(repo, "diff", "--name-only", base, tree, "--", *(f":(glob){p}" for p in LEFT_OUT)).splitlines()
+        spec, left_out = list(paths or ["."]), []
+    else:
+        spec = [".", *(f":(exclude,glob){p}" for p in LEFT_OUT)]
+        left_out = git(repo, "diff", "--name-only", base, tree, "--",
+                       *(f":(glob){p}" for p in LEFT_OUT)).splitlines()
+    if folders:
+        # --no-renames: a rename's numstat path is "old => new", which names no one folder
+        return by_folder(git(repo, "diff", "--numstat", "--no-renames", base, tree, "--", *spec)), left_out
+    return git(repo, "diff", *(["--stat"] if stat else []), base, tree, "--", *spec), left_out
+
+
+def with_note(shown, left_out):
     if not left_out:
         return shown
     note = (f"left out: {len(left_out)} file(s) of the step folders, docs/steps/INDEX.md, "
@@ -181,22 +231,40 @@ def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, b
     return f"{shown}\n{note}" if shown else note
 
 
+def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, base=None, folders=False):
+    """The diff from the step's base (or the round named, or the commit ``base``) to the working
+    files: the paths named, or everything (``show_all``), or everything but LEFT_OUT, with a last line
+    that counts what was left out."""
+    base, _ = diff_base(repo, step_id, from_round, base)
+    return with_note(*compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders))
+
+
+def worktree_diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, folders=False):
+    """The working files against the step's snapshot (or the round named) itself -> (equal, text).
+    Equal when nothing shown differs; the left-out files do not count, as in every diff."""
+    base, ref = diff_base(repo, step_id, from_round, worktree=True)
+    shown, left_out = compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders)
+    return not shown, with_note(shown or f"working tree equals {ref}", left_out)
+
+
 def parse_diff_args(rest):
-    """The arguments after ``diff S0NN``: [--stat] [--all] [--from-round n | --base <commit>]
-    [-- <path>…], in any order before the ``--``. Returns (stat, from_round, paths, show_all, base),
-    or None when an argument is wrong."""
+    """The arguments after ``diff S0NN``: [--stat] [--all] [--by-folder] [--worktree]
+    [--from-round n | --base <commit>] [-- <path>…], in any order before the ``--``. Returns
+    (stat, from_round, paths, show_all, base, worktree, folders), or None when an argument is wrong
+    (``--worktree`` compares with the step's own snapshot or round, so not with ``--base``)."""
     paths = []
     if "--" in rest:
         cut = rest.index("--")
         rest, paths = rest[:cut], rest[cut + 1:]
-    stat, show_all = "--stat" in rest, "--all" in rest
-    rest = [a for a in rest if a not in ("--stat", "--all")]
+    flags = ("--stat", "--all", "--worktree", "--by-folder")
+    stat, show_all, worktree, folders = (flag in rest for flag in flags)
+    rest = [a for a in rest if a not in flags]
     from_round = base = None
     if rest[:1] == ["--from-round"] and len(rest) == 2 and rest[1].isdigit():
         from_round, rest = int(rest[1]), []
-    elif rest[:1] == ["--base"] and len(rest) == 2 and not rest[1].startswith("-"):
+    elif rest[:1] == ["--base"] and len(rest) == 2 and not rest[1].startswith("-") and not worktree:
         base, rest = rest[1], []
-    return None if rest else (stat, from_round, paths, show_all, base)
+    return None if rest else (stat, from_round, paths, show_all, base, worktree, folders)
 
 
 def snapshot(repo, step_id, message):
@@ -274,8 +342,12 @@ def main(argv, repo=ROOT):
             if parsed is None or (step_id is None and parsed[4] is None):
                 print(__doc__)
                 return 2
-            stat, from_round, paths, show_all, base = parsed
-            print(diff(repo, step_id, from_round, stat, paths, show_all, base))
+            stat, from_round, paths, show_all, base, worktree, folders = parsed
+            if worktree:   # a step id is there: --worktree never goes with --base
+                equal, text = worktree_diff(repo, step_id, from_round, stat, paths, show_all, folders)
+                print(text)
+                return 0 if equal else 1
+            print(diff(repo, step_id, from_round, stat, paths, show_all, base, folders))
             return 0
         if argv[:1] == ["rounds"] and len(argv) == 2:
             found = rounds(repo, argv[1])

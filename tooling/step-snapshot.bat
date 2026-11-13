@@ -5,6 +5,8 @@
 :: Each snapshot keeps a round ref (refs/step-rounds/S0NN-n, 27-10-2026): "rounds S0NN" lists them; "diff S0NN
 :: [--from-round n] [--stat] [-- <path>...]" shows the step's change, new files as added, from its base or from
 :: round n; it leaves out docs\steps\S0NN-*\ unless paths are named (29-10-2026). "diff [S0NN] --base <commit>"
-:: compares with any commit, for a step with no snapshot yet (31-10-2026).
+:: compares with any commit, for a step with no snapshot yet (31-10-2026). "diff S0NN --worktree [--from-round n]"
+:: compares the working tree, untracked files too, with the snapshot (or round n) itself: "working tree equals
+:: <ref>" and exit 0, else the diff and exit 1; "--by-folder" gives one line per top-level folder (02-11-2026).
 cd /d "%~dp0.." && uv run --no-project python tooling\steps\step_snapshot.py %*
 exit /b %ERRORLEVEL%

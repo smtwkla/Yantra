@@ -313,6 +313,12 @@ need (pulling an image, installing a tool, a setting, another repo) is neither d
 silently: it goes back as a question for the user, with what it would do and why the step needs
 it.
 
+**Scratch names carry the step.** Every file or folder an agent puts in `scratch/` starts with the
+step id or holds it as a word (`s061_fix_docs.py`, `s061cr2-e2e.log`, `brief-facts-S061.md`), never
+a bare `hand.py` or `fix.py`. When the step is finished, `tooling/step-clean.bat` deletes the
+entries that carry its id, plus its snapshot and round refs; an entry without one stays behind for
+good. Scripts that a later step will need again belong in the repo, not in `scratch/`.
+
 **Commits.** No agent commits, pushes, builds images, deploys or releases: the user does, or asks
 the orchestrator for it in so many words. The snapshot tool's refs (`refs/steps/`) are not commits
 of a branch and are the orchestrator's.
@@ -388,6 +394,20 @@ Windows; on Linux or macOS, rules 1, 4, 6 and 7 still apply.
    text-mode write (`open(path, "w")`, `Path.write_text`): on Windows it turns every LF into CRLF.
    Check a file's line endings by its bytes (`b"\r\n" in Path(path).read_bytes()`), not with
    `grep -c $'\r'`: Git Bash counts every line there.
+8. **Leave the git index alone** (01-11-2026, from the agents' feedback on S087 and S088): delete a
+   file with plain `rm`, never `git rm`, and never `git add`. `git rm` stages the deletion, and the
+   index is the user's, as the commit is.
+9. **No `|` in a `-g` pattern under `cmd //c`** (02-11-2026, from the agents' feedback): `cmd`
+   reads the `|` as a pipe and splits the command. Use a single word, or two runs.
+10. **`cmd //c "x.bat" | tail` hides the wrapper's exit code**: the pipe returns `tail`'s. Read the
+    PASSED or FAILED line, or redirect the output to a file and then read the file.
+11. **`PYTHONUTF8=1`** before a Python command whose output goes to a file: Python writes cp1252
+    there otherwise, and a `→` stops it.
+12. **The same edit in many files**: `uv run --no-project python tooling/steps/edit_text.py <file>
+    --old-file old.txt --new-file new.txt [--count N]`, the texts written first with the Write tool.
+    It replaces the exact text N times (default 1) or refuses, and keeps the file's line endings.
+13. **Never start `python -`, `uv run python -` or `cat` without input**: they wait on stdin until
+    the Bash tool's 2-minute limit (S071, S087, S097). Write the script to a file and run the file.
 
 ## Orchestrated mode (one terminal)
 
@@ -436,6 +456,10 @@ terminal, with each role as a subagent (`.claude/agents/`):
   compares the working tree with that commit, the same way and with the
   same exclusions: for a step with no snapshot yet whose base is not `HEAD`,
   or to override the step's base.
+- **Is the tree still the snapshot?** (02-11-2026): `diff S00N --worktree
+  [--from-round <n>]` compares the working tree, untracked files too, with the
+  snapshot or round itself; it prints `working tree equals <ref>` (exit 0) or
+  the diff (exit 1). Never `git diff refs/steps/…`: it shows new files as deleted.
 - **The files and conventions above are unchanged.** The separate terminals
   below still work.
 

@@ -7,12 +7,15 @@ group what recurs and propose improvements.  It judges nothing.
     python tooling/steps/step_feedback.py --new        only the items not yet in the feedback log
     python tooling/steps/step_feedback.py --rows       the same, as rows to paste into the log
     python tooling/steps/step_feedback.py --themes     the log's rows counted by theme
+    python tooling/steps/step_feedback.py --dropped    one line: the themes last decided `dropped`
 
-An item is a line `- <label>: <text>` under a heading whose text starts with "Feedback" (any level,
-so a fix round's `### Feedback` counts too), up to the next heading of the same or a higher level.
-An item may go on over indented lines (the files are wrapped at about 100 columns).
-Labels: waste, hindrance, rule, idea; `- none` is counted, not listed.  A line with another label
-is listed as `other`, so nothing an agent wrote is lost.
+An item is a line `- <label>: <text>` (or `- <label> — <text>`, `- <label> - <text>`) under a
+heading whose text starts with "Feedback" (any level, so a fix round's `### Feedback` counts too),
+up to the next heading of any level (01-11-2026: S087's "### Round 2" after its Feedback section was
+read as feedback).  An item may go on over indented lines (the files are wrapped at about 100
+columns).  Labels: waste, hindrance, rule, idea; `- none` is counted, not listed.  A one-word label
+of another name is listed as `other`, so nothing an agent wrote is lost; a bullet with no one-word
+label before its separator ("- Line endings: …", "- CR1-03 (nit): …") is no item.
 
 The feedback log (`docs/steps/feedback-log.md`, 27-10-2026) records what was decided on each item
 read: a table row `| step | file | label | item | theme | decision |`.  An item is read when the log
@@ -24,7 +27,9 @@ Themes (29-10-2026, from the advice on the agents' feedback): the theme cell is 
 orchestrator writes at triage (`facts-path`, `shell-heredoc`, …), so items about one problem from
 different steps can be counted.  `--themes` counts the rows per theme and their decisions, and
 marks a theme whose last two decisions were `noted`: the skill asks for `acted` or `dropped` then.
-A row of five cells (before 29-10-2026) has no theme."""
+`--dropped` (01-11-2026) names the themes whose latest row, in log order, was decided `dropped`, in
+one line the orchestrator pastes into a spawn prompt.  A row of five cells (before 29-10-2026) has
+no theme."""
 
 import re
 import sys
@@ -40,30 +45,41 @@ LABELS = ("waste", "hindrance", "rule", "idea")
 HEADING = re.compile(r"^(#{2,6})\s+(.*)$")
 LOG_DATE = re.compile(r"^##\s+(\d{2}-\d{2}-\d{4})")
 DECISION = re.compile(r"(?:^|;\s*)(acted|dropped|noted)\b")
-ITEM = re.compile(r"^\s*-\s+`?(\w+)`?\s*(?::|—|-)?\s*(.*)$")
+# A label is one word followed by ":", "—" or " - " ("- idea: x", "- idea — x"), or `- none` alone.
+# 01-11-2026 (S087): "- CR1-03 (nit): …" and "- Line endings: …" are no items.
+ITEM = re.compile(r"^\s*-\s+`?(\w+)`?(?:\s*[:—]|\s+-\s)\s*(.*)$")
+NONE_ITEM = re.compile(r"^\s*-\s+`?none\b`?\W*(.*)$", re.I)      # also "- none further.", "- none: …"
+BULLET = re.compile(r"^\s*-\s")
 
 
 def feedback_items(text):
     """The (label, text) items of every Feedback section of one file; `none` items included.  An
     indented line after an item goes on with it."""
     items = []
-    level = None                      # the heading level of the open Feedback section
+    in_section = False
+    in_item = False                   # the last bullet was an item, so an indented line goes on with it
     for line in text.splitlines():
         heading = HEADING.match(line)
         if heading:
-            depth = len(heading.group(1))
-            if heading.group(2).strip().lower().startswith("feedback"):
-                level = depth
-            elif level is not None and depth <= level:
-                level = None
+            # Any next heading ends the section (01-11-2026, S087: a fix round's "### Round 2"
+            # after "## Feedback (fix round 1)" was read as feedback).
+            in_section = heading.group(2).strip().lower().startswith("feedback")
+            in_item = False
             continue
-        if level is None:
+        if not in_section:
             continue
         item = ITEM.match(line)
-        if item:
+        nothing = NONE_ITEM.match(line)
+        if nothing:
+            items.append(["none", nothing.group(1).strip() or line.strip()])
+            in_item = True
+        elif item:
             label = item.group(1).lower()
             items.append([label if label in LABELS + ("none",) else "other", item.group(2).strip() or line.strip()])
-        elif items and line[:1].isspace() and line.strip():
+            in_item = True
+        elif BULLET.match(line):         # a bullet with no label is no item, nor are its lines
+            in_item = False
+        elif in_item and line[:1].isspace() and line.strip():
             items[-1][1] += " " + line.strip()
     return [tuple(i) for i in items]
 
@@ -107,9 +123,8 @@ def log_row(step, file, label, text):
     return f"| {step} | {file} | {label} | {' '.join(text.split()).replace('|', chr(92) + '|')} |  |  |"
 
 
-def themes(log_text):
-    """The log's rows per theme -> lines: count, steps, decisions, and a mark when the last two
-    decisions were `noted` (a problem that came back after it was read and left)."""
+def theme_rows(log_text):
+    """The log's rows that have a theme -> {theme: [(date, step, decision), …]} in log order."""
     found = {}
     for date, cells in log_rows(log_text):
         if len(cells) < 6 or not cells[4]:
@@ -118,6 +133,20 @@ def themes(log_text):
         decisions = DECISION.findall(cells[5].lower())
         decision = decisions[-1] if decisions else "undecided"
         found.setdefault(cells[4], []).append((date, cells[0].upper(), decision))
+    return found
+
+
+def dropped(log_text):
+    """One line naming the themes whose latest row (in log order) was decided `dropped`, for the
+    orchestrator to paste into a spawn prompt: the agents need not read the log (01-11-2026)."""
+    names = sorted(theme for theme, rows in theme_rows(log_text).items() if rows[-1][2] == "dropped")
+    return "Dropped themes (do not report again): " + (", ".join(names) or "none")
+
+
+def themes(log_text):
+    """The log's rows per theme -> lines: count, steps, decisions, and a mark when the last two
+    decisions were `noted` (a problem that came back after it was read and left)."""
+    found = theme_rows(log_text)
     lines = []
     for theme, rows in sorted(found.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         decisions = Counter(d for _, _, d in rows)
@@ -135,6 +164,9 @@ def main(argv):
     log_text = LOG.read_text(encoding="utf-8") if LOG.is_file() else ""
     if "--themes" in argv:
         print("\n".join(themes(log_text)))
+        return 0
+    if "--dropped" in argv:
+        print(dropped(log_text))
         return 0
     rows = "--rows" in argv
     only_new = rows or "--new" in argv

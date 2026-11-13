@@ -34,6 +34,11 @@ Since 30-10-2026 (the agents' feedback, 23 items):
     another step; a name in more than 10 test files lists 3 files only;
   - screen text is looked for in the frontend test files only.
 
+Since 01-11-2026 (the agents' feedback on S087 and S092):
+  - a path git tracks but which is deleted in the working tree is "no such file" (it crashed);
+  - quoted text with a space at either end or an underscore (" A_B ") is a test value, not
+    screen text, and is skipped; screen text in more than 20 test lines gives its count only.
+
 Since 31-10-2026 (the agents' feedback: an 870-line facts file for S087):
   - a code name the brief marks new (`name` **(new)**) goes in one line, with the files that
     already hold the name; a SQL name (a table, column, key or constraint of the migrations' DDL,
@@ -46,11 +51,20 @@ Since 31-10-2026 (the agents' feedback: an 870-line facts file for S087):
   - "planned in S0NN" takes the steps the sentence says add the name ("new in S0NN", "S0NN
     adds"), else every other step it names, sorted; a step that has its 3-impl-report.md is
     marked "now coded — re-check": the brief names what that step planned, not what it built.
+
+Since 02-11-2026 (KLA's feedback triage, items of S094–S102):
+  - a Python built-in name (`ValueError`, `RuntimeError`) is no code name, and is skipped;
+  - the names found nowhere that other steps plan go in one line per planning step, "planned in
+    S097 (not coded yet): 40 names — …", not in the not-found line;
+  - a step counts as a name's planner only when its own 1-brief.md names it (or it has no brief
+    yet): S096's facts said `pm_schedule_core` was "planned in S080", because a sentence citing
+    S080 for another reason named it; "S0NN creates" names the planner as "S0NN adds" does.
 Writes the same text to scratch/brief-facts-<step>.md.
 
 The folders searched are the repo's `Code folders` setting (.claude/CLAUDE.md § Step workflow);
 without it, the whole repo except docs/."""
 
+import builtins
 import re
 import subprocess
 import sys
@@ -78,12 +92,14 @@ DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
 UI_TEXT = re.compile(r'^"([^"\n]{1,60})"$')
 MIN_UI_TEXT = 3                         # shorter screen text ("-1", "OK") matches too many test lines
+COMMON_UI_LINES = 20                    # screen text in more test lines than this: the count only
 # path:NN or path:NN-MM anywhere in the text; the extension starts with a letter, so 127.0.0.1:5002 is no path
 CITED = re.compile(r"(?<![\w./\-])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z]\w*):(\d+)(?:-(\d+))?(?!\d)")
 STEP_MENTION = re.compile(r"\bS\d{3}\b")
 # The steps a sentence says add a name: "new in S080", "added by S080", "planned in S080", "S080 adds"
 STEP_ADDS = re.compile(r"\b(?:new in|added (?:in|by)|planned in|lands (?:in|with))\s+(S\d{3})\b|"
-                       r"\b(S\d{3})(?:'s brief)?\s+(?:adds|introduces|plans)\b")
+                       r"\b(S\d{3})(?:'s brief)?\s+(?:adds|introduces|plans|creates)\b")
+BUILTIN_NAMES = frozenset(dir(builtins))   # ValueError, RuntimeError: Python's own, never a code name of the repo
 # `name` **(new)**: the brief marks the name as one the step adds
 MARKED_NEW = re.compile(r"`([^`\n]+)`\**\s*\**\(new\b")
 TEST_CLASS = re.compile(r"^[A-Z]\w*$")   # a test id without its file: Class::test
@@ -124,9 +140,12 @@ def classify(token):
     # "No" and "Save" in hundreds of lines.
     match = UI_TEXT.match(token)
     if match:
-        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text
+        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text.
+        # 01-11-2026 (S092): a test value the brief quotes (" A_B ") is no label either: a label
+        # has no space at its ends and no underscore.
         text = match.group(1)
-        worth = len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
+        worth = (len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
+                 and text == text.strip() and "_" not in text)
         return Ref("ui", text) if worth else None
     match = TEST_ID.match(token)
     if match and ("/" in match.group(1) or "." in match.group(1) or TEST_CLASS.match(match.group(1))):
@@ -142,7 +161,8 @@ def classify(token):
         return Ref("route", match.group(1).rstrip("/"))
     match = CALL.match(token)
     name = match.group(1) if match else token
-    if NAME.match(name) and DISTINCT_NAME.search(name) and not name.endswith(".") and greppable(name):
+    if (NAME.match(name) and DISTINCT_NAME.search(name) and not name.endswith(".") and greppable(name)
+            and name not in BUILTIN_NAMES):
         return Ref("name", name)
     return None
 
@@ -204,25 +224,48 @@ def new_names(text):
     return {ref.value for ref in refs if ref and ref.kind == "name"}
 
 
-def planned_in(name, all_sentences, own_step=None, coded=frozenset()):
-    """' (planned in S070)' when a sentence that names `name` also names another step, else ''.
-    A sentence that says which step adds the name ("new in S070", "S070 adds") gives that step
-    only (31-10-2026: a paragraph names many steps).  A step in ``coded`` (it has its impl report)
-    is marked: the name should exist by now, so the brief's name is stale."""
+def planners(name, all_sentences, own_step=None):
+    """The other steps that plan `name`, sorted: those of each sentence that names it. A sentence
+    that says which step adds the name ("new in S070", "S070 adds") gives that step only
+    (31-10-2026: a paragraph names many steps). A step whose own brief does not name it is dropped
+    (02-11-2026: the sentence cited that step for something else)."""
     steps = set()
     for sentence in all_sentences:
         if f"`{name}" in sentence:
             adds = {a or b for a, b in STEP_ADDS.findall(sentence)}
             steps |= (adds or set(STEP_MENTION.findall(sentence))) - {own_step}
-    if not steps:
-        return ""
-    named = ", ".join(sorted(steps))
-    done = sorted(steps & set(coded))
-    if not done:
-        return f" (planned in {named})"
-    if len(done) == len(steps):
-        return f" (planned in {named}, now coded — re-check)"
-    return f" (planned in {named}; {', '.join(done)} now coded — re-check)"
+    return sorted(step for step in steps if brief_may_name(step, name))
+
+
+def brief_may_name(step, name):
+    """Whether the step's 1-brief.md names ``name`` (by its last part); True when the step has no
+    brief yet (a roadmap item), since then nothing says it does not plan it."""
+    briefs = sorted(STEPS_DIR.glob(f"{step}-*/1-brief.md"))
+    if not briefs:
+        return True
+    word = re.compile(rf"\b{re.escape(name.rpartition('.')[2])}\b")
+    return any(word.search(path.read_text(encoding="utf-8", errors="replace")) for path in briefs)
+
+
+def planned_lines(planned, coded=frozenset()):
+    """{name: [its planning steps]} -> one line per set of planning steps, with all its names. A
+    step in ``coded`` (it has its impl report) is marked: the name should exist by now, so the
+    brief's name is stale."""
+    groups = {}
+    for name, steps in planned.items():
+        groups.setdefault(tuple(steps), []).append(name)
+    lines = []
+    for steps, names in sorted(groups.items()):
+        done = [step for step in steps if step in coded]
+        if not done:
+            state = "not coded yet"
+        elif len(done) == len(steps):
+            state = "now coded — re-check"
+        else:
+            state = f"{', '.join(done)} now coded — re-check"
+        count = f"{len(names)} name" + ("s" if len(names) > 1 else "")
+        lines.append(f"- planned in {', '.join(steps)} ({state}): {count} — {', '.join(names)}")
+    return lines
 
 
 def coded_steps(step_ids):
@@ -391,10 +434,12 @@ def grep(pattern, folders=None, fixed=True, word=True):
 
 
 def files_ending(path):
-    """Tracked or untracked (not ignored) files whose path is ``path`` or ends in ``/path``."""
+    """Tracked or untracked (not ignored) files on disk whose path is ``path`` or ends in ``/path``.
+    git lists a tracked file deleted in the working tree too (S087: a squashed migration's fixture,
+    removed but not yet committed); it is no file, as git grep also skips it."""
     result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{path}",
                              path], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
-    return sorted(set(result.stdout.split()))
+    return sorted(p for p in set(result.stdout.split()) if (ROOT / p).is_file())
 
 
 def is_binary(path):
@@ -507,6 +552,8 @@ def check_ui(ref, folders=None):
     """Screen text -> the frontend test lines that hold it (a backend line is no screen text)."""
     lines = [f"{path}:{line}" for path, line, _ in map(split_hit, grep(ref.value, folders, word=False))
              if is_frontend_test(path)]
+    if len(lines) > COMMON_UI_LINES:     # S092: "Equipment" in 44 lines; a list that long is not read
+        return [f"- `\"{ref.value}\"`: in {len(lines)} test lines — too common to list"]
     return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
 
 
@@ -514,7 +561,7 @@ def check_names(group, folders=None, all_sentences=(), own_step=None, new=frozen
     """The code names: one entry per name found; then one line each for the names the brief marks
     new (``new``), the SQL names, the names found nowhere, and the dotted names whose module is no
     code file defining it (a table.column, a JS object)."""
-    lines, marked_new, sql, missing, not_looked_up = [], [], [], [], []
+    lines, marked_new, sql, missing, not_looked_up, planned = [], [], [], [], [], {}
     coded = coded_steps({step for sentence in all_sentences for step in STEP_MENTION.findall(sentence)})
     for ref in group:
         module, _, short = ref.value.rpartition(".")
@@ -536,13 +583,18 @@ def check_names(group, folders=None, all_sentences=(), own_step=None, new=frozen
             sql.append(f"`{ref.value}`")
             continue
         if not hits:
-            missing.append(f"`{ref.value}`{planned_in(ref.value, all_sentences, own_step, coded)}")
+            steps = planners(ref.value, all_sentences, own_step)
+            if steps:
+                planned[f"`{ref.value}`"] = steps
+            else:
+                missing.append(f"`{ref.value}`")
             continue
         lines += summarise_hits(ref.value, hits, folders)
     if marked_new:
         lines.append(f"- marked new in the brief: {', '.join(marked_new)}")
     if sql:
         lines.append(f"- SQL names (tables, columns, keys; their uses not listed): {', '.join(sql)}")
+    lines += planned_lines(planned, coded)
     if missing:
         lines.append(f"- not found: {', '.join(missing)}")
     if not_looked_up:
