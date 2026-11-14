@@ -95,6 +95,16 @@ REMOVED = [
         "351b65792313801640f7fb4534778925f64a5c057991b0f808dc91948b60dddf",  # a2147bd
         "b495ddd31ee76e45f8609ea1746fcda76cf77c736fa1f7586eb16383085f0ffd",  # 17272f6
     }),
+    # Dropped: images are pasted into Claude Code directly, and Claude reads the browser itself
+    (".claude/skills/project-scratch/SKILL.md", {
+        "37375efee3228c615c70a8fcbc217f15b6f96098759286d15d95cbf8e23cfffe",  # 019eab6
+        "75dd9b937f31c6433c3ad9a658b4cf9e6dea2d3fed63940f6a01ad36b453b564",  # 646f6e3
+    }),
+    # Dropped: current models ask when a decision is open, and the step workflow's
+    # brief review and gates question every design
+    (".claude/skills/grill-me/SKILL.md", {
+        "b8c192b118dc6702b68bf6f9d574e61a7198b341583d88368d71301f5ef2fa65",  # 646f6e3
+    }),
 ]
 
 # Target project's CLAUDE.md must start with this banner. The `@CLAUDE-COMMON.md`

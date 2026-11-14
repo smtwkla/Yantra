@@ -59,6 +59,13 @@ Shared development rules across all repos, in two kinds:
   payload carries the person's id, never the address, so the queue and the logs hold no address.
   This covers the mail relay and people's addresses only; other service
   URLs, realm names and deployment paths may be in a repo.
+- **No staff names in a repo or in memory**: never name workers, supervisors or other staff in repo
+  docs, code, commit messages or Claude's memory. Record a team by its role and head count, and point
+  to my own source (a roster, a deck) for the names. Repo docs are shared reference material.
+- **Files for me go in `<repo>/scratch/`**: a file I have to open, paste or run (a report, a script,
+  a config block, an export) goes in the gitignored `scratch/` folder of the repo being worked on,
+  named for what it is. The session scratchpad (under `AppData\Local\Temp`) is for throwaway
+  intermediates only: its path is long and changes each session.
 - **Data directories**: App-owned data in a gitignored `data/` folder, organized by tenant/company if multi-tenant. Support env-var overrides for default paths.
 - **Git commit messages**: One line, feature-focused — what changed, brief context after a dash or semicolon. No multi-line bodies or bullet lists.
   Example: `Auto-generated project index: Index.md - triggered on project save and daily materialisation run;`
@@ -78,6 +85,7 @@ Write in the spirit of ASD-STE100 Simplified Technical English, without its full
 7. **Use structure for scanning.** Lists for parallel items, tables for comparisons. Label assumptions and recommendations as such; leave facts unlabelled, so an unlabelled statement is one you checked.
 8. **Questions to me:** state the question first, then the options with the consequence of each. Mark the recommended option.
 9. **Write for a reader who hasn't seen the work.** Each message stands alone. Say what a thing is the first time you name it; don't use a term, ID or abbreviation invented during the work (a finding ID, a step number, "D1") without saying what it refers to.
+10. **Write for the IT architect.** I am the sysadmin, developer and architect of every SMTW system, and I read any log, config or stack trace. Be technical and exact (hosts, units, containers, config keys, paths); never explain IT fundamentals; do not soften findings. My limit is time, not expertise. A repo may ask for explanations in its own domain (e.g. maintenance practice); that is a different matter.
 
 Keep full sentences with articles — no telegraphic text. Keep technical depth: plain wording must not remove detail, reasons, or caveats.
 
@@ -94,6 +102,10 @@ Keep full sentences with articles — no telegraphic text. Keep technical depth:
 ### Shell preference (Windows)
 
 Prefer the Bash tool over PowerShell — PowerShell mangles special characters, wasting turns. Use PowerShell only when the task genuinely requires it (Windows cmdlets, `Invoke-Command`, remote Windows VM management).
+
+A script that rewrites a file reads it, builds the whole new text in memory, and only then opens the
+file for writing, in one go. A script that opens the file for writing first empties it (it once
+emptied a backend module). Prefer the Edit tool to a patch script.
 
 ### Wrapper scripts
 
@@ -231,6 +243,14 @@ Canonical description — repo `CLAUDE.md` links here, doesn't restate. When a p
 To connect to, run commands on, or diagnose production servers (VMs, switches, OS), use the provided tooling scripts and skills — the `prod-vm` skill may apply; verify before connecting.
 
 **Claude Code is read-only on production.** Connections go through `tooling/common/ccssh.py` (restricted `claude_ro` account) for diagnostics only. Any change on a prod machine — config edit, service restart, deploy, cleanup — is executed by the user: prepare the exact ready-to-paste commands with a one-line reason and expected outcome each, state risks, then wait for the user to run them and report back. Never attempt a change via another credential, session, or workaround.
+
+**One-off commands, yes; persistent config, only from the repo.** Ready-to-paste commands and ad-hoc
+scripts are fine for one-off work: probing, investigation, a fix, a recovery. A change meant to stay
+on the host (a config file, a unit, a cron entry, a setting that must survive a rebuild) never goes
+as a pasted `cat > file <<EOF` block or a raw command. It goes into the repo as a tracked file with
+its reason in comments, is installed by the stack's own mechanism (its `install.sh`, an Ansible
+role), and the user runs that. A pasted change leaves a host state nobody can review, diff or
+rebuild, and the session's context is no record of it.
 
 ### Gallery apps — `docs/SMTW-Utils-Gallery.md`
 
