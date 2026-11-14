@@ -7,30 +7,27 @@ work, on real screens. It is kept apart from `docs/`, which is developer documen
 screens and the Masters set-up, so the gallery lets only Yantra's users open them.
 
 **How it reaches the user:** the pages are plain web pages, published by SMTW's gallery
-(<https://gallery.mspv.app>). The app only links to the Help home: the **Help** button in the top bar opens
-<https://gallery.mspv.app/yantra/home/> in a new tab (`frontend/src/help.js`).
+(<https://gallery.mspv.app>). The app only links to Help: the **Help** button in the top bar opens
+<https://gallery.mspv.app/yantra/help/> in a new tab (`frontend/src/help.js`).
 
 ## What is here
 
-This folder is Yantra's gallery folder: each subfolder is one gallery app with its `gallery.toml`; a file
-directly in `help/` (this one, the outline) is not published.
+This folder is Yantra's gallery folder. It holds one gallery app, `help/`, with its `gallery.toml`; a file
+directly in `help/` (this one, the outline) is not published. Until 15-11-2026 there were three apps (`home`,
+`guide`, `documents`); KLA folded them into one, so the gallery shows one card for Yantra.
 
 | Path | What it is | Published at |
 |---|---|---|
-| `home/` | The Help home: one card per guide | `/yantra/home/` |
-| `guide/` | The user guide: 75 slides, shown as a slide show (a screen 900 px wide or more) or as a page (a phone). `index.html` holds the text, the styles and a small script; `shots/` holds the 70 pictures (lossless WebP) | `/yantra/guide/` |
-| `documents/` | Documents and photos: a reading page with its own pictures in `shots/` | `/yantra/documents/` |
+| `help/` | Yantra Help, the user guide: 85 slides in 11 sections (section 10 is *Documents and photos*), shown as a slide show (a screen 900 px wide or more) or as a page (a phone). `index.html` holds the text, the styles and a small script; `shots/` holds the 82 pictures (lossless WebP) | `/yantra/help/` |
 | `guide-outline.md` | The screenshot list: who, where and the how-to lines of each shot, and the table slide id → shot → alt text | not published |
 
-Each page stands alone: relative addresses only, no library, no service worker, no browser storage
+The page stands alone: relative addresses only, no library, no service worker, no browser storage
 (the gallery's app contract, `docs/SMTW-Utils-Gallery.md` in the Gallery repo). `tooling/tests/test_help_pages.py`
-checks the pictures, the links, the ids and the manifests.
+checks the pictures, the links, the ids and the manifest.
 
 ## See a page
 
-Open each page's `index.html` itself in a browser (`help/guide/index.html`, `help/home/index.html`,
-`help/documents/index.html`); from disk the home's `../guide/` link opens a folder listing, not the page.
-On the guide, `?view=slides` or `?view=page` in the address chooses the view; `#x20` opens a slide.
+Open `help/help/index.html` in a browser. In it, `?view=slides` or `?view=page` in the address chooses the view; `#x20` opens a slide.
 
 ## Publish a change
 
@@ -53,9 +50,8 @@ word:
    a test stack on lane 9 with standard plant data, runs the tour (`frontend/help-tour/`) and stops
    everything. It writes only under `scratch/help-shots/`: `shots/` (PNG), `webp/` (lossless copies),
    `data.json`, the logs.
-2. Look at the shots. Copy the `webp/*.webp` files that do not start with `doc-` into `help/guide/shots/` (and the `doc-*` files into
-   `help/documents/shots/`). The table in `guide-outline.md` says which slide uses which file; a file name
+2. Look at the shots. Copy all the `webp/*.webp` files into `help/help/shots/`. The table in `guide-outline.md` says which slide uses which file; a file name
    stays the same, so no page changes.
-3. Change the version on the Help home, the guide's cover and its last slide (v0.1.16, screens of 15-11-2026) and the
+3. Change the version on the guide's cover and its last slide (v0.1.16, screens of 15-11-2026) and the
    text of any slide whose screen changed.
 4. Run `tooling\run-tooling-tests.bat`, then commit and publish as above.

@@ -1,0 +1,7 @@
+contract = 1
+title = "Yantra Help"
+description = "The user guide of Yantra: the screens, who uses them and the steps, documents and photos included; as a slide show or a page."
+
+[access]
+client = "vel-yantra-master"
+roles = ["maintenance_team", "it_admin"]

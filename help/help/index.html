@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Yantra user guide</title>
+<title>Yantra Help</title>
 <style>
 /* Yantra user guide. One copy of the text, two views: the reading page (the default, and with
    JavaScript off) and the slide show (body.show, set by the script at 900 px and wider).
@@ -155,11 +155,11 @@ body.show .pager button { border-color: #94a3b8; }
 </head>
 <body>
 <header class="bar">
-  <a class="home" href="../home/">Yantra Help</a>
+  <a class="home" href="#cover">Yantra Help</a>
   <details class="toc">
     <summary>Contents</summary>
     <nav aria-label="Contents">
-      <a class="up" href="../home/">&larr; Yantra Help</a>
+      <a href="#contents"><b>What is in this guide</b><span>The sections and who each is for</span></a>
       <a href="#cover"><b>1 · Getting around</b><span>Getting around: who uses Yantra, the Me page and the menus</span></a>
       <a href="#x13"><b>2 · Equipment</b><span>Equipment: find a machine, its page, QR labels and the asset list</span></a>
       <a href="#x20"><b>3 · Tickets</b><span>Tickets: raise, work and close a breakdown or a defect</span></a>
@@ -168,8 +168,9 @@ body.show .pager button { border-color: #94a3b8; }
       <a href="#x40"><b>6 · Meter readings</b><span>Meter readings</span></a>
       <a href="#x56"><b>7 · Preventive maintenance</b><span>Preventive maintenance: PM templates, attach to machines, jobs on the phone, verify, reschedule and skip</span></a>
       <a href="#x80"><b>8 · Contracts</b><span>Contracts: AMC and warranty</span></a>
-      <a href="#mt1"><b>9 · Masters and onboarding</b><span>Masters: how sites, classes, models and documents fit together, onboarding a machine, the set-up lists</span></a>
-      <a href="#x90"><b>10 · Notifications and settings</b><span>Notifications and Settings</span></a>
+      <a href="#mt1"><b>9 · Masters and entering equipment</b><span>Masters: how sites, classes, models and documents fit together, onboarding a machine, the set-up lists</span></a>
+      <a href="#d1"><b>10 · Documents and photos</b><span>Documents and photos: the model or the machine, add, open, remove and restore, the rules</span></a>
+      <a href="#x90"><b>11 · Notifications and settings</b><span>Notifications and Settings</span></a>
     </nav>
   </details>
   <button type="button" id="view" data-js>Read as a page</button>
@@ -177,14 +178,33 @@ body.show .pager button { border-color: #94a3b8; }
 <main class="deck" id="deck">
 <section id="cover" class="slide dark row phone">
 <div class="tx">
-<p class="kick">User guide · v0.1.16</p>
+<p class="kick">Yantra Help · user guide · v0.1.16</p>
 <h1>Yantra</h1>
 <p class="lead">What is where, and how to do the daily work — shown on real screens</p>
-<p class="sub">Equipment · Tickets · Improvements · Lessons · Readings · Preventive maintenance · Contracts · Masters · Settings</p>
+<p class="sub">Equipment · Tickets · Improvements · Lessons · Readings · Preventive maintenance · Contracts · Masters · Documents and photos · Settings</p>
 <p class="fine">Screens taken on a test copy with sample plant data. The screens show Yantra v0.1.16, as of 15-11-2026.</p>
 </div>
 <div class="crop"><img src="shots/50-pm-list-due-phone.webp" alt="The PM jobs list on a phone" width="428" height="872" loading="lazy"></div>
 <aside>Yantra is the plant maintenance app. Each slide shows one screen: who uses it, where (phone on the floor or desktop in the office) and the steps, in the app’s own button names.</aside>
+</section>
+<section id="contents" class="slide light stack">
+<p class="kick">Yantra Help</p>
+<h2>What is in this guide</h2>
+<table>
+<tr><th>Section</th><th>For</th></tr>
+<tr><td><a href="#cover">1 · Getting around</a>: who uses what, the Me page</td><td>Everyone</td></tr>
+<tr><td><a href="#x13">2 · Equipment</a>: find a machine, QR labels</td><td>Everyone</td></tr>
+<tr><td><a href="#x20">3 · Tickets</a>: raise, work and close</td><td>Operators, technicians, engineers</td></tr>
+<tr><td><a href="#x33">4 · Improvements</a>: root cause, countermeasures</td><td>Engineers, managers</td></tr>
+<tr><td><a href="#x35">5 · One-point lessons</a></td><td>Everyone</td></tr>
+<tr><td><a href="#x40">6 · Meter readings</a></td><td>Operators, engineers</td></tr>
+<tr><td><a href="#x56">7 · Preventive maintenance</a>: templates, plans and jobs</td><td>Technicians, engineers</td></tr>
+<tr><td><a href="#x80">8 · Contracts</a>: AMC and warranty</td><td>Engineers, managers</td></tr>
+<tr><td><a href="#mt1">9 · Masters: entering equipment</a></td><td>The team that sets up machines</td></tr>
+<tr><td><a href="#d1">10 · Documents and photos</a>: add, find, remove, restore</td><td>Engineers, managers, IT admin</td></tr>
+<tr><td><a href="#x90">11 · Notifications and settings</a></td><td>Everyone; Settings for IT admin and Admin</td></tr>
+</table>
+<p class="who">On a laptop the guide opens as a slide show: use the arrow keys or swipe, and <b>Contents</b> at the top to jump. On a phone it opens as a page you scroll.</p>
 </section>
 <section id="roles" class="slide light stack">
 <p class="kick">1 · Getting around</p>
@@ -1180,9 +1200,138 @@ body.show .pager button { border-color: #94a3b8; }
 </div>
 <div class="shot"><img class="dk" src="shots/85-masters-team-desktop.webp" alt="Masters, Team" width="1180" height="663" loading="lazy"></div>
 </section>
+<section id="d1" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>The model, or the machine</h2>
+<p class="who">Everyone who enters equipment · Masters and the machine’s page</p>
+<ul class="f26">
+<li>The <b>maker’s</b> papers (manual, drawings, spare-parts list) go on the <b>model</b>. Upload them once; every machine of that model shows them under <b>From model …</b>, at every site.</li>
+<li>This machine’s <b>own</b> papers (a test report, an invoice, a drawing of a change) and the nameplate photo go on the <b>machine</b>.</li>
+<li>No confidential paper (a contract, a price) on a machine or a model: everyone who sees the machine sees its documents. Contracts keep their own documents, for managers only.</li>
+<li>The table in section 9 (<a href="#mt7">Documents and photos: where each goes</a>) has more examples.</li>
+</ul>
+</div>
+<div class="shot"><div class="fig"><img class="ph" src="shots/doc-04-machine-documents-empty-phone.webp" alt="The Documents card of a machine on a phone: the Add document button, and the model's manual under the group From model Atlas Copco GA37" width="728" height="550" loading="lazy"><p class="f24 note">No document of its own yet; the model’s manual shows under <b>From model …</b>.</p></div></div>
+</section>
+<section id="d2" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>Add a document to a machine</h2>
+<p class="who">Engineer, manager, IT admin · phone or desktop · not on a scrapped machine</p>
+<ol class="f26">
+<li>Open the machine. In <b>Documents</b>, tap <b>Add document</b>.</li>
+<li>Under <b>File</b>, choose the PDF. The dialog shows the largest size allowed.</li>
+<li>Check the <b>Title</b>: write a name people will know, e.g. “Compressor 1 test report”.</li>
+<li>Tap <b>Upload</b>. A grey button says what is missing when you point at it.</li>
+<li>The newest document is first: title, file name, size, who added it and when.</li>
+</ol>
+</div>
+<div class="shot"><div class="cols pair"><div class="fig"><img class="ph" src="shots/doc-05-add-document-dialog-phone.webp" alt="The Add document dialog on a phone, with a PDF chosen and its title filled in" width="403" height="820" loading="lazy"><p class="f24 note">The Add document dialog.</p></div><div class="fig"><img class="ph" src="shots/doc-06-machine-documents-phone.webp" alt="The Documents card of a machine with two documents of its own and, below them, the group From model Atlas Copco GA37" width="491" height="820" loading="lazy"><p class="f24 note">The machine’s own documents, then the model’s group.</p></div></div></div>
+</section>
+<section id="d3" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>Add a photo</h2>
+<p class="who">Engineer, manager, IT admin · best on a phone, at the machine</p>
+<ol class="f28">
+<li>Open the machine. In <b>Photos</b>, tap <b>Add photo</b>.</li>
+<li>Under <b>File</b>, a phone offers the camera or the gallery. JPEG, PNG or WebP.</li>
+<li>Under <b>Title</b>, say what it shows, e.g. “Nameplate”.</li>
+<li>Tap <b>Upload</b>. Tap a photo to see it large; the arrows step through the photos.</li>
+</ol>
+</div>
+<div class="shot"><div class="cols pair"><div class="fig"><img class="ph" src="shots/doc-09-add-photo-dialog-phone.webp" alt="The Add photo dialog on a phone, with a photo chosen and the title Nameplate" width="403" height="820" loading="lazy"><p class="f24 note">The Add photo dialog.</p></div><div class="fig"><img class="ph" src="shots/doc-10-machine-photos-phone.webp" alt="The Photos card of a machine with one photo titled Nameplate" width="584" height="382" loading="lazy"><p class="f24 note">The Photos card after the upload.</p></div></div></div>
+</section>
+<section id="d4" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>The model’s documents</h2>
+<p class="who">Engineer, manager, IT admin · desktop · Masters › Models</p>
+<ol class="f26">
+<li>Click <b>Masters</b>, then <b>Models</b>.</li>
+<li>On the model’s row, click the paperclip button (<b>Documents</b>). Its <b>Documents</b> and <b>Photos</b> cards open in place.</li>
+<li>Click <b>Add document</b>, choose the PDF, check the <b>Title</b>, click <b>Upload</b>. <b>Add photo</b> works the same.</li>
+<li>Click <b>Models</b> (the arrow at the top left of the card) to go back to the list.</li>
+</ol>
+</div>
+<div class="shot"><div class="fig"><img class="dk" src="shots/doc-01-models-documents-button-desktop.webp" alt="Masters, Models tab: the list of models, each row with a paperclip button for its documents" width="1180" height="663" loading="lazy"><p class="f24 note">The paperclip button on each model’s row.</p></div></div>
+</section>
+<section id="d5" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>Add a document to a model</h2>
+<p class="who">Engineer, manager, IT admin · desktop · Masters › Models</p>
+<ol class="f28">
+<li>The dialog is the same as on a machine: <b>File</b>, <b>Title</b>, <b>Upload</b>.</li>
+<li>It says the file is visible at every site: no confidential documents (contracts, prices).</li>
+<li>Write a title people will know, e.g. “GA37 instruction manual”.</li>
+</ol>
+</div>
+<div class="shot"><div class="fig"><img class="ph" src="shots/doc-02-model-add-document-dialog-desktop.webp" alt="The Add document dialog for a model, with the note that it is visible at every site" width="624" height="888" loading="lazy"><p class="f24 note">Add document on a model.</p></div></div>
+</section>
+<section id="d6" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>A model’s document on every machine</h2>
+<p class="who">Engineer, manager, IT admin · desktop</p>
+<ol class="f26">
+<li>The model’s cards show the new document.</li>
+<li>Every machine of the model shows it under <b>From model …</b>, below its own documents (slide 1 of this section).</li>
+<li>On the machine you open and download it; to change or remove it, go back to <b>Masters › Models</b>.</li>
+<li>Removing it asks: “Remove this document? It disappears from every machine of this model.”</li>
+</ol>
+</div>
+<div class="shot"><div class="fig"><img class="dk" src="shots/doc-03-model-documents-desktop.webp" alt="The Documents and Photos cards of the model Atlas Copco GA37, with one document" width="1180" height="663" loading="lazy"><p class="f24 note">The model’s cards, with its first document.</p></div></div>
+</section>
+<section id="d7" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>One row, four actions</h2>
+<p class="who">Everyone opens and downloads · engineer, manager and IT admin change</p>
+<ul class="f26">
+<li><b>Open</b>: tap the title. The PDF opens in a new tab.</li>
+<li><b>Download</b>: keeps the file on the phone or computer.</li>
+<li><b>Rename</b>: <b>⋯</b> (<b>More actions</b>) › <b>Edit title</b>.</li>
+<li><b>Remove</b>: <b>⋯</b> › <b>Remove</b>, then <b>Yes</b>. The file is kept (next slide). To replace a file, remove the old one and add the new one.</li>
+</ul>
+</div>
+<div class="shot"><div class="cols pair"><div class="fig"><img class="ph" src="shots/doc-07-document-more-actions-phone.webp" alt="The Documents card with the More actions menu open, showing Edit title and Remove" width="491" height="820" loading="lazy"><p class="f24 note">The <b>⋯</b> menu on a document.</p></div><div class="fig"><img class="ph" src="shots/doc-08-remove-document-confirm-phone.webp" alt="The Documents card asking Remove this document? with the buttons Yes and No" width="461" height="820" loading="lazy"><p class="f24 note">The question before a document is removed.</p></div></div></div>
+</section>
+<section id="d8" class="slide alt row desk">
+<div class="tx">
+<p class="kick">10 · Documents and photos</p>
+<h2>Removed documents</h2>
+<p class="who">Manager, IT admin · desktop · Settings</p>
+<ol class="f26">
+<li>Click <b>Settings</b>, find <b>Removed documents</b>.</li>
+<li>Search by machine, model, ticket, improvement, lesson, contract, title or file name; or pick <b>Documents</b> or <b>Photos</b>.</li>
+<li><b>Restore</b> puts the file back. It is grey when the owner cannot change any more (a scrapped machine, a closed ticket); point at it to read why.</li>
+<li><b>Delete for good</b> erases the file, after the question “Delete for good? The file cannot be recovered.”</li>
+</ol>
+</div>
+<div class="shot"><div class="col"><div class="fig"><img class="dk" src="shots/doc-11-removed-documents-desktop.webp" alt="The Removed documents card in Settings, listing one removed document with the buttons Restore and Delete for good" width="1180" height="216" loading="lazy"><p class="f24 note">A removed document waits here.</p></div><div class="fig"><img class="dk" src="shots/doc-12-removed-delete-confirm-desktop.webp" alt="The Removed documents card asking Delete for good? The file cannot be recovered." width="1180" height="216" loading="lazy"><p class="f24 note">The question before a file is erased.</p></div></div></div>
+</section>
+<section id="d9" class="slide light stack">
+<p class="kick">10 · Documents and photos</p>
+<h2>What may be uploaded, and by whom</h2>
+<table>
+<tr><th>Rule</th><th>What it says</th></tr>
+<tr><td>File type</td><td>Documents are PDF only. Photos are JPEG, PNG or WebP.</td></tr>
+<tr><td>iPhone photos</td><td>An iPhone photo in HEIC form is refused. Set Camera › Formats › Most Compatible, or share the photo as JPEG.</td></tr>
+<tr><td>Size</td><td>Settings › Uploads, “Largest file for documents and photos”: 20 MB at the start; IT admin sets 1 to 100 MB. A larger file is refused before it is sent.</td></tr>
+<tr><td>Who adds to a machine or a model</td><td>Engineer, manager and IT admin. Everyone else opens and downloads.</td></tr>
+<tr><td>Who restores or erases</td><td>Manager and IT admin.</td></tr>
+</table>
+<ul class="f28">
+<li><b>Tickets</b>: photos while raising a ticket or on its page; a technician can add documents.</li>
+<li><b>Countermeasures</b> and <b>one-point lessons</b>: their owner, or an engineer, adds files.</li>
+<li><b>Contracts</b>: a quote or an agreement; only managers see them, because they can show a price.</li>
+</ul>
+</section>
 <section id="x90" class="slide light row phone">
 <div class="tx">
-<p class="kick">10 · Notifications and settings</p>
+<p class="kick">11 · Notifications and settings</p>
 <h2>My notifications</h2>
 <p class="who">Anyone · phone · /notifications</p>
 <ol class="f32">
@@ -1196,7 +1345,7 @@ body.show .pager button { border-color: #94a3b8; }
 </section>
 <section id="x91" class="slide alt row desk">
 <div class="tx">
-<p class="kick">10 · Notifications and settings</p>
+<p class="kick">11 · Notifications and settings</p>
 <h2>Notifications on the desktop</h2>
 <p class="who">Manager · desktop</p>
 <ol class="f28">
@@ -1208,7 +1357,7 @@ body.show .pager button { border-color: #94a3b8; }
 </section>
 <section id="x95" class="slide alt row desk">
 <div class="tx">
-<p class="kick">10 · Notifications and settings</p>
+<p class="kick">11 · Notifications and settings</p>
 <h2>Settings</h2>
 <p class="who">Admin · desktop · /settings</p>
 <ol class="f26">
@@ -1223,7 +1372,7 @@ body.show .pager button { border-color: #94a3b8; }
 </section>
 <section id="x96" class="slide alt row desk">
 <div class="tx">
-<p class="kick">10 · Notifications and settings</p>
+<p class="kick">11 · Notifications and settings</p>
 <h2>Settings as IT admin</h2>
 <p class="who">IT admin · desktop</p>
 <ol class="f28">
@@ -1247,7 +1396,7 @@ body.show .pager button { border-color: #94a3b8; }
 </main>
 <div class="pager" data-js-block>
   <button type="button" id="prev" aria-label="Previous slide">&larr;</button>
-  <span id="count" aria-live="polite">1 / 75</span>
+  <span id="count" aria-live="polite">1 / 85</span>
   <button type="button" id="next" aria-label="Next slide">&rarr;</button>
 </div>
 <script>

@@ -2,7 +2,7 @@
 
 The Help source is in `help/` (see `help/README.md`). This file is not published: it sits beside the
 apps, so the gallery skips it. It has three parts: the guide's shots (who, where, the how-to lines), the
-table *slide id → shot → alt text* that a retake follows, and the Documents and photos page's shots.
+table *slide id → shot → alt text* that a retake follows, and the shots of section 10, Documents and photos.
 
 The tour (`tooling/help-shots.bat`) writes the shots to `scratch/help-shots/shots/` (PNG) and `scratch/help-shots/webp/` (lossless WebP). Phone shots: Pixel 7 at scale 2 (824 px wide). Desktop shots: 1366×768 at scale 1.5.
 "Full" means a long page taken whole (the phone's bottom bar then sits over the page's end).
@@ -368,7 +368,7 @@ All on the desktop, as admin (some tabs also for the engineer). Click **Masters*
 The guide's `<img src>` is `shots/<name>.webp`; a retake replaces the file of the same name.
 Slide `cover` and `x12` show one shot twice (the second picture is the same file moved up).
 
-| Slide id | Shot (`help/guide/shots/<name>.webp`) | Alt text |
+| Slide id | Shot (`help/help/shots/<name>.webp`) | Alt text |
 |---|---|---|
 | `cover` | `50-pm-list-due-phone` | The PM jobs list on a phone |
 | `x01` | `01-me-open-work-phone` | Me page, open work, on a phone |
@@ -453,23 +453,23 @@ Slide `cover` and `x12` show one shot twice (the second picture is the same file
 
 ---
 
-## Documents and photos page
+## 10. Documents and photos (slides d1–d9)
 
 Taken by `frontend/help-tour/documents.tour.js` (the tour's third project). The tour uploads a small PDF and a
-drawn photo through the real dialogs (`tooling/help/make_photo.py` makes them), so the rows are real. Copy the
-`doc-*.webp` files into `help/documents/shots/`.
+drawn photo through the real dialogs (`tooling/help/make_photo.py` makes them), so the rows are real. They go into
+`help/help/shots/` with the others.
 
-| Shot (`help/documents/shots/<name>.webp`) | Who / where | What it shows | Used in section |
+| Shot (`help/help/shots/<name>.webp`) | Who / where | What it shows | Slide |
 |---|---|---|---|
-| `doc-01-models-documents-button-desktop` | engineer, desktop | Masters › Models, the paperclip button on each row | 4 |
-| `doc-02-model-add-document-dialog-desktop` | engineer, desktop | Add document dialog of a model, file chosen, title filled | 4 |
-| `doc-03-model-documents-desktop` | engineer, desktop | the model's Documents and Photos cards with the new manual | 4 |
-| `doc-04-machine-documents-empty-phone` | engineer, phone | a machine's Documents card with no own document yet; the model's manual shows under From model … | 1 |
-| `doc-05-add-document-dialog-phone` | engineer, phone | Add document dialog on a machine | 2 |
-| `doc-06-machine-documents-phone` | engineer, phone | own documents, then the group From model … | 2 |
-| `doc-07-document-more-actions-phone` | engineer, phone | the More actions menu: Edit title, Remove | 5 |
-| `doc-08-remove-document-confirm-phone` | engineer, phone | “Remove this document?” with Yes and No | 5 |
-| `doc-09-add-photo-dialog-phone` | engineer, phone | Add photo dialog | 3 |
-| `doc-10-machine-photos-phone` | engineer, phone | the Photos card with one photo | 3 |
-| `doc-11-removed-documents-desktop` | IT admin, desktop | Settings › Removed documents with a removed document | 6 |
-| `doc-12-removed-delete-confirm-desktop` | IT admin, desktop | “Delete for good? The file cannot be recovered.” | 6 |
+| `doc-01-models-documents-button-desktop` | engineer, desktop | Masters › Models, the paperclip button on each row | d4 |
+| `doc-02-model-add-document-dialog-desktop` | engineer, desktop | Add document dialog of a model, file chosen, title filled | d5 |
+| `doc-03-model-documents-desktop` | engineer, desktop | the model's Documents and Photos cards with the new manual | d6 |
+| `doc-04-machine-documents-empty-phone` | engineer, phone | a machine's Documents card with no own document yet; the model's manual shows under From model … | d1 |
+| `doc-05-add-document-dialog-phone` | engineer, phone | Add document dialog on a machine | d2 |
+| `doc-06-machine-documents-phone` | engineer, phone | own documents, then the group From model … | d2 |
+| `doc-07-document-more-actions-phone` | engineer, phone | the More actions menu: Edit title, Remove | d7 |
+| `doc-08-remove-document-confirm-phone` | engineer, phone | “Remove this document?” with Yes and No | d7 |
+| `doc-09-add-photo-dialog-phone` | engineer, phone | Add photo dialog | d3 |
+| `doc-10-machine-photos-phone` | engineer, phone | the Photos card with one photo | d3 |
+| `doc-11-removed-documents-desktop` | IT admin, desktop | Settings › Removed documents with a removed document | d8 |
+| `doc-12-removed-delete-confirm-desktop` | IT admin, desktop | “Delete for good? The file cannot be recovered.” | d8 |

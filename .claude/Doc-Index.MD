@@ -45,8 +45,6 @@ records of their time and are not kept current.
 
 | File | What it holds | Update when |
 |---|---|---|
-| `help/README.md` | How Help is built, retaken and published | the guide's slide or picture count, or the retake steps, change |
+| `help/README.md` | How Help is built, retaken and published | the slide or picture count, or the retake steps, change |
 | `help/guide-outline.md` | Each screenshot: who, where, how-to; slide → shot → alt text | a shot is added, removed or renamed |
-| `help/guide/index.html` | The user guide (slides and reading page) | screens change, before a release, on KLA's word (`tooling\help-shots.bat`) |
-| `help/home/index.html` | The Help home | the guide's slide count, version or date changes |
-| `help/documents/index.html` | Documents and photos guide | the document or photo screens change |
+| `help/help/index.html` | Yantra Help, the one gallery app: the user guide, Documents and photos included (slides and reading page) | screens change, before a release, on KLA's word (`tooling\help-shots.bat`) |

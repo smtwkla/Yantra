@@ -1,4 +1,4 @@
-"""The Help pages of help/ (S103): the three gallery apps `home`, `guide` and `documents`.
+"""The Help page of help/ (S103): one gallery app, `help` (published at /yantra/help/).
 
 The pages are plain HTML published by SMTW's gallery, so a broken picture, a link to a missing slide or a
 URL that points outside the app is found here, not by a user.  The rules of the gallery's app contract
@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import pytest
 
 HELP = Path(__file__).resolve().parents[2] / "help"
-APPS = ("home", "guide", "documents")
+APP = "help"
 ACCESS = {"client": "vel-yantra-master", "roles": ["maintenance_team", "it_admin"]}
 PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 EXTENSIONS = {"html", "htm", "js", "mjs", "css", "json", "csv", "txt", "md", "svg", "png", "jpg", "jpeg", "gif",
@@ -51,14 +51,13 @@ def app_files(app):
     return [p for p in (HELP / app).rglob("*") if p.is_file()]
 
 
-def test_help_has_exactly_the_three_apps():
+def test_help_has_exactly_the_one_app():
     folders = sorted(p.name for p in HELP.iterdir() if p.is_dir())
-    assert folders == sorted(APPS)
+    assert folders == [APP]
 
 
-@pytest.mark.parametrize("app", APPS)
-def test_manifest_has_the_agreed_keys(app):
-    manifest = tomllib.loads((HELP / app / "gallery.toml").read_text(encoding="utf-8"))
+def test_manifest_has_the_agreed_keys():
+    manifest = tomllib.loads((HELP / APP / "gallery.toml").read_text(encoding="utf-8"))
     assert set(manifest) == {"contract", "title", "description", "access"}
     assert manifest["contract"] == 1 and isinstance(manifest["contract"], int)
     assert 1 <= len(manifest["title"].strip()) <= 80
@@ -66,11 +65,10 @@ def test_manifest_has_the_agreed_keys(app):
     assert manifest["access"] == ACCESS
 
 
-@pytest.mark.parametrize("app", APPS)
-def test_file_names_and_sizes_follow_the_contract(app):
-    files = [p for p in app_files(app) if p.name != "gallery.toml"]
+def test_file_names_and_sizes_follow_the_contract():
+    files = [p for p in app_files(APP) if p.name != "gallery.toml"]
     for path in files:
-        parts = path.relative_to(HELP / app).parts
+        parts = path.relative_to(HELP / APP).parts
         assert all(PART.match(part) and not part.endswith(".") for part in parts), path
         assert path.suffix[1:] in EXTENSIONS, f"{path}: the extension must be lower case and allowed"
         assert path.stat().st_size <= MAX_FILE, path
@@ -80,68 +78,50 @@ def test_file_names_and_sizes_follow_the_contract(app):
     # as the collector: every folder prefix is compared too, not only whole paths
     spellings = {}
     for path in files:
-        parts = path.relative_to(HELP / app).parts
+        parts = path.relative_to(HELP / APP).parts
         for end in range(1, len(parts) + 1):
             prefix = "/".join(parts[:end])
             spellings.setdefault(prefix.lower(), set()).add(prefix)
     clashes = sorted(sorted(names) for names in spellings.values() if len(names) > 1)
-    assert not clashes, f"{app}: paths that differ only in capitals: {clashes}"
+    assert not clashes, f"paths that differ only in capitals: {clashes}"
 
 
-@pytest.mark.parametrize("app", APPS)
-def test_every_url_is_relative_and_stays_in_the_gallery(app):
-    for tag, key, url in read_page(app).links:
+def test_every_url_is_relative_and_stays_in_the_app():
+    for tag, key, url in read_page(APP).links:
         parts = urlsplit(url)
-        assert not parts.scheme and not parts.netloc, f"{app}: <{tag} {key}={url!r}> names another site"
-        assert not url.startswith("/"), f"{app}: <{tag} {key}={url!r}> starts with / (outside the app)"
+        assert not parts.scheme and not parts.netloc, f"<{tag} {key}={url!r}> names another site"
+        assert not url.startswith("/"), f"<{tag} {key}={url!r}> starts with / (outside the app)"
+        assert not url.startswith("../"), f"<{tag} {key}={url!r}> leaves the app (one app since 15-11-2026)"
         assert "_blob" not in url and "claude.ai" not in url
 
 
-@pytest.mark.parametrize("app", ("guide", "documents"))
-def test_every_picture_exists_has_an_alt_and_is_used(app):
-    page = read_page(app)
+def test_every_picture_exists_has_an_alt_and_is_used():
+    page = read_page(APP)
     named = {Path(img["src"]) for img in page.images}
     for img in page.images:
-        assert (HELP / app / img["src"]).is_file(), f"{app}: {img['src']} is not a file"
-        assert img.get("alt", "").strip(), f"{app}: {img['src']} has no alt text"
-    shots = {p.relative_to(HELP / app) for p in (HELP / app / "shots").glob("*")}
-    assert shots - named == set(), f"{app}: pictures no page uses"
+        assert (HELP / APP / img["src"]).is_file(), f"{img['src']} is not a file"
+        assert img.get("alt", "").strip(), f"{img['src']} has no alt text"
+    shots = {p.relative_to(HELP / APP) for p in (HELP / APP / "shots").glob("*")}
+    assert shots - named == set(), "pictures no slide uses"
 
 
-@pytest.mark.parametrize("app", ("guide", "documents"))
-def test_section_ids_are_unique(app):
-    page = read_page(app)
+def test_section_ids_are_unique():
+    page = read_page(APP)
     assert len(page.ids) == len(set(page.ids)), "an id is used twice"
     assert page.section_ids
 
 
-def targets_of(app):
-    """(page, id) pairs: each link that names a section, in this page or in the guide."""
-    pairs = []
-    for _tag, key, url in read_page(app).links:
+def test_every_section_link_names_a_section():
+    page = read_page(APP)
+    for _tag, key, url in page.links:
         parts = urlsplit(url)
         if key == "href" and parts.fragment:
-            page = {"": app, "../guide/": "guide", "../documents/": "documents"}.get(parts.path)
-            assert page, f"{app}: {url!r} points at a page this test does not know"
-            pairs.append((page, parts.fragment))
-    return pairs
+            assert not parts.path, f"{url!r} names another page"
+            assert parts.fragment in page.ids, f"#{parts.fragment} is not a section"
 
 
-@pytest.mark.parametrize("app", APPS)
-def test_every_section_link_names_a_section(app):
-    for page, fragment in targets_of(app):
-        assert fragment in read_page(page).ids, f"{app}: #{fragment} is not in {page}"
-
-
-def test_the_home_links_to_the_guide_and_to_documents_and_the_onboarding_section():
-    hrefs = {url for _tag, key, url in read_page("home").links if key == "href"}
-    assert {"../guide/", "../guide/#mt1", "../documents/"} <= hrefs
-    assert "mt1" in read_page("guide").section_ids
-
-
-def test_every_folder_a_link_names_has_its_entry_page():
-    for app in APPS:
-        for _tag, key, url in read_page(app).links:
-            parts = urlsplit(url)
-            if key == "href" and parts.path.startswith("../"):
-                assert (HELP / app / parts.path / "index.html").resolve().is_file(), f"{app}: {url!r}"
+def test_the_contents_name_every_section_and_the_onboarding_and_documents_slides():
+    page = read_page(APP)
+    hrefs = {url for _tag, key, url in page.links if key == "href"}
+    assert {"#contents", "#mt1", "#d1"} <= hrefs
+    assert {"contents", "mt1", "d1"} <= set(page.section_ids)
