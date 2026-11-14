@@ -166,7 +166,7 @@ body.show .pager button { border-color: #94a3b8; }
       <a href="#x33"><b>4 · Improvements</b><span>Improvements: root-cause analysis and countermeasures</span></a>
       <a href="#x35"><b>5 · One-point lessons</b><span>One-point lessons</span></a>
       <a href="#x40"><b>6 · Meter readings</b><span>Meter readings</span></a>
-      <a href="#x60"><b>7 · Preventive maintenance</b><span>Preventive maintenance: plans, jobs on the phone, verify, reschedule and skip</span></a>
+      <a href="#x56"><b>7 · Preventive maintenance</b><span>Preventive maintenance: PM templates, attach to machines, jobs on the phone, verify, reschedule and skip</span></a>
       <a href="#x80"><b>8 · Contracts</b><span>Contracts: AMC and warranty</span></a>
       <a href="#mt1"><b>9 · Masters and onboarding</b><span>Masters: how sites, classes, models and documents fit together, onboarding a machine, the set-up lists</span></a>
       <a href="#x90"><b>10 · Notifications and settings</b><span>Notifications and Settings</span></a>
@@ -177,11 +177,11 @@ body.show .pager button { border-color: #94a3b8; }
 <main class="deck" id="deck">
 <section id="cover" class="slide dark row phone">
 <div class="tx">
-<p class="kick">User guide · v0.1.15 + PM</p>
+<p class="kick">User guide · v0.1.16</p>
 <h1>Yantra</h1>
 <p class="lead">What is where, and how to do the daily work — shown on real screens</p>
 <p class="sub">Equipment · Tickets · Improvements · Lessons · Readings · Preventive maintenance · Contracts · Masters · Settings</p>
-<p class="fine">Screens taken on a test copy with sample plant data. The screens show Yantra v0.1.15 with preventive maintenance, as of 02-11-2026.</p>
+<p class="fine">Screens taken on a test copy with sample plant data. The screens show Yantra v0.1.16, as of 15-11-2026.</p>
 </div>
 <div class="crop"><img src="shots/50-pm-list-due-phone.webp" alt="The PM jobs list on a phone" width="428" height="872" loading="lazy"></div>
 <aside>Yantra is the plant maintenance app. Each slide shows one screen: who uses it, where (phone on the floor or desktop in the office) and the steps, in the app’s own button names.</aside>
@@ -194,7 +194,7 @@ body.show .pager button { border-color: #94a3b8; }
 <tr><td>Operator</td><td>Phone</td><td>Raise a ticket at the machine (QR label), log meter readings, read one-point lessons</td></tr>
 <tr><td>Supervisor</td><td>Phone</td><td>As the operator, for the units they look after</td></tr>
 <tr><td>Technician</td><td>Phone</td><td>Work tickets to Back in service; do PM jobs item by item</td></tr>
-<tr><td>Engineer</td><td>Desktop</td><td>Assign and close tickets; PM plans; verify, send back, reschedule or skip PM jobs; improvements</td></tr>
+<tr><td>Engineer</td><td>Desktop</td><td>Assign and close tickets; PM templates and attaching them to machines; verify, send back, reschedule or skip PM jobs; improvements</td></tr>
 <tr><td>Manager</td><td>Desktop</td><td>Contracts with prices and documents; improvement register; all sites</td></tr>
 <tr><td>IT admin, Admin</td><td>Desktop</td><td>Settings, QR labels, network; Admin also the Masters lists</td></tr>
 </table>
@@ -318,7 +318,7 @@ body.show .pager button { border-color: #94a3b8; }
 <ol class="f28">
 <li>Buttons: <b>Raise ticket</b>, <b>Edit</b>, <b>Add part</b>, <b>Move</b>, <b>Change lifecycle</b>, <b>Print label</b>.</li>
 <li>Cards: <b>Lessons</b>, <b>Under contract</b>, <b>Open tickets</b>, <b>PM plans</b>, <b>Details</b>, <b>Properties</b>, <b>Parts</b>, <b>Meters</b>, <b>History</b>, <b>Documents</b>, <b>Photos</b>.</li>
-<li>Each card has its own add button, e.g. <b>Add PM plan</b>, <b>Log reading</b>.</li>
+<li>Each card has its own add button, e.g. <b>Attach PM template</b>, <b>Log reading</b>.</li>
 </ol>
 </div>
 <div class="shot"><img class="dk" src="shots/15-equipment-detail-desktop.webp" alt="Machine page on the desktop, whole page" width="607" height="888" loading="lazy"></div>
@@ -330,11 +330,11 @@ body.show .pager button { border-color: #94a3b8; }
 <p class="who">Engineer · desktop · GBX001 Extruder main gearbox</p>
 <ol class="f28">
 <li>The path at the top (SMTW › MCC2 › EXT001 › GBX001) shows which machine it belongs to.</li>
-<li>A part has its own tickets, meters and PM plans, here <b>Gearbox oil change</b>.</li>
+<li>A part has its own tickets and PM plans, here <b>Gearbox oil change</b>. Its <b>Run hours</b> come from the extruder (<b>Use a meter from above</b>).</li>
 <li>Add one with <b>Add part</b> on the machine’s page.</li>
 </ol>
 </div>
-<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="775" height="888" loading="lazy"></div>
+<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="758" height="888" loading="lazy"></div>
 </section>
 <section id="x17" class="slide alt row desk">
 <div class="tx">
@@ -628,48 +628,92 @@ body.show .pager button { border-color: #94a3b8; }
 </div>
 <div class="shot"><img class="dk" src="shots/42-readings-register-desktop.webp" alt="Readings register" width="1180" height="663" loading="lazy"></div>
 </section>
-<section id="x60" class="slide alt row desk">
+<section id="x43" class="slide alt row desk">
 <div class="tx">
-<p class="kick">7 · Preventive maintenance</p>
-<h2>A PM plan</h2>
-<p class="who">Engineer · desktop · /equipment/pm/&lt;id&gt;</p>
-<ol class="f26">
-<li>On the machine’s page click <b>Add PM plan</b>, or a plan’s name to change it.</li>
-<li><b>Plan</b>: <b>Title</b>, <b>Done by</b>, <b>Assign jobs to</b>, <b>An engineer verifies each job</b>.</li>
-<li><b>When is it due?</b> <b>By calendar: every</b> … and/or <b>By meter: every</b> …; <b>Last done</b>.</li>
-<li><b>Items</b> on the right: <b>Add item</b>; the arrows change the order. Click <b>Save plan</b>.</li>
+<p class="kick">6 · Meter readings</p>
+<h2>A part uses the machine’s meter</h2>
+<p class="who">Engineer · desktop · a part’s page, Meters card</p>
+<ol class="f28">
+<li>A gearbox runs whenever its extruder runs, so it needs no hour meter of its own.</li>
+<li>On the part’s page, in <b>Meters</b>, click <b>Use a meter from above</b>.</li>
+<li>Pick the meter of the machine (or the part above). Click <b>Use this meter</b>.</li>
+<li>Readings are still logged on the machine; the part shows them, and its PM plans count on them. <b>Remove link</b> undoes it.</li>
 </ol>
 </div>
-<div class="shot"><img class="dk" src="shots/60-pm-plan-desktop.webp" alt="PM plan page" width="1111" height="888" loading="lazy"></div>
-<aside>A PM plan is time-based or usage-based maintenance (EN 13306: preventive maintenance carried out at set intervals). With both a calendar and a meter, the job is due at whichever comes first.</aside>
+<div class="shot"><img class="dk" src="shots/43-meter-link-dialog-desktop.webp" alt="Use a meter from above dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x56" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>PM templates: the work, written once</h2>
+<p class="who">Engineer · desktop · Masters › PM templates</p>
+<ol class="f26">
+<li>A <b>PM template</b> holds the work: the items, when it is due, who does it and whether an engineer verifies.</li>
+<li>Write it once; attach it to every machine that needs the same work, e.g. both compressors.</li>
+<li>Click <b>Add PM template</b>, or a template’s name to open it. Each row shows how many machines use it.</li>
+<li>A template is never deleted: open it and click <b>Deactivate template</b>; its machines get no more jobs.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/56-pm-templates-list-desktop.webp" alt="Masters, PM templates" width="1180" height="663" loading="lazy"></div>
+<aside>A PM template is the standard job of TPM’s planned maintenance: one written method, so every machine of a kind gets the same checks. EN 13306 calls this preventive maintenance at set intervals.</aside>
+</section>
+<section id="x57" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A PM template</h2>
+<p class="who">Engineer · desktop · /masters/pm-templates/&lt;id&gt;</p>
+<ol class="f26">
+<li><b>Template</b>: <b>Name</b>, <b>Done by</b>, <b>An engineer verifies each job</b>.</li>
+<li><b>When is it due?</b> <b>By calendar: every</b> … and/or <b>By meter: every</b> … with a meter type. Both ticked: due at whichever comes first.</li>
+<li><b>Items</b> on the right: <b>Add item</b>; the arrows change the order. Click <b>Save template</b>.</li>
+<li>A change reaches every machine at its next job. A job already started keeps its items.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/57-pm-template-desktop.webp" alt="PM template page" width="1180" height="824" loading="lazy"></div>
+<aside>The template names a meter type, not a meter. Each machine uses its own meter of that type, so one 500-hour service fits every compressor.</aside>
 </section>
 <section id="x61" class="slide alt row desk">
 <div class="tx">
 <p class="kick">7 · Preventive maintenance</p>
-<h2>Add an item to a plan</h2>
+<h2>Add an item to a template</h2>
 <p class="who">Engineer · desktop · dialog</p>
 <ol class="f28">
 <li>Click <b>Add item</b>. Choose <b>Task</b>, <b>Check</b> or <b>Reading</b>.</li>
 <li>Write <b>What to do or check</b>; add <b>Help text</b> if useful; choose <b>Photo</b>.</li>
-<li>A reading can log a meter and has Min and Max.</li>
-<li>Click <b>Save item</b>.</li>
+<li>A reading is a <b>Measurement</b> (unit, Min, Max) or a <b>Meter reading</b> (logs the machine’s meter, with the machine’s limits).</li>
+<li>Click <b>Save item</b>, then <b>Save template</b>.</li>
 </ol>
 </div>
 <div class="shot"><img class="dk" src="shots/61-pm-add-item-dialog-desktop.webp" alt="Add item dialog" width="1180" height="663" loading="lazy"></div>
 </section>
-<section id="x62" class="slide alt row desk">
+<section id="x58" class="slide alt row desk">
 <div class="tx">
 <p class="kick">7 · Preventive maintenance</p>
-<h2>A new plan</h2>
-<p class="who">Engineer · desktop · Screw compressor 2</p>
+<h2>Attach a template to a machine</h2>
+<p class="who">Engineer · desktop · the machine’s page, PM plans card</p>
 <ol class="f28">
-<li>Fill the title.</li>
-<li>Tick the trigger: calendar, meter or both.</li>
-<li>Add at least one item.</li>
-<li>Click <b>Save plan</b>. The first job comes when the plan falls due.</li>
+<li>On the machine’s or part’s page click <b>Attach PM template</b>.</li>
+<li>Pick the template. The dialog says which meter it will use here.</li>
+<li><b>Does not apply here</b>: the machine lacks a meter the template needs. You may attach it; it makes no job until the meter is added.</li>
+<li>Click <b>Attach template</b>. The machine now has a PM plan for it.</li>
 </ol>
 </div>
-<div class="shot"><img class="dk" src="shots/62-pm-new-plan-desktop.webp" alt="New PM plan" width="1151" height="888" loading="lazy"></div>
+<div class="shot"><img class="dk" src="shots/58-pm-attach-dialog-desktop.webp" alt="Attach PM template dialog" width="1180" height="663" loading="lazy"></div>
+</section>
+<section id="x60" class="slide alt row desk">
+<div class="tx">
+<p class="kick">7 · Preventive maintenance</p>
+<h2>A machine’s PM plan</h2>
+<p class="who">Engineer · desktop · /equipment/pm/&lt;id&gt;</p>
+<ol class="f26">
+<li>On the machine’s page click a plan in the <b>PM plans</b> card.</li>
+<li><b>Template</b> (left) shows the work, read-only. <b>Open template</b> to change it for every machine.</li>
+<li><b>This machine</b>: <b>Assign jobs to</b>, <b>Meters this plan uses</b>, <b>Last done (before Yantra)</b> and the meter reading then. Click <b>Save plan</b>.</li>
+<li><b>Remove from this machine</b> stops the plan. Its history stays.</li>
+</ol>
+</div>
+<div class="shot"><img class="dk" src="shots/60-pm-plan-desktop.webp" alt="A machine's PM plan page" width="1180" height="663" loading="lazy"></div>
+<aside><b>Last done</b> tells Yantra when the work was last done on paper, so the first job falls due at the right time and not today.</aside>
 </section>
 <section id="x50" class="slide light row phone">
 <div class="tx">
@@ -1060,12 +1104,12 @@ body.show .pager button { border-color: #94a3b8; }
 <ul class="f27">
 <li>Add a part with <b>Add part</b> on the machine’s page: a component-unit (drive, power pack) or a component (motor, gearbox).</li>
 <li>Make a part only when tickets or PM point at it: the gearbox oil change, a press’s safety door.</li>
-<li>A part gets its own code (GBX001) and can have its own meters and PM plans.</li>
+<li>A part gets its own code (GBX001) and can have its own meters and PM plans, or use its machine’s meter.</li>
 <li>It has no unit: it follows its machine. Criticality comes from the machine unless you grade it.</li>
 <li>The code never changes, also when the part moves to another machine.</li>
 </ul>
 </div>
-<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="775" height="888" loading="lazy"></div>
+<div class="shot"><img class="dk" src="shots/16-component-unit-desktop.webp" alt="A component's page" width="758" height="888" loading="lazy"></div>
 </section>
 <section id="mt7" class="slide light stack">
 <p class="kick">9 · Masters · onboarding equipment</p>
@@ -1098,10 +1142,11 @@ body.show .pager button { border-color: #94a3b8; }
 <li>Equipment › <b>Add equipment</b>: unit, model, name, criticality (A, B, C), serial number, year.</li>
 <li>Add the <b>parts</b> that tickets or PM will point at.</li>
 <li>This machine’s own values: properties that differ, its own meters, the nameplate photo.</li>
+<li><b>Attach PM template</b> for the PM work it needs (the template first, in Masters › PM templates).</li>
 <li><b>Print label</b>, stick it on the machine, scan it once to check.</li>
 </ol>
 </div>
-<aside>Who: steps 1 needs IT admin; steps 2–9 an engineer or IT admin. Scanning the label once proves the label and the record match.</aside>
+<aside>Who: step 1 needs IT admin; steps 2–8 and 10 an engineer or IT admin; step 9 an engineer. Scanning the label once proves the label and the record match.</aside>
 </section>
 <section id="m1" class="slide alt stack mid">
 <h2>Masters: where the plant is set up</h2>
@@ -1196,13 +1241,13 @@ body.show .pager button { border-color: #94a3b8; }
 <li>History lines show test logins such as <b>e2e_operator</b>. Real use shows the person’s name.</li>
 <li>Notifications are blocked in the test browser, and no background worker runs, so those two screens look different in real use.</li>
 <li>The access log is empty on the test copy.</li>
-<li>The screens show Yantra v0.1.15 with preventive maintenance, as of 02-11-2026.</li>
+<li>The screens show Yantra v0.1.16, as of 15-11-2026.</li>
 </ul>
 </section>
 </main>
 <div class="pager" data-js-block>
   <button type="button" id="prev" aria-label="Previous slide">&larr;</button>
-  <span id="count" aria-live="polite">1 / 72</span>
+  <span id="count" aria-live="polite">1 / 75</span>
   <button type="button" id="next" aria-label="Next slide">&rarr;</button>
 </div>
 <script>

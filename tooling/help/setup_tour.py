@@ -1,6 +1,7 @@
 """The tour's standard data on lane 9 (after seed_e2e.py): realistic machines, meters, readings,
-tickets, an improvement, a lesson, a contract and PM plans/jobs in every state, made through the API
-as each role (S103).  tour.py calls main(); the ids go to scratch/help-shots/data.json."""
+tickets, an improvement, a lesson, a contract, PM templates attached to machines (S104) and PM jobs
+in every state, made through the API as each role (S103).  tour.py calls main(); the ids go to
+scratch/help-shots/data.json."""
 import json
 import os
 import subprocess
@@ -259,17 +260,23 @@ def main():
         api("manager", "POST", f"/api/contracts/{contract['id']}/equipment",
             {"equipment_id": ids[name], "price": price})
 
-    # PM plans
-    def plan(name, title, *, kind="calendar", every=None, unit=None, meter_every=None, last_on=None,
-             last_meter=None, plan_items, verify=True, who="engineer", assignee="technician"):
-        body = {"equipment_id": ids[name], "title": title, "trigger_kind": kind, "assignee_id": me[assignee],
-                "needs_verification": verify, "items": plan_items, "last_done_on": last_on}
+    # PM (S104): the work lives on PM templates (Masters); a machine links to a template, and its plan row holds
+    # only the machine's facts (assignee, Last done)
+    def template(name, items_, *, kind="calendar", every=None, unit=None, meter_every=None, verify=True):
+        body = {"name": name, "performer": "maintenance", "needs_verification": verify, "trigger_kind": kind,
+                "items": items_}
         if kind in ("calendar", "both"):
             body.update(calendar_every=every, calendar_unit=unit)
         if kind in ("meter", "both"):
-            body.update(meter_every=str(meter_every), meter_type_id=RUN, meter_equipment_id=ids[name],
-                        last_done_meter=str(last_meter))
-        return api(who, "POST", "/api/pm/plans", body)
+            body.update(meter_every=str(meter_every), meter_type_id=RUN)
+        return api("engineer", "POST", "/api/pm/templates", body)
+
+    def plan(name, tpl, *, last_on=None, last_meter=None, assignee="technician"):
+        made = api("engineer", "POST", "/api/pm/plans", {"equipment_id": ids[name], "template_id": tpl["id"]})
+        settings = {"assignee_id": me[assignee], "last_done_on": last_on}
+        if last_meter is not None:
+            settings["last_done_meter"] = str(last_meter)
+        return api("engineer", "PUT", f"/api/pm/plans/{made['id']}", settings)
 
     def job_of(p):
         for tab in ("due", "upcoming"):
@@ -286,35 +293,64 @@ def main():
             if ans is not None:
                 api("technician", "PUT", f"/api/pm/jobs/{job['id']}/results/{item['id']}", ans)
 
-    ext_items = [
+    discharge = {"item_type": "reading", "reading_kind": "measurement", "text": "Discharge temperature at full load",
+                 "photo": "none", "unit": "°C", "min_value": "70", "max_value": "100"}
+    t_ext = template("Weekly extruder check", [
         {"item_type": "check", "text": "No oil leaks at the gearbox", "photo": "optional"},
         {"item_type": "check", "text": "Vacuum gauge reads -0.9 bar or better", "photo": "none"},
         {"item_type": "task", "text": "Grease the auger shaft bearings", "photo": "none",
          "help_text": "Two shots of EP2 grease at each nipple."},
-        {"item_type": "reading", "text": "Gearbox oil temperature", "photo": "none", "meter_type_id": OIL,
-         "meter_equipment_id": ids["Main extruder"], "min_value": "20", "max_value": "80"},
-    ]
-    p_ext = plan("Main extruder", "Weekly extruder check", every=1, unit="week", last_on=day(-9), plan_items=ext_items)
-    comp_items = [
+        {"item_type": "reading", "reading_kind": "meter", "text": "Gearbox oil temperature", "photo": "none",
+         "meter_type_id": OIL},
+    ], every=1, unit="week")
+    t_c1 = template("500-hour compressor service", [
         {"item_type": "task", "text": "Clean the oil cooler fins with compressed air", "photo": "optional"},
         {"item_type": "task", "text": "Change the air filter element", "photo": "none"},
         {"item_type": "check", "text": "Oil level between the marks in the sight glass", "photo": "none"},
-        {"item_type": "reading", "text": "Discharge temperature at full load", "photo": "none", "unit": "°C",
-         "min_value": "70", "max_value": "100"},
-    ]
-    p_c1 = plan("Screw compressor 1", "500-hour compressor service", kind="both", every=3, unit="month",
-                meter_every=500, last_on=day(-80), last_meter=5730, plan_items=comp_items)
+        discharge,
+    ], kind="both", every=3, unit="month", meter_every=500)
+    t_c2 = template("Monthly compressor check", [
+        {"item_type": "check", "text": "No air leaks at the hoses and joints", "photo": "none"},
+        {"item_type": "check", "text": "Drain valve works; no water in the receiver", "photo": "none"},
+        {"item_type": "task", "text": "Clean the oil cooler fins", "photo": "none"},
+        discharge,
+    ], every=1, unit="month")
+    t_mill = template("Weekly blade mill check", [
+        {"item_type": "check", "text": "Blades sharp, no broken teeth", "photo": "optional"},
+        {"item_type": "check", "text": "Guard fitted and bolts tight", "photo": "none"},
+        {"item_type": "task", "text": "Grease the main shaft bearings", "photo": "none"},
+    ], every=1, unit="week")
+    t_press = template("Hydraulic press check", [
+        {"item_type": "check", "text": "No oil leaks at the cylinder seals", "photo": "optional"},
+        {"item_type": "check", "text": "Safety light curtain stops the ram", "photo": "none"},
+        {"item_type": "reading", "reading_kind": "meter", "text": "Power-pack oil temperature", "photo": "none",
+         "meter_type_id": OIL},
+    ], every=10, unit="day")
+    t_gbx = template("Gearbox oil change", [
+        {"item_type": "task", "text": "Drain and refill gearbox oil (ISO VG 320, 40 L)", "photo": "optional"},
+        {"item_type": "check", "text": "Magnetic plug clean, no metal chips", "photo": "none"},
+    ], kind="both", every=6, unit="month", meter_every=4000)
+    t_back = template("Monthly vacuum pump service", [
+        {"item_type": "task", "text": "Change the vacuum pump oil", "photo": "none"},
+        {"item_type": "check", "text": "Pump belt tension OK", "photo": "none"},
+    ], every=1, unit="month")
+    t_skip = template("Monthly blade mill lubrication", [
+        {"item_type": "task", "text": "Grease the shaft bearings", "photo": "none"},
+    ], every=1, unit="month")
+
+    # The gearbox (a part) runs with the extruder: it uses the extruder's run-hours meter (S104 A1)
+    api("engineer", "POST", f"/api/equipment/{ids['Extruder main gearbox']}/meter-links",
+        {"meter_type_id": RUN, "source_equipment_id": ids["Main extruder"]})
+
+    p_ext = plan("Main extruder", t_ext, last_on=day(-9))
+    p_c1 = plan("Screw compressor 1", t_c1, last_on=day(-80), last_meter=5730)
     j = job_of(p_c1)
     st = start(j)
     fill(j, st, [{"outcome": "done"}, {"outcome": "done"}, None, None])
 
-    p_c2 = plan("Screw compressor 2", "Monthly compressor check", every=1, unit="month", last_on=day(-33),
-                plan_items=[{"item_type": "check", "text": "No air leaks at the hoses and joints", "photo": "none"},
-                            {"item_type": "check", "text": "Drain valve works; no water in the receiver",
-                             "photo": "none"},
-                            {"item_type": "task", "text": "Clean the oil cooler fins", "photo": "none"},
-                            {"item_type": "reading", "text": "Discharge temperature at full load", "photo": "none",
-                             "unit": "°C", "min_value": "70", "max_value": "100"}])
+    p_c2 = plan("Screw compressor 2", t_c2, last_on=day(-33))
+    # One template on two machines: compressor 1 gets the monthly check too, counted from today
+    plan("Screw compressor 1", t_c2, assignee="technician2")
     j = job_of(p_c2)
     st = start(j, "technician2")
     hiss = {"outcome": "not_ok", "remark": "Hose joint at the dryer hisses. Clamp is loose."}
@@ -323,39 +359,23 @@ def main():
         api("technician2", "PUT", f"/api/pm/jobs/{j['id']}/results/{item['id']}", ans)
     api("technician2", "POST", f"/api/pm/jobs/{j['id']}/done", {})
 
-    mill_items = [{"item_type": "check", "text": "Blades sharp, no broken teeth", "photo": "optional"},
-                  {"item_type": "check", "text": "Guard fitted and bolts tight", "photo": "none"},
-                  {"item_type": "task", "text": "Grease the main shaft bearings", "photo": "none"}]
-    p_mill = plan("Vertical blade mill", "Weekly blade mill check", every=1, unit="week", last_on=day(-8),
-                  plan_items=mill_items)
+    p_mill = plan("Vertical blade mill", t_mill, last_on=day(-8))
     j = job_of(p_mill)
     st = start(j)
     fill(j, st, [{"outcome": "ok"}, {"outcome": "ok"}, {"outcome": "done"}])
     api("technician", "POST", f"/api/pm/jobs/{j['id']}/done", {})
     api("engineer", "POST", f"/api/pm/jobs/{j['id']}/verify", {"remark": "Checked the blades myself. Good."})
 
-    p_press = plan("Hydraulic press 1", "Hydraulic press check", every=10, unit="day", last_on=day(-10),
-                   plan_items=[{"item_type": "check", "text": "No oil leaks at the cylinder seals",
-                                "photo": "optional"},
-                               {"item_type": "check", "text": "Safety light curtain stops the ram", "photo": "none"},
-                               {"item_type": "reading", "text": "Power-pack oil temperature", "photo": "none",
-                                "meter_type_id": OIL, "meter_equipment_id": ids["Hydraulic press 1"],
-                                "min_value": "30", "max_value": "60"}])
-    p_gbx = plan("Extruder main gearbox", "Gearbox oil change", every=6, unit="month", last_on=day(-178),
-                 plan_items=[{"item_type": "task", "text": "Drain and refill gearbox oil (ISO VG 320, 40 L)",
-                              "photo": "optional"},
-                             {"item_type": "check", "text": "Magnetic plug clean, no metal chips", "photo": "none"}])
-    p_back = plan("Main extruder", "Monthly vacuum pump service", every=1, unit="month", last_on=day(-32),
-                  plan_items=[{"item_type": "task", "text": "Change the vacuum pump oil", "photo": "none"},
-                              {"item_type": "check", "text": "Pump belt tension OK", "photo": "none"}])
+    p_press = plan("Hydraulic press 1", t_press, last_on=day(-10))
+    p_gbx = plan("Extruder main gearbox", t_gbx, last_on=day(-178), last_meter=8000)
+    p_back = plan("Main extruder", t_back, last_on=day(-32))
     j = job_of(p_back)
     st = start(j)
     fill(j, st, [{"outcome": "done"}, {"outcome": "ok"}])
     api("technician", "POST", f"/api/pm/jobs/{j['id']}/done", {})
     api("engineer", "POST", f"/api/pm/jobs/{j['id']}/send-back",
         {"remark": "Belt is still loose. Tighten it and check again."})
-    p_skip = plan("Blade mill 2", "Monthly blade mill lubrication", every=1, unit="month", last_on=day(-31),
-                  plan_items=[{"item_type": "task", "text": "Grease the shaft bearings", "photo": "none"}])
+    p_skip = plan("Blade mill 2", t_skip, last_on=day(-31))
     j = job_of(p_skip)
     api("engineer", "POST", f"/api/pm/jobs/{j['id']}/skip",
         {"remark": "Blade mill 2 stopped all month for the line change."})
@@ -365,7 +385,8 @@ def main():
                        "closed": t_closed["id"], "sched": t_sched["id"], "fix": t_fix["id"]},
            "improvement": imp["id"], "lesson": lesson["id"], "contract": contract["id"],
            "plans": {"ext": p_ext["id"], "c1": p_c1["id"], "c2": p_c2["id"], "mill": p_mill["id"],
-                     "press": p_press["id"], "gbx": p_gbx["id"], "back": p_back["id"], "skip": p_skip["id"]}}
+                     "press": p_press["id"], "gbx": p_gbx["id"], "back": p_back["id"], "skip": p_skip["id"]},
+           "templates": {"ext": t_ext["id"], "c1": t_c1["id"], "c2": t_c2["id"]}}
     jobs = {}
     for tab in ("due", "upcoming", "to_verify", "done"):
         for jj in items(f"/api/pm/jobs?tab={tab}", "engineer"):

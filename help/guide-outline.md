@@ -63,12 +63,12 @@ Order below is the suggested teaching order.
 ### 15-equipment-detail-desktop.png — Machine page (`/equipment/<id>`, full)
 - **Who / where:** engineer, desktop. Main extruder.
 - Buttons: **Raise ticket**, **Edit**, **Add part**, **Move**, **Change lifecycle**, **Print label**.
-- Cards: **Lessons** (**Add lesson**), **Under contract**, **Open tickets**, **PM plans** (**Add PM plan**), **Details**, **Properties**, **Parts**, **Meters** (**Open register**, **Add meter**, **Log reading**), **History**, **Documents**, **Photos**.
+- Cards: **Lessons** (**Add lesson**), **Under contract**, **Open tickets**, **PM plans** (**Attach PM template**), **Details**, **Properties**, **Parts**, **Meters** (**Open register**, **Add meter**, **Log reading**), **History**, **Documents**, **Photos**.
 
 ### 16-component-unit-desktop.png — A part of a machine (`/equipment/<id>`, full)
 - **Who / where:** engineer, desktop. GBX001 Extruder main gearbox, a part of EXT001.
 - The path at the top (SMTW › MCC2 › EXT001 › GBX001) shows which machine it belongs to.
-- A part has its own tickets and PM plans (here **Gearbox oil change**).
+- A part has its own tickets and PM plans (here **Gearbox oil change**); its **Run hours** come from the extruder through a meter link.
 
 ### 17-labels-print-desktop.png — QR labels (`/labels?ids=…`)
 - **Who / where:** engineer or IT admin, desktop.
@@ -195,22 +195,38 @@ Order below is the suggested teaching order.
 
 ---
 
+### 43-meter-link-dialog-desktop.png — Use a meter from above (dialog, on a part's page)
+- **Who / where:** engineer, desktop. GBX001 Extruder main gearbox; it already uses the extruder's **Run hours**.
+- In **Meters** click **Use a meter from above**, pick the machine's meter, **Use this meter**.
+- Readings stay on the machine; the part shows them and its PM plans count on them. **Remove link** undoes it.
+
 ## 7. Preventive maintenance (PM)
 
-### 60-pm-plan-desktop.png — PM plan (`/equipment/pm/<id>`, full)
+### 56-pm-templates-list-desktop.png — Masters › PM templates (`/masters?section=pm_templates`)
 - **Who / where:** engineer, desktop.
-- On the machine page click **Add PM plan** (or a plan's name to change it).
-- **Plan**: **Title**, **Done by**, **Assign jobs to**, **An engineer verifies each job**.
-- **When is it due?**: **By calendar: every** … and/or **By meter: every** … ; **Last done**.
-- **Items** on the right; **Add item**; arrows change the order. Click **Save plan**.
+- A PM template holds the work: items, when it is due, who does it, verification. Written once, attached to every machine that needs it.
+- **Add PM template**; click a name to open one; each row shows how many machines use it. Never deleted: open it, **Deactivate template**.
 
-### 61-pm-add-item-dialog-desktop.png — Add item (dialog)
+### 57-pm-template-desktop.png — A PM template (`/masters/pm-templates/<id>`, full)
+- **Who / where:** engineer, desktop. *Monthly compressor check*, used on both compressors.
+- **Template**: **Name**, **Done by**, **An engineer verifies each job**.
+- **When is it due?**: **By calendar: every** … and/or **By meter: every** … with a meter type; both: whichever comes first.
+- **Items** on the right; **Add item**; arrows change the order. Click **Save template**. A change reaches every machine at its next job.
+
+### 61-pm-add-item-dialog-desktop.png — Add item (dialog, on the template page)
 - Click **Add item**. Choose **Task**, **Check** or **Reading**.
 - Write **What to do or check**; add **Help text** if useful; choose **Photo** (none, optional, required).
-- A reading can log a meter and has Min and Max. Click **Save item**.
+- A reading is a **Measurement** (unit, Min, Max) or a **Meter reading** (the machine's meter and limits). Click **Save item**.
 
-### 62-pm-new-plan-desktop.png — New PM plan (`/equipment/<id>/pm/new`, full)
-- An empty plan for Screw compressor 2: fill the title, tick the trigger, add at least one item, **Save plan**.
+### 58-pm-attach-dialog-desktop.png — Attach PM template (dialog, on the machine page)
+- **Who / where:** engineer, desktop. Screw compressor 2, *500-hour compressor service* picked.
+- The dialog says which meter the template uses here, or **Does not apply here** when a meter is missing.
+- Click **Attach template**.
+
+### 60-pm-plan-desktop.png — A machine's PM plan (`/equipment/pm/<id>`, full)
+- **Who / where:** engineer, desktop. Main extruder, *Weekly extruder check*.
+- **Template** (read-only) with **Open template**; **This machine**: **Assign jobs to**, **Meters this plan uses**, **Last done (before Yantra)**, **Meter reading then**. **Save plan**.
+- **Remove from this machine** stops the plan; its history stays.
 
 ### 50-pm-list-due-phone.png — PM › Due (`/pm`)
 - **Who / where:** technician, phone.
@@ -390,9 +406,12 @@ Slide `cover` and `x12` show one shot twice (the second picture is the same file
 | `x40` | `40-readings-sheet-phone` | Readings sheet, lower part |
 | `x41` | `41-log-reading-dialog-phone` | Log reading dialog |
 | `x42` | `42-readings-register-desktop` | Readings register |
-| `x60` | `60-pm-plan-desktop` | PM plan page |
+| `x43` | `43-meter-link-dialog-desktop` | Use a meter from above dialog |
+| `x56` | `56-pm-templates-list-desktop` | Masters, PM templates |
+| `x57` | `57-pm-template-desktop` | PM template page |
 | `x61` | `61-pm-add-item-dialog-desktop` | Add item dialog |
-| `x62` | `62-pm-new-plan-desktop` | New PM plan |
+| `x58` | `58-pm-attach-dialog-desktop` | Attach PM template dialog |
+| `x60` | `60-pm-plan-desktop` | A machine's PM plan page |
 | `x50` | `50-pm-list-due-phone` | PM jobs list on a phone |
 | `x51` | `51-pm-job-before-start-phone` | PM job before start |
 | `x52` | `52-pm-job-filling-phone` | Filling a PM job, top |

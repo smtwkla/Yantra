@@ -18,7 +18,7 @@ directly in `help/` (this one, the outline) is not published.
 | Path | What it is | Published at |
 |---|---|---|
 | `home/` | The Help home: one card per guide | `/yantra/home/` |
-| `guide/` | The user guide: 72 slides, shown as a slide show (a screen 900 px wide or more) or as a page (a phone). `index.html` holds the text, the styles and a small script; `shots/` holds the 67 pictures (lossless WebP) | `/yantra/guide/` |
+| `guide/` | The user guide: 75 slides, shown as a slide show (a screen 900 px wide or more) or as a page (a phone). `index.html` holds the text, the styles and a small script; `shots/` holds the 70 pictures (lossless WebP) | `/yantra/guide/` |
 | `documents/` | Documents and photos: a reading page with its own pictures in `shots/` | `/yantra/documents/` |
 | `guide-outline.md` | The screenshot list: who, where and the how-to lines of each shot, and the table slide id → shot → alt text | not published |
 
@@ -56,6 +56,6 @@ word:
 2. Look at the shots. Copy the `webp/*.webp` files that do not start with `doc-` into `help/guide/shots/` (and the `doc-*` files into
    `help/documents/shots/`). The table in `guide-outline.md` says which slide uses which file; a file name
    stays the same, so no page changes.
-3. Change the version on the Help home, the guide's cover and its last slide (v0.1.15 + PM, screens of 02-11-2026) and the
+3. Change the version on the Help home, the guide's cover and its last slide (v0.1.16, screens of 15-11-2026) and the
    text of any slide whose screen changed.
 4. Run `tooling\run-tooling-tests.bat`, then commit and publish as above.

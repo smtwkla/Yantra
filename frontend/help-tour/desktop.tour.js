@@ -1,4 +1,4 @@
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { asPerson, closeDialog, DATA, dialogOpen, shot, tryDo } from "./shot.js";
 
 const id = DATA.ids;
@@ -80,21 +80,42 @@ test("desktop lesson and readings", async ({ page }) => {
   await page.goto(`/equipment/${id["Main extruder"]}`);
   await page.getByRole("link", { name: "Open register" }).or(page.getByRole("button", { name: "Open register" })).first().click();
   await shot(page, "42-readings-register-desktop");
+  // S104 A1: a part uses a meter of the machine above it
+  await page.goto(`/equipment/${id["Extruder main gearbox"]}`);
+  await tryDo("meter link", async () => {
+    await page.getByRole("button", { name: "Use a meter from above" }).click();
+    const d = await dialogOpen(page);
+    await d.getByTestId("meter-link-choice").first().locator("input").check();
+    await shot(page, "43-meter-link-dialog-desktop");
+    await closeDialog(page);
+  });
 });
 
 test("desktop pm", async ({ page }) => {
-  await asPerson(page, "engineer", `/equipment/pm/${P.ext}`);
-  await shot(page, "60-pm-plan-desktop", { full: true, maxHeight: 1800 });
+  // S104: the work lives on PM templates in Masters; a machine's plan holds only its own facts
+  await asPerson(page, "engineer", "/masters?section=pm_templates");
+  await shot(page, "56-pm-templates-list-desktop");
+  await page.goto(`/masters/pm-templates/${DATA.templates.c2}`);
+  await shot(page, "57-pm-template-desktop", { full: true, maxHeight: 1600 });
   await tryDo("add item", async () => {
     await page.getByRole("button", { name: "Add item", exact: true }).click();
     const d = await dialogOpen(page);
     await tryDo("type", () => d.locator("label.btn", { hasText: "Check" }).click());
-    await d.getByLabel("What to do or check").fill("Clean the cooler fins with compressed air");
+    await d.getByLabel("What to do or check").fill("Belt tension: 10 mm deflection at mid-span");
     await shot(page, "61-pm-add-item-dialog-desktop");
     await closeDialog(page);
   });
-  await page.goto(`/equipment/${id["Screw compressor 2"]}/pm/new`);
-  await shot(page, "62-pm-new-plan-desktop", { full: true, maxHeight: 1600 });
+  await page.goto(`/equipment/${id["Screw compressor 2"]}`);
+  await tryDo("attach", async () => {
+    await page.getByRole("button", { name: "Attach PM template" }).click();
+    const d = await dialogOpen(page);
+    await sel(d, "PM template", "500-hour compressor service");
+    await expect(d.getByTestId("pm-attach-preview")).not.toContainText("Loading");
+    await shot(page, "58-pm-attach-dialog-desktop");
+    await closeDialog(page);
+  });
+  await page.goto(`/equipment/pm/${P.ext}`);
+  await shot(page, "60-pm-plan-desktop", { full: true, maxHeight: 1800 });
 
   await page.goto("/pm");
   await shot(page, "63-pm-jobs-due-desktop");
