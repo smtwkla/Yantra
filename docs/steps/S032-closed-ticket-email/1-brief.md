@@ -4,7 +4,7 @@ Doc: brief
 Author: Planner (Opus)
 Date: 23-10-2026
 Track: full
-Status: Committed; device checks pending (rows 27-30 of device-checks.md)
+Status: Committed b100494 (23-10-2026); device checks pending (rows 27-30 of device-checks.md)
 Baseline: 33c3a4b
 ```
 

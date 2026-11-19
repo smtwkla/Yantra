@@ -397,7 +397,11 @@ EQUIPMENT = "/api/equipment"
 
 @pytest.fixture
 def admin(role_client):
-    """IT admin: writes masters and equipment, and sees every unit."""
+    """IT admin (role it_admin), not the Keycloak admin: writes masters and equipment, and sees every unit.
+
+    It holds no maintenance key (e.g. no PM template edit); for the admin who holds every key, use
+    keycloak_admin.
+    """
     return role_client("it_admin")
 
 
