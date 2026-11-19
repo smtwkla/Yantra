@@ -13,13 +13,16 @@ import logging
 import time
 
 import jwt
+import pymysql
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import app as app_module
 import auth_utils
 import config
 from local_db import get_local_db
+from tests.conftest import SERVER_ERROR, server_error
 
 CLIENT_ID = config.KEYCLOAK_CLIENT_ID
 
@@ -398,6 +401,36 @@ class TestDatabaseDown:
     def test_a_check_that_needs_memberships_is_503(self, client, db_down):
         res = client.get("/api/masters/sites", headers=_bearer(_token(client_roles=["maintenance_team"])))
         assert res.status_code == 503
+
+    @pytest.mark.parametrize("error, detail", [
+        (pymysql.err.InterfaceError(0, ""), "connection closed"),
+        (pymysql.err.OperationalError(2013, "Lost connection to MySQL server during query"), "2013"),
+    ])
+    def test_a_lost_connection_gives_the_token_permissions(self, client, monkeypatch, caplog, error, detail):
+        # S105: a connection lost on the first statement answers as DBUnavailable does, and is logged
+        def lost():
+            raise error
+        monkeypatch.setattr(app_module, "current_memberships", lost)
+        with caplog.at_level(logging.ERROR, logger="api_common"):
+            res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["it_admin"])))
+        body = res.get_json()
+        assert res.status_code == 200
+        assert body["db_unavailable"] is True and body["sites"] is None and body["person_id"] is None
+        assert body["role"] == "it_admin"
+        assert body["permissions"] == auth_utils.compute_permissions(["it_admin"])
+        assert any(r.name == "api_common" and "GET /api/auth/me" in r.getMessage() and detail in r.getMessage()
+                   for r in caplog.records)
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["maintenance_team"])))
+        assert res.status_code == 200
+        assert res.get_json()["permissions"] == [] and res.get_json()["db_unavailable"] is True
+
+    def test_another_database_error_in_auth_me_is_not_hidden(self, client, monkeypatch):
+        # S105: only a lost connection is the outage answer; a deadlock stays the 500
+        def deadlock():
+            raise pymysql.err.OperationalError(1213, "Deadlock found when trying to get lock")
+        monkeypatch.setattr(app_module, "current_memberships", deadlock)
+        res = client.get("/api/auth/me", headers=_bearer(_token(client_roles=["it_admin"])))
+        assert server_error(res) == SERVER_ERROR
 
 
 class TestInternalUrl:

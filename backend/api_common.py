@@ -91,14 +91,26 @@ def _unexpected_error(exc):
     return jsonify({"error": _HTTP_ERROR_TEXT[500]}), 500
 
 
+def log_connection_lost(exc):
+    """One ERROR line, no traceback: a lost connection is no fault in Yantra's code (S105 D2).
+    Public because /api/auth/me logs the loss it answers itself (S105 D3)."""
+    detail = "connection closed" if isinstance(exc, pymysql.err.InterfaceError) else exc
+    logger.error("Database connection lost on %s %s: %s", request.method, request.path, detail)
+
+
+def _database_lost(exc):
+    """A lost connection is a 503, as DBUnavailable.  Also the handler of PyMySQL's
+    InterfaceError, which 1.2.3 raises only on a closed socket (S105)."""
+    log_connection_lost(exc)
+    return jsonify({"error": DB_LOST_TEXT}), 503
+
+
 def _operational_error(exc):
-    """A connection that died mid-request (the pool's ping passed, the first execute failed) is
-    a 503, as DBUnavailable; any other OperationalError (1213 deadlock, 1205 lock wait — the
-    accepted rare races) is the plain 500."""
+    """A connection that died mid-request is a 503, as DBUnavailable; any other
+    OperationalError (1213 deadlock, 1205 lock wait — the accepted rare races) is the plain 500."""
     code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else 0
     if is_connection_lost(code):
-        logger.error("Database connection lost on %s %s: %s", request.method, request.path, exc)
-        return jsonify({"error": DB_LOST_TEXT}), 503
+        return _database_lost(exc)
     return _unexpected_error(exc)
 
 
@@ -109,6 +121,7 @@ def register_error_handlers(app):
     app.register_error_handler(pymysql.err.IntegrityError, _integrity_error)
     app.register_error_handler(RequestEntityTooLarge, _request_too_large)
     app.register_error_handler(pymysql.err.OperationalError, _operational_error)
+    app.register_error_handler(pymysql.err.InterfaceError, _database_lost)
     app.register_error_handler(HTTPException, _http_error)
     app.register_error_handler(Exception, _unexpected_error)
 

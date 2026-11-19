@@ -25,8 +25,10 @@ def get_db():
         if error:
             raise DBUnavailable(error)
         try:
-            # The pool pings on checkout, so a connection that died while idle is replaced
-            # here; an error means the server itself cannot be reached.
+            # The pool pings on checkout and replaces a dead cached connection only when the
+            # server answers; when it does not, DBUtils hands out the dead connection, and its
+            # first statement raises PyMySQL's InterfaceError, which api_common answers with
+            # the same 503 (S105).  An error here means no new connection could be made.
             g.db = get_pooled_db()
         except pymysql.err.OperationalError as exc:
             raise DBUnavailable(describe_error(exc)) from exc

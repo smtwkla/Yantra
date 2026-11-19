@@ -47,6 +47,18 @@ def test_a_lost_connection_is_503(client, failing_version):
     assert (res.status_code, res.get_json()) == (503, {"error": DB_TEXT})
 
 
+def test_a_closed_connection_is_the_same_503(client, failing_version, caplog):
+    # S105: PyMySQL's closed socket (a rollback after a lost connection, or the dead pooled
+    # connection DBUtils hands out while the server stays down); one log line, no traceback
+    failing_version(pymysql.err.InterfaceError(0, ""))
+    with caplog.at_level(logging.ERROR, logger="api_common"):
+        res = client.get("/api/version")
+    assert (res.status_code, res.get_json()) == (503, {"error": DB_TEXT})
+    lines = [r for r in caplog.records if r.name == "api_common"
+             and "GET /api/version" in r.getMessage() and "connection closed" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].exc_info is None
+
+
 def test_db_unavailable_is_the_same_503_without_the_cause(client, failing_version, caplog):
     # S064 UX-13 row 2: both 503 paths say the same plain text; the cause goes to the log only
     from local_db import DBUnavailable

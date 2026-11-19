@@ -4,10 +4,11 @@ import logging
 import os
 import time
 
+import pymysql
 from flask import Flask, g, jsonify, request
 
 from access_control import client_network, make_access_log_hook, require_network
-from api_common import DB_LOST_TEXT, register_error_handlers
+from api_common import DB_LOST_TEXT, log_connection_lost, register_error_handlers
 from access_core import display_role
 from auth_utils import (
     current_memberships, current_person_id, global_permissions, membership_sites, require_auth, store_login_email,
@@ -18,7 +19,7 @@ from config import (
     SECRET_KEY, UPLOAD_MAX_MB_CEILING,
 )
 from db_helpers import close_db, get_db
-from local_db import DBUnavailable, ensure_schema, init_pool
+from local_db import DBUnavailable, connection_lost, ensure_schema, init_pool
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -133,10 +134,11 @@ def auth_me():
     """Return the current user's profile, permissions and site roles (S011 § 6).
 
     Called once per page load, the de-facto login: it logs the stale Keycloak maintenance
-    roles a token still carries (S011 § 5.1), and answers while the database is down with
-    the token's permissions only, so IT admin can still reach Settings › Database.  ``network``
-    is the address the server saw and whether it counts as internal (S013 § 6).  ``person_id``
-    is the user's own Team record, or null (S018 § 3: *Assigned to me*, the labour default).
+    roles a token still carries (S011 § 5.1), and answers while the database is down or its
+    connection is lost (S105) with the token's permissions only, so IT admin can still reach
+    Settings › Database.  ``network`` is the address the server saw and whether it counts as
+    internal (S013 § 6).  ``person_id`` is the user's own Team record, or null (S018 § 3:
+    *Assigned to me*, the labour default).
 
     S032 § 5.4: the token's email is copied onto the person here, a GET that writes on purpose
     (this is the login moment); a no-op write on every load after the first.  No person, or the
@@ -158,7 +160,13 @@ def auth_me():
                 store_login_email(cur, person_id, user["email"])
         body.update(role=display_role(user["roles"], memberships), permissions=global_permissions(),
                     sites=membership_sites(memberships), person_id=person_id, db_unavailable=False)
-    except DBUnavailable:
+    except (DBUnavailable, pymysql.MySQLError) as exc:
+        # S105: a connection lost on the way answers as the database down; any other database
+        # error (a deadlock, an SQL fault) stays the 500
+        if isinstance(exc, pymysql.MySQLError):
+            if not connection_lost(None, exc):
+                raise
+            log_connection_lost(exc)
         body.update(role=display_role(user["roles"], []), permissions=user["permissions"], sites=None,
                     person_id=None, db_unavailable=True)
     return jsonify(body)
