@@ -1,5 +1,15 @@
 # What changed in Yantra
 
+## 0.1.16 — 21-11-2026
+- Preventive maintenance templates in Masters set the work once for many machines
+- Attach a template to a machine to give it a maintenance plan
+- Meter links let a part use the meter of the machine above it
+- Preventive maintenance jobs come due, start on the phone, get verified, and can be rescheduled or skipped
+- Preventive maintenance job alerts reach assignees and verifiers when a job is due or overdue
+- Equipment search finds the class and words in any order, and shows model, class and badges
+- Help button in the top bar opens the user guide
+- The app shows a clear message when the database connection is lost
+
 ## 0.1.15 — 01-11-2026
 - Record service contracts: vendor, period, coverage, PM visits, response time, machines at any site
 - Keep a list of service vendors in Masters, and link a contractor to their vendor
