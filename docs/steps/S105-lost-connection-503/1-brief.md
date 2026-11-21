@@ -5,7 +5,7 @@ Author: Brief writer (Opus)
 Date: 14-11-2026 (revised 15-11-2026 for review rounds 1 and 2; revised 19-11-2026: cut to a small step, KLA)
 Track: full (chosen by KLA 14-11-2026; the writer proposed light)
 Baseline: 0d64228 (stale check 19-11-2026: no file of § 3 changed since review r2's 6696283)
-Status: Gate B — waiting for KLA (code review r1: no findings)
+Status: Done (committed 299391a, 20-11-2026; checks: none)
 ```
 
 # S105 — A lost database connection answers 503, not 500
