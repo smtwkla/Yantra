@@ -1,4 +1,4 @@
-"""Step claims: one orchestrator session at a time works on a step (decided 27-10-2026, KLA).
+"""Step claims: one orchestrator session at a time works on a step.
 
     python tooling/steps/step_claim.py take S062 "coding"         take, or refuse if another session holds it
     python tooling/steps/step_claim.py take S062 "coding" --force take over a live claim (only on the user's word)
@@ -53,8 +53,7 @@ LOCK_TRIES = 50                       # the lock is held for milliseconds; 50 tr
 IDLE_LIMIT = timedelta(minutes=30)    # no agent running and no command for this long: dead
 AGENT_GRACE = timedelta(minutes=15)   # an agent past its budget by this much: its claim is dead
 WATCH_POLL_SECONDS = 30
-# Budgets in minutes, about twice each role's usual time (/step stats, 27-10-2026: an Opus coder
-# 23-24 min, a review 2-7 min, a fix round 5 min). A fix round passes its own budget (20).
+# Budgets in minutes, about twice each role's usual time. A fix round passes its own budget (20).
 # The brief writer: a new brief or amendment (brief-writer) and answers to a review (brief-answer).
 BUDGETS = {"coder": 60, "fix": 20, "code-reviewer": 20, "brief-writer": 45, "brief-answer": 20,
            "brief-reviewer": 20, "advisor": 30, "planner": 45,

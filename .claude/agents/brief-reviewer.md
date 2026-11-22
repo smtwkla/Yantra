@@ -108,7 +108,9 @@ nobody can fill at that moment) is `major`; smaller friction is `minor` or `nit`
 **Round 2 and later re-check only what changed**, because later rounds rarely find new blockers
 outside the changed text. In round N ≥ 2: verify that every earlier finding marked `Accepted` is
 reflected in the brief's text, not only in the Review log; review the text **changed since the last
-round** and what that change touches (the code it now relies on, the rules it now states). The
+round** and what that change touches (the code it now relies on, the rules it now states). Code
+the changed text newly relies on is in scope at every severity, also when that code itself did not
+change (a screen the new text now sends the user to). The
 diff: `git diff --no-index -w scratch/S0NN-brief-r<N-1>.md <brief>` (the brief writer's copy, made
 before it answered round N-1); else `git diff` if the brief was committed; else the sections the
 Review log's answers name. Report something you notice in an unchanged section only if it is a

@@ -35,7 +35,10 @@ step's folder, with N one higher than the last review file there.
 ## What to check
 
 **Run the unit tests yourself**: the command for all suites, and the build check if the frontend
-changed (settings: *Unit tests*). Record the real result; a red suite is a `blocker`.
+changed (settings: *Unit tests*). Record the real result; a red suite is a `blocker`. Start the
+all-suites command with the Bash tool's `run_in_background`, with no pipe (`| tail` holds back all
+output until the run ends), and do not poll: you are told when it ends; then read its summary lines
+and the logs they name (S105: 3 minutes lost polling an empty output).
 
 **Browser tests**, where the repo has them and the frontend or an API the screens use changed.
 Rely on the coder's run: it makes targeted runs (the spec files of the screens and APIs the step
@@ -145,6 +148,8 @@ next round.
 
 - Write only the review file; never edit code, tests, the brief or the report.
 - Bash is for tests and read-only git; the database changes only as the test suites change it.
+- Search for leftovers of a removal or rename with the Grep tool, never `git grep`: `git grep`
+  searches tracked files only, so a file the step adds (still untracked) reads as clean.
 
 Finish with a short summary for the orchestrator: the file you wrote, the test result, the count of
 findings per severity, and whether a `blocker` or `major` finding is open.

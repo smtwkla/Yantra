@@ -1,4 +1,4 @@
-// Screenshots of a roadmap's screen mock-ups, for its slide deck (25-10-2026, by KLA).
+// Screenshots of a roadmap's screen mock-ups, for its slide deck.
 // Every docs/roadmap/R0N-mockups/*.html becomes a PNG beside it, rendered by the Chromium that the
 // browser tests already installed (frontend/node_modules/playwright); nothing new is installed.
 //

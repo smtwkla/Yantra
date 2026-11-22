@@ -19,8 +19,8 @@ most 5 items, one bullet each, `waste`, `hindrance`, `rule` or `idea`, each with
   unread item with its step, file and label, and `--themes` once: the log's rows counted by theme.
   Group the items that say the same thing, give each group a theme (an existing one when it fits),
   count them, and propose the few changes that would save the most; the user decides. Prefer
-  fixing a tool over adding a rule: in past triages, the tool fixes ended their
-  themes and the prose rule did not.
+  fixing a tool over adding a rule: a tool fix ends its theme, where a prose rule
+  often does not.
 - **A theme noted twice**: a theme whose last two decisions were `noted` (`--themes`
   marks it) is decided `acted` or `dropped` at this triage; `noted` is not offered for it.
 - **The feedback log**: `docs/steps/feedback-log.md`, one table row per item

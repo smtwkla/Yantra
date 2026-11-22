@@ -36,18 +36,18 @@ progress:
 
 | File | Written by | Purpose |
 |---|---|---|
-| `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the orchestrator, a coder or a reviewer through the orchestrator (25-10-2026). Optional; a step may have none or several. |
+| `0-advice-<topic>.md` | Advisor | The answer to one technical question (how a library, browser, operating system or device really behaves; which option works), by research and read-only experiments, each claim labelled fact, assumption or recommendation. Asked by the orchestrator, a coder or a reviewer through the orchestrator. Optional; a step may have none or several. |
 | `1-brief.md` | Brief writer | The implementation brief: what, where, design decisions, open questions (CLAUDE-COMMON "Show the plan before building"), plus standards, tests and acceptance. Revised in place; its **Review log** answers each finding. |
 | `2-brief-review-r1.md`, `-r2.md`, … | Brief reviewer | One file per review round |
 | `2-brief-review-s1.md`, `-s2.md`, … | Brief reviewer | A staleness review: does the approved brief still hold for code changed since its baseline (§ Stale brief check) |
-| `3-impl-report.md` | Coder | The mandatory post-implementation report (CLAUDE-COMMON "Report after implementation"). Its **Docs updated** section lists every doc the step changed (the docs pass, standing rule 24-10-2026; which docs: `.claude/CLAUDE.md` § Docs to keep current), or says why none; its **Fix rounds** section answers each code-review finding. |
+| `3-impl-report.md` | Coder | The mandatory post-implementation report (CLAUDE-COMMON "Report after implementation"). Its **Docs updated** section lists every doc the step changed (the docs pass; which docs: `.claude/CLAUDE.md` § Docs to keep current), or says why none; its **Fix rounds** section answers each code-review finding. |
 | `4-code-review-r1.md`, `-r2.md`, … | Code reviewer | One file per review round, reviewing the working-tree diff against the brief |
 
-**Feedback** (25-10-2026, by KLA). Every file an agent writes — advice, brief, brief review, impl report,
+**Feedback**. Every file an agent writes — advice, brief, brief review, impl report,
 code review — ends with `## Feedback`: at most 5 items, one bullet each, labelled `waste`, `hindrance`,
 `rule` or `idea`, each with its evidence, or `- none` (the agents' instructions give the form).
 `/step feedback` collects them across steps (`tooling/step-feedback.bat`), by default only the
-items not yet in the repo's **feedback log** `docs/steps/feedback-log.md` (27-10-2026): one row
+items not yet in the repo's **feedback log** `docs/steps/feedback-log.md`: one row
 per item read, with its theme and what was decided (`acted`, `dropped` or `noted`). The log is the
 repo's own file, like the index; `.claude/skills/step/reference/feedback.md` gives its form.
 
@@ -97,17 +97,17 @@ The orchestrator proposes the track; the user confirms or overrides it.
 **Switch to full** when the brief reviewer raises a `blocker` or `major`
 finding, or the step turns out to meet a full-track criterion. The header and
 the index row (`INDEX.md`) are updated, and the user is told. A finding that only says
-"belongs on the full track" is `minor` (23-10-2026, S029): it switches the
+"belongs on the full track" is `minor`: it switches the
 track, and the user may keep light at approval.
 
 **Facts run.** Before brief review round 1, the brief writer runs
 `tooling/step-brief-facts.bat S0NN`: where each file, test, route and code name
 the brief cites exists, and which tests use it. The brief writer fixes the brief
-from it; the brief reviewer gets the output (23-10-2026, S029). Its *Cited lines*
+from it; the brief reviewer gets the output. Its *Cited lines*
 section shows the text of each `file:line` the brief cites, and where a named
-function or constant is now when it has moved (30-10-2026).
+function or constant is now when it has moved.
 
-**Anchors by name** (30-10-2026): line numbers move when other steps are coded.
+**Anchors by name**: line numbers move when other steps are coded.
 A brief planned ahead of a step it depends on, or citing a file that another
 open step edits, anchors by name (function, test, constant). It adds
 `file:line` only for files no open step touches.
@@ -121,7 +121,7 @@ open step edits, anchors by name (function, test, constant). It adds
 6. Open questions and assumptions;
 7. Amendments; Review log.
 
-**The fix lane** (`Track: fix`, standing rule 24-10-2026). It is for a small
+**The fix lane** (`Track: fix`). It is for a small
 bug, fixed with no brief review and no approval gate: the user's request is the
 approval. The bug qualifies only if every one of these holds:
 - it fixes behaviour that a brief, the repo's product plan or the docs already describe, and
@@ -142,8 +142,8 @@ step leaves the lane: it gets a light or full brief and goes to gate A.
 ## Manual checks
 
 A brief's tests section lists the checks a person would make on the screens.
-The ones that matter are marked **important**; the rest stay plain notes. Since
-S024 they come in two kinds:
+The ones that matter are marked **important**; the rest stay plain notes. They
+come in two kinds:
 
 - **Automated** — anything a browser engine can judge: a screen opens, a flow
   completes, a refusal shows beside its field, a dialog's buttons fit a phone.
@@ -162,7 +162,7 @@ The rules:
   `- [auto] <check> — <test file>::<test name>`. Real-device checks go there as
   boxes, `- [ ] …` (important) or a plain list, and the coder appends them as
   rows to the repo's device-check list (settings: *Device checks*).
-- **The levels** (S047). The repo's browser tests run at its levels (settings:
+- **The levels**. The repo's browser tests run at its levels (settings:
   *Browser tests*): a quick whole-app run, the whole-suite run (every test on
   the logic device, and the layout-tagged tests, which check layout or differ
   by device, on the other devices the settings name), and the release level.
@@ -223,7 +223,7 @@ The rules:
    not decided in code.
 3. **Code review.** Status `In code review`. Rounds repeat until no `blocker`
    or `major` finding is open. Minor findings and nits are then fixed in one
-   more fix round, without asking the user (standing rule, 24-10-2026). A
+   more fix round, without asking the user. A
    finding that needs a design decision, or would change approved behaviour,
    goes to the user at gate B instead. Gate B names the fixed findings in one
    line; the impl report holds the details.
@@ -370,8 +370,8 @@ of content. That is expected and never needs the user's attention:
 
 ## Shell on Windows
 
-Every agent reads this before its first Bash call: these are the ways runs got lost to quoting, to a
-`cd` that stayed, and to a chain that stopped on an empty `grep`. The Bash tool is Git Bash on
+Every agent reads this before its first Bash call: these rules guard against quoting, a `cd` that
+stays, and a chain that stops on an empty `grep`. The Bash tool is Git Bash on
 Windows; on Linux or macOS, rules 1, 4, 6 and 7 still apply.
 
 1. **Text and scripts go to a file first.** Change a file with the Edit or Write tool. For a script
@@ -394,11 +394,13 @@ Windows; on Linux or macOS, rules 1, 4, 6 and 7 still apply.
    text-mode write (`open(path, "w")`, `Path.write_text`): on Windows it turns every LF into CRLF.
    Check a file's line endings by its bytes (`b"\r\n" in Path(path).read_bytes()`), not with
    `grep -c $'\r'`: Git Bash counts every line there.
-8. **Leave the git index alone** (01-11-2026, from the agents' feedback on S087 and S088): delete a
+8. **Leave the git index alone**: delete a
    file with plain `rm`, never `git rm`, and never `git add`. `git rm` stages the deletion, and the
    index is the user's, as the commit is.
-9. **No `|` in a `-g` pattern under `cmd //c`** (02-11-2026, from the agents' feedback): `cmd`
-   reads the `|` as a pipe and splits the command. Use a single word, or two runs.
+9. **No `|` and no spaces in a pattern under `cmd //c`**: `cmd`
+   reads a `|` in a `-g` pattern as a pipe and splits the command, and splits a spaced pytest `-k`
+   expression (`-k "a or b"`) at its spaces, so the run selects nothing. Use a single word, name the
+   test ids (`file::Class::test`), or make two runs.
 10. **`cmd //c "x.bat" | tail` hides the wrapper's exit code**: the pipe returns `tail`'s. Read the
     PASSED or FAILED line, or redirect the output to a file and then read the file.
 11. **`PYTHONUTF8=1`** before a Python command whose output goes to a file: Python writes cp1252
@@ -407,7 +409,7 @@ Windows; on Linux or macOS, rules 1, 4, 6 and 7 still apply.
     --old-file old.txt --new-file new.txt [--count N]`, the texts written first with the Write tool.
     It replaces the exact text N times (default 1) or refuses, and keeps the file's line endings.
 13. **Never start `python -`, `uv run python -` or `cat` without input**: they wait on stdin until
-    the Bash tool's 2-minute limit (S071, S087, S097). Write the script to a file and run the file.
+    the Bash tool's 2-minute limit. Write the script to a file and run the file.
 
 ## Orchestrated mode (one terminal)
 
@@ -435,7 +437,7 @@ terminal, with each role as a subagent (`.claude/agents/`):
 - **Each review loop is capped at 3 rounds,** then the orchestrator asks the
   user.
 - **The stale brief check** (above) runs before each `/step implement`.
-- **One session per step** (27-10-2026): the orchestrator takes a claim on a
+- **One session per step**: the orchestrator takes a claim on a
   step before it writes the step's files (`tooling/step-claim.bat`, files in
   the main working folder's `scratch/step-claims/`), and a second session is
   refused while the claim is live. A claim dies when its session's process
@@ -444,24 +446,24 @@ terminal, with each role as a subagent (`.claude/agents/`):
   an agent passes its budget; it never stops the agent. The skill's
   `reference/claims.md` has the commands and the budgets. `scratch/`
   must be ignored by git, as it is for the browser-test lock.
-- **Snapshot rounds** (27-10-2026): every coder hand-back is snapshotted, and
+- **Snapshot rounds**: every coder hand-back is snapshotted, and
   each snapshot keeps a round ref (`refs/step-rounds/S00N-<n>`), so a verify
   review reads only the fix round: `tooling/step-snapshot.bat diff S00N
   --from-round <n>`.
-- **The step's diff leaves out the workflow files** (30-10-2026): `diff` does
+- **The step's diff leaves out the workflow files**: `diff` does
   not show the step folders, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
   or `docs/roadmap/`, and its last line counts what it left out. The
   device-check list stays in. `--all` shows everything; paths after `--` win.
-- **A diff from any commit** (31-10-2026): `diff [S00N] --base <commit>`
+- **A diff from any commit**: `diff [S00N] --base <commit>`
   compares the working tree with that commit, the same way and with the
   same exclusions: for a step with no snapshot yet whose base is not `HEAD`,
   or to override the step's base.
-- **Is the tree still the snapshot?** (02-11-2026): `diff S00N --worktree
+- **Is the tree still the snapshot?** `diff S00N --worktree
   [--from-round <n>]` compares the working tree, untracked files too, with the
   snapshot or round itself; it prints `working tree equals <ref>` (exit 0) or
   the diff (exit 1). Never `git diff refs/steps/…`: it shows new files as deleted.
-- **The files and conventions above are unchanged.** The separate terminals
-  below still work.
+- **The files and conventions above are the same in both modes.** The separate
+  terminals below also work.
 
 ## Prompts per terminal (manual mode)
 
@@ -514,8 +516,7 @@ from the doc as a `major` finding. The coder never edits it.
 
 ## The repo's settings and index
 
-Two things in a repo are its own; everything above is the same in every repo
-(S056).
+Two things in a repo are its own; everything above is the same in every repo.
 
 **The settings.** The repo's `.claude/CLAUDE.md` has a section
 `## Step workflow`: first a few lines on the repo's step tools, then one bullet
@@ -526,7 +527,7 @@ section: the orchestrator stops with "This repo has no Step workflow section in
 its CLAUDE.md. Add one; docs/steps/README.md lists the entries (see
 `## Pre-flight` for the form)."
 
-Six entries are read by the step tools (S057), so each is a list of backticked
+Six entries are read by the step tools, so each is a list of backticked
 words, and its text outside the backticks is for the reader: a value holds no
 other backtick. A missing entry, or `none`, takes the default in the last
 column. The tools that read them (`step_facts.read_step_settings`) stop with
@@ -536,6 +537,7 @@ the message above when the section is missing: `brief_facts.py` and
 | Entry | Holds | When it is `none` |
 |---|---|---|
 | *Unit tests* | the command for all suites, the per-suite commands, the build check, the test run name variable and its reserved names | — (every repo has unit tests) |
+| *Test services* | the services the tests need (a database container, a mail catcher), the command that shows whether they are up, and how the user starts them | no check: the tests need no service |
 | *Browser tests* | the browser-test tool and its rules; the targeted run, a new test alone, the quick whole-app run, the whole-suite run, the release level; the device projects and the logic device; the layout tag and its rule; the test conventions; the spec-to-step map; the lock | no browser runs and no `[auto]` checks: every manual check is a device check |
 | *Plan and domain docs* | the repo's product plan (where gate A and gate R record lasting decisions), the domain docs, the schema doc | the generic text only |
 | *Standards* | the repo's standards rule (a pointer), the standards to name, and why they are explained | no standards section in the brief; the reviews do not ask for one |

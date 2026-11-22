@@ -1,4 +1,4 @@
-"""Exact text replace for agents (02-11-2026, KLA's feedback triage): the same mechanical edit in
+"""Exact text replace for agents: the same mechanical edit in
 one or many files, with the texts read from files, so no shell quoting, heredoc or sed mangles a
 backslash or a CRLF on the way in.
 

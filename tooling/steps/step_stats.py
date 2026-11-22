@@ -42,7 +42,7 @@ PROJECTS = Path.home() / ".claude" / "projects"
 REPORT = ROOT / "scratch" / "step-stats.md"
 SEVERITIES = ("blocker", "major", "minor", "nit")
 REVIEW_NAME = re.compile(r"^(2-brief-review|4-code-review)-([rs])(\d+)\.md$")
-# A finding: a heading "### BR1-02 …", or (since 22-10-2026) a nit bullet "- **BR1-07** (nit) …"
+# A finding: a heading "### BR1-02 …", or a nit bullet "- **BR1-07** (nit) …"
 FINDING = re.compile(r"^(?:#{2,4}\s+|-\s+\*\*)((BR|CR|BS)(\d+)-\d+)\b\**(.*)$", re.MULTILINE)
 SEVERITY_WORD = re.compile(r"\b(blocker|major|minor|nit)s?\b", re.IGNORECASE)
 REJECTED = re.compile(r"\*\*Rejected\*\*|\|\s*Rejected\b")

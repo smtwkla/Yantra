@@ -1,4 +1,4 @@
-// The Mermaid diagrams of a Markdown file render (the architecture doc; 11-11-2026, by KLA).
+// The Mermaid diagrams of a Markdown file render (the architecture doc).
 // Each ```mermaid block is drawn by the browser tests' Chromium (frontend/node_modules/playwright),
 // so a syntax error is found before a reader sees an error box instead of a picture.
 //

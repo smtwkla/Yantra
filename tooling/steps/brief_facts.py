@@ -1,8 +1,7 @@
-"""Facts behind a brief's claims about the code, in one run (adopted 23-10-2026 from S029's
-/step stats: most brief-review findings were facts the orchestrator had not checked — a constant
-that already existed, a test the change breaks).  The orchestrator runs it before review round 1
-and fixes the brief from it; the brief reviewer gets the output and verifies the brief's
-claims from it instead of finding each one again.
+"""Facts behind a brief's claims about the code, in one run, because most brief-review findings
+are facts nobody had checked: a constant that already exists, a test the change breaks.  The
+orchestrator runs it before review round 1 and fixes the brief from it; the brief reviewer gets
+the output and verifies the brief's claims from it instead of finding each one again.
 
     python tooling/steps/brief_facts.py S029                   the step's 1-brief.md
     python tooling/steps/brief_facts.py docs/steps/…/1-brief.md
@@ -10,55 +9,49 @@ claims from it instead of finding each one again.
 Reads every `backticked` reference in the brief:
   - a file path (with an optional :line or :from-to): exists, and has that many lines; a path not
     at the root is looked for as the end of a longer path (the brief named its folder in prose);
-    one row per file, the highest line cited;
+    one row per file, the highest line cited; a binary file (png, pdf, …) has no line count:
+    "exists (binary)"; a path git tracks but which is deleted in the working tree is "no such file";
   - a bare file name (`screens.spec.js`): where files of that name are;
-  - a test id (file::Class::name): the file exists and names it;
-  - an API route (/api/…): the test files that call it;
+  - a test id (file::Class::name): the file exists and names it; a test id Class::test (or
+    file::Class::test) lists the class's other tests by name;
+  - an API route (/api/…): the test files that call it; a route matches a test line only by its
+    whole shape, a placeholder matching one segment; the test file's own route constants
+    (EQUIPMENT = "/api/equipment") are put into the line first;
   - a code name (snake_case, CamelCase, CONSTANT, dotted module.name): where it is defined,
-    how many other code files use it, and which test files use it;
-  - screen text in double quotes inside the backticks (`"Print asset list"`): the test lines that
-    use it, so a step that hides, renames or moves a control sees the tests it breaks.
+    how many other code files use it, and which test files use it; a name in more than 10 test
+    files lists 3 files only; a dotted name is looked up only when <module>.py in the code folders
+    defines it at top level, else it is listed as a table.column or attribute, not looked up; a
+    Python built-in name (`ValueError`, `RuntimeError`) is no code name, and is skipped;
+  - screen text in double quotes inside the backticks (`"Print asset list"`): the lines of the
+    frontend test files that use it, so a step that hides, renames or moves a control sees the
+    tests it breaks; screen text in backticks that wraps onto a second line is read as one text;
+    text shorter than 3 characters or with no letter ("-1", "0 = 1"), and text with a space at
+    either end or an underscore (" A_B ", a test value), is skipped; screen text in more than 20
+    test lines gives its count only.
 Plain words in backticks (`down`, `critical`) are skipped: too common to grep usefully.
 It judges nothing: "not found" may be right for a name the brief says is new.
 
-Since 30-10-2026 (the agents' feedback, 23 items):
+Also:
   - *Cited lines*: every path:NN or path:NN-MM in the brief, in backticks or not, with the line's
     text now; when the sentence names a code name that is not on that line, where the file
     defines it now ("moved? now :NN") — anchors move when a brief is planned ahead of its
-    dependencies;
-  - a route matches a test line only by its whole shape, a placeholder matching one segment; the
-    test file's own route constants (EQUIPMENT = "/api/equipment") are put into the line first;
-  - a dotted name is looked up only when <module>.py in the code folders defines it at top level;
-    else it is listed as a table.column or attribute, not looked up;
-  - the names found nowhere go in one line, with "(planned in S0NN)" when their sentence names
-    another step; a name in more than 10 test files lists 3 files only;
-  - screen text is looked for in the frontend test files only.
-
-Since 01-11-2026 (the agents' feedback on S087 and S092):
-  - a path git tracks but which is deleted in the working tree is "no such file" (it crashed);
-  - quoted text with a space at either end or an underscore (" A_B ") is a test value, not
-    screen text, and is skipped; screen text in more than 20 test lines gives its count only.
-
-Since 31-10-2026 (the agents' feedback: an 870-line facts file for S087):
+    dependencies; a cited range shows its first and its last line, so a range that runs into the
+    next entry shows it; a name goes with the first cite after it in its own clause (a "; " or a
+    table cell ends one; a name after every cite goes with the last), and a name whose def, class
+    or function holds the cited lines is no "moved?";
+  - an exception class the brief names (`DBUnavailable`): its parents up to Python's own, and the
+    `except` sites in code of each, since a handler of a parent catches it too;
   - a code name the brief marks new (`name` **(new)**) goes in one line, with the files that
     already hold the name; a SQL name (a table, column, key or constraint of the migrations' DDL,
     or an upper-case information_schema column) goes in one line, without its uses;
-  - screen text shorter than 3 characters or with no letter ("-1", "0 = 1") is skipped;
-  - a binary file (png, pdf, …) has no line count: "exists (binary)";
-  - a cited range shows its first and its last line, so a range that runs into the next entry
-    shows it;
-  - a test id Class::test (or file::Class::test) lists the class's other tests by name;
-  - "planned in S0NN" takes the steps the sentence says add the name ("new in S0NN", "S0NN
-    adds"), else every other step it names, sorted; a step that has its 3-impl-report.md is
+  - the names found nowhere go in one line; those that other steps plan go in one line per
+    planning step, "planned in S0NN (not coded yet): 40 names — …", not in the not-found line;
+  - a name's planners are the steps its sentence says add it ("new in S0NN", "S0NN adds", "S0NN
+    creates"), else every other step the sentence names that is not coded yet (a coded step the
+    sentence only mentions is cited as a reason, and the name is the brief's own new one), sorted;
+    a step counts only when its own 1-brief.md names the name (or it has no brief yet), since a
+    sentence may cite a step for another reason; a planner that has its 3-impl-report.md is
     marked "now coded — re-check": the brief names what that step planned, not what it built.
-
-Since 02-11-2026 (KLA's feedback triage, items of S094–S102):
-  - a Python built-in name (`ValueError`, `RuntimeError`) is no code name, and is skipped;
-  - the names found nowhere that other steps plan go in one line per planning step, "planned in
-    S097 (not coded yet): 40 names — …", not in the not-found line;
-  - a step counts as a name's planner only when its own 1-brief.md names it (or it has no brief
-    yet): S096's facts said `pm_schedule_core` was "planned in S080", because a sentence citing
-    S080 for another reason named it; "S0NN creates" names the planner as "S0NN adds" does.
 Writes the same text to scratch/brief-facts-<step>.md.
 
 The folders searched are the repo's `Code folders` setting (.claude/CLAUDE.md § Step workflow);
@@ -81,14 +74,18 @@ MAX_LINE_TEXT = 160                     # characters of a cited line shown
 FRONTEND_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx", ".vue")   # screen text is tested here
 
 BACKTICKED = re.compile(r"`([^`\n]+)`")
+# Screen text in backticks that the brief wraps onto a second line; only a quoted text, so an odd
+# backtick elsewhere pairs nothing
+WRAPPED_UI = re.compile(r'`("[^"`\n]+\n[ \t>]*[^"`\n]+")`')
 PATH = re.compile(r"^([\w.\-]+(?:/[\w.\-\[\]]+)*\.\w+)(?::(\d+)(?:-(\d+))?)?$")
 TEST_ID = re.compile(r"^([\w.\-/]*\w)::([\w:]+)$")
 ROUTE = re.compile(r"^(?:(?:GET|POST|PUT|PATCH|DELETE) )?(/api/[\w\-/<>]+)")
 BARE_FILE = re.compile(r"^[\w.\-]+\.(py|js|vue|md|bat|json|ya?ml|sql|toml)$")
 CALL = re.compile(r"^([A-Za-z_][\w.]*)\(")
 NAME = re.compile(r"^[A-Za-z_][\w.]*$")
-# Worth grepping: has an underscore, an inner capital, or a dot (module.name); not a plain word
-DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.")
+# Worth grepping: has an underscore, an inner capital, a dot (module.name), or an acronym before a
+# word (DBUnavailable, HTTPError); not a plain word
+DISTINCT_NAME = re.compile(r"_|[a-z][A-Z]|\.|[A-Z]{2}[a-z]{2}")
 TEST_PATH = re.compile(r"(^|/)(tests|e2e)/|(^|/)test_|\.(spec|test)\.\w+$")
 UI_TEXT = re.compile(r'^"([^"\n]{1,60})"$')
 MIN_UI_TEXT = 3                         # shorter screen text ("-1", "OK") matches too many test lines
@@ -98,7 +95,7 @@ CITED = re.compile(r"(?<![\w./\-])((?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z]\w*):(\d+)(?:
 STEP_MENTION = re.compile(r"\bS\d{3}\b")
 # The steps a sentence says add a name: "new in S080", "added by S080", "planned in S080", "S080 adds"
 STEP_ADDS = re.compile(r"\b(?:new in|added (?:in|by)|planned in|lands (?:in|with))\s+(S\d{3})\b|"
-                       r"\b(S\d{3})(?:'s brief)?\s+(?:adds|introduces|plans|creates)\b")
+                       r"\b(S\d{3})(?:'s brief)?\s+(?:adds|introduces|plans|planned|creates)\b")
 BUILTIN_NAMES = frozenset(dir(builtins))   # ValueError, RuntimeError: Python's own, never a code name of the repo
 # `name` **(new)**: the brief marks the name as one the step adds
 MARKED_NEW = re.compile(r"`([^`\n]+)`\**\s*\**\(new\b")
@@ -119,6 +116,9 @@ ROUTE_CONSTANT = re.compile(r"^\s*(?:export\s+)?(?:const\s+)?([A-Z][A-Z0-9_]*)\s
 # A paragraph ends at a blank line or before a heading, list item or table row
 PARAGRAPH_BREAK = re.compile(r"\n\s*\n|\n(?=\s*(?:#|[-*] |\d+\. |\|))")
 SENTENCE_END = re.compile(r"(?<=[.!?])(?<!\d\.)\s+")   # not after "1." of a numbered item
+# A sentence's clauses (a "; " or a table cell): a name pairs with a cited line only in its own clause
+CLAUSE_BREAK = re.compile(r";\s|\s\|\s")
+EXCEPTION_DEPTH = 5                     # parents followed up from an exception class the brief names
 
 
 @dataclass(frozen=True)
@@ -136,13 +136,11 @@ class Ref:
 def classify(token):
     """One backticked text -> a Ref, or None when it is not worth checking."""
     token = token.strip()
-    # Opt-in by form (29-10-2026, S064's feedback): a scan of every quoted text in a brief found
-    # "No" and "Save" in hundreds of lines.
+    # Opt-in by form: every quoted text of a brief would find "No" and "Save" in hundreds of lines.
     match = UI_TEXT.match(token)
     if match:
-        # 31-10-2026: "-1" matched 125 test lines; text with no letter is no screen text.
-        # 01-11-2026 (S092): a test value the brief quotes (" A_B ") is no label either: a label
-        # has no space at its ends and no underscore.
+        # Text with no letter ("-1") is no screen text. A test value the brief quotes (" A_B ") is
+        # no label either: a label has no space at its ends and no underscore.
         text = match.group(1)
         worth = (len(text) >= MIN_UI_TEXT and any(c.isalpha() for c in text)
                  and text == text.strip() and "_" not in text)
@@ -168,7 +166,7 @@ def classify(token):
 
 
 def greppable(name):
-    """Whether grepping the name finds its own uses (S062's feedback, 27-10-2026): a lone `_` has
+    """Whether grepping the name finds its own uses: a lone `_` has
     no letter, and `Thing.open` is grepped by its last part, a plain word in dozens of files."""
     if not re.search(r"[A-Za-z0-9]", name):
         return False
@@ -178,9 +176,11 @@ def greppable(name):
 
 def extract_refs(text):
     """Brief text -> its distinct Refs, in order of first mention.  A file cited at several lines
-    is one Ref with the highest line, since only that one is checked (S057, S058 feedback)."""
+    is one Ref with the highest line, since only that one is checked."""
     found = {}
-    for token in BACKTICKED.findall(text):
+    # Taken out first: its two backticks on two lines would pair every later backtick wrongly
+    wrapped = [" ".join(token.split()) for token in WRAPPED_UI.findall(text)]
+    for token in BACKTICKED.findall(WRAPPED_UI.sub(" ", text)) + wrapped:
         ref = classify(token)
         if not ref:
             continue
@@ -200,22 +200,36 @@ def sentences(text):
 
 
 def citations(text):
-    """Brief text -> {(path, first, last): [code names its sentences name]}, in order of first
-    mention.  The names are the backticked code names of each sentence that cites the line."""
+    """Brief text -> {(path, first, last): [code names that go with it]}, in order of first
+    mention.  A backticked code name goes with one cited line of its own clause (CLAUSE_BREAK) only:
+    the first cite after it ("`load` (`a.py:5`)"), or the last cite for a name after every cite
+    ("`a.py:5` holds `load`").  A sentence that cites two files, or a table row, names many
+    functions, and pairing each with every cite gave a false "moved?" for each (S105)."""
     found = {}
     for sentence in sentences(text):
-        names = names_in(sentence)
-        for path, first, last in CITED.findall(sentence):
-            key = (path, int(first), int(last or first))
-            found.setdefault(key, [])
-            found[key] += [n for n in names if n not in found[key]]
+        for clause in CLAUSE_BREAK.split(sentence):
+            cites = [(m.start(), m.end(), (m.group(1), int(m.group(2)), int(m.group(3) or m.group(2))))
+                     for m in CITED.finditer(clause)]
+            for _, _, key in cites:
+                found.setdefault(key, [])
+            if not cites:
+                continue
+            for _, end, name in names_at(clause):
+                key = next((cite for cite in cites if cite[0] >= end), cites[-1])[2]
+                if name not in found[key]:
+                    found[key].append(name)
     return found
 
 
-def names_in(sentence):
-    """The backticked code names of a sentence, by their last part (`tickets.load` -> load)."""
-    refs = [classify(token) for token in BACKTICKED.findall(sentence)]
-    return [ref.value.rpartition(".")[2] for ref in refs if ref and ref.kind == "name"]
+def names_at(text):
+    """The backticked code names of ``text`` with their spans, [(start, end, name)], each by its last
+    part (`tickets.load` -> load)."""
+    found = []
+    for match in BACKTICKED.finditer(text):
+        ref = classify(match.group(1))
+        if ref and ref.kind == "name":
+            found.append((match.start(), match.end(), ref.value.rpartition(".")[2]))
+    return found
 
 
 def new_names(text):
@@ -224,16 +238,18 @@ def new_names(text):
     return {ref.value for ref in refs if ref and ref.kind == "name"}
 
 
-def planners(name, all_sentences, own_step=None):
+def planners(name, all_sentences, own_step=None, coded=frozenset()):
     """The other steps that plan `name`, sorted: those of each sentence that names it. A sentence
-    that says which step adds the name ("new in S070", "S070 adds") gives that step only
-    (31-10-2026: a paragraph names many steps). A step whose own brief does not name it is dropped
-    (02-11-2026: the sentence cited that step for something else)."""
+    that says which step adds the name ("new in S070", "S070 adds") gives that step only, since a
+    paragraph names many steps. A step whose own brief does not name it is dropped: the sentence
+    cites that step for something else. A step the sentence only mentions is dropped when it is in
+    ``coded``: a coded step is cited as a reason, not as the planner; a step it says adds the name
+    stays."""
     steps = set()
     for sentence in all_sentences:
         if f"`{name}" in sentence:
             adds = {a or b for a, b in STEP_ADDS.findall(sentence)}
-            steps |= (adds or set(STEP_MENTION.findall(sentence))) - {own_step}
+            steps |= (adds or set(STEP_MENTION.findall(sentence)) - set(coded)) - {own_step}
     return sorted(step for step in steps if brief_may_name(step, name))
 
 
@@ -376,10 +392,9 @@ def cited_row(lines, first, last, names):
         row += f" **(the file ends at line {len(lines)})**"
     elif last != first:                  # a range that runs into the next entry shows it here
         row += f" … :{last} {code_span(lines[last - 1])}"
-    cited = "\n".join(lines[first - 1:last])
     notes, absent = [], []
     for name in names:
-        note = name_note(lines, cited, name)
+        note = name_note(lines, first, last, name)
         if note == NOT_IN_FILE:
             absent.append(f"`{name}`")
         elif note:
@@ -392,18 +407,45 @@ def cited_row(lines, first, last, names):
 NOT_IN_FILE = "not in file"
 
 
-def name_note(lines, cited, name):
-    """None when ``name`` is on the cited lines; else where the file defines it (or first uses
-    it), or NOT_IN_FILE."""
+def name_note(lines, first, last, name):
+    """None when ``name`` is on the cited lines first..last, or names the def, class or function
+    whose body holds them (`get_db` for a line inside get_db) or whose decorators they are; else
+    where the file defines it (or first uses it), or NOT_IN_FILE."""
     word = re.compile(rf"\b{re.escape(name)}\b")
-    if word.search(cited):
+    if word.search("\n".join(lines[first - 1:last])):
         return None
     defines = definition_pattern(name)
     defined = next((i for i, line in enumerate(lines, 1) if defines.search(line)), None)
+    if defined and (encloses(lines, defined, first, last) or decorates(lines, first, defined)):
+        return None
     if defined:
         return f"`{name}` moved? now :{defined}"
     used = next((i for i, line in enumerate(lines, 1) if word.search(line)), None)
     return f"`{name}` moved? first used at :{used}" if used else NOT_IN_FILE
+
+
+def encloses(lines, start, first, last):
+    """Whether the block that starts at line ``start`` (its body: the lines indented deeper, up to
+    the next line that is not) holds the lines first..last.  A line that starts with ")" or "]"
+    closes a wrapped signature and does not end the block; a JavaScript "}" does."""
+    if start >= first:
+        return False
+    indent = indentation(lines[start - 1])
+    for line in lines[start:last]:
+        if line.strip() and indentation(line) <= indent and not line.strip().startswith((")", "]")):
+            return False
+    return True
+
+
+def decorates(lines, first, defined):
+    """Whether lines first..defined-1 are all decorators of the definition at line ``defined``
+    (`app.py:132` cites the `@app.route` line above `def auth_me`)."""
+    above = lines[first - 1:defined - 1]
+    return bool(above) and all(line.strip().startswith("@") for line in above)
+
+
+def indentation(line):
+    return len(line) - len(line.lstrip())
 
 
 def code_span(line):
@@ -435,8 +477,8 @@ def grep(pattern, folders=None, fixed=True, word=True):
 
 def files_ending(path):
     """Tracked or untracked (not ignored) files on disk whose path is ``path`` or ends in ``/path``.
-    git lists a tracked file deleted in the working tree too (S087: a squashed migration's fixture,
-    removed but not yet committed); it is no file, as git grep also skips it."""
+    git lists a tracked file deleted in the working tree too (removed but not yet committed); it is
+    no file, as git grep also skips it."""
     result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", f"*/{path}",
                              path], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
     return sorted(p for p in set(result.stdout.split()) if (ROOT / p).is_file())
@@ -452,7 +494,7 @@ def is_binary(path):
 
 def check_path(ref, folders=None):
     """A path not at the root is looked for as the end of a longer one: briefs often give the
-    folder in prose ("in `frontend/src/views/`", S048, S059, S061, S064 feedback)."""
+    folder in prose ("in `frontend/src/views/`")."""
     found = [ref.value] if (ROOT / ref.value).is_file() else files_ending(ref.value)
     if not found:
         return [f"- `{ref.value}`: **no such file** (new, or a library's path)"]
@@ -476,8 +518,7 @@ def check_file(ref, folders=None):
 def check_test(ref, folders=None):
     """A test id's file is looked up at the root, then in each code folder and its tests/ folder;
     a test id without its file (Class::test) in the test files that define the class.  A test of a
-    class lists the class's other tests (31-10-2026: a change to one test often meets its
-    siblings)."""
+    class lists the class's other tests: a change to one test often meets its siblings."""
     parts = ref.value.split("::")
     if TEST_CLASS.match(parts[0]):
         names = parts
@@ -552,7 +593,7 @@ def check_ui(ref, folders=None):
     """Screen text -> the frontend test lines that hold it (a backend line is no screen text)."""
     lines = [f"{path}:{line}" for path, line, _ in map(split_hit, grep(ref.value, folders, word=False))
              if is_frontend_test(path)]
-    if len(lines) > COMMON_UI_LINES:     # S092: "Equipment" in 44 lines; a list that long is not read
+    if len(lines) > COMMON_UI_LINES:     # a list that long is not read
         return [f"- `\"{ref.value}\"`: in {len(lines)} test lines — too common to list"]
     return [f"- `\"{ref.value}\"`: in {len(lines)} test line(s): {listing(lines) or '—'}"]
 
@@ -583,13 +624,16 @@ def check_names(group, folders=None, all_sentences=(), own_step=None, new=frozen
             sql.append(f"`{ref.value}`")
             continue
         if not hits:
-            steps = planners(ref.value, all_sentences, own_step)
+            steps = planners(ref.value, all_sentences, own_step, coded)
             if steps:
                 planned[f"`{ref.value}`"] = steps
             else:
                 missing.append(f"`{ref.value}`")
             continue
         lines += summarise_hits(ref.value, hits, folders)
+        chain = exception_chain(short, hits, folders)
+        if chain:
+            lines += exception_lines(chain, folders)
     if marked_new:
         lines.append(f"- marked new in the brief: {', '.join(marked_new)}")
     if sql:
@@ -599,6 +643,50 @@ def check_names(group, folders=None, all_sentences=(), own_step=None, new=frozen
         lines.append(f"- not found: {', '.join(missing)}")
     if not_looked_up:
         lines.append(f"- table.column or attribute, not looked up: {', '.join(not_looked_up)}")
+    return lines
+
+
+def exception_chain(name, hits, folders=None, depth=0):
+    """The class ``name`` and its parents, up to the Python exception it rests on: [name, …, the
+    built-in], or [] when the grep ``hits`` define no exception class of that name.  A parent of the
+    repo is looked up in the code ``folders``."""
+    head = re.compile(rf"^\s*class\s+{re.escape(name)}\s*\(([^)]*)\)")
+    bases = next((m.group(1) for m in (head.match(split_hit(hit)[2]) for hit in hits) if m), None)
+    if bases is None or depth >= EXCEPTION_DEPTH:
+        return []
+    for base in bases.split(","):
+        base = base.strip()
+        if not base or "=" in base:      # metaclass=…
+            continue
+        base = base.rpartition(".")[2]
+        builtin = getattr(builtins, base, None)
+        if isinstance(builtin, type) and issubclass(builtin, BaseException):
+            return [name, base]
+        parents = exception_chain(base, grep(f"class {base}", folders), folders, depth + 1)
+        if parents:
+            return [name] + parents
+    return []
+
+
+def except_sites(chain, folders=None):
+    """{class: ['path:line', …]} for each class of ``chain``: the code lines (not the tests) whose
+    except clause names it."""
+    hits = [split_hit(hit) for hit in grep("except", folders)]
+    sites = {}
+    for name in chain:
+        clause = re.compile(rf"^\s*except\*?\s*\(?[^:]*\b{re.escape(name)}\b")
+        sites[name] = [f"{path}:{line}" for path, line, text in hits
+                       if path.endswith(".py") and not is_test_path(path) and clause.search(text)]
+    return sites
+
+
+def exception_lines(chain, folders=None):
+    """An exception class's report lines: its parents and the except sites of each, since a step
+    that changes what raises it or where it is caught is judged by every handler that catches it,
+    a parent's included (S105: `/api/auth/me`'s own handler was found only by a grep in review)."""
+    lines = [f"  - an exception ({' → '.join(chain)}); `except` sites in code (a parent's handler catches it too):"]
+    for name, found in except_sites(chain, folders).items():
+        lines.append(f"    - `{name}`: {len(found)} — {listing(found) or '—'}")
     return lines
 
 

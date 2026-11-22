@@ -3,7 +3,7 @@
 A **roadmap** turns one big feature (a module of the repo's product plan, e.g. preventive
 maintenance) into an ordered list of items, each the seed of one step. The **planner**
 (`.claude/agents/planner.md`, Opus) writes it; the user, the product owner, approves it at
-**gate R**; each item becomes a step only when the user takes it up (25-10-2026, by KLA). The
+**gate R**; each item becomes a step only when the user takes it up. The
 repo's own values are in the `## Step workflow` section of its `.claude/CLAUDE.md` ("the
 settings"); the roadmaps are listed in `INDEX.md`, beside this file.
 

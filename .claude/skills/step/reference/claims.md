@@ -4,7 +4,7 @@ Part of the step skill (`.claude/skills/step/SKILL.md`); read when the skill poi
 
 Two sessions working on one step at once overwrite each other's files, so
 one orchestrator session at a time works on a step. The rule is kept by this
-skill, not by a hook (the user's choice). The tool is `tooling/step-claim.bat`;
+skill, not by a hook. The tool is `tooling/step-claim.bat`;
 from the Bash tool call `uv run --no-project python tooling/steps/step_claim.py …`
 (it reads the session's `CLAUDE_PID`, which a `cmd //c` call also passes on).
 

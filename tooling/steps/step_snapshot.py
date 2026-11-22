@@ -1,5 +1,5 @@
 """Step snapshots: one commit object per step at gate B, so the user can commit each step on its
-own while the next step's coder carries on in the same working tree (decided 24-10-2026, KLA).
+own while the next step's coder carries on in the same working tree.
 
     python tooling/steps/step_snapshot.py snapshot S038 "S038: meters on models and equipment; v30;"
     python tooling/steps/step_snapshot.py list
@@ -29,7 +29,7 @@ its files (``git reset --mixed``); the working files stay as they are.  A plain
 Re-running ``snapshot`` for the newest unmerged step replaces it (a fix after gate B).  A step
 already merged into HEAD, or one with a newer snapshot on top, is refused.
 
-Rounds (27-10-2026, from the agents' feedback on S061 and S062): every ``snapshot`` also keeps its
+Rounds: every ``snapshot`` also keeps its
 commit as refs/step-rounds/<step>-<n>, n = 1, 2, … So when a fix round replaces the step's
 snapshot, the earlier round is still there, and a verify review sees exactly the fix round's
 change: ``diff S038 --from-round 1``. ``adopt`` removes the step's round refs.
@@ -39,26 +39,23 @@ like a snapshot's, nothing written to the user's index) with the step's base: th
 builds on (or HEAD), or the round named. A plain ``git diff <ref>`` lists the step's untracked
 files as deleted; this does not.
 
-``diff`` leaves out the step's own folder, docs/steps/<step>-*/ (29-10-2026, from the agents'
-feedback on S063 and S064): the reviewer reads the brief, the impl report and the reviews in full
-anyway, and they were a third of a step's diff. Paths after ``--`` replace that default, e.g.
-``diff S038 -- backend frontend``.
+``diff`` leaves out every step folder under docs/steps/, docs/steps/INDEX.md,
+docs/steps/feedback-log.md and docs/roadmap/. The reviewer reads the step's brief, impl report
+and reviews in full anyway, and the orchestrator edits other steps' files while a coder works, so
+they land in the snapshot, but they are not the step's code. The device-check list
+(docs/steps/device-checks.md) stays: a coder's docs pass adds rows to it. Paths after ``--``
+replace that default, e.g. ``diff S038 -- backend frontend``; ``--all`` shows everything; the
+last line of the output names what was left out.
 
-Since 30-10-2026 (16 feedback items): ``diff`` leaves out every step folder under docs/steps/,
-docs/steps/INDEX.md, docs/steps/feedback-log.md and docs/roadmap/. The orchestrator edits other
-steps' files while a coder works, so they land in the snapshot, but they are not the step's code.
-The device-check list (docs/steps/device-checks.md) stays: a coder's docs pass adds rows to it.
-``--all`` shows everything; the last line of the output names what was left out.
-
-Since 31-10-2026 (the agents' feedback): ``diff --base <commit>`` compares the working files with
+``diff --base <commit>`` compares the working files with
 any commit, the same way and with the same exclusions: for a step with no snapshot yet whose base
 is not HEAD (a brief's baseline), or to override the step's base. The step id may then be left
 out; ``--base`` and ``--from-round`` do not go together.
 
-Since 02-11-2026 (6 feedback items, S094–S102): ``diff S038 --worktree`` asks whether the working
+``diff S038 --worktree`` asks whether the working
 files still equal the step's snapshot (refs/steps/S038), or with ``--from-round n`` its round ref.
-A reviewer's ``git diff refs/steps/S038`` compares with the index, so every untracked new file
-showed as deleted. It is the same diff as above with the snapshot itself as the base: the same
+A plain ``git diff refs/steps/S038`` compares with the index, so every untracked new file
+shows as deleted. It is the same diff as above with the snapshot itself as the base: the same
 tree of the working files, the same exclusions and path filters. It prints "working tree equals
 refs/steps/S038" and exits 0 when nothing shown differs, else the diff and exits 1.
 ``--by-folder`` (any diff) prints one line per top-level folder instead: files, lines added and
@@ -368,7 +365,7 @@ def main(argv, repo=ROOT):
 
 
 if __name__ == "__main__":
-    # A Windows console or a redirected file is cp1252 by default; a brief's "→" stopped the diff
-    # (S064 code reviews).
+    # A Windows console or a redirected file is cp1252 by default, and a brief's "→" would stop
+    # the diff.
     sys.stdout.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

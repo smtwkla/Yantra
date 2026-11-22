@@ -68,14 +68,17 @@ plan: the orchestrator records approved decisions there.
   the ones that matter as **important** (README § Manual checks).
 - Open points that do not change the design go into the brief's § Open
   questions. The ones that do change it go back first (§ Hand-backs).
-- **Size**, because one oversized step cost a 70-minute coder run. When the brief's *Where* lists more than about
+- **Size**, because an oversized step makes a long coder run. When the brief's *Where* lists more than about
   **25 files**, or holds two concerns that could ship apart (a backend engine
   and its screens, a new shell and a feature in it), propose a split into two
   steps in one line of your final message, with the cut. The same when the
   draft passes **600 lines**, or adds more than one table and two screens. The
-  user decides.
-- **Facts run**, because most brief-review findings were facts about existing
-  code the brief had not checked. Once the draft is
+  user decides. An **amendment** counts the same: the files and lines it adds
+  alone. When an amendment passes about 25 files or 300 lines, propose in one
+  line "amendment or new step?" with the count, before you write it out in
+  full.
+- **Facts run**, because most brief-review findings are facts about existing
+  code the brief has not checked. Once the draft is
   written, run `uv run --no-project python tooling/steps/brief_facts.py S0NN`
   (it writes `scratch/brief-facts-S0NN.md`): every `backticked` file, test id,
   route and code name in the brief, with where it is defined and which code
@@ -85,7 +88,7 @@ plan: the orchestrator records approved decisions there.
   relies on in backticks, so the run covers it. Run it again after large
   edits, and once more at the end, so the facts file the reviewer gets matches
   the brief. It feeds self-check items 1 and 5.
-- **Self-check before review round 1.** Past review findings came, by weight,
+- **Self-check before review round 1.** Review findings come, most often first,
   from rules left to the coder, unverified claims, tests, permissions and
   identity, phone screens and locks. Check the draft against each item and fix it:
   1. **Evidence for every claim** about code, a library, a browser or the
@@ -93,7 +96,9 @@ plan: the orchestrator records approved decisions there.
      `uv run python` or `node -e` check for library behaviour (examples:
      settings, *Self-check, repo items*). Open the file for "the API shows X".
      Grep the places the settings name for a task said not to exist. A claim
-     with no evidence is marked "to verify".
+     with no evidence is marked "to verify". A probe follows the path each
+     changed route really takes: inside or outside a transaction, on a fresh
+     or a pooled connection; probe every path a route can take, not one.
   2. **Locks**: one numbered lock sequence per route — table, row, mode,
      including the shared locks taken through foreign keys — compared with the
      repo's lock notes (settings: *Self-check, repo items*). Decide from the
@@ -140,6 +145,9 @@ plan: the orchestrator records approved decisions there.
       items*): what each new hook, route and task does when a dependency is
       down. For a background task, what is stored on success, on retry-later
       and on no-retry, and which transaction holds the claim and the result.
+      For an exception the step raises, remaps or catches, check every
+      `except` site the facts run lists for it and its parents: a handler
+      that degrades instead of refusing changes what the step does.
   12. **Security of new outside input**: a URL, file or address checked with
       the same parser that will use it.
   13. **Screens**: for each dialog or control, the composable and its call

@@ -294,6 +294,11 @@ reviews; you run the loop, talk to the user and keep the index. Its rules
    round where that applies. Give every coder and code reviewer its own test
    run name (the repo's test run name variable, settings: *Unit tests*), so
    agents running tests at the same time never share a database.
+   - **Check the test services first**, where the repo's tests need a service
+     (settings: *Test services*; `none` skips this): before each coder or
+     code-reviewer spawn, run its check. When a service is down, ask the user
+     to start it, and spawn only when it is up. Name the result in the spawn
+     prompt ("test services: up").
    - **Snapshot every coder hand-back**: when the coder of the step or of a fix round hands back,
      run `snapshot` for the step (§ Snapshots). Each run keeps a round ref
      (`refs/step-rounds/S00N-<n>`). Tell the next code reviewer its diff:

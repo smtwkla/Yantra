@@ -67,7 +67,7 @@ The orchestrator gives you one of three tasks:
 ## Tests
 
 - **Unit tests: targeted while coding, every suite once at the end.** Full runs repeated between
-  edits were most of the time coders lost. While coding, run only the tests of the modules you
+  edits cost a coder the most time. While coding, run only the tests of the modules you
   change (the per-suite commands: settings, *Unit tests*). When the code is done, run the command
   for all suites once, and the build check when the frontend changed. A red full run sends you
   back to targeted runs until fixed, then one more full run. Report the real numbers of the final
@@ -77,7 +77,7 @@ The orchestrator gives you one of three tasks:
   - write a browser test for each *Automated* check of the brief, asserting what the user would
     see, by the repo's test conventions;
   - **get a new test green alone first**, on one lane and the logic device (the command: settings,
-    *Browser tests*), because most failed runs were mistakes in the coder's own new test; then run
+    *Browser tests*), because a failed run is most often a mistake in the new test itself; then run
     the targeted set once;
   - **targeted runs** as often as you need: the spec files of the screens and APIs the step
     changed, plus the specs the settings always add. The quick whole-app run is allowed when you
