@@ -289,6 +289,13 @@ done, also for an owner without a login or without `improvement:read` (the store
 never sees it. A user is the owner when their own Team record is; IT admin, with no Team
 record, owns none and reads only.
 
+A task on a ticket (S106, 22-11-2026) is marked done in the same way: by data, with no new
+key. Its **owner** (any active person of the ticket's site, picked from Team) marks their own
+task done with `ticket:read` at the ticket's site; a `ticket:assign` holder at the site
+(engineer, manager, IT admin) adds, changes and cancels tasks and marks any done, also for an
+owner without a login or without `ticket:read`, who never sees it. IT admin, with no Team
+record, owns none but marks any done, as it assigns tickets.
+
 ## 4. Modules
 
 ### 4.1 Equipment register
@@ -476,7 +483,8 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   (raised → first acknowledged or started; the plant's own measure), **repair time** (EN
   13306 *active corrective maintenance time*: time in progress), **downtime** (EN 13306
   *down time*, the *time to restoration* of a breakdown; its mean is **MTTR**). Closing
-  needs cause, action, symptom and at least one labour row. Ticket attachments: photos
+  needs cause, action, symptom and at least one labour row, and no open task (S106; *Not a
+  fault* needs no open task either). Ticket attachments: photos
   and vendor documents (PDF reports, quotes).
 - **Improvement (S067, 30-10-2026; R05.1):** a ticket back in service or closed can start an
   improvement (TPM focused improvement), and a ticket in any state can be added to one; a ticket
@@ -507,6 +515,22 @@ raised / acknowledged ──► closed  (engineer, frivolous — code + remarks 
   countermeasures. A closed or dropped improvement is read-only. Every change writes a line on
   its timeline (`improvement_events`, who and when, the replaced text), and anyone at the site
   but IT admin adds notes.
+- **Ticket tasks (S106, gate A 22-11-2026, KLA; from TK-2026-11-008):** a ticket holds follow-up
+  *tasks*, each one-off work that finds or fixes this fault (a check, a test, one inspection visit,
+  a trial fix), given to one person of the site (a login or not) with a due date; open, done or
+  cancelled with a reason, never deleted, each change a line on the ticket's timeline (EN 13306
+  fault diagnosis and correction; ISO 9001 § 7.5.3). Work that stops the fault for good (a regular
+  vendor PM, a design change) is a countermeasure on the improvement, not a task. `ticket:assign`
+  adds, changes and cancels; the owner marks their own done, a `ticket:assign` holder marks any
+  (no new key). An open task blocks *Close* and *Not a fault*, never *Back in service*. Tasks in
+  every state but closed; no kind; photos on the ticket; alerts *Task for you* and *Task overdue*
+  (push). Built in three steps: backend (S106), screens, alerts. S106 built the backend: the
+  `ticket_tasks` table (v59; text up to 300 characters, at most 30 tasks per ticket, a due date
+  from the day the problem happened to a year ahead) and its API (add, change, mark done, cancel,
+  *my open tasks* for *Me › Open work*); each timeline line names its task
+  (`ticket_events.task_id`) and is skipped by the times (MTTR and downtime are unchanged); the
+  ticket detail sends each owner's standing (active, has a login, may own, can open the ticket)
+  and the close moves say why they are blocked. Nothing shows to users until the screens step.
 - **Production marks "back in service" too** (decided 16-10-2026, sorting-line use case): the
   supervisor, or whoever has operator rights at the unit, can record "back in service" and
   name the technician who did the work from Team. Standard CMMS requester sign-off: production

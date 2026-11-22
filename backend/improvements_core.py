@@ -359,6 +359,11 @@ def _required(body, field, creating):
     return False, creating or field in body
 
 
+# The public name for ticket_tasks_core (S106 § 3), as is_id and text_field above: a task's add and change bodies
+# follow the same required-or-absent rule, with no import of a private name
+required_field = _required
+
+
 def validate_action(body, creating):
     """The add (``creating``) or change body of a countermeasure -> ``(clean, errors)`` for
     clean_body (§ 5.2).  On an add every field is required; on a change an absent field stays as

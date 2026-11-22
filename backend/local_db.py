@@ -1593,6 +1593,51 @@ _MIGRATIONS = [
             OR (reading_kind = 'meter' AND meter_type_id IS NOT NULL AND unit IS NULL AND min_value IS NULL
                 AND max_value IS NULL))""",
     ]),
+    # S106 — tasks on a ticket (docs/steps/S106-ticket-tasks/1-brief.md § 4.1).
+    #   - ticket_tasks: one piece of the ticket's corrective work, given to one person with a due date (EN 13306
+    #     fault diagnosis and correction).  Never deleted: a cancel keeps the row with its reason (ISO 9001 § 7.5.3).
+    #     improvement_actions without kind, on a ticket; text is 300 characters so a change's "old → new" line fits
+    #     ticket_events.remark (D11);
+    #   - ticket_events.task_id: the timeline line of a task change names its task (D10).
+    # Shapes: production at v58 holds tickets and their events; every existing ticket_events row gets task_id NULL,
+    # and nothing is converted, refused or dropped, so no precondition.  The foreign key on ticket_events is added
+    # with foreign_key_checks on (as v50's on people), which MariaDB cannot do in place: the server copies
+    # ticket_events once (a few lines per ticket), blocking writes to it meanwhile, in the release's window.
+    # Every statement is safe to run twice (IF NOT EXISTS), so a half-applied v59 re-runs to the same shape.
+    (59, "Tasks on a ticket (S106)", [
+        """CREATE TABLE IF NOT EXISTS ticket_tasks (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            ticket_id       INT NOT NULL,
+            text            VARCHAR(300) NOT NULL,
+            owner_id        INT NOT NULL,
+            due_date        DATE NOT NULL,
+            state           ENUM('open','done','cancelled') NOT NULL DEFAULT 'open',
+            done_text       VARCHAR(1000) NULL,
+            done_at         DATETIME NULL,
+            done_by         VARCHAR(100) NULL,
+            cancel_reason   VARCHAR(500) NULL,
+            cancelled_at    DATETIME NULL,
+            cancelled_by    VARCHAR(100) NULL,
+            created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by      VARCHAR(100) NOT NULL,
+            updated_at      DATETIME NULL,
+            updated_by      VARCHAR(100) NULL,
+            KEY ix_ticket_tasks_ticket (ticket_id, id),
+            KEY ix_ticket_tasks_owner_state (owner_id, state, due_date),
+            CONSTRAINT fk_ticket_tasks_ticket FOREIGN KEY (ticket_id) REFERENCES tickets (id),
+            CONSTRAINT fk_ticket_tasks_owner FOREIGN KEY (owner_id) REFERENCES people (id),
+            CONSTRAINT chk_ticket_tasks_done CHECK (
+                (state = 'done') = (done_text IS NOT NULL AND done_at IS NOT NULL AND done_by IS NOT NULL)),
+            CONSTRAINT chk_ticket_tasks_cancelled CHECK (
+                (state = 'cancelled')
+                = (cancel_reason IS NOT NULL AND cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""",
+        """ALTER TABLE ticket_events
+            ADD COLUMN IF NOT EXISTS task_id INT NULL AFTER machine_stopped,
+            ADD KEY IF NOT EXISTS ix_ticket_events_task (task_id),
+            ADD CONSTRAINT fk_ticket_events_task
+                FOREIGN KEY IF NOT EXISTS (task_id) REFERENCES ticket_tasks (id)""",
+    ]),
 ]
 
 LATEST_VERSION = _MIGRATIONS[-1][0]

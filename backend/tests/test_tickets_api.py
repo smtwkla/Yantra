@@ -361,7 +361,8 @@ class TestDetailAndAccess:
         assert res.status_code == 200
         # What this user may do differs from the raiser's (S018: keys at the ticket's site); the
         # ticket itself is the same
-        per_user = {"permissions", "moves", "regrade_to", "can_add_documents", "can_add_photos", "can_raise_repeat"}
+        per_user = {"permissions", "moves", "regrade_to", "can_add_documents", "can_add_photos", "can_raise_repeat",
+                    "can_add_task"}
         shown = res.get_json()
         assert {k: v for k, v in shown.items() if k not in per_user} == {
             k: v for k, v in ticket.items() if k not in per_user}

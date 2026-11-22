@@ -40,7 +40,8 @@ only when the write needs it:
         after the node (1) shared.  Nothing that holds (6g) exclusive waits on a plan, a job, a
         node or a counter, and a template save settles its plans only after its commit, so it
         closes no cycle
-    (7) the ticket row (tickets.py, S017)
+    (7) the ticket row (tickets.py, S017); ``ticket_tasks`` rows (S106) are written only under their
+        ticket's lock (7) and never locked on their own
 
 A write with a model never locks a type: it comes from the model, whose type never changes
 (S012 § 5.5); its name for the event comes from the plain re-read.  Class (5) before type

@@ -2,7 +2,8 @@
 (docs/steps/S018-work-tickets/1-brief.md): moves, re-grade, edit, assignment, labour, repeat;
 the parts used (docs/steps/S020-parts-used/1-brief.md); work notes
 (docs/steps/S027-work-notes/1-brief.md); the Me page's two reads, ``raised=me`` on the list and
-``GET /activity`` (docs/steps/S031-me-page/1-brief.md).
+``GET /activity`` (docs/steps/S031-me-page/1-brief.md); tasks on a ticket, the ``ticket_tasks`` rows
+(docs/steps/S106-ticket-tasks/1-brief.md; their rules in ticket_tasks_core).
 
 Thin shell: tickets_core holds the rules (intensity, the event-time window, the serial, the
 description rule, machine and component from the node, the moves table, the send-back and
@@ -36,8 +37,21 @@ scheduled included), re-grade, edit, assignment, labour or parts change (S020), 
 note (S027) — locks (7) explicitly, and nothing else explicitly.  A note's correction (S027
 § 5.2) locks (7), then the note's event row FOR UPDATE; only the correction locks an event row,
 and nothing locks one first, so this adds no lock-order edge.  Its ticket_note_edits insert
-takes the event row's FK lock, already held.  Codes and people are read plain.  A change of tickets.state also
-rewrites the entries of ix_tickets_unit_state, ix_tickets_equipment_state and
+takes the event row's FK lock, already held.  Codes and people are read plain.
+Tasks (S106 § 5.6) add no lock level: a ``ticket_tasks`` row is written only by a transaction that holds its
+ticket (7) FOR UPDATE, as a labour row and a parts line are, and is never locked on its own (an UPDATE takes its
+row lock under (7)).  Add, change and cancel lock (7) with ticket:assign, mark done with ticket:read; then plain
+reads (the task, the count of 30, the owner, the due date or done time), the ``ticket_tasks`` insert or UPDATE
+(shared foreign-key locks on the ticket, held, and on the owner's people row), and the event insert (shared
+foreign-key locks on the ticket and on the task, both this transaction's).  Close and Not a fault count the open
+``ticket_tasks`` rows with a plain read under (7), which every task write holds, so a closed ticket never has an
+open task.  No new deadlock cycle: (7) then a people row shared is the edge a labour or assignee insert already
+takes, and masters.py's person edit never waits on a ticket; nothing takes a ``ticket_tasks`` row and then a
+ticket (improvements.py holds ticket rows only shared and never a ``ticket_tasks`` row); a task write changes no
+tickets column, so it takes none of the unit, machine or component locks a state change takes.  The detail's
+owner query (owner.can_open) reads people, memberships and person_units plain.  The four accepted deadlocks
+below are unchanged.
+A change of tickets.state also rewrites the entries of ix_tickets_unit_state, ix_tickets_equipment_state and
 ix_tickets_component_state, the indexes of the unit, machine and component foreign keys, so
 InnoDB re-checks those keys and takes shared locks on the unit, machine and (when set)
 component rows (S025 CR1-02; S019 § 5.6 adds no lock and no lock-order edge).  Three reads
@@ -94,6 +108,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
+from access_core import roles_holding
 from api_common import (
     DEFAULT_PER_PAGE, MAX_PAGE, MAX_PER_PAGE, UNIQUE_KEY_ERRORS, ApiError, actor, clean_body, enum_arg, int_arg,
     like_pattern,
@@ -110,6 +125,10 @@ from db_helpers import (
 from equipment import IST, load_node_for_user, unit_access_condition
 from equipment_core import SCRAPPED
 import improvements_core
+from ticket_tasks_core import (
+    OWNER_OR_ASSIGNER, TASK_ADDED, TASK_CANCELLED, TASK_CANCELLED_EVENT, TASK_CHANGED, TASK_DONE, TASK_DONE_EVENT,
+    TASK_OPEN, TASKS_FULL, TASKS_MAX, close_block, task_change_line, task_line, task_state_error, validate_task,
+)
 from tickets_core import (
     ACTION_NEEDED, ASSIGN_KEY, ASSIGNED_EVENT, AUTO_ASSIGN_MOVES, EDIT_NOTES_KEY, EVENT_LABELS, MACHINE_STOPPED_MOVES,
     MACHINE_STOPPED_NEEDED, NOTE_EVENT, NOTHING_TO_CHANGE, PART_NODE_NEEDED, PARTS_HINT_ACTION_CODES, PARTS_NOT_A_FAULT,
@@ -261,7 +280,7 @@ def _event_rows(cur, ticket_id):
     a note for its correction; ``updated_*`` is set on a corrected note only (S027)."""
     cur.execute("SELECT e.id, e.event, e.from_state, e.to_state, e.occurred_at, e.intensity, e.remark, e.created_at,"
                 " e.created_by, e.updated_at, e.updated_by, e.planned_date, e.waiting_reason, e.machine_stopped,"
-                " p.id AS person_id, p.name AS person_name FROM ticket_events e"
+                " e.task_id, p.id AS person_id, p.name AS person_name FROM ticket_events e"
                 " LEFT JOIN people p ON p.id = e.person_id WHERE e.ticket_id = %s"
                 " ORDER BY e.occurred_at, e.id", (ticket_id,))
     return cur.fetchall()
@@ -282,7 +301,8 @@ def _note_edits(cur, ticket_id):
 
 def _events_out(rows, note_edits):
     """The timeline as the page shows it; each note carries ``earlier`` (empty when never
-    corrected)."""
+    corrected), and every line its ``task_id`` (the task a task line is about, S106; None on the
+    others)."""
     events = []
     for row in rows_to_list(rows):
         person_id, person_name = row.pop("person_id"), row.pop("person_name")
@@ -338,6 +358,76 @@ def _parts(cur, ticket_id):
     } for row in rows_to_list(cur.fetchall())]
 
 
+# The tasks with their owner's standing and the names of who added, finished or cancelled them, in one query
+# (S106 § 4.2): the owner may own a task when active and a member of the ticket's site today (the first %s)
+_TASK_COLUMNS = (
+    "SELECT k.id, k.text, k.owner_id, k.due_date, k.state, k.done_text, k.done_at, k.done_by, k.cancel_reason,"
+    " k.cancelled_at, k.cancelled_by, k.created_at, k.created_by, k.updated_at,"
+    " o.name AS owner_name, o.active AS owner_active, o.username IS NOT NULL AS owner_has_login,"
+    " (o.active = 1 AND EXISTS (SELECT 1 FROM memberships ms WHERE ms.person_id = o.id AND ms.site_id = %s))"
+    " AS owner_may_own,"
+    " cp.name AS created_by_name, dp.name AS done_by_name, xp.name AS cancelled_by_name"
+    " FROM ticket_tasks k JOIN people o ON o.id = k.owner_id"
+    " LEFT JOIN people cp ON cp.username = k.created_by"
+    " LEFT JOIN people dp ON dp.username = k.done_by"
+    " LEFT JOIN people xp ON xp.username = k.cancelled_by"
+    " WHERE k.ticket_id = %s ORDER BY k.id"
+)
+
+
+def _by_name(plain, column):
+    """Who a login column names: the person whose login it is, else the login; None when empty (as
+    improvements.py's helper of the same name, which this module may not import)."""
+    return (plain[f"{column}_name"] or plain[column]) if plain[column] else None
+
+
+def _owners_who_can_open(cur, row, task_rows):
+    """S106 § 4.2, a hint for the engineer that no rule reads: which owners will see their task and get its
+    alerts.  An owner with a login whose role at the ticket's site holds ticket:read and who covers the
+    ticket's unit, through the ticket alerts' own recipient query (alerts.people_at_unit), so the flag and the
+    alerts' audience agree.  The login is checked here because people_at_unit does not ask for one and a role
+    row without a login grants nothing.  No query when no owner has a login."""
+    with_login = sorted({task["owner_id"] for task in task_rows if task["owner_has_login"]})
+    return set(alerts.people_at_unit(cur, row["site_id"], [row["unit_id"]], roles_holding(READ_KEY),
+                                     only_ids=with_login))
+
+
+def _tasks(cur, row, keys, today):
+    """The ticket's tasks in the order they were added (S106 § 6), each with its owner's standing, its overdue
+    days and what this user may do on it.  ``keys``: the user's keys at the ticket's site.  The owner rule's
+    flag needs ticket:read at the site too, so a reader who sees the ticket only through its machine's current
+    unit at another site is offered no button that ends in a 403 (§ 5.4).  Two queries for any number, one for
+    none, plus one for the user's Team record the first time ``current_person_id`` runs in the request."""
+    cur.execute(_TASK_COLUMNS, (row["site_id"], row["id"]))
+    rows = cur.fetchall()
+    if not rows:
+        return []
+    can_open = _owners_who_can_open(cur, row, rows)
+    ticket_open = row["state"] != CLOSED
+    may_assign = ASSIGN_KEY in keys
+    person_id = current_person_id(cur) if READ_KEY in keys else None
+    tasks = []
+    for task in rows:
+        plain = row_to_dict(task)
+        flags = improvements_core.action_flags(ticket_open, task["state"], may_assign,
+                                               person_id is not None and person_id == task["owner_id"])
+        tasks.append({
+            "id": plain["id"], "text": plain["text"],
+            "owner": {"id": plain["owner_id"], "name": plain["owner_name"], "active": bool(plain["owner_active"]),
+                      "has_login": bool(plain["owner_has_login"]), "may_own": bool(plain["owner_may_own"]),
+                      "can_open": plain["owner_id"] in can_open},
+            "due_date": plain["due_date"], "state": plain["state"],
+            "overdue_days": improvements_core.overdue_days(task["state"], task["due_date"], today),
+            "done_text": plain["done_text"], "done_at": plain["done_at"], "done_by_name": _by_name(plain, "done_by"),
+            "cancel_reason": plain["cancel_reason"], "cancelled_at": plain["cancelled_at"],
+            "cancelled_by_name": _by_name(plain, "cancelled_by"),
+            "created_at": plain["created_at"], "created_by_name": _by_name(plain, "created_by"),
+            "updated_at": plain["updated_at"],
+            "can_change": flags["can_change"], "can_mark_done": flags["can_mark_done"],
+        })
+    return tasks
+
+
 def _parts_hint_actions(cur):
     """The ids of the actions whose close shows "No parts recorded" (S020 § 1.6), active or
     not: a retired code keeps its hint while old tickets still carry it."""
@@ -387,12 +477,14 @@ def _person_ref(person):
     return {"id": person["id"], "name": person["name"]} if person else None
 
 
-def _moves(cur, row, keys):
+def _moves(cur, row, keys, open_tasks):
     """allowed_moves for this user, with what each dialog shows: the restore move's
     ``default_person`` (the user's own person, when he holds ticket:work and may be named at the
     site, BR4-03) and acknowledge / start's ``recording_as`` (the person the move will
     auto-assign, BR4-04).  Start and restore carry ``asks_machine_stopped`` (S019 § 6): the
-    server will require the answer — on restore, once a start time is given."""
+    server will require the answer — on restore, once a start time is given.  The moves that
+    close (Close, Not a fault) carry ``blocked_reason`` (S106 § 5.5): why _apply_move would
+    refuse them while ``open_tasks`` tasks are open, or None."""
     names = allowed_moves(row["state"], keys, has_repeat=_latest_repeat_serial(cur, row["id"]) is not None)
     own = _own_person_at_site(cur, row["site_id"]) if names else None
     moves = []
@@ -406,6 +498,8 @@ def _moves(cur, row, keys):
             entry["asks_machine_stopped"] = machine_stopped_needed(row["state"], row["intensity"])
         if name == "close":
             entry["parts_hint_actions"] = _parts_hint_actions(cur)
+        if MOVES[name].to_state == CLOSED:
+            entry["blocked_reason"] = close_block(open_tasks)
         moves.append(entry)
     return moves
 
@@ -420,6 +514,8 @@ def _detail(cur, row):
     now = _now()
     is_open = state != CLOSED
     can_regrade = state in REGRADE_STATES and RAISE_KEY in keys
+    tasks = _tasks(cur, row, keys, now.date())
+    task_counts = improvements_core.action_counts(tasks)
     return {
         **_ticket_out(row, now.date()),
         "events": _events_out(events, _note_edits(cur, ticket_id)),
@@ -427,8 +523,12 @@ def _detail(cur, row):
         "assignees": _assignees(cur, [ticket_id])[ticket_id],
         "labour": _labour(cur, ticket_id),
         "parts": _parts(cur, ticket_id),
+        # S106 § 6: every reader gets every task in full
+        "tasks": tasks,
+        "task_counts": task_counts,
+        "can_add_task": is_open and ASSIGN_KEY in keys,
         "repeats": _repeats(cur, ticket_id),
-        "moves": _moves(cur, row, keys),
+        "moves": _moves(cur, row, keys, task_counts[TASK_OPEN]),
         "permissions": sorted(keys),
         "regrade_to": regrade_options(row["intensity"], WORK_KEY in keys) if can_regrade else [],
         "can_add_photos": is_open and RAISE_KEY in keys,
@@ -934,12 +1034,14 @@ def raise_ticket():
 # ---------------------------------------------------------------------------
 
 def _add_event(cur, ticket_id, event, occurred_at, from_state=None, to_state=None, intensity=None, person_id=None,
-               remark=None, planned_date=None, waiting_reason=None, machine_stopped=None):
-    """Write one timeline line -> its id (an alert names the event that caused it, S021 BR1-12)."""
+               remark=None, planned_date=None, waiting_reason=None, machine_stopped=None, task_id=None):
+    """Write one timeline line -> its id (an alert names the event that caused it, S021 BR1-12).
+    ``task_id`` names the task a task line is about (S106 D10)."""
     return insert_row(cur, "ticket_events", {
         "ticket_id": ticket_id, "event": event, "from_state": from_state, "to_state": to_state,
         "occurred_at": occurred_at, "intensity": intensity, "person_id": person_id, "remark": remark,
         "planned_date": planned_date, "waiting_reason": waiting_reason, "machine_stopped": machine_stopped,
+        "task_id": task_id,
     }, actor())
 
 
@@ -1138,6 +1240,13 @@ def _apply_move(cur, ticket, move, clean, now, prefix=""):
     if ticket["state"] not in spec.from_states:
         raise ApiError(TICKET_CHANGED, 409)
     ticket_id = ticket["id"]
+    if spec.to_state == CLOSED:
+        # S106 § 5.5, D4: Close and Not a fault wait until no task is open; Back in service never does.  A plain
+        # count under the ticket's lock (7), which every task write holds, so a closed ticket has no open task.
+        message = close_block(count(cur, "SELECT COUNT(*) AS n FROM ticket_tasks WHERE ticket_id = %s AND state = %s",
+                                    (ticket_id, TASK_OPEN)))
+        if message:
+            raise ApiError(message, 409)
     last = _last_ordered_event(cur, ticket_id)
     occurred_at = _event_time(clean["occurred_at"], last, now, f"{prefix}occurred_at")
     event, changes = {"from_state": ticket["state"]}, {}
@@ -1498,3 +1607,170 @@ def part_suggestions(ticket_id):
                     (machine_id, machine_id, machine_id, PART_SUGGESTIONS_MAX))
         items = cur.fetchall()
     return jsonify({"items": items, "total": len(items)})
+
+
+# ---------------------------------------------------------------------------
+# Tasks (S106): one piece of the ticket's corrective work, for one person, with a due date.  Every write: the
+# body 400, then the ticket (7) FOR UPDATE: 404, 403 at the ticket's site, closed 409; then the task 404, the
+# owner rule 403 (mark done), the task's state 409, the checks that need the database 400 (§ 5.1).  Each write
+# adds its timeline line with the task's id, after the change, in the same transaction (§ 5.5).
+# ---------------------------------------------------------------------------
+
+def _task_row(cur, ticket_id, task_id):
+    """A ``ticket_tasks`` row of this ticket, read plain under the ticket's lock (7), with its owner's name for
+    a change's line -> the row; 404 for a task of another ticket or an unknown one."""
+    cur.execute("SELECT k.id, k.state, k.text, k.owner_id, k.due_date, o.name AS owner_name FROM ticket_tasks k"
+                " JOIN people o ON o.id = k.owner_id WHERE k.id = %s AND k.ticket_id = %s", (task_id, ticket_id))
+    task = cur.fetchone()
+    if task is None:
+        raise ApiError("Not found", 404)
+    return task
+
+
+def _refuse_task_state(operation, task):
+    """The task's own state (§ 5.5): 409."""
+    message = task_state_error(operation, task["state"])
+    if message:
+        raise ApiError(message, 409)
+
+
+def _check_task_due(ticket, due):
+    """§ 5.3: from the day the problem happened (the locked ticket's occurred_at) to a year ahead (IST)."""
+    message = improvements_core.due_date_error(due, ticket["occurred_at"].date(), _today())
+    if message:
+        raise ApiError(message, 400, "due_date")
+
+
+@tickets_bp.route("/<int:ticket_id>/tasks", methods=["POST"])
+@require_perm(ASSIGN_KEY)
+def add_task(ticket_id):
+    """A task with its text, owner (any active person of the ticket's site, with or without a login) and due
+    date, up to TASKS_MAX per ticket, cancelled ones counted (§ 5.2, § 5.3)."""
+    clean = clean_body(validate_task, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        ticket = _lock_open_ticket(cur, ticket_id, ASSIGN_KEY)
+        if count(cur, "SELECT COUNT(*) AS n FROM ticket_tasks WHERE ticket_id = %s", (ticket_id,)) >= TASKS_MAX:
+            raise ApiError(TASKS_FULL, 409)
+        owner = _check_person(cur, clean["owner_id"], ticket["site_id"], "owner_id")
+        _check_task_due(ticket, clean["due_date"])
+        task_id = insert_row(cur, "ticket_tasks", {"ticket_id": ticket_id, **clean}, actor())
+        _add_event(cur, ticket_id, TASK_ADDED, _now(), remark=task_line(clean["text"], owner["name"],
+                                                                         clean["due_date"]), task_id=task_id)
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail), 201
+
+
+@tickets_bp.route("/<int:ticket_id>/tasks/<int:task_id>", methods=["PUT"])
+@require_perm(ASSIGN_KEY)
+def edit_task(ticket_id, task_id):
+    """The text, owner and due date of an open task: a field equal to the stored one is not written, and a
+    change of nothing writes nothing (no updated_*, no line).  The owner and the due date are checked only
+    when they change, so an owner who has since left the site stays until someone picks another (§ 5.3)."""
+    clean = clean_body(validate_task, creating=False)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        ticket = _lock_open_ticket(cur, ticket_id, ASSIGN_KEY)
+        task = _task_row(cur, ticket_id, task_id)
+        _refuse_task_state("change", task)
+        changes = {field: value for field, value in clean.items() if value != task[field]}
+        new = {}
+        old = {"text": task["text"], "owner": task["owner_name"], "owner_id": task["owner_id"],
+               "due": task["due_date"]}
+        if "text" in changes:
+            new["text"] = changes["text"]
+        if "owner_id" in changes:
+            new["owner"] = _check_person(cur, changes["owner_id"], ticket["site_id"], "owner_id")["name"]
+            new["owner_id"] = changes["owner_id"]
+        if "due_date" in changes:
+            _check_task_due(ticket, changes["due_date"])
+            new["due"] = changes["due_date"]
+        if changes:
+            update_row(cur, "ticket_tasks", task_id, changes, actor())
+            _add_event(cur, ticket_id, TASK_CHANGED, _now(), remark=task_change_line(old, new), task_id=task_id)
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+@tickets_bp.route("/<int:ticket_id>/tasks/<int:task_id>/done", methods=["POST"])
+@require_perm(READ_KEY)
+def mark_task_done(ticket_id, task_id):
+    """What was done and when (§ 5.2), by the task's owner or a ticket:assign holder at the ticket's site
+    (owner by data, § 5.7; also for an owner without a login).  No done_at is *Now*: the server's clock.
+    done_by is who recorded it; updated_* stay the last change of the text, owner and due date (§ 5.5)."""
+    clean = clean_body(improvements_core.validate_done, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        ticket = _lock_open_ticket(cur, ticket_id, READ_KEY)
+        task = _task_row(cur, ticket_id, task_id)
+        # A user with no Team record (IT admin) owns nothing
+        if not (has_perm_at(ASSIGN_KEY, ticket["site_id"]) or current_person_id(cur) == task["owner_id"]):
+            raise ApiError(OWNER_OR_ASSIGNER, 403)
+        _refuse_task_state("done", task)
+        now = _now()
+        done_at = clean["done_at"] or now
+        message = improvements_core.done_time_error(done_at, now, ticket["occurred_at"])
+        if message:
+            raise ApiError(message, 400, "done_at")
+        cur.execute("UPDATE ticket_tasks SET state = %s, done_text = %s, done_at = %s, done_by = %s WHERE id = %s",
+                    (TASK_DONE, clean["done_text"], done_at, actor(), task_id))
+        _add_event(cur, ticket_id, TASK_DONE_EVENT, done_at, remark=clean["done_text"], task_id=task_id)
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+@tickets_bp.route("/<int:ticket_id>/tasks/<int:task_id>/cancel", methods=["POST"])
+@require_perm(ASSIGN_KEY)
+def cancel_task(ticket_id, task_id):
+    """An open task cancelled with a reason; the row stays (ISO 9001 § 7.5.3)."""
+    clean = clean_body(improvements_core.validate_cancel, creating=True)
+    conn = get_db()
+    with transaction(conn), conn.cursor() as cur:
+        _lock_open_ticket(cur, ticket_id, ASSIGN_KEY)
+        task = _task_row(cur, ticket_id, task_id)
+        _refuse_task_state("cancel", task)
+        now = _now()
+        cur.execute("UPDATE ticket_tasks SET state = %s, cancel_reason = %s, cancelled_at = %s, cancelled_by = %s"
+                    " WHERE id = %s", (TASK_CANCELLED, clean["reason"], now, actor(), task_id))
+        _add_event(cur, ticket_id, TASK_CANCELLED_EVENT, now, remark=clean["reason"], task_id=task_id)
+        detail = _ticket_response(cur, ticket_id)
+    return jsonify(detail)
+
+
+@tickets_bp.route("/tasks/mine")
+@require_perm(READ_KEY)
+def my_tasks():
+    """My open tasks (*Me › Open work*, S106 § 6, D13): owned by my Team record, on tickets not closed and
+    inside the ticket predicate, by due date, up to MAX_PER_PAGE with the total.  ``tasks`` is not an integer,
+    so this route never meets ``/<int:ticket_id>``.  A user with no Team record owns none.  The "not closed"
+    condition excludes nothing while the close block holds; it keeps the list right if that rule is relaxed."""
+    with get_db().cursor() as cur:
+        person_id = current_person_id(cur)
+        visible = _visible_condition(cur)
+        if person_id is None or visible is None:
+            return jsonify({"items": [], "total": 0})
+        from_where = (" FROM ticket_tasks k JOIN tickets t ON t.id = k.ticket_id"
+                      " JOIN equipment m ON m.id = t.equipment_id JOIN units u ON u.id = t.unit_id"
+                      f" WHERE k.owner_id = %s AND k.state = %s AND t.state <> %s AND {visible[0]}")
+        params = [person_id, TASK_OPEN, CLOSED, *visible[1]]
+        total = count(cur, f"SELECT COUNT(*) AS n{from_where}", params)
+        cur.execute("SELECT k.id, k.text, k.due_date, k.state, t.id AS t_id, t.serial, t.state AS t_state,"
+                    " t.intensity, u.site_id, m.id AS m_id, m.code AS m_code, m.name AS m_name"
+                    f"{from_where} ORDER BY k.due_date, k.id LIMIT %s", [*params, MAX_PER_PAGE])
+        rows = cur.fetchall()
+    today = _today()
+    items = []
+    for row in rows:
+        # The detail's flag for this task: the user is the owner, so the owner rule needs ticket:read here
+        flags = improvements_core.action_flags(row["t_state"] != CLOSED, row["state"],
+                                               has_perm_at(ASSIGN_KEY, row["site_id"]),
+                                               has_perm_at(READ_KEY, row["site_id"]))
+        items.append({
+            "id": row["id"], "text": row["text"], "due_date": row["due_date"].isoformat(),
+            "overdue_days": improvements_core.overdue_days(row["state"], row["due_date"], today),
+            "can_mark_done": flags["can_mark_done"],
+            "ticket": {"id": row["t_id"], "serial": row["serial"], "state": row["t_state"],
+                       "intensity": row["intensity"],
+                       "machine": {"id": row["m_id"], "code": row["m_code"], "name": row["m_name"]}},
+        })
+    return jsonify({"items": items, "total": total})

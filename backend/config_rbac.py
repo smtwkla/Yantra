@@ -116,6 +116,9 @@ PERMISSIONS = {
     # all four (S017 user decision 7) but no site role, so it is never assigned.
     "ticket:work": ("maint_technician", "it_admin"),
     "ticket:restore": ("maint_operator", "it_admin"),
+    # Tasks on a ticket (S106 § 5.7, D4): ticket:assign adds, changes and cancels them, and an open task blocks
+    # Close and Not a fault.  The block relies on whoever may close being able to cancel the blocking task, so
+    # a change to the holders of either key reconsiders it (today the two have the same holders).
     "ticket:assign": ("maint_engineer", "it_admin"),
     "ticket:close": ("maint_engineer", "it_admin"),
     # Correcting a work note (S027): a typo or wrong fact, keeping the earlier text.  Adding a

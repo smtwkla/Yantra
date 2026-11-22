@@ -190,7 +190,7 @@ _TABLES = ("pm_job_results", "pm_job_events", "pm_jobs", "pm_plans", "pm_templat
            "meter_readings", "node_meter_links", "node_meters", "model_meters", "access_log", "task_queue",
            "push_subscriptions",
            "person_units", "memberships", "person_trades", "ticket_parts", "ticket_labour", "ticket_assignees",
-           "people", "vendors", "trades", "ticket_note_edits", "ticket_events",
+           "people", "vendors", "trades", "ticket_note_edits", "ticket_events", "ticket_tasks",
            "equipment_documents", "tickets",
            "equipment_events", "equipment_property_values", "equipment", "model_property_values", "equipment_models",
            "manufacturers",
