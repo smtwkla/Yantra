@@ -113,6 +113,21 @@ export function overdueText(days) {
   return `Overdue ${days} ${days === 1 ? "day" : "days"}`;
 }
 
+/**
+ * What *Mark countermeasure done* shows and where it saves (S071 § 5.5; S107 § 5.5: the shared
+ * dialog's `open(target)`, beside ticketLabels.taskDoneTarget).
+ */
+export function countermeasureDoneTarget(improvementId, action) {
+  return {
+    title: "Mark countermeasure done",
+    text: action.text,
+    donePath: `/api/improvements/${improvementId}/actions/${action.id}/done`,
+    photosPath: `/api/improvements/actions/${action.id}/documents`,
+    placeholder: "New gasket fitted.",
+    photoNote: "",
+  };
+}
+
 /** "2 of 6 done" from the detail's `action_counts`; cancelled ones are in neither number; "" with none left. */
 export function actionCountsText(counts) {
   const total = counts.open + counts.done;

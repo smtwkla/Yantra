@@ -5,7 +5,9 @@
  *                   and above them my open countermeasures (S071: GET /api/improvements/actions/mine,
  *                   page 1 only, for improvement:read holders), each with Mark done; above those my due,
  *                   overdue and started PM jobs (S098 § 5.11: GET /api/pm/jobs?tab=due&assigned=me, page 1
- *                   only, for pm_job:read holders with a Team record);
+ *                   only, for pm_job:read holders with a Team record); between the PM jobs and the
+ *                   countermeasures my open ticket tasks (S107 § 5.9: GET /api/tickets/tasks/mine, page 1
+ *                   only, with a Team record), each with Mark done;
  *   Raised by me  — the tickets I raised or that name me the reporter (?raised=me&state=…);
  *   My activity   — every timeline line I recorded (GET /api/tickets/activity).
  * The tab, the state and the page live in the URL query, as the Tickets filters do, so Back
@@ -18,12 +20,14 @@ import CountermeasureItem from "../components/CountermeasureItem.vue";
 import IntensityBadge from "../components/IntensityBadge.vue";
 import PagerBar from "../components/PagerBar.vue";
 import PmJobRow from "../components/PmJobRow.vue";
+import TaskItem from "../components/TaskItem.vue";
 import TicketRow from "../components/TicketRow.vue";
 import { userPermissions, userPersonId, userRoles } from "../stores/auth";
 import { ensureMyUnits, noUnits } from "../stores/equipment";
 import { formatDateTime } from "../utils/datetime";
 import { NO_UNITS_TEXT } from "../utils/messages";
-import { activityDetail, defaultMeTab, EVENT_LABELS, isBackdated } from "../utils/ticketLabels";
+import { countermeasureDoneTarget } from "../utils/improvementLabels";
+import { activityDetail, defaultMeTab, EVENT_LABELS, isBackdated, taskDoneTarget } from "../utils/ticketLabels";
 import MarkDoneDialog from "./improvements/MarkDoneDialog.vue";
 
 const PAGE_SIZE = 50; // the API default
@@ -45,6 +49,7 @@ const router = useRouter();
 const page = ref(null); // {items, total, page, per_page}
 const actions = ref({ items: [], total: 0 }); // my open countermeasures (S071); empty on every other tab and page
 const pmJobs = ref([]); // my due, overdue and started PM jobs (S098); empty on every other tab and page
+const tasks = ref({ items: [], total: 0 }); // my open ticket tasks (S107); empty on every other tab and page
 const markDoneDialog = ref(null);
 const loading = ref(true);
 const loadError = ref("");
@@ -80,6 +85,7 @@ watch(tab, () => {
   page.value = null;
   actions.value = { items: [], total: 0 };
   pmJobs.value = [];
+  tasks.value = { items: [], total: 0 };
 });
 const chooseState = (value) => go({ state: value });
 const choosePage = (value) => go({ state: raisedState.value, pageNo: value });
@@ -112,6 +118,12 @@ async function loadPmJobs() {
   return wanted ? (await apiGet("/api/pm/jobs?tab=due&assigned=me")).items : [];
 }
 
+// S107 § 5.9: my open tasks, by due date, on page 1 of Open work only; with no Team record the server owns none
+async function loadTasks() {
+  const wanted = tab.value === "open" && pageNumber.value === 1 && Boolean(userPersonId.value);
+  return wanted ? apiGet("/api/tickets/tasks/mine") : { items: [], total: 0 };
+}
+
 async function load() {
   if (route.name !== "me") return; // the route is changing to another page
   // A typed /me by a user without ticket:read shows for a moment before App.vue redirects: no call
@@ -120,12 +132,13 @@ async function load() {
   loading.value = true;
   loadError.value = "";
   try {
-    const [result, mine, jobs] = await Promise.all([apiGet(listUrl()), loadActions(), loadPmJobs(),
-      ensureMyUnits()]);
+    const [result, mine, jobs, myTasks] = await Promise.all([apiGet(listUrl()), loadActions(), loadPmJobs(),
+      loadTasks(), ensureMyUnits()]);
     if (seq !== loadSeq) return;
     page.value = result;
     actions.value = mine;
     pmJobs.value = jobs;
+    tasks.value = myTasks;
     now.value = new Date();
   } catch (err) {
     if (seq === loadSeq) loadError.value = err.message;
@@ -188,6 +201,20 @@ const emptyText = computed(() => {
           <PmJobRow v-for="j in pmJobs" :key="j.id" :job="j" />
         </div>
       </template>
+      <!-- S107 D7: tasks hold their ticket open and are due in days, so above the countermeasures -->
+      <template v-if="tasks.items.length">
+        <h6 class="mb-2" data-testid="me-tasks">Tasks ({{ tasks.total }})</h6>
+        <ul class="list-group mb-3">
+          <TaskItem
+            v-for="(k, i) in tasks.items"
+            :key="k.id"
+            :task="k"
+            :number="i + 1"
+            show-ticket
+            @mark-done="markDoneDialog.open(taskDoneTarget(k.ticket.id, k))"
+          />
+        </ul>
+      </template>
       <template v-if="actions.items.length">
         <h6 class="mb-2" data-testid="me-countermeasures">Countermeasures ({{ actions.total }})</h6>
         <ul class="list-group mb-3">
@@ -196,11 +223,11 @@ const emptyText = computed(() => {
             :key="a.id"
             :action="a"
             show-improvement
-            @mark-done="markDoneDialog.open({ improvementId: a.improvement.id, action: a })"
+            @mark-done="markDoneDialog.open(countermeasureDoneTarget(a.improvement.id, a))"
           />
         </ul>
       </template>
-      <h6 v-if="pmJobs.length || actions.items.length" class="mb-2">Tickets</h6>
+      <h6 v-if="pmJobs.length || tasks.items.length || actions.items.length" class="mb-2">Tickets</h6>
       <div v-if="page.total > 0 && countText" class="text-secondary small mb-2">{{ countText }}</div>
       <div v-if="page.total === 0 && notInTeam" class="text-secondary">
         <template v-if="isItAdmin">You are not in Team. Add yourself in Masters › Team to be assigned tickets.</template>

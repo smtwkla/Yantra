@@ -15,7 +15,7 @@ from tests.conftest import EQUIPMENT, MASTERS
 from tests.ticket_helpers import local, now_ist, refusal
 from tests.test_ticket_work_api import booked, detail, move, moved, scheduled, url
 from ticket_tasks_core import (
-    ALREADY_CANCELLED, ALREADY_DONE, DONE_NOT_CANCELLED, ONLY_OPEN_CHANGES, OWNER_OR_ASSIGNER, TASKS_FULL,
+    ALREADY_CANCELLED, ALREADY_DONE, DONE_NOT_CANCELLED, DUE_NEEDED, ONLY_OPEN_CHANGES, OWNER_OR_ASSIGNER, TASKS_FULL,
     TASKS_MAX, WAS_CANCELLED, close_block,
 )
 from tickets import PERSON_AT_SITE, TICKET_CLOSED
@@ -211,6 +211,8 @@ class TestAdd:
         _, person = tech
         assert refusal(client.post(url(ticket, "tasks"), json={})) == (400, "text", "Enter what to do")
         assert refusal(add(client, ticket, person, due_date="22-11-2026"))[:2] == (400, "due_date")
+        # S107 § 5.3: an empty date asks to choose one
+        assert refusal(add(client, ticket, person, due_date="")) == (400, "due_date", DUE_NEEDED)
 
     def test_the_31st_task_is_refused(self, eng, tech, ticket, db_rows):
         client, _ = eng

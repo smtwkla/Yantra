@@ -9,7 +9,7 @@
  */
 import { computed } from "vue";
 import {
-  PLAN_DATE_HELP, PLAN_QUICK_DAYS, PLANNED_DATE_MAX_DAYS, planDateKind, planDateLabel, toLocalDateValue, WAITING_REASON_LABELS,
+  dateInDays, PLAN_DATE_HELP, PLAN_QUICK_DAYS, PLANNED_DATE_MAX_DAYS, planDateKind, planDateLabel, WAITING_REASON_LABELS,
 } from "../../utils/ticketLabels";
 
 defineProps({
@@ -21,17 +21,12 @@ defineProps({
 });
 const emit = defineEmits(["update:date", "update:reason"]);
 
-const today = computed(() => toLocalDateValue(new Date()));
-/** Today plus `days`, in the phone's local date, the same basis as the input's min. */
-function daysFromToday(days) {
-  const day = new Date();
-  day.setDate(day.getDate() + days);
-  return toLocalDateValue(day);
-}
+// The input's `min`: today in the phone's local date, the same basis as the quick-pick buttons (dateInDays, S107)
+const today = computed(() => dateInDays(0));
 function pickDays(days) {
-  emit("update:date", daysFromToday(days));
+  emit("update:date", dateInDays(days));
 }
-const lastDay = computed(() => daysFromToday(PLANNED_DATE_MAX_DAYS));
+const lastDay = computed(() => dateInDays(PLANNED_DATE_MAX_DAYS));
 </script>
 
 <template>

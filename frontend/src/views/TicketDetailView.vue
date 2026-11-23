@@ -45,6 +45,12 @@
  * line (TicketContractLine) between the plan line and the action bar, with S082's "Do not repair"
  * warning when only the vendor may repair: the technician reads it before *Start*, the engineer
  * reads the vendor before *Assign*.
+ *
+ * S107: the *Tasks* card (TasksCard) after details, times and assignees: who does what by when
+ * (S106's tasks). *Close* and *Not a fault* say why they wait (moveBlocks): the server's
+ * `blocked_reason` (open tasks), then no labour (*Close*) or parts recorded (*Not a fault*), each
+ * reason a line under the disabled button. The timeline names the four task lines and shows the
+ * task's text on a change, done or cancel line.
  */
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -56,8 +62,8 @@ import { userPersonId } from "../stores/auth";
 import { formatDateTime } from "../utils/datetime";
 import { improvementStateLabel } from "../utils/improvementLabels";
 import {
-  ageText, EVENT_LABELS, intensityChanges, minutesText, moveLabel, PLAN_MOVES, planChanges, planLine, SIGNIFICANT_MOVES,
-  stateLabel, ticketTint, waitingSplit,
+  ageText, EVENT_LABELS, intensityChanges, minutesText, moveBlocks, moveLabel, PLAN_MOVES, planChanges, planLine,
+  SIGNIFICANT_MOVES, stateLabel, taskEventText, ticketTint, waitingSplit,
 } from "../utils/ticketLabels";
 import AssignDialog from "./tickets/AssignDialog.vue";
 import ImprovementDialog from "./improvements/ImprovementDialog.vue";
@@ -67,6 +73,7 @@ import MoveDialog from "./tickets/MoveDialog.vue";
 import NoteDialog from "./tickets/NoteDialog.vue";
 import PartsPanel from "./tickets/PartsPanel.vue";
 import RegradeDialog from "./tickets/RegradeDialog.vue";
+import TasksCard from "./tickets/TasksCard.vue";
 import TicketContractLine from "./tickets/TicketContractLine.vue";
 import TicketMetersCard from "./tickets/TicketMetersCard.vue";
 import TicketShare from "./tickets/TicketShare.vue";
@@ -92,6 +99,7 @@ const noteDialog = ref(null);
 const improvementDialog = ref(null);
 const shownEarlier = ref(new Set()); // the notes whose earlier texts are open
 const labourPanel = ref(null);
+const documentsCards = ref(null);
 const confirmingUnassignId = ref(null);
 const unassigning = ref(false);
 const unassignError = ref("");
@@ -108,8 +116,15 @@ const chainMoves = computed(() => (ticket.value?.moves ?? [])
 const planMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => PLAN_MOVES.includes(m.name)));
 const significantMoves = computed(() => (ticket.value?.moves ?? []).filter((m) => SIGNIFICANT_MOVES.includes(m.name)));
 const closeNeedsLabour = (m) => m.name === "close" && ticket.value.labour.length === 0;
-// A ticket with parts was a fault (S020 § 1.5): Not a fault waits until they are removed
-const notAFaultHasParts = (m) => m.name === "not-a-fault" && ticket.value.parts.length > 0;
+// S107 § 5.7: why Close or Not a fault waits (open tasks, no labour, parts: a ticket with parts was a fault,
+// S020 § 1.5); empty when the move may be made
+// computed once per move, so the disabled button and its reasons read the same list
+const blocksByMove = computed(() => Object.fromEntries(significantMoves.value.map((m) => [
+  m.name,
+  moveBlocks(m, { labourCount: ticket.value.labour.length, partCount: ticket.value.parts.length }),
+])));
+// S107 § 5.6: the task text of each timeline line, by the event's index (the row's key), once per load
+const taskTexts = computed(() => (ticket.value?.events ?? []).map((e) => taskEventText(e, ticket.value.tasks)));
 // ticket:work holders get Change severity only; others Machine stopped, on a defect (BR4-05)
 const showChangeSeverity = computed(() => can("ticket:work") && (ticket.value?.regrade_to ?? []).length > 0);
 const showMachineStopped = computed(() => !can("ticket:work") && !ticket.value?.is_breakdown
@@ -195,6 +210,12 @@ function toggleEarlier(note) {
 function onSaved(result) {
   ticket.value = result;
   confirmingUnassignId.value = null;
+}
+
+// S107: a task's dialog found the page stale, or a photo went up to the ticket's photos
+function reloadWithPhotos() {
+  load();
+  documentsCards.value?.reload();
 }
 
 async function unassign(person) {
@@ -287,20 +308,16 @@ watch(() => route.params.id, load, { immediate: true });
         </router-link>
         <div v-if="significantMoves.length" class="significant d-grid gap-2 d-md-flex align-items-md-start order-md-first me-md-auto">
           <template v-for="m in significantMoves" :key="m.name">
-            <div v-if="closeNeedsLabour(m)" class="d-grid gap-1">
+            <div v-if="blocksByMove[m.name].length" class="d-grid gap-1">
               <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-secondary btn-lg flex-grow-1" disabled>Close</button>
-                <button v-if="canWork" type="button" class="btn btn-outline-primary btn-lg" @click="labourPanel.openAdd()">
+                <button type="button" class="btn btn-outline-secondary btn-lg flex-grow-1" disabled>
+                  {{ moveLabel(m.name, ticket.intensity) }}
+                </button>
+                <button v-if="closeNeedsLabour(m) && canWork" type="button" class="btn btn-outline-primary btn-lg" @click="labourPanel.openAdd()">
                   Add labour
                 </button>
               </div>
-              <span class="small text-secondary">Add the labour first</span>
-            </div>
-            <div v-else-if="notAFaultHasParts(m)" class="d-grid gap-1">
-              <button type="button" class="btn btn-outline-secondary btn-lg" disabled>
-                {{ moveLabel(m.name, ticket.intensity) }}
-              </button>
-              <span class="small text-secondary">Remove the parts first</span>
+              <span v-for="reason in blocksByMove[m.name]" :key="reason" class="small text-secondary">{{ reason }}</span>
             </div>
             <button v-else type="button" class="btn btn-outline-dark btn-lg" @click="moveDialog.open(m)">
               {{ moveLabel(m.name, ticket.intensity) }}
@@ -436,6 +453,9 @@ watch(() => route.params.id, load, { immediate: true });
         </div>
       </div>
 
+      <!-- S107: who does what by when, beside Assigned (D6); draws nothing with no task and no right to add one -->
+      <TasksCard :ticket="ticket" :people="people" :own-person-id="userPersonId" @saved="onSaved" @reload="reloadWithPhotos" />
+
       <!-- S052: the meters as they stood when it happened; draws nothing while loading or without meters -->
       <TicketMetersCard :ticket="ticket" />
 
@@ -496,7 +516,9 @@ watch(() => route.params.id, load, { immediate: true });
                     </div>
                   </template>
                 </template>
-                <div v-else-if="e.remark" class="small text-break remark">{{ e.remark }}</div>
+                <!-- S107 § 5.6: the task a change, done or cancel line is about -->
+                <div v-if="taskTexts[i]" class="small text-break">Task: {{ taskTexts[i] }}</div>
+                <div v-if="e.event !== 'note' && e.remark" class="small text-break remark">{{ e.remark }}</div>
               </li>
             </ul>
             <div v-if="timelineMore.canExpand.value" class="card-footer">
@@ -509,6 +531,7 @@ watch(() => route.params.id, load, { immediate: true });
       </div>
 
       <DocumentsCards
+        ref="documentsCards"
         :base-path="`/api/tickets/${ticket.id}/documents`"
         :can-edit="ticket.can_add_photos"
         :can-edit-documents="ticket.can_add_documents"

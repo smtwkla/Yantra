@@ -7,7 +7,7 @@ import pytest
 import improvements_core
 from improvements_core import ACTION_STATES, OWNER_NEEDED
 from ticket_tasks_core import (
-    ALREADY_CANCELLED, ALREADY_DONE, DONE_NOT_CANCELLED, ONLY_OPEN_CHANGES, TASK_CANCELLED, TASK_DONE,
+    ALREADY_CANCELLED, ALREADY_DONE, DONE_NOT_CANCELLED, DUE_NEEDED, ONLY_OPEN_CHANGES, TASK_CANCELLED, TASK_DONE,
     TASK_EVENTS, TASK_OPEN, TASK_STATES, TASK_TEXT_MAX, TASKS_FULL, TASKS_MAX, TEXT_NEEDED, TEXT_NOT_TEXT,
     TEXT_TOO_LONG, WAS_CANCELLED, close_block, task_change_line, task_line, task_state_error, validate_task,
 )
@@ -29,12 +29,24 @@ class TestValidateTask:
         assert clean == {"text": "Check the heater", "owner_id": 4, "due_date": date(2026, 11, 25)}
 
     def test_a_missing_field_on_an_add_gives_its_first_message(self):
-        assert _errors({}) == [("text", TEXT_NEEDED), ("owner_id", OWNER_NEEDED), ("due_date", DATE_FORMAT)]
+        assert _errors({}) == [("text", TEXT_NEEDED), ("owner_id", OWNER_NEEDED), ("due_date", DUE_NEEDED)]
 
     @pytest.mark.parametrize("creating", [True, False])
     def test_null_is_refused_on_add_and_change(self, creating):
         assert _errors({"text": None, "owner_id": None, "due_date": None}, creating) == [
-            ("text", TEXT_NEEDED), ("owner_id", OWNER_NEEDED), ("due_date", DATE_FORMAT)]
+            ("text", TEXT_NEEDED), ("owner_id", OWNER_NEEDED), ("due_date", DUE_NEEDED)]
+
+    @pytest.mark.parametrize("creating", [True, False])
+    @pytest.mark.parametrize("due", ["", "   ", None])
+    def test_an_empty_due_date_asks_to_choose_one(self, due, creating):
+        """S107 § 5.3: the dialog's words, not the API's format words (D13)."""
+        assert _errors({**GOOD, "due_date": due}, creating) == [("due_date", DUE_NEEDED)]
+        assert DUE_NEEDED == "Choose the due date"
+
+    def test_a_missing_due_date_asks_on_an_add_and_stays_on_a_change(self):
+        body = {key: value for key, value in GOOD.items() if key != "due_date"}
+        assert _errors(body) == [("due_date", DUE_NEEDED)]
+        assert _errors(body, creating=False) == []
 
     def test_the_text(self):
         assert _errors({**GOOD, "text": "   "}) == [("text", TEXT_NEEDED)]
@@ -47,7 +59,7 @@ class TestValidateTask:
     def test_the_owner_must_be_an_id(self, owner):
         assert _errors({**GOOD, "owner_id": owner}) == [("owner_id", OWNER_NEEDED)]
 
-    @pytest.mark.parametrize("due", ["22-11-2026", "2026-02-30", "20261122", "2026-W47-7", 20261122, ""])
+    @pytest.mark.parametrize("due", ["22-11-2026", "2026-02-30", "20261122", "2026-W47-7", 20261122])
     def test_the_due_date_is_yyyy_mm_dd(self, due):
         assert _errors({**GOOD, "due_date": due}) == [("due_date", DATE_FORMAT)]
 

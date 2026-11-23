@@ -15,6 +15,15 @@ DB_USER = "vel_yantra_master"
 DB_PASSWORD = "dev-password"
 DB_NAME = "vel_yantra_master"
 
+# Production read-only user, for tooling/run-prod-query.bat on the dev laptop only (diagnostics).
+# Never in the Ansible template: the production container does not need it.  The tool refuses a
+# user that holds more than SELECT.
+# PROD_RO_DB_HOST = "db-server.example.test"
+# PROD_RO_DB_PORT = 3306
+# PROD_RO_DB_USER = "vel_yantra_ro"
+# PROD_RO_DB_PASSWORD = "CHANGE_ME"
+# PROD_RO_DB_NAME = "vel_yantra_master"
+
 # Keycloak — full realm URL (base URL + /realms/ + realm name)
 KEYCLOAK_REALM_URL = "https://sso.mspv.app/realms/Office.smtw.in"
 KEYCLOAK_CLIENT_ID = "vel-yantra-master"

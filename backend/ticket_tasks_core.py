@@ -37,6 +37,9 @@ TASK_TEXT_MAX = 300
 TEXT_NEEDED = "Enter what to do"
 TEXT_TOO_LONG = f"What to do: up to {TASK_TEXT_MAX} characters"
 TEXT_NOT_TEXT = "What to do must be text"
+# An empty due date (S107 § 5.3, D13): the words fit the dialog's field and its quick picks; any other value
+# that is not YYYY-MM-DD keeps LABOUR_DATE_FORMAT, which fits an API caller
+DUE_NEEDED = "Choose the due date"
 TASKS_FULL = f"A ticket holds up to {TASKS_MAX} tasks. Change an open one instead."
 OWNER_OR_ASSIGNER = "Only the owner, or an engineer or manager of this site, can mark this task done"
 ONLY_OPEN_CHANGES = "Only an open task can be changed"
@@ -76,9 +79,17 @@ def validate_task(body, creating):
     due = iso_date(body["due_date"]) if read else None
     if due is not None:
         clean["due_date"] = due
-    elif read or missing:
+    elif missing or (read and _blank(body["due_date"])):
+        # Missing on an add, or null on either (required_field), or blank text (S107 § 5.3)
+        errors.append({"field": "due_date", "message": DUE_NEEDED})
+    elif read:
         errors.append({"field": "due_date", "message": LABOUR_DATE_FORMAT})
     return clean, errors
+
+
+def _blank(value):
+    """A due date string that is empty after trim (S107 § 5.3)."""
+    return isinstance(value, str) and not value.strip()
 
 
 def task_state_error(operation, state):

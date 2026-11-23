@@ -141,3 +141,51 @@ export function shownDay(isoDate) {
   const [y, m, d] = isoDate.split("-");
   return `${d}-${m}-${y}`;
 }
+
+// --- S107: tasks on a ticket (set-up and tidy-up by API; the flows use the screens) -----------
+
+/**
+ * Add a task to the ticket `ticketId` through the API as `key` (default the engineer, a
+ * ticket:assign holder) -> {detail, task}, the task being the one just added. `owner` is the
+ * person's name as the people picker shows it ("Ramesh (operator, no phone)": no login needed).
+ */
+export async function taskByApi(ticketId, {
+  owner = "Kannan (technician)", text = "S107 set-up: check the panel", due = istDay(1), key = "engineer",
+} = {}) {
+  const api = await apiAs(key);
+  try {
+    const people = (await (await api.get(`/api/tickets/people?ticket_id=${ticketId}`)).json()).items;
+    const person = people.find((p) => p.name === owner);
+    expect(person, `${owner} is not at the ticket's site`).toBeTruthy();
+    const res = await api.post(`/api/tickets/${ticketId}/tasks`, {
+      data: { text, owner_id: person.id, due_date: due },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    const detail = await res.json();
+    return { detail, task: detail.tasks.at(-1) };
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** Mark the task done through the API as `key` (its owner, or a ticket:assign holder) -> the ticket. */
+export function markTaskDoneByApi(ticketId, taskId, key = "engineer", doneText = "S107 set-up: done") {
+  return postAs(key, `/api/tickets/${ticketId}/tasks/${taskId}/done`, { done_text: doneText });
+}
+
+/**
+ * Cancel every open task of the ticket as admin, so the ticket can be closed (S106: an open task
+ * blocks Close and Not a fault). For a test's tidy-up, on a ticket that is not closed.
+ */
+export async function cancelOpenTasksByApi(ticketId) {
+  const api = await apiAs("admin");
+  try {
+    const ticket = await (await api.get(`/api/tickets/${ticketId}`)).json();
+    for (const task of ticket.tasks.filter((t) => t.state === "open")) {
+      const res = await api.post(`/api/tickets/${ticketId}/tasks/${task.id}/cancel`, { data: { reason: "S107 test: tidy-up" } });
+      expect(res.status(), await res.text()).toBe(200);
+    }
+  } finally {
+    await api.dispose();
+  }
+}

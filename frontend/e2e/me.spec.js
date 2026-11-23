@@ -8,7 +8,9 @@ import { apiAs, asPerson, personId, seedIds } from "./support/people.js";
 import { navItem } from "./support/nav.js";
 import { meterMachine } from "./support/meters.js";
 import { pmPlanByApi } from "./support/pm.js";
-import { causeId, istDay, moveByApi, raiseByApi, saveDialog } from "./support/tickets.js";
+import {
+  cancelOpenTasksByApi, causeId, istDay, istLocal, moveByApi, raiseByApi, saveDialog, taskByApi,
+} from "./support/tickets.js";
 
 // S071: the overdue test answers the countermeasures call with page.route.  WebKit does not route a
 // request while the app's service worker (S021) controls the page, so none is started (as readings.spec.js).
@@ -27,6 +29,8 @@ test.afterEach(async () => {
     for (const id of raised) {
       const ticket = await (await api.get(`/api/tickets/${id}`)).json();
       if (ticket.state === "closed") continue;
+      // S107: an open task blocks Not a fault (S106), so the test's tasks are cancelled first
+      await cancelOpenTasksByApi(id);
       const res = await api.post(`/api/tickets/${id}/moves/not-a-fault`, {
         data: { cause_id: await causeId("5.1"), remark: "S031 test: tidy-up" },
       });
@@ -235,4 +239,45 @@ test("S098: Me › Open work lists my started PM job above the tickets", async (
   await row.click();
   await expect(page).toHaveURL(new RegExp(`/pm/jobs/${job.id}$`));
   await expect(page.getByRole("heading", { name: job.serial })).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------------------------
+// S107: my open ticket tasks on Open work.  A task's row is found by li[data-task] inside the
+// list under me-tasks, never by rowOf(page, serial), which also matches a task row (it holds the serial).
+// ---------------------------------------------------------------------------------------------
+
+const myTaskRow = (page, taskId) => page.locator(`li[data-task="${taskId}"]`);
+
+test("S107: Kannan's task shows on Me › Open work above the tickets, with its ticket and Mark done; the serial opens the ticket", async ({ page }) => {
+  const ticket = await raiseDefect("S107 me: a task for Kannan");
+  const { task } = await taskByApi(ticket.id, { text: "S107 me: check the space heater fuse" });
+  await asPerson(page, "technician", "/me");
+  const heading = page.getByTestId("me-tasks");
+  await expect(heading).toHaveText(/^Tasks \(\d+\)$/);
+  const tickets = page.getByRole("heading", { name: "Tickets", exact: true });
+  await expect(tickets).toBeVisible();
+  expect((await heading.boundingBox()).y).toBeLessThan((await tickets.boundingBox()).y);
+
+  const row = myTaskRow(page, task.id);
+  await expect(row).toContainText("S107 me: check the space heater fuse");
+  await expect(row).toContainText(`${ticket.serial} · ${seed.extruder.code} — ${seed.extruder.name}`);
+  await expect(row.getByRole("button", { name: "Mark done", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: /^(Change|Cancel) task/ })).toHaveCount(0);
+  await row.getByRole("link", { name: new RegExp(ticket.serial) }).click();
+  await expect(page).toHaveURL(new RegExp(`/tickets/${ticket.id}$`));
+  await expect(page.getByRole("heading", { name: ticket.serial })).toBeVisible();
+});
+
+test("S107: an overdue task shows Overdue 2 days on a red row on Me", async ({ page }) => {
+  // Raised 3 days back, so a due date 2 days back is allowed (the floor is the day it happened)
+  const ticket = await raiseByApi("operator", {
+    equipment_id: seed.extruder.id, intensity: "degraded", description: "S107 me: overdue task",
+    occurred_at: istLocal(3 * 24 * 60),
+  });
+  raised.push(ticket.id);
+  const { task } = await taskByApi(ticket.id, { text: "S107 me: overdue check", due: istDay(-2) });
+  await asPerson(page, "technician", "/me");
+  const row = myTaskRow(page, task.id);
+  await expect(row).toContainText("Overdue 2 days");
+  await expect(row).toHaveClass(/list-group-item-danger/);
 });

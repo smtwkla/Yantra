@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_KINDS, actionCountsText, actionKindLabel, causeText, closedLine, defaultDueDate, eventLabel, figureRows,
+  ACTION_KINDS, actionCountsText, actionKindLabel, causeText, closedLine, countermeasureDoneTarget, defaultDueDate, eventLabel, figureRows,
   IMPROVEMENT_EVENT_LABELS, improvementStateBadgeClass, repeatText, machinesText, symptomsText, watchEndDate, watchLine, defaultProblem, defaultRootCause, defaultTitle,
   IMPROVEMENT_STATE_LABELS, improvementStateLabel, lossText, overdueText, PROBLEM_MAX, ROOT_CAUSE_MAX,
   ticketCauses, TITLE_MAX, whyBody,
@@ -140,6 +140,19 @@ describe("actionCountsText", () => {
   it("leaves cancelled ones out of both numbers", () => {
     expect(actionCountsText({ open: 0, done: 0, cancelled: 2, overdue: 0 })).toBe("");
     expect(actionCountsText({ open: 1, done: 0, cancelled: 1, overdue: 0 })).toBe("0 of 1 done");
+  });
+});
+
+describe("countermeasureDoneTarget (S107 § 5.5)", () => {
+  it("gives S071's title, paths and placeholder", () => {
+    expect(countermeasureDoneTarget(7, { id: 42, text: "Fit the new gasket" })).toEqual({
+      title: "Mark countermeasure done",
+      text: "Fit the new gasket",
+      donePath: "/api/improvements/7/actions/42/done",
+      photosPath: "/api/improvements/actions/42/documents",
+      placeholder: "New gasket fitted.",
+      photoNote: "",
+    });
   });
 });
 

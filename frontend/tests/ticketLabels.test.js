@@ -10,6 +10,9 @@ import {
 } from "../src/utils/ticketLabels.js";
 import { activityDetail, defaultMeTab, isBackdated, planText } from "../src/utils/ticketLabels.js";
 import { ticketRowClass, ticketTint } from "../src/utils/ticketLabels.js";
+import {
+  dateInDays, moveBlocks, TASK_DUE_PICKS, TASK_TEXT_MAX, taskDoneTarget, taskEventText, taskOwnerMark,
+} from "../src/utils/ticketLabels.js";
 import { TICKET_FILTER_CHOICES, TICKET_LIGHT_LABELS } from "../src/utils/ticketLabels.js";
 import {
   DEFAULT_PART_KIND, matchingParts, PART_KIND_CHOICES, PART_KIND_SHORT, PART_UNITS, partText, quantityText,
@@ -129,6 +132,98 @@ describe("move labels (S018)", () => {
       "regraded", "edited", "assigned", "unassigned", "note"]) {
       expect(EVENT_LABELS[event]).toBeTruthy();
     }
+  });
+
+  it("names S106's four task lines (S107 § 5.6)", () => {
+    expect([EVENT_LABELS.task_added, EVENT_LABELS.task_changed, EVENT_LABELS.task_done, EVENT_LABELS.task_cancelled])
+      .toEqual(["Task added", "Task changed", "Task done", "Task cancelled"]);
+  });
+});
+
+// --- S107: tasks on a ticket ------------------------------------------------------------------
+
+describe("dateInDays (S107 § 5.10)", () => {
+  const from = new Date(2026, 10, 22, 10, 0); // 22-11-2026, local time
+  it("is today for 0", () => expect(dateInDays(0, from)).toBe("2026-11-22"));
+  it("is tomorrow for 1", () => expect(dateInDays(1, from)).toBe("2026-11-23"));
+  it("is a week ahead for 7", () => expect(dateInDays(7, from)).toBe("2026-11-29"));
+  it("crosses a month end", () => expect(dateInDays(1, new Date(2026, 10, 30, 23, 30))).toBe("2026-12-01"));
+  it("does not change the date it was given", () => {
+    dateInDays(7, from);
+    expect(from.getDate()).toBe(22);
+  });
+  it("the quick picks: Today, Tomorrow, In 7 days; the text bound is the server's", () => {
+    expect(TASK_DUE_PICKS).toEqual([[0, "Today"], [1, "Tomorrow"], [7, "In 7 days"]]);
+    expect(TASK_TEXT_MAX).toBe(300);
+  });
+});
+
+describe("moveBlocks (S107 § 5.7)", () => {
+  const OPEN_TASKS = "This ticket has 1 open task. Mark it done or cancel it first.";
+  const counts = (labourCount, partCount) => ({ labourCount, partCount });
+  it("gives the server's reason alone", () => {
+    expect(moveBlocks({ name: "close", blocked_reason: OPEN_TASKS }, counts(1, 0))).toEqual([OPEN_TASKS]);
+    expect(moveBlocks({ name: "not-a-fault", blocked_reason: OPEN_TASKS }, counts(0, 0))).toEqual([OPEN_TASKS]);
+  });
+  it("gives the missing labour alone", () => {
+    expect(moveBlocks({ name: "close", blocked_reason: null }, counts(0, 0))).toEqual(["Add the labour first"]);
+  });
+  it("gives the parts alone", () => {
+    expect(moveBlocks({ name: "not-a-fault", blocked_reason: null }, counts(0, 2))).toEqual(["Remove the parts first"]);
+  });
+  it("gives both on Close with open tasks and no labour, the tasks first", () => {
+    expect(moveBlocks({ name: "close", blocked_reason: OPEN_TASKS }, counts(0, 0)))
+      .toEqual([OPEN_TASKS, "Add the labour first"]);
+  });
+  it("gives none for a move that may be made", () => {
+    expect(moveBlocks({ name: "close", blocked_reason: null }, counts(1, 3))).toEqual([]);
+    expect(moveBlocks({ name: "send-back" }, counts(0, 3))).toEqual([]);
+  });
+});
+
+describe("taskEventText (S107 § 5.6)", () => {
+  const tasks = [{ id: 4, text: "Check the space heater fuse" }];
+  it("names a known task's text", () => {
+    expect(taskEventText({ event: "task_done", task_id: 4 }, tasks)).toBe("Check the space heater fuse");
+  });
+  it("is empty for an unknown task", () => expect(taskEventText({ event: "task_done", task_id: 9 }, tasks)).toBe(""));
+  it("is empty for a line with no task", () => expect(taskEventText({ event: "closed" }, tasks)).toBe(""));
+  it("is empty for Task added, whose remark holds the text", () => {
+    expect(taskEventText({ event: "task_added", task_id: 4 }, tasks)).toBe("");
+  });
+});
+
+describe("taskOwnerMark (S107 § 5.2)", () => {
+  const task = (owner, canChange = true) => ({
+    can_change: canChange, owner: { active: true, may_own: true, has_login: true, can_open: true, ...owner },
+  });
+  it("tells an engineer to record for an owner with no login", () => {
+    expect(taskOwnerMark(task({ has_login: false, can_open: false }))).toBe("No login: mark it done for them.");
+  });
+  it("warns of an owner who may not see the ticket", () => {
+    expect(taskOwnerMark(task({ can_open: false })))
+      .toBe("May not see this ticket. Mark it done for them, or choose another owner.");
+  });
+  it("says nothing when the row already says the owner is not at this site", () => {
+    expect(taskOwnerMark(task({ can_open: false, active: false }))).toBe("");
+    expect(taskOwnerMark(task({ can_open: false, may_own: false }))).toBe("");
+  });
+  it("says nothing when the owner can open the ticket", () => expect(taskOwnerMark(task({}))).toBe(""));
+  it("says nothing to a reader who cannot change the task", () => {
+    expect(taskOwnerMark(task({ has_login: false, can_open: false }, false))).toBe("");
+  });
+});
+
+describe("taskDoneTarget (S107 § 5.5)", () => {
+  it("saves on the task and puts the photos on the ticket", () => {
+    expect(taskDoneTarget(12, { id: 3, text: "Check the fuse" })).toEqual({
+      title: "Mark task done",
+      text: "Check the fuse",
+      donePath: "/api/tickets/12/tasks/3/done",
+      photosPath: "/api/tickets/12/documents",
+      placeholder: "Fuse F3 was blown. Fitted a new one.",
+      photoNote: "The photos go to the ticket's photos.",
+    });
   });
 });
 

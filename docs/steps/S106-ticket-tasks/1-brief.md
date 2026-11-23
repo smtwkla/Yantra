@@ -5,7 +5,7 @@ Author: Brief writer (Fable)
 Date: 22-11-2026
 Track: full
 Baseline: 8644720
-Status: Gate B 22-11-2026 (code review r1: 1 minor, 3 nits, fixed in fix round 1; verify review r2: no finding; open for KLA: the person id in a same-name owner line, § 8.7 acceptance by API tests); was approved 22-11-2026 by KLA (Q1 a, Q2 a, the split: three steps, Q3–Q7 as recommended; review r1: 1 major, 2 minor, 6 nits; r2: 5 nits; all accepted)
+Status: Done (committed 0bf95b3, adopted 22-11-2026; checks: none — backend only, 433 browser tests green at Normal; was: Gate B 22-11-2026, code review r1: 1 minor, 3 nits fixed, verify review r2: no finding; gate B answers by KLA: the same-name owner line and the § 8.7 acceptance go to S107)
 ```
 
 # S106 — Tasks on a ticket

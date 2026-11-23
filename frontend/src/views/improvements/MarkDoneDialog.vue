@@ -1,14 +1,18 @@
 <script setup>
 /**
- * Mark countermeasure done (docs/steps/S071-countermeasure-screens/1-brief.md § 5.5): what was
- * done, when (the S051 time field with a Now tick) and photos of the work. One dialog for the
- * improvement page and for Me; the caller gives `open({ improvementId, action })`.
+ * Mark countermeasure done (docs/steps/S071-countermeasure-screens/1-brief.md § 5.5) and Mark task
+ * done (docs/steps/S107-ticket-task-screens/1-brief.md § 5.5, D4): what was done, when (the S051
+ * time field with a Now tick) and photos of the work. One dialog for the improvement page, the
+ * ticket page and Me; the caller gives `open(target)`, built by countermeasureDoneTarget or
+ * taskDoneTarget: {title, text, donePath, photosPath, placeholder, photoNote}, so no caller writes
+ * a path. A task's photos go to the ticket's photos (S106 D7).
  *
  * It does not use useFormModal's send(), which closes the modal as soon as its request resolves.
  * save() posts the done first, so the record never waits for a slow upload, then uploads the
  * photos with the dialog still blocked (`saving`), then closes. A photo that fails leaves the
- * dialog open in its close-only phase, with the reason and "Add photos" again: the countermeasure
- * is done already, and S070 allows photos on a done one.
+ * dialog open in its close-only phase, with the reason and "Add photos" again: the record is
+ * done already, and S070 allows photos on a done countermeasure (a task's ticket takes them while
+ * it is open).
  *
  * Events: `saved(detail)` right after the done (the page replaces its copy, so the row reads
  * Done behind the dialog); `reload` when the page behind is stale (409) or a photo went up (the
@@ -29,7 +33,7 @@ const emit = defineEmits(["saved", "reload"]);
 const SHOWN_FIELDS = ["done_text", "done_at"];
 
 // Copied at open(): the row may be gone from Me after the first reload (BR2-01)
-const target = ref({ improvementId: null, id: null, text: "" });
+const target = ref({ title: "", text: "", donePath: "", photosPath: "", placeholder: "", photoNote: "" });
 const uploadLimitMb = ref(null);
 const donePhase = ref(false); // marked done, a photo failed: close-only
 const opens = ref(0); // EventFields is keyed on it: every opening starts at "Now"
@@ -40,7 +44,7 @@ const { modal, form, saving, dirty, error, fieldError, markClean, openCreate } =
   afterSave: () => {},
 });
 const { files, add, remove, uploadAll, revokeAll } = usePhotoUploads({
-  path: () => `/api/improvements/actions/${target.value.id}/documents`,
+  path: () => target.value.photosPath,
   maxMb: uploadLimitMb,
   previews: true,
 });
@@ -51,14 +55,14 @@ const showHeicHint = computed(() => failed.value.some((f) => isHeicFile(f.file))
 
 async function loadLimit() {
   try {
-    uploadLimitMb.value = (await apiGet(`/api/improvements/actions/${target.value.id}/documents`)).upload_max_mb;
+    uploadLimitMb.value = (await apiGet(target.value.photosPath)).upload_max_mb;
   } catch {
     uploadLimitMb.value = null; // the server still checks each upload
   }
 }
 
-function open({ improvementId, action }) {
-  target.value = { improvementId, id: action.id, text: action.text };
+function open(doneTarget) {
+  target.value = { ...doneTarget };
   revokeAll();
   files.value = [];
   donePhase.value = false;
@@ -83,7 +87,7 @@ async function save() {
   saving.value = true;
   let detail;
   try {
-    detail = await apiPost(`/api/improvements/${target.value.improvementId}/actions/${target.value.id}/done`, {
+    detail = await apiPost(target.value.donePath, {
       done_text: form.value.done_text,
       done_at: form.value.done_at,
     });
@@ -122,7 +126,7 @@ defineExpose({ open });
 <template>
   <FormModal
     ref="modal"
-    title="Mark countermeasure done"
+    :title="target.title"
     save-label="Mark done"
     :saving="saving"
     :dirty="!donePhase && (dirty || files.length > 0)"
@@ -143,7 +147,7 @@ defineExpose({ open });
           :class="{ 'is-invalid': fieldError('done_text') }"
           rows="3"
           :maxlength="DONE_TEXT_MAX"
-          placeholder="New gasket fitted."
+          :placeholder="target.placeholder"
           autofocus
         ></textarea>
         <div v-if="fieldError('done_text')" class="invalid-feedback d-block">{{ fieldError("done_text") }}</div>
@@ -163,7 +167,7 @@ defineExpose({ open });
       <input class="visually-hidden" type="file" multiple :accept="ACCEPT.photo" :disabled="saving" @change="onPhotosChosen" />
     </label>
     <div class="form-text mb-3">
-      <template v-if="uploadLimitMb">At most {{ uploadLimitMb }} MB each. </template><template v-if="showHeicHint">{{ IPHONE_PHOTO_HINT }}</template>
+      <template v-if="target.photoNote">{{ target.photoNote }} </template><template v-if="uploadLimitMb">At most {{ uploadLimitMb }} MB each. </template><template v-if="showHeicHint">{{ IPHONE_PHOTO_HINT }}</template>
     </div>
     <ul v-if="files.length" class="list-group">
       <li v-for="f in files" :key="f.key" class="list-group-item d-flex align-items-center gap-2" :data-photo="f.name">

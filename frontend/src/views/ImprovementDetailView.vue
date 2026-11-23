@@ -26,7 +26,7 @@ import TicketsTabs from "../components/TicketsTabs.vue";
 import { formatDateTime } from "../utils/datetime";
 import { causeGroupLabel } from "../stores/masters";
 import {
-  ACTION_KINDS, actionCountsText, causeText, closedLine, improvementStateBadgeClass, improvementStateLabel, lossText, ticketCauses, watchLine,
+  ACTION_KINDS, actionCountsText, causeText, closedLine, countermeasureDoneTarget, improvementStateBadgeClass, improvementStateLabel, lossText, ticketCauses, watchLine,
 } from "../utils/improvementLabels";
 import { minutesText } from "../utils/ticketLabels";
 import LessonDialog from "./equipment/LessonDialog.vue";
@@ -421,7 +421,7 @@ watch(() => route.params.id, load, { immediate: true });
             @ask-cancel="askCancel(a)"
             @keep="cancellingId = null"
             @cancel="(reason) => cancelAction(a, reason)"
-            @mark-done="markDoneDialog.open({ improvementId: improvement.id, action: a })"
+            @mark-done="markDoneDialog.open(countermeasureDoneTarget(improvement.id, a))"
             @write-lesson="lessonDialog.openCreate({ machine: improvement.machine, body: a.text, action_id: a.id })"
             @photos="togglePhotos(a)"
           >

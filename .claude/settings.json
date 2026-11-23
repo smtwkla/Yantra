@@ -1,4 +1,12 @@
 {
+
+  "permissions": {
+    "allow": [
+       "Bash(tooling/run-prod-query.bat *)",
+       "Bash(cmd //c \"tooling\\\\run-prod-query.bat *)"
+    ]
+  },
+
   "hooks": {
     "SessionStart": [
       {

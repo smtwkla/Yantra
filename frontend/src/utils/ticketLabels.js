@@ -88,6 +88,11 @@ export const EVENT_LABELS = {
   scheduled: "On hold",
   rescheduled: "Plan changed",
   note: "Note", // S027: a work note
+  // S107 § 5.6: the four task lines (S106)
+  task_added: "Task added",
+  task_changed: "Task changed",
+  task_done: "Task done",
+  task_cancelled: "Task cancelled",
 };
 
 export function isBreakdown(intensity) {
@@ -312,6 +317,16 @@ export function groupPeople(people, { ownId = null, assigneeIds = [], excludeIds
 /** A local date for <input type="date">: "2026-10-20". */
 export function toLocalDateValue(date) {
   return toLocalInputValue(date).slice(0, 10);
+}
+
+/**
+ * The day `days` after `from` (default today) in the phone's local date, "YYYY-MM-DD": the same
+ * basis as a date input's `min`. The quick picks of the plan and of a task's due date (S107).
+ */
+export function dateInDays(days, from = new Date()) {
+  const day = new Date(from);
+  day.setDate(day.getDate() + days);
+  return toLocalDateValue(day);
 }
 
 // ---------------------------------------------------------------------------
@@ -541,4 +556,61 @@ export function activityDetail(item) {
  */
 export function isBackdated(item) {
   return item.occurred_at.slice(0, 10) < item.created_at.slice(0, 10);
+}
+
+// --- S107: tasks on a ticket (the record and the rules are S106's) ---------------------------
+
+/** ticket_tasks_core.TASK_TEXT_MAX: the field's maxlength (the server checks it). */
+export const TASK_TEXT_MAX = 300;
+
+/** The due date's quick picks: [days from today, label]. No default date (S107 D5). */
+export const TASK_DUE_PICKS = [[0, "Today"], [1, "Tomorrow"], [7, "In 7 days"]];
+
+/**
+ * Why a significant move waits (S107 § 5.7), in this order: the server's `blocked_reason` (open
+ * tasks, S106; Close and Not a fault), "Add the labour first" (Close with no labour), "Remove
+ * the parts first" (Not a fault with parts). Empty: the move may be made.
+ */
+export function moveBlocks(move, { labourCount, partCount }) {
+  const reasons = [];
+  if (move.blocked_reason) reasons.push(move.blocked_reason);
+  if (move.name === "close" && labourCount === 0) reasons.push("Add the labour first");
+  if (move.name === "not-a-fault" && partCount > 0) reasons.push("Remove the parts first");
+  return reasons;
+}
+
+/**
+ * The task a timeline line names, for *Task changed*, *Task done* and *Task cancelled*: its
+ * current text, or "" (no `task_id`, or a task not in `tasks`). A *Task added* line's remark
+ * holds the text already, so it gets "" too.
+ */
+export function taskEventText(event, tasks) {
+  if (!event.task_id || event.event === "task_added") return "";
+  return tasks.find((t) => t.id === event.task_id)?.text ?? "";
+}
+
+/**
+ * The line under an open task whose owner cannot act on it (S107 § 5.2), for the people who can
+ * change the task: "" when the owner can open the ticket, or the row already says "(not at this
+ * site now)". "May not": `can_open` is a hint that can be wrong both ways (S106 § 4.2).
+ */
+export function taskOwnerMark(task) {
+  const owner = task.owner;
+  if (!task.can_change || !owner || owner.can_open) return "";
+  if (!owner.active || !owner.may_own) return "";
+  return owner.has_login
+    ? "May not see this ticket. Mark it done for them, or choose another owner."
+    : "No login: mark it done for them.";
+}
+
+/** What *Mark task done* shows and where it saves (S107 § 5.5; the dialog's `open(target)`). */
+export function taskDoneTarget(ticketId, task) {
+  return {
+    title: "Mark task done",
+    text: task.text,
+    donePath: `/api/tickets/${ticketId}/tasks/${task.id}/done`,
+    photosPath: `/api/tickets/${ticketId}/documents`,
+    placeholder: "Fuse F3 was blown. Fitted a new one.",
+    photoNote: "The photos go to the ticket's photos.",
+  };
 }

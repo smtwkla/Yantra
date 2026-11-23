@@ -8,18 +8,19 @@
  * `owner` is there, the done and cancelled lines only when the state says so, and the photos
  * button only when `documents` is there.
  *
- * The row makes no call. It emits `change`, `ask-cancel`, `keep` (the inline cancel's two
- * taps), `cancel(reason)`, `mark-done` and `photos`; the page makes the calls and holds which
- * row asks and which row shows its photos (`cancelling`, `photosOpen`), so only one of each is
- * open at a time. Every button follows the server's flags (`can_change`, `can_mark_done`,
- * `can_add_photo`, `can_write_lesson`), so none ends in a refusal.
+ * The row makes no call. It emits `change`, `ask-cancel`, `keep` (the inline cancel's two taps,
+ * made by CancelAsk since S107), `cancel(reason)`, `mark-done` and `photos`; the page makes the
+ * calls and holds which row asks and which row shows its photos (`cancelling`, `photosOpen`), so
+ * only one of each is open at a time. Every button follows the server's flags (`can_change`,
+ * `can_mark_done`, `can_add_photo`, `can_write_lesson`), so none ends in a refusal.
  *
  * A *Lesson* countermeasure shows its lesson (S077 § 5.4; `lesson` is in the detail shape only) as a link to
  * its page, or "Write lesson", which emits `write-lesson`; the page opens the lesson dialog.
  */
-import { computed, nextTick, ref, watch } from "vue";
+import { computed } from "vue";
 import { formatDateTime } from "../utils/datetime";
-import { ACTION_STATE_LABELS, actionKindLabel, CANCEL_REASON_MAX, overdueText } from "../utils/improvementLabels";
+import { ACTION_STATE_LABELS, actionKindLabel, overdueText } from "../utils/improvementLabels";
+import CancelAsk from "./CancelAsk.vue";
 
 const props = defineProps({
   action: { type: Object, required: true },
@@ -52,17 +53,6 @@ const photosLabel = computed(() => {
   if (documentCount.value > 0) return `Photos (${documentCount.value})`;
   return state.value === "done" && props.action.can_add_photo ? "Add photos" : "";
 });
-
-const reason = ref("");
-const reasonField = ref(null);
-const reasonId = computed(() => `cancel-reason-${props.action.id}`);
-watch(() => props.cancelling, (asking) => {
-  if (!asking) return;
-  reason.value = "";
-  nextTick(() => reasonField.value?.focus());
-});
-const reasonError = computed(() => (props.cancelError?.field === "reason" ? props.cancelError.message : ""));
-const rowError = computed(() => (props.cancelError && props.cancelError.field !== "reason" ? props.cancelError.message : ""));
 </script>
 
 <template>
@@ -127,28 +117,17 @@ const rowError = computed(() => (props.cancelError && props.cancelError.field !=
       </div>
     </div>
 
-    <div v-if="cancelling" class="mt-2">
-      <p class="mb-2">Cancel this countermeasure? It stays on the record with your reason.</p>
-      <label class="form-label" :for="reasonId">Why cancel it?</label>
-      <textarea
-        :id="reasonId"
-        ref="reasonField"
-        v-model="reason"
-        class="form-control"
-        :class="{ 'is-invalid': reasonError }"
-        rows="2"
-        :maxlength="CANCEL_REASON_MAX"
-      ></textarea>
-      <div v-if="reasonError" class="invalid-feedback d-block">{{ reasonError }}</div>
-      <div class="form-text">For example: done by another countermeasure, or added by mistake.</div>
-      <div class="d-flex flex-wrap justify-content-end gap-2 mt-2">
-        <button type="button" class="btn btn-danger" :disabled="cancelBusy || !reason.trim()" @click="emit('cancel', reason.trim())">
-          Cancel countermeasure
-        </button>
-        <button type="button" class="btn btn-outline-secondary" :disabled="cancelBusy" @click="emit('keep')">Keep it</button>
-      </div>
-      <div v-if="rowError" class="alert alert-danger py-2 mt-2 mb-0">{{ rowError }}</div>
-    </div>
+    <CancelAsk
+      v-if="cancelling"
+      question="Cancel this countermeasure? It stays on the record with your reason."
+      help="For example: done by another countermeasure, or added by mistake."
+      confirm-label="Cancel countermeasure"
+      :busy="cancelBusy"
+      :error="cancelError"
+      :id-suffix="action.id"
+      @cancel="(reason) => emit('cancel', reason)"
+      @keep="emit('keep')"
+    />
 
     <!-- The page puts the row's photo cards here while its photos button is open -->
     <slot />
