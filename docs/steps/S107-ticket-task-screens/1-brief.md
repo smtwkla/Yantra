@@ -5,7 +5,7 @@ Author: Brief writer (Opus 5.5)
 Date: 22-11-2026
 Track: full
 Baseline: 0bf95b3 (S106 adopted; stale check 22-11-2026: none of the brief's files changed since its review)
-Status: Gate B 22-11-2026 (code review r1: 1 minor, 3 nits, fixed in fix round 1; verify review r2: 1 nit, fixed by the orchestrator; device checks rows 71–72 for IT Admin after the release; gate B answers by KLA 22-11-2026: adoption waits, feedback triage after the alerts step); was approved 22-11-2026 by KLA (Q1 (b))
+Status: Committed f198876 (23-11-2026, by KLA); checks: 10 auto; important check pending: row 71 of device-checks.md (IT Admin, after the release); row 72 plain; was: gate B 22-11-2026 (code review r1: 1 minor, 3 nits, fixed in fix round 1; verify review r2: 1 nit, fixed by the orchestrator; device checks rows 71–72 for IT Admin after the release; gate B answers by KLA 22-11-2026: adoption waits, feedback triage after the alerts step); was approved 22-11-2026 by KLA (Q1 (b))
 ```
 
 # S107 — Ticket tasks: screens
