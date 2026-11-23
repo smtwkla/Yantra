@@ -37,6 +37,9 @@ for %%I in ("%REPO%") do set "REPO=%%~fI"
 set "WT=%TEMP%\yantra-release-tests"
 set "YANTRA_TEST_RUN=release"
 set "YANTRA_TEST_LOG_DIR=%REPO%\scratch\release-tests"
+:: PyCharm's run configs put the working folder's backend\ on PYTHONPATH (backend is a source root), so a
+:: gitignored module there, such as secrets_app.py, would be imported by the worktree's tests. Test HEAD alone.
+set "PYTHONPATH="
 set "REF=%~1"
 if not defined REF set "REF=HEAD"
 
