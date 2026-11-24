@@ -15,10 +15,12 @@ next step's coder carries on in the same working tree.
   since a `.bat` argument holds none). From the Bash tool, call
   `uv run --no-project python tooling/steps/step_snapshot.py …` directly:
   `cmd //c` garbles a quoted message on its way to the `.bat`.
-- **Diff**: `diff S00N [--from-round n] [--stat] [--all] [-- <path>…]`
+- **Diff**: `diff S00N [--from-round n] [--stat] [--all] [--exclude <path>]… [-- <path>…]`
   leaves out every step folder, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md`
   and `docs/roadmap/`, and its last line counts them; `--all` or named paths
-  show them. A spawn prompt names the command only, no list of files to skip.
+  show them. A spawn prompt names the command only, no list of files to skip,
+  except the user's own uncommitted files that are not the step's (`step-ls`'s
+  unclaimed changes): name each as `--exclude <path>` in the command.
   `diff [S00N] --base <commit>` diffs from that commit instead
   of the step's base, with the same exclusions: for a step with no snapshot
   yet whose base is not `HEAD`. A fix after gate B re-runs `snapshot` for the same step; only the newest

@@ -73,7 +73,14 @@ plan: the orchestrator records approved decisions there.
   and its screens, a new shell and a feature in it), propose a split into two
   steps in one line of your final message, with the cut. The same when the
   draft passes **600 lines**, or adds more than one table and two screens. The
-  user decides. An **amendment** counts the same: the files and lines it adds
+  user decides. The 600 lines count the brief's text up to its open questions:
+  the questions for the user (§ 9, with their consequences) and the Review log
+  do not count, so answering a review never forces a split. A brief with **one
+  concern**, nothing that could ship apart, needs no split proposal at any
+  length: say in one line of your final message why it does not cut. When the
+  spawn prompt asks for one brief of a feature that has two concerns, write the
+  first and record the cut and the rest in § 9 instead of proposing a split.
+  An **amendment** counts the same: the files and lines it adds
   alone. When an amendment passes about 25 files or 300 lines, propose in one
   line "amendment or new step?" with the count, before you write it out in
   full.

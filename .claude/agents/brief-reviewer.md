@@ -132,6 +132,15 @@ unmarked, or a plain check marked **important**.
 
 ## How to write findings
 
+- **Severity in a normal round** (staleness mode has its own, above):
+  - `blocker`: the step cannot be coded as written, or coding it breaks an invariant of the repo
+    (data loss, a permission leak, a lock order broken, a migration that fails on production's rows);
+  - `major`: the design leaves a risk unhandled or contradicts a decision the user took, so the
+    code would have to change after review; a test plan that cannot pass as written (a state the
+    move is not offered from, a test that the change breaks and the brief keeps) is `major`;
+  - `minor`: a gap the coder could fill alone but would likely miss, a wrong fact that does not
+    change the design, a check missing or wrongly marked;
+  - `nit`: wording, a file name, a reference.
 - **`blocker`, `major` and `minor`:** an ID, a severity, the problem, why it matters, and options
   with a recommendation.
 - **`nit`s are a short list** under one heading `## Nits`, one bullet each:

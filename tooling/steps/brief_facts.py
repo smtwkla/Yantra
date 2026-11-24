@@ -523,6 +523,13 @@ def check_test(ref, folders=None):
     if TEST_CLASS.match(parts[0]):
         names = parts
         found = class_files(parts[0], folders)
+        if len(found) > 1:
+            # Several files define a class of that name (TestChange is common): the id means the file
+            # whose class holds the test, so only those count.
+            holding = [f for f in found if names[-1] in class_tests(
+                (ROOT / f).read_text(encoding="utf-8", errors="replace"), parts[0])]
+            if holding:
+                found = holding
         if len(found) != 1:
             many = f"**{len(found)} test files define it**: {listing(found)}" if found else "**no such test class**"
             return [f"- `{ref.value}`: {many}"]
@@ -731,11 +738,16 @@ def brief_path(arg):
 
 
 def main(argv):
+    if argv in (["-h"], ["--help"]):
+        print(__doc__)
+        return 0
     if len(argv) != 1:
         print(__doc__)
         return 2
     folders = backticked(load_step_settings().get("Code folders")) or None
     path = brief_path(argv[0])
+    if not path.is_file():
+        raise SystemExit(f"No brief at {argv[0]}: give a step id (S029) or the path of a 1-brief.md.")
     brief = path.read_text(encoding="utf-8")
     refs = extract_refs(brief)
     step = re.match(r"S\d{3}", path.parent.name)

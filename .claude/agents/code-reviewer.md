@@ -28,7 +28,9 @@ step's folder, with N one higher than the last review file there.
   later, `diff S00N --from-round N` shows only the fix round's change (the orchestrator names N).
   The diff leaves out the step folders, `docs/steps/INDEX.md`, `docs/steps/feedback-log.md` and
   `docs/roadmap/`, and its last line counts them; `--all` shows them, and paths after `--` replace
-  that default. Read the touched files in full where the hunks don't settle a question.
+  that default. A snapshot holds the whole working tree, so the user's own uncommitted files are
+  in it: leave the ones the orchestrator names out with `--exclude <path>` (repeatable, before
+  any `--`). Read the touched files in full where the hunks don't settle a question.
 - The engineering rules: `.claude/CLAUDE-COMMON.md`, `.claude/CLAUDE.md`, the relevant sections of
   `.claude/SMTW-WebApp-Base.md`, and the repo's architecture doc (settings: *Architecture*).
 

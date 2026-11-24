@@ -12,7 +12,8 @@ own while the next step's coder carries on in the same working tree.
     python tooling/steps/step_snapshot.py diff S038 --worktree [--from-round 1] [--stat] [--all] [-- <path>…]
                                     the working files against the snapshot (or round 1) itself;
                                     "working tree equals refs/steps/S038" and exit 0, else exit 1
-    (any diff: --by-folder gives one line per top-level folder instead of the diff)
+    (any diff: --by-folder gives one line per top-level folder instead of the diff; --exclude <path>,
+    repeatable, leaves that path out too, e.g. the user's own uncommitted files)
         (diff leaves out the step folders, docs/steps/INDEX.md, docs/steps/feedback-log.md and
         docs/roadmap/; --all shows them, and paths after -- replace that default)
     python tooling/steps/step_snapshot.py rounds S038
@@ -59,7 +60,12 @@ shows as deleted. It is the same diff as above with the snapshot itself as the b
 tree of the working files, the same exclusions and path filters. It prints "working tree equals
 refs/steps/S038" and exits 0 when nothing shown differs, else the diff and exits 1.
 ``--by-folder`` (any diff) prints one line per top-level folder instead: files, lines added and
-removed."""
+removed.
+
+``--exclude <path>`` (any diff, repeatable, before the ``--``) leaves that path, a file or a folder,
+out of the diff as well, with the default exclusions, the paths named or ``--all``. A snapshot holds
+the whole working tree, so the user's uncommitted files that are not the step's are in it; the
+reviewer leaves them out by name instead of listing every folder of the step after ``--``."""
 
 import os
 import re
@@ -205,15 +211,16 @@ def by_folder(numstat):
     return "\n".join(lines)
 
 
-def compare(repo, base, tree, stat=False, paths=(), show_all=False, folders=False):
+def compare(repo, base, tree, stat=False, paths=(), show_all=False, folders=False, excludes=()):
     """The diff from ``base`` to ``tree`` -> (the text shown, the left-out paths). The paths named,
-    or everything (``show_all``), or everything but LEFT_OUT."""
+    or everything (``show_all``), or everything but LEFT_OUT; never the ``excludes``."""
     if paths or show_all:
         spec, left_out = list(paths or ["."]), []
     else:
         spec = [".", *(f":(exclude,glob){p}" for p in LEFT_OUT)]
         left_out = git(repo, "diff", "--name-only", base, tree, "--",
                        *(f":(glob){p}" for p in LEFT_OUT)).splitlines()
+    spec += [f":(exclude){p}" for p in excludes]
     if folders:
         # --no-renames: a rename's numstat path is "old => new", which names no one folder
         return by_folder(git(repo, "diff", "--numstat", "--no-renames", base, tree, "--", *spec)), left_out
@@ -228,20 +235,39 @@ def with_note(shown, left_out):
     return f"{shown}\n{note}" if shown else note
 
 
-def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, base=None, folders=False):
+def diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, base=None, folders=False,
+         excludes=()):
     """The diff from the step's base (or the round named, or the commit ``base``) to the working
     files: the paths named, or everything (``show_all``), or everything but LEFT_OUT, with a last line
     that counts what was left out."""
     base, _ = diff_base(repo, step_id, from_round, base)
-    return with_note(*compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders))
+    return with_note(*compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders, excludes))
 
 
-def worktree_diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, folders=False):
+def worktree_diff(repo, step_id, from_round=None, stat=False, paths=(), show_all=False, folders=False,
+                  excludes=()):
     """The working files against the step's snapshot (or the round named) itself -> (equal, text).
     Equal when nothing shown differs; the left-out files do not count, as in every diff."""
     base, ref = diff_base(repo, step_id, from_round, worktree=True)
-    shown, left_out = compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders)
+    shown, left_out = compare(repo, base, working_tree(repo, base), stat, paths, show_all, folders, excludes)
     return not shown, with_note(shown or f"working tree equals {ref}", left_out)
+
+
+def take_excludes(rest):
+    """``--exclude <path>`` pairs before the ``--`` -> (the other arguments, the paths), or None
+    when an ``--exclude`` has no path."""
+    cut = rest.index("--") if "--" in rest else len(rest)
+    head, excludes, i = [], [], 0
+    while i < cut:
+        if rest[i] == "--exclude":
+            if i + 1 >= cut or rest[i + 1].startswith("-"):
+                return None
+            excludes.append(rest[i + 1])
+            i += 2
+        else:
+            head.append(rest[i])
+            i += 1
+    return head + rest[cut:], excludes
 
 
 def parse_diff_args(rest):
@@ -335,16 +361,17 @@ def main(argv, repo=ROOT):
         if argv[:1] == ["diff"] and len(argv) >= 2:
             # the step id may be left out with --base: the diff then needs no step's snapshot
             step_id, rest = (argv[1], argv[2:]) if STEP_ID.match(argv[1]) else (None, argv[1:])
-            parsed = parse_diff_args(rest)
+            taken = take_excludes(rest)
+            parsed = parse_diff_args(taken[0]) if taken else None
             if parsed is None or (step_id is None and parsed[4] is None):
                 print(__doc__)
                 return 2
             stat, from_round, paths, show_all, base, worktree, folders = parsed
             if worktree:   # a step id is there: --worktree never goes with --base
-                equal, text = worktree_diff(repo, step_id, from_round, stat, paths, show_all, folders)
+                equal, text = worktree_diff(repo, step_id, from_round, stat, paths, show_all, folders, taken[1])
                 print(text)
                 return 0 if equal else 1
-            print(diff(repo, step_id, from_round, stat, paths, show_all, base, folders))
+            print(diff(repo, step_id, from_round, stat, paths, show_all, base, folders, taken[1]))
             return 0
         if argv[:1] == ["rounds"] and len(argv) == 2:
             found = rounds(repo, argv[1])
