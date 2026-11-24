@@ -1,5 +1,10 @@
 # What changed in Yantra
 
+## 0.1.17 — 24-11-2026
+- Add tasks to a ticket, then change, finish or cancel them
+- A ticket with an open task cannot be closed
+- See your own tasks in one list
+
 ## 0.1.16 — 21-11-2026
 - Preventive maintenance templates in Masters set the work once for many machines
 - Attach a template to a machine to give it a maintenance plan
